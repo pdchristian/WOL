@@ -15,6 +15,7 @@ import sys
 import shutil
 import ctypes
 import subprocess
+import tempfile
 import winreg
 from pathlib import Path
 
@@ -94,27 +95,37 @@ def rollback_installation(install_dir, created_items):
 
 
 def create_shortcut(target_path, shortcut_path, work_dir="", icon_path=""):
-    """Create a Windows shortcut using WScript.Shell COM object."""
+    """Create a Windows shortcut using WScript.Shell COM object via temp PS script."""
     ps_script = f'''
-    `$shell = New-Object -ComObject WScript.Shell
-    `$shortcut = `$shell.CreateShortcut("{shortcut_path}")
-    `$shortcut.TargetPath = "{target_path}"
-    `$shortcut.WorkingDirectory = "{work_dir}"
-    if ("{icon_path}") {{ `$shortcut.IconLocation = "{icon_path}" }}
-    `$shortcut.Description = "{APP_NAME} v{APP_VERSION}"
-    `$shortcut.WindowStyle = 1
-    `$shortcut.Save()
-    '''
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut("{shortcut_path}")
+$shortcut.TargetPath = "{target_path}"
+$shortcut.WorkingDirectory = "{work_dir}"
+if ("{icon_path}") {{ $shortcut.IconLocation = "{icon_path}" }}
+$shortcut.Description = "{APP_NAME} v{APP_VERSION}"
+$shortcut.WindowStyle = 1
+$shortcut.Save()
+'''
+    tmp_file = None
     try:
+        fd, tmp_file = tempfile.mkstemp(suffix='.ps1')
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(ps_script)
         subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_script],
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", tmp_file],
             capture_output=True, check=True, timeout=10
         )
         return True
     except Exception as e:
         print(f"  Warning: Could not create shortcut: {e}")
         return False
-
+    finally:
+        if tmp_file and os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except Exception:
+                pass
 
 def register_app_in_registry(install_dir, exe_path, uninstaller_path):
     """Register the application in Windows Add/Remove Programs list."""
