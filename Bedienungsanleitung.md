@@ -2,35 +2,62 @@
 
 ## Inhaltsverzeichnis
 1. [Installation](#installation)
-2. [Start der Anwendung](#start-der-anwendung)
-3. [Geräte verwalten](#geräte-verwalten)
-4. [Wake-on-LAN senden](#wake-on-lan-senden)
-5. [Status prüfen](#status-prüfen)
-6. [Zeitpläne erstellen](#zeitpläne-erstellen)
-7. [Netzwerkeinstellungen](#netzwerkeinstellungen)
-8. [Protokoll anzeigen](#protokoll-anzeigen)
-9. [Tastenkürzel](#tastenkürzel)
-10. [Häufige Fragen](#häufige-fragen)
+2. [Deinstallation](#deinstallation)
+3. [Start der Anwendung](#start-der-anwendung)
+4. [Geräte verwalten](#geräte-verwalten)
+5. [Wake-on-LAN senden](#wake-on-lan-senden)
+6. [Status prüfen](#status-prüfen)
+7. [Zeitpläne erstellen](#zeitpläne-erstellen)
+8. [Netzwerkeinstellungen](#netzwerkeinstellungen)
+9. [Protokoll anzeigen](#protokoll-anzeigen)
+10. [Tastenkürzel](#tastenkürzel)
+11. [Häufige Fragen](#häufige-fragen)
+12. [Systemanforderungen](#systemanforderungen)
 
 ---
 
 ## Installation
 
-### Option 1: Standalone-Executable (empfohlen)
-1. Die Datei `Wake-on-LAN Manager.exe` an einen beliebigen Ort kopieren (z. B. Desktop oder Programme-Ordner).
-2. Optional: Eine Verknüpfung auf dem Desktop erstellen.
-3. Fertig – keine weitere Installation nötig.
+### Mit dem Installer (empfohlen)
+1. Die Datei `Wake-on-LAN Manager Installer.exe` herunterladen.
+2. Doppelklicken Sie auf die Datei – der Installer fordert automatisch Administratorrechte an (UAC-Abfrage).
+3. Der Installer führt folgende Schritte durch:
+   - Kopiert die Anwendung nach `C:\Program Files\WakeOnLAN`
+   - Erstellt einen Startmenü-Eintrag unter **Wake-on-LAN Manager**
+   - Erstellt eine Desktop-Verknüpfung
+   - Registriert die Anwendung in der Windows-Programmliste (Deinstallationsprogramme)
+4. Bei einer **Neuinstallation** werden Sie gefragt, ob vorhandene Geräteeinträge und Einstellungen behalten oder gelöscht werden sollen.
 
-### Option 2: Aus dem Quellcode starten
+### Aus dem Quellcode starten
 1. Python 3.10+ installieren.
 2. Abhängigkeiten installieren: `pip install -r requirements.txt`
 3. App starten: `python run.py`
 
 ---
 
+## Deinstallation
+
+### Über das Startmenü
+1. Öffnen Sie das Windows-Startmenü.
+2. Navigieren Sie zu **Wake-on-LAN Manager → Uninstall Wake-on-LAN Manager**.
+3. Bestätigen Sie die Deinstallation.
+
+### Über die Windows-Programmliste
+1. Öffnen Sie **Einstellungen → Apps → Installierte Apps** (oder *Systemsteuerung → Programme deinstallieren*).
+2. Suchen Sie **Wake-on-LAN Manager** und klicken Sie auf **Deinstallieren**.
+3. Bestätigen Sie die Abfrage – alle Dateien, Verknüpfungen und Registrierungseinträge werden entfernt.
+
+> **Hinweis:** Bei der Deinstallation werden auch alle Geräteeinträge und Einstellungen gelöscht.
+
+---
+
 ## Start der Anwendung
 
-Doppelklicken Sie auf `Wake-on-LAN Manager.exe`. Die Hauptansicht zeigt eine Tabelle mit allen konfigurierten Geräten und deren Status.
+Starten Sie die Anwendung über:
+- Die **Desktop-Verknüpfung** (Doppelklick)
+- Das **Windows-Startmenü** → *Wake-on-LAN Manager*
+
+Die Hauptansicht zeigt eine Tabelle mit allen konfigurierten Geräten und deren Status.
 
 **Hauptbestandteile:**
 - **Menüleiste** oben (Datei, Tools, Hilfe)
@@ -61,8 +88,6 @@ Doppelklicken Sie auf `Wake-on-LAN Manager.exe`. Die Hauptansicht zeigt eine Tab
 1. Menü: **Datei → Geräte verwalten...**
 2. Wählen Sie das Gerät aus und klicken Sie auf **Löschen**.
 3. Bestätigen Sie die Abfrage.
-
-> **Hinweis:** Pro App können bis zu 8 Geräte konfiguriert werden.
 
 ---
 
@@ -160,8 +185,19 @@ Der Status wird alle **30 Sekunden** automatisch aktualisiert.
 - Keine IP-Adresse wurde für das Gerät konfiguriert. Fügen Sie die IP in den Geräteeinstellungen hinzu.
 
 ### Wo werden die Einstellungen gespeichert?
-- Alle Daten werden in `%USERPROFILE%\.wol_app\config.json` gespeichert.
+- Alle Daten werden in `%USERPROFILE%\.wol_app\` gespeichert.
 
 ---
 
-*Version 1.0 | Wake-on-LAN Manager*
+## Systemanforderungen
+
+| Komponente | Anforderung |
+|------------|-------------|
+| Betriebssystem | Windows 10/11 (64-Bit) |
+| Python | 3.10+ (nur für Quellcode-Variante) |
+| Netzwerk | Lokales Netzwerk (LAN), UDP-Port 7 oder 9 offen |
+| BIOS/UEFI | Wake-on-LAN aktiviert auf den Zielsystemen |
+
+---
+
+*Version 1.0.0 | Wake-on-LAN Manager*
