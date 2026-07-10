@@ -333,8 +333,18 @@ def main():
         except Exception:
             pass
 
-        # Remove old user data
-        remove_user_data()
+        # Ask whether to keep or remove existing user data (devices, settings, etc.)
+        wol_dir = Path.home() / ".wol_app"
+        if wol_dir.exists():
+            response = input(
+                "\nExisting device entries and settings found.\n"
+                "Keep them? (y=keep / n=remove) [y]: ").lower()
+            if response == 'n':
+                remove_user_data()
+            else:
+                print("  Keeping existing user data.")
+        else:
+            print("  No existing user data found.")
 
     # Create install directory
     print(f"\nInstalling to: {install_dir}")
