@@ -288,8 +288,8 @@ def main():
     if os.path.exists(exe_dest):
         print(f"INFO: {app_name} is already installed at:")
         print(f"  {install_dir}")
-        response = input("\nReinstall? (This will remove old data) (y/n): ").lower()
-        if response != 'y':
+        response = input("\nReinstall? (This will remove old data) [y]: ").lower()
+        if response not in ('', 'y'):
             print("Installation cancelled.")
             return
         # Clean up old installation
@@ -431,8 +431,8 @@ def main():
     print()
 
     # Launch app?
-    response = input("Start Wake-on-LAN Manager now? (y/n): ").lower()
-    if response == 'y':
+    response = input("Start Wake-on-LAN Manager now? [y]: ").lower()
+    if response in ('', 'y'):
         subprocess.Popen([exe_dest])
 
     input("\nPress Enter to exit...")

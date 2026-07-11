@@ -200,4 +200,4 @@ Der Status wird alle **30 Sekunden** automatisch aktualisiert.
 
 ---
 
-*Version 1.0.0 | Wake-on-LAN Manager*
+*Version 1.1.0 | Wake-on-LAN Manager*

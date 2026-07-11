@@ -12,23 +12,37 @@ html = f'''<!DOCTYPE html>
 body {{
     font-family: Segoe UI, Arial, sans-serif;
     margin: 60pt 50pt;
-    line-height: 1.6;
+    line-height: 1.4;
     color: #333;
+}}
+p {{
+    margin: 4pt 0;
+}}
+ul, ol {{
+    margin: 4pt 0;
+    padding-left: 20pt;
+}}
+li {{
+    margin: 2pt 0;
 }}
 h1 {{
     font-size: 24pt;
     color: #1a1a2e;
     border-bottom: 3px solid #0078d4;
     padding-bottom: 8pt;
+    margin-top: 0;
 }}
 h2 {{
     font-size: 18pt;
     color: #0078d4;
-    margin-top: 24pt;
+    margin-top: 16pt;
+    margin-bottom: 6pt;
 }}
 h3 {{
     font-size: 14pt;
     color: #333;
+    margin-top: 10pt;
+    margin-bottom: 4pt;
 }}
 table {{
     border-collapse: collapse;
@@ -46,8 +60,8 @@ th {{
 }}
 blockquote {{
     border-left: 4px solid #0078d4;
-    padding: 8pt 16pt;
-    margin: 12pt 0;
+    padding: 6pt 12pt;
+    margin: 8pt 0;
     background: #f0f6ff;
 }}
 code {{
@@ -58,14 +72,14 @@ code {{
 hr {{
     border: none;
     border-top: 2px solid #ddd;
-    margin: 20pt 0;
+    margin: 12pt 0;
 }}
 </style>
 </head>
 <body>
 ''' + markdown.markdown(md, extensions=['tables', 'fenced_code']) + '''
 <footer style="text-align:center;font-size:10pt;color:#888;margin-top:30pt;">
-Version 1.0.0 | Wake-on-LAN Manager
+Version 1.1.0 | Wake-on-LAN Manager
 </footer>
 </body>
 </html>'''

@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
+from wol_app.network_scan_dialog import NetworkScanDialog
+
 
 class DeviceDialog(QDialog):
     """Dialog for adding/editing a device."""
@@ -146,8 +148,8 @@ class DeviceManagerDialog(QDialog):
         import_btn.clicked.connect(self._import_devices)
         export_btn = QPushButton("Export")
         export_btn.clicked.connect(self._export_devices)
-        refresh_btn = QPushButton("Refresh Status")
-        refresh_btn.clicked.connect(self._refresh_table)
+        refresh_btn = QPushButton("Netzwerk scannen")
+        refresh_btn.clicked.connect(self._scan_network)
 
         btn_layout.addWidget(add_btn)
         btn_layout.addWidget(edit_btn)
@@ -228,6 +230,12 @@ class DeviceManagerDialog(QDialog):
         if reply == QMessageBox.StandardButton.Yes:
             self.config.remove_device(device["id"])
             self._refresh_table()
+
+    def _scan_network(self):
+        """Open network scan dialog to discover active devices."""
+        dialog = NetworkScanDialog(self.config, parent=self)
+        dialog.exec()
+        self._refresh_table()
 
     def _export_devices(self):
         """Export configured devices to a JSON file."""

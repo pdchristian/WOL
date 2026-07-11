@@ -17,6 +17,7 @@ from wol_app.device_dialog import DeviceManagerDialog
 from wol_app.settings_dialog import SettingsDialog
 from wol_app.schedule_dialog import ScheduleDialog
 from wol_app.log_dialog import LogDialog
+from wol_app.network_scan_dialog import NetworkScanDialog
 
 
 class StatusWorker(QObject):
@@ -89,6 +90,10 @@ class MainWindow(QMainWindow):
 
         # Tools menu
         tools_menu = menubar.addMenu("&Tools")
+        network_scan_action = QAction("Netzwerk &scannen...", self)
+        network_scan_action.triggered.connect(self._open_network_scan)
+        tools_menu.addAction(network_scan_action)
+
         settings_action = QAction("&Network Settings...", self)
         settings_action.triggered.connect(self._open_settings)
         tools_menu.addAction(settings_action)
@@ -317,6 +322,11 @@ class MainWindow(QMainWindow):
 
     # --- Dialog openers ---
 
+    def _open_network_scan(self):
+        dialog = NetworkScanDialog(self.config, parent=self)
+        dialog.exec()
+        self._refresh_device_table()
+
     def _open_device_manager(self):
         dialog = DeviceManagerDialog(self.config, parent=self)
         dialog.exec()
@@ -340,7 +350,7 @@ class MainWindow(QMainWindow):
             "<h3>Wake-on-LAN Manager</h3>"
             "<p>Send magic packets to wake up computers on your network.</p>"
             "<p>Supports up to 8 devices with scheduling and status monitoring.</p>"
-            "<p>Version 1.0</p>"
+            "<p>Version 1.1.0</p>"
         )
 
     def closeEvent(self, event):
