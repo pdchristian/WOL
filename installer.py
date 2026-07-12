@@ -22,7 +22,7 @@ from pathlib import Path
 
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.1"
 APP_PUBLISHER = "Wake-on-LAN"
 APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"

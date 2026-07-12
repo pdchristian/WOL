@@ -160,6 +160,49 @@ def get_mac_from_arp(ip: str) -> Optional[str]:
     return None
 
 
+def calculate_broadcast_address(ip: str, netmask: str) -> str:
+    """Calculate the directed broadcast address for a subnet."""
+    try:
+        ip_int = struct.unpack("!I", socket.inet_aton(ip))[0]
+        mask_int = struct.unpack("!I", socket.inet_aton(netmask))[0]
+        network = ip_int & mask_int
+        broadcast = network | (mask_int ^ 0xFFFFFFFF)
+        return socket.inet_ntoa(struct.pack("!I", broadcast))
+    except Exception:
+        return "255.255.255.255"
+
+
+def ip_in_subnet(ip: str, subnet_ip: str, netmask: str) -> bool:
+    """Check if an IP address belongs to a given subnet."""
+    try:
+        ip_int = struct.unpack("!I", socket.inet_aton(ip))[0]
+        subnet_int = struct.unpack("!I", socket.inet_aton(subnet_ip))[0]
+        mask_int = struct.unpack("!I", socket.inet_aton(netmask))[0]
+        return (ip_int & mask_int) == (subnet_int & mask_int)
+    except Exception:
+        return False
+
+
+def find_interface_for_device(target_ip: str) -> Optional[Dict]:
+    """
+    Find the local network interface that can reach the target IP.
+    Returns dict with 'local_ip', 'netmask', and 'broadcast_ip' or None if no match.
+    """
+    if not target_ip:
+        return None
+
+    interfaces = get_local_interfaces()
+    for iface in interfaces:
+        if ip_in_subnet(target_ip, iface["ip"], iface["netmask"]):
+            broadcast = calculate_broadcast_address(iface["ip"], iface["netmask"])
+            return {
+                "local_ip": iface["ip"],
+                "netmask": iface["netmask"],
+                "broadcast_ip": broadcast,
+            }
+    return None
+
+
 def scan_subnet(ip: str, netmask: str, timeout: int = 1,
                 progress_callback=None) -> List[Dict]:
     """Scan a subnet for active hosts."""

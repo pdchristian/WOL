@@ -7,6 +7,8 @@ import time
 from datetime import datetime
 from typing import Callable, Optional
 
+from wol_app.network_scanner import find_interface_for_device
+
 
 class WOLEngine:
     """Handles Wake-on-LAN magic packets, device status checks, and scheduling."""
@@ -40,8 +42,21 @@ class WOLEngine:
         mac = device["mac"]
         name = device["name"]
         network = self.config.get_network_settings()
-        broadcast_ip = network["broadcast_ip"]
         broadcast_port = network["broadcast_port"]
+
+        # Determine the correct interface and broadcast address for this device
+        target_ip = device.get("ip", "")
+        iface = find_interface_for_device(target_ip) if target_ip else None
+
+        if iface:
+            broadcast_ip = iface["broadcast_ip"]
+            local_ip = iface["local_ip"]
+            info_suffix = f" via {local_ip} -> {broadcast_ip}:{broadcast_port}"
+        else:
+            # Fallback: use global broadcast settings
+            broadcast_ip = network["broadcast_ip"]
+            local_ip = None
+            info_suffix = f" at {broadcast_ip}:{broadcast_port}"
 
         try:
             packet = self._create_magic_packet(mac)
@@ -49,10 +64,15 @@ class WOLEngine:
             # Create UDP socket
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+            # Bind to the correct local interface so the packet goes out the right NIC
+            if local_ip:
+                sock.bind((local_ip, 0))
+
             sock.sendto(packet, (broadcast_ip, broadcast_port))
             sock.close()
 
-            self.config.add_log(name, "WAKE", "SUCCESS", f"Magic packet sent to {mac} at {broadcast_ip}:{broadcast_port}")
+            self.config.add_log(name, "WAKE", "SUCCESS", f"Magic packet sent to {mac}{info_suffix}")
             return True, f"Wake packet sent to {name} ({mac})."
         except socket.error as e:
             error_msg = f"Socket error: {e}"
