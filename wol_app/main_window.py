@@ -438,7 +438,7 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
         else:
             # Connect without credentials
-            cmd = f'net use \\{device_ip}\IPC$'
+            cmd = f'net use \\\\{device_ip}\\IPC$'
             self.statusBar().showMessage(f"Verbinde mit {device_name} ({device_ip})...")
             QApplication.processEvents()
 
@@ -566,7 +566,7 @@ class MainWindow(QMainWindow):
             "<h3>Wake-on-LAN Manager</h3>"
             "<p>Send magic packets to wake up computers on your network.</p>"
             "<p>Supports up to 8 devices with scheduling and status monitoring.</p>"
-            "<p>Version 1.1.2</p>"
+            "<p>Version 1.2.1</p>"
         )
 
     def closeEvent(self, event):

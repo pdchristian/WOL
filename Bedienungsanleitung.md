@@ -7,12 +7,14 @@
 4. [Geräte verwalten](#geräte-verwalten)
 5. [Wake-on-LAN senden](#wake-on-lan-senden)
 6. [Status prüfen](#status-prüfen)
-7. [Zeitpläne erstellen](#zeitpläne-erstellen)
-8. [Netzwerkeinstellungen](#netzwerkeinstellungen)
-9. [Protokoll anzeigen](#protokoll-anzeigen)
-10. [Tastenkürzel](#tastenkürzel)
-11. [Häufige Fragen](#häufige-fragen)
-12. [Systemanforderungen](#systemanforderungen)
+7. [Remote Shutdown](#remote-shutdown)
+8. [Zeitpläne erstellen](#zeitpläne-erstellen)
+9. [Netzwerkeinstellungen](#netzwerkeinstellungen)
+10. [Protokoll anzeigen](#protokoll-anzeigen)
+11. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
+12. [Tastenkürzel](#tastenkürzel)
+13. [Häufige Fragen](#häufige-fragen)
+14. [Systemanforderungen](#systemanforderungen)
 
 ---
 
@@ -76,6 +78,8 @@ Die Hauptansicht zeigt eine Tabelle mit allen konfigurierten Geräten und deren 
    - **Gerätename:** Ein sprechender Name (z. B. "Büro-PC", "Gaming-Rig")
    - **MAC-Adresse:** Die MAC-Adresse des Zielsystems (Format: `AA:BB:CC:DD:EE:FF`)
    - **IP-Adresse:** Optional, für Status-Prüfung per Ping
+   - **Nutzer:** Optional, Benutzername für Remote-Shutdown (z. B. `Administrator` oder `Benutzername`)
+   - **Passwort:** Optional, Passwort für Remote-Shutdown (wird verschlüsselt gespeichert)
 4. Klicken Sie auf **Speichern**.
 
 ### Gerät bearbeiten
@@ -125,6 +129,73 @@ Der Status wird alle **30 Sekunden** automatisch aktualisiert.
 
 ---
 
+## Remote Shutdown
+
+Mit dieser Funktion können Sie ein konfiguriertes Gerät über das Netzwerk herunterfahren. Es gibt zwei Varianten: **Shutdown ohne Anmeldedaten** (für Systeme mit offenen Freigaben) und **Shutdown mit Benutzername und Passwort** (für Systeme mit geschützten Freigaben).
+
+### Voraussetzungen am Zielsystem
+Bevor Remote-Shutdown funktioniert, müssen folgende Einstellungen am **Zielsystem** vorgenommen werden:
+
+1. **Registry-Eintrag hinzufügen:**
+   ```
+   [HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System]
+     "LocalAccountTokenFilterPolicy"=dword:00000001
+   ```
+   > Dieser Eintrag ermöglicht den Zugriff auf lokale Administrator-Konten über das Netzwerk.
+
+2. **Date- und Druckerfreigabe** muss aktiviert sein.
+3. Eine **IP-Adresse** muss für das Gerät konfiguriert sein.
+4. **Firewall-Einstellungen:** Stellen Sie sicher, dass der Zugriff auf **IPC$** (SMB, Port 445) nicht blockiert wird.
+
+---
+
+### Shutdown ohne Benutzername und Passwort
+Falls das Zielsystem keine Authentifizierung für die Remote-Shutdown-Funktion erfordert (z. B. bei offenen Freigaben oder lokalen Konten mit Standardberechtigungen), gehen Sie wie folgt vor:
+
+1. **Gerät auswählen:**
+   Wählen Sie in der Hauptansicht das gewünschte Gerät aus der Tabelle aus.
+
+2. **Shutdown auslösen:**
+   Klicken Sie auf die Schaltfläche **Herunterfahren**.
+
+3. **Bestätigen:**
+   Ein Dialogfenster erscheint zur Bestätigung. Klicken Sie auf **Ja**, um den Shutdown-Befehl zu senden.
+
+4. **Ausführung:**
+   Die Anwendung sendet den Shutdown-Befehl über das Netzwerk an das Zielsystem. Das Gerät wird heruntergefahren.
+
+> **Hinweis:** Diese Methode funktioniert nur, wenn das Zielsystem keine Authentifizierung für Remote-Befehle erfordert. Falls der Shutdown fehlschlägt, verwenden Sie die Methode **mit Benutzername und Passwort**.
+
+---
+
+### Shutdown mit Benutzername und Passwort
+Falls das Zielsystem eine Authentifizierung erfordert (z. B. bei Domänen-Konten oder geschützten Freigaben), müssen Sie **Nutzername** und **Passwort** für das Gerät hinterlegen:
+
+1. **Gerät konfigurieren:**
+   - Öffnen Sie den Geräte-Manager (**Datei → Geräte verwalten...** oder `Strg+D`).
+   - Wählen Sie das Gerät aus und klicken Sie auf **Bearbeiten**.
+   - Tragen Sie im Feld **Nutzer** den Benutzernamen ein (z. B. `Administrator` oder `Domain\Benutzername`).
+   - Tragen Sie im Feld **Passwort** das zugehörige Passwort ein.
+     > **Sicherheit:** Das Passwort wird **automatisch verschlüsselt** gespeichert (siehe [Passwort-Verschlüsselung](#passwort-verschlüsselung)).
+   - Klicken Sie auf **Aktualisieren**, um die Änderungen zu speichern.
+
+2. **Shutdown auslösen:**
+   - Wählen Sie das Gerät in der Hauptansicht aus.
+   - Klicken Sie auf **Herunterfahren**.
+
+3. **Verbindung herstellen:**
+   Die Anwendung stellt eine Verbindung zum Zielsystem her, indem sie den Befehl `net use` verwendet, um eine Sitzung mit der Freigabe `IPC$` herzustellen. Dabei werden die hinterlegten Anmeldedaten verwendet.
+
+4. **Shutdown-Befehl senden:**
+   Nach erfolgreicher Authentifizierung wird der Shutdown-Befehl (`shutdown /s /t 0`) an das Zielsystem gesendet. Das Gerät wird sofort heruntergefahren.
+
+> **Hinweis:**
+> - Die Authentifizierung erfolgt über **Windows SMB (Server Message Block)**.
+> - Falls die Verbindung fehlschlägt, prüfen Sie die **Berechtigungen** des Benutzers auf dem Zielsystem.
+> - Das Passwort wird **verschlüsselt** gespeichert und ist nur auf dem aktuellen System lesbar.
+
+---
+
 ## Zeitpläne erstellen
 
 1. Menü: **Datei → Zeitpläne verwalten...** (oder `Strg+S`)
@@ -160,6 +231,80 @@ Der Status wird alle **30 Sekunden** automatisch aktualisiert.
    - Automatische Zeitplan-Auslösungen
    - Fehlermeldungen
 3. Klicken Sie auf **Protokoll löschen**, um den Verlauf zu leeren.
+
+---
+
+## Passwort-Verschlüsselung
+
+Der **Wake-on-LAN Manager** schützt alle gespeicherten Passwörter durch eine starke Verschlüsselung, um die Sicherheit Ihrer Anmeldedaten zu gewährleisten. Diese Funktion ist besonders wichtig, wenn Sie die **Shutdown-Funktion mit Benutzername und Passwort** nutzen.
+
+---
+
+### Wie funktioniert die Verschlüsselung?
+
+Die Passwort-Verschlüsselung basiert auf einer Kombination aus **AES-256-GCM** und **Windows DPAPI** (Data Protection API):
+
+1. **AES-256-GCM-Verschlüsselung:**
+   - Passwörter werden mit dem **AES-256-GCM-Algorithmus** verschlüsselt, einem der sicherten Verschlüsselungsstandards.
+   - Dieser Algorithmus bietet **Authentizität** (Datenintegrität) und **Vertraulichkeit** (Geheimhaltung).
+
+2. **Schlüsselverwaltung mit Windows DPAPI:**
+   - Der **Verschlüsselungsschlüssel** selbst wird nicht in der Konfigurationsdatei gespeichert, sondern über die **Windows Data Protection API (DPAPI)** geschützt.
+   - DPAPI bindet den Schlüssel an den aktuellen **Windows-Benutzer** und das **System**, auf dem die Verschlüsselung stattfindet.
+   - Dadurch können **nur der aktuelle Benutzer auf demselben System** die Passwörter entschlüsseln.
+
+3. **Sicherer Speicherort:**
+   - Verschlüsselte Passwörter werden in der Datei `config.json` im Ordner `%USERPROFILE%\.wol_app\` gespeichert.
+   - Selbst wenn die Datei kopiert oder gestohlen wird, sind die Passwörter **nicht lesbar**, da der Schlüssel fehlt.
+
+---
+
+### Sicherheit und Nutzung
+
+#### Vorteile der Verschlüsselung
+✅ **Kein Klartext:** Passwörter werden **nie** im Klartext in Dateien oder der Registry gespeichert.
+✅ **Systemspezifisch:** Passwörter sind nur auf dem System lesbar, auf dem sie verschlüsselt wurden.
+✅ **Benutzerspezifisch:** Jeder Windows-Benutzer hat seinen eigenen Verschlüsselungsschlüssel. Passwörter eines Benutzers sind für andere Benutzer **nicht zugänglich**.<|reserved_token_163700|>
+✅ **Export/Import:** Auch beim Exportieren oder Importieren von Geräten bleiben die Passwörter verschlüsselt und werden automatisch entschlüsselt, wenn sie auf demselben System importiert werden.
+
+#### Wichtige Hinweise
+⚠ **Systemwechsel:**
+   - Wenn Sie die Konfigurationsdatei (`config.json`) auf ein **anderes System** kopieren, können die Passwörter **nicht entschlüsselt** werden, da der DPAPI-Schlüssel systemspezifisch ist.
+   - In diesem Fall müssen Sie die Passwörter manuell erneut eingeben.
+
+⚠ **Benutzerwechsel:**
+   - Falls ein anderer Windows-Benutzer auf demselben System die Anwendung nutzt, kann dieser die Passwörter **nicht entschlüsseln**, da sie an Ihren Benutzerkonten gebunden sind.
+
+⚠ **Sicherheitskopie:**
+   - Erstellen Sie regelmäßig **Sicherheitskopien** Ihrer Geräteeinstellungen (über **Datei → Geräte exportieren...**).
+   - Beachten Sie, dass die exportierten Passwörter **nur auf demselben System und Benutzer** entschlüsselt werden können.
+
+---
+
+### Technische Details
+| Komponente | Beschreibung |
+|------------|-------------|
+| **Algorithmus** | AES-256-GCM (256-Bit-Schlüssel, Galois/Counter Mode) |
+| **Schlüsselverwaltung** | Windows DPAPI (Data Protection API) |
+| **Speicherort** | `%USERPROFILE%\.wol_app\config.json` |
+| **Kompatibilität** | Windows 10/11 (64-Bit) |
+| **Performance** | Verschlüsselung/Entschlüsselung erfolgt in Echtzeit und ist nicht spürbar.
+
+---
+
+### Häufige Fragen zur Verschlüsselung
+
+#### Werden meine Passwörter beim Speichern verschlüsselt?
+Ja, **sofort nach dem Speichern** eines Geräts mit Passwort wird dieses verschlüsselt. Sie sehen das Passwort policier in der Geräteverwaltung, aber in der Datei `config.json` ist es verschlüsselt.
+
+#### Kann ich die verschlüsselten Passwörter manuell entschlüsseln?
+Nein. Die Entschlüsselung erfolgt automatisch durch die Anwendung und ist **nicht manuell möglich**, um die Sicherheit zu gewährleisten.
+
+#### Was passiert, wenn ich Windows neu installiere?
+Bei einer Neuinstallation von Windows geht der DPAPI-Schlüssel verloren. In diesem Fall müssen Sie die Passwörter **manuell erneut eingeben**, sobald Sie die Anwendung wieder verwenden.
+
+#### Funktioniert die Verschlüsselung auch auf älteren Windows-Versionen?
+Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen werden nicht unterstützt.
 
 ---
 
@@ -200,4 +345,4 @@ Der Status wird alle **30 Sekunden** automatisch aktualisiert.
 
 ---
 
-*Version 1.1.0 | Wake-on-LAN Manager*
+*Version 1.2.1 | Wake-on-LAN Manager*

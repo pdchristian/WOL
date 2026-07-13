@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from wol_app.network_scan_dialog import NetworkScanDialog
+from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
 
 
 class DeviceDialog(QDialog):
@@ -171,8 +172,8 @@ class DeviceManagerDialog(QDialog):
 
         # Device Table
         self.table = QTableWidget()
-        self.table.setColumnCount(8)
-        self.table.setHorizontalHeaderLabels(["Name", "MAC Address", "IP Address", "Nutzer", "Passwort", "Enabled", "Status", ""])
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["Name", "MAC Address", "IP Address", "Nutzer", "Passwort"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
@@ -279,26 +280,6 @@ class DeviceManagerDialog(QDialog):
             password_display = "*" * len(password) if password else ""
             self.table.setItem(row, 4, QTableWidgetItem(password_display))
 
-            enabled_check = QCheckBox()
-            enabled_check.setChecked(device.get("enabled", True))
-            enabled_check.toggled.connect(
-                lambda checked, d_id=device["id"]: self.config.update_device(d_id, enabled=checked)
-            )
-            self.table.setCellWidget(row, 5, enabled_check)
-
-            status_text = device.get("_status", "unknown")
-            status_item = QTableWidgetItem(status_text)
-            if status_text == "online":
-                status_item.setForeground(Qt.GlobalColor.darkGreen)
-            elif status_text == "offline":
-                status_item.setForeground(Qt.GlobalColor.darkRed)
-            self.table.setItem(row, 6, status_item)
-            
-            delete_btn = QPushButton("🗑️")
-            delete_btn.setProperty("device_id", device["id"])
-            delete_btn.clicked.connect(self._delete_device_from_row)
-            self.table.setCellWidget(row, 7, delete_btn)
-
     def _add_device(self):
         dialog = DeviceDialog(self.config, parent=self)
         dialog.device_saved.connect(lambda d: self._refresh_table())
@@ -339,21 +320,6 @@ class DeviceManagerDialog(QDialog):
             self.config.remove_device(device["id"])
             self._refresh_table()
 
-    def _delete_device_from_row(self):
-        sender = self.sender()
-        device_id = sender.property("device_id")
-        device = self.config.get_device_by_id(device_id)
-        
-        if device:
-            reply = QMessageBox.question(
-                self, "Confirm Delete",
-                f"Are you sure you want to delete '{device['name']}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.config.remove_device(device["id"])
-                self._refresh_table()
-
     def _scan_network(self):
         """Open network scan dialog to discover active devices."""
         dialog = NetworkScanDialog(self.config, parent=self)
@@ -370,6 +336,7 @@ class DeviceManagerDialog(QDialog):
 
         devices = self.config.get_devices()
         # Export only relevant fields (exclude internal/status fields)
+        # Passwords are encrypted in the export file for security
         export_data = []
         for dev in devices:
             export_data.append({
@@ -377,7 +344,7 @@ class DeviceManagerDialog(QDialog):
                 "mac": dev.get("mac", ""),
                 "ip": dev.get("ip", ""),
                 "username": dev.get("username", ""),
-                "password": dev.get("password", ""),
+                "password": encrypt_password(dev.get("password", "")),
                 "enabled": dev.get("enabled", True),
             })
 
@@ -426,12 +393,15 @@ class DeviceManagerDialog(QDialog):
             existing = self.config.get_device_by_name(name)
             if existing:
                 # Update existing device
+                pw = dev_data.get("password", "")
+                if is_encrypted(pw):
+                    pw = decrypt_password(pw)
                 self.config.update_device(
                     existing["id"],
                     mac=mac,
                     ip=dev_data.get("ip", ""),
                     username=dev_data.get("username", ""),
-                    password=dev_data.get("password", ""),
+                    password=pw,
                     enabled=dev_data.get("enabled", True),
                 )
                 updated += 1
@@ -439,11 +409,14 @@ class DeviceManagerDialog(QDialog):
                 # Add new device
                 device = self.config.add_device(name, mac)
                 if device:
+                    pw = dev_data.get("password", "")
+                    if is_encrypted(pw):
+                        pw = decrypt_password(pw)
                     self.config.update_device(
                         device["id"],
                         ip=dev_data.get("ip", ""),
                         username=dev_data.get("username", ""),
-                        password=dev_data.get("password", ""),
+                        password=pw,
                         enabled=dev_data.get("enabled", True),
                     )
                     imported += 1
