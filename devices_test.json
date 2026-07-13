@@ -11,8 +11,8 @@
     "name": "A4-H20",
     "mac": "60:CF:84:84:31:29",
     "ip": "192.168.2.50",
-    "username": "",
-    "password": "",
+    "username": "cp",
+    "password": "6uXAfLFXvevYU146ALP0O3ErUhcslrnjj1zBIYDqnSo1LftV6iE=",
     "enabled": true
   },
   {
@@ -28,7 +28,15 @@
     "mac": "C2:39:6F:AC:29:24",
     "ip": "192.168.2.34",
     "username": "cp",
-    "password": "karTon63:-",
+    "password": "iMFjjM8TLfX5QGLVSEJKRY2raZ7yZ59vhjuwfu3ERXR8B18yu4Q=",
+    "enabled": true
+  },
+  {
+    "name": "Apple-TV-CP.lan",
+    "mac": "C8:69:CD:2D:9C:DB",
+    "ip": "192.168.2.157",
+    "username": "",
+    "password": "",
     "enabled": true
   }
 ]

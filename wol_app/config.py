@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
+
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -41,13 +43,15 @@ class ConfigManager:
         self.config = self._load()
 
     def _load(self) -> dict:
-        """Load configuration from file, or create default."""
+        """Load configuration from file, auto-decrypt passwords and migrate old format."""
         if self.config_path.exists():
             try:
                 with open(self.config_path, "r") as f:
                     data = json.load(f)
                 # Deep merge with defaults to ensure all keys exist
                 merged = self._deep_merge(DEFAULT_CONFIG.copy(), data)
+                # Auto-decrypt passwords on load
+                self._decrypt_devices(merged)
                 return merged
             except (json.JSONDecodeError, IOError):
                 return DEFAULT_CONFIG.copy()
@@ -64,14 +68,18 @@ class ConfigManager:
         return base
 
     def save(self):
-        """Save current configuration to file."""
+        """Save current configuration to file with encrypted passwords."""
         # Trim logs if exceeding max
         max_logs = self.config.get("max_logs", 100)
         if len(self.config.get("logs", [])) > max_logs:
             self.config["logs"] = self.config["logs"][-max_logs:]
 
+        # Encrypt passwords before saving
+        self._encrypt_devices(self.config)
         with open(self.config_path, "w") as f:
             json.dump(self.config, f, indent=2)
+        # Decrypt back so in-memory state stays plaintext
+        self._decrypt_devices(self.config)
 
     # --- Devices ---
 
@@ -226,6 +234,27 @@ class ConfigManager:
         self.config["ui"]["device_sort_column"] = sort_column
         self.config["ui"]["device_sort_order"] = sort_order
         self.save()
+
+    # --- Encryption Helpers ---
+
+    @staticmethod
+    def _encrypt_devices(config: dict):
+        """Encrypt all device passwords in-place before saving."""
+        for dev in config.get("devices", []):
+            pw = dev.get("password", "")
+            if pw and not is_encrypted(pw):
+                dev["password"] = encrypt_password(pw)
+
+    @staticmethod
+    def _decrypt_devices(config: dict):
+        """Decrypt all device passwords in-place after loading."""
+        for dev in config.get("devices", []):
+            pw = dev.get("password", "")
+            if pw and is_encrypted(pw):
+                try:
+                    dev["password"] = decrypt_password(pw)
+                except Exception:
+                    dev["password"] = ""
 
     # --- Validation ---
 
