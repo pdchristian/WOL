@@ -163,7 +163,7 @@ class DeviceManagerDialog(QDialog):
         sort_layout = QHBoxLayout()
         sort_label = QLabel("Sort by:")
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems(["Name", "MAC Address", "IP Address", "Nutzer", "Passwort"])
+        self.sort_combo.addItems(["Name", "MAC Address", "IP Address", "Nutzer"])
         self.sort_combo.currentIndexChanged.connect(self._change_sort)
         sort_layout.addWidget(sort_label)
         sort_layout.addWidget(self.sort_combo)
@@ -235,7 +235,6 @@ class DeviceManagerDialog(QDialog):
             1: "mac",  # MAC Address
             2: "ip",   # IP Address
             3: "username",  # Username
-            4: "password",  # Password
         }
         
         # Ensure sort_column is within valid range for backwards compatibility
@@ -311,10 +310,10 @@ class DeviceManagerDialog(QDialog):
             QMessageBox.information(self, "Select Device", "Please select a device to edit.")
             return
 
-        devices = self.config.get_devices()
-        if current_row >= len(devices):
+        sorted_devices = self._get_sorted_devices()
+        if current_row >= len(sorted_devices):
             return
-        device = devices[current_row]
+        device = sorted_devices[current_row]
 
         dialog = DeviceDialog(self.config, device=device, parent=self)
         dialog.device_saved.connect(lambda d: self._refresh_table())

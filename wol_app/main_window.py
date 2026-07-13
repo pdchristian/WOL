@@ -7,9 +7,12 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
     QMessageBox, QMenuBar, QMenu, QStatusBar, QGroupBox, QFrame,
+    QDialog, QTextEdit,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import QAction, QFont, QIcon, QPalette, QColor
+import subprocess
+import shlex
 
 from wol_app.config import ConfigManager
 from wol_app.wol_engine import WOLEngine
@@ -174,9 +177,15 @@ class MainWindow(QMainWindow):
         self.device_table.setPalette(palette)
         devices_layout.addWidget(self.device_table)
 
-        # Per-device wake buttons row
+        # Per-device action buttons row
         device_btn_layout = QHBoxLayout()
+        self.shutdown_btn = QPushButton("Shut Down")
+        self.shutdown_btn.clicked.connect(self._shutdown_selected)
+        self.shutdown_btn.setMinimumHeight(35)
+        device_btn_layout.addWidget(self.shutdown_btn)
+
         device_btn_layout.addStretch()
+
         self.wake_selected_btn = QPushButton("Wake Selected")
         self.wake_selected_btn.clicked.connect(self._wake_selected)
         self.wake_selected_btn.setMinimumHeight(35)
@@ -336,6 +345,166 @@ class MainWindow(QMainWindow):
 
         status, msg = self.engine.check_device_status(device["id"])
         QMessageBox.information(self, f"Status: {status.upper()}", msg)
+
+    def _shutdown_selected(self):
+        """Show shutdown confirmation dialog for the selected device."""
+        current_row = self.device_table.currentRow()
+        if current_row < 0:
+            QMessageBox.information(self, "Select Device", "Please select a device to shut down.")
+            return
+
+        sorted_devices = self._get_sorted_devices()
+        if current_row >= len(sorted_devices):
+            return
+        device = sorted_devices[current_row]
+
+        device_name = device.get("name", "")
+        device_ip = device.get("ip", "")
+
+        if not device_ip:
+            QMessageBox.warning(self, "No IP Address", f"'{device_name}' has no IP address configured.")
+            return
+
+        # Build confirmation dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Shut Down {device_name}")
+        dialog.setMinimumWidth(450)
+        layout = QVBoxLayout(dialog)
+
+        label1 = QLabel(f"Would you like to shut down {device_name}?")
+        layout.addWidget(label1)
+
+        label2 = QLabel(
+            "If local user and password do not match the remote device, "
+            "they have to be added to the device entry."
+        )
+        layout.addWidget(label2)
+
+        label3 = QLabel("To shut down device remotely following Settings are required:")
+        layout.addWidget(label3)
+
+        registry_text = QTextEdit()
+        registry_text.setPlainText(
+            "- [HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Policies\\\\System]\n"
+            "  \"LocalAccountTokenFilterPolicy\"=dword:00000001\n"
+            "\n"
+            "- File- and Printer Sharing activated"
+        )
+        registry_text.setReadOnly(True)
+        registry_text.setMaximumHeight(80)
+        layout.addWidget(registry_text)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        shutdown_confirm_btn = QPushButton("Shut Down")
+        shutdown_confirm_btn.setObjectName("primaryButton")
+        shutdown_confirm_btn.clicked.connect(lambda: self._execute_shutdown(device, dialog))
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(shutdown_confirm_btn)
+        layout.addLayout(button_layout)
+
+        dialog.exec()
+
+    def _execute_shutdown(self, device, dialog):
+        """Execute the remote shutdown sequence for a device."""
+        dialog.accept()  # Close the confirmation dialog
+
+        device_name = device.get("name", "")
+        device_ip = device.get("ip", "")
+        username = device.get("username", "")
+        password = device.get("password", "")
+
+        self.statusBar().showMessage(f"Shutting down {device_name}...")
+        QApplication.processEvents()
+
+        # Step 1: Connect to remote IPC$
+        if username:
+            # Delete any existing connection first
+            delete_cmd = f'net use \\\\{device_ip} /delete /y'
+            self.statusBar().showMessage(f"Lösche bestehende Verbindung zu {device_name}...")
+            QApplication.processEvents()
+            try:
+                subprocess.run(
+                    delete_cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=15
+                )
+            except Exception:
+                pass  # Ignore errors from delete — connection may not exist yet
+
+            # Connect with username and password
+            cmd = f'net use \\\\{device_ip}\\IPC$ /user:{username} {password}'
+            self.statusBar().showMessage(f"Verbinde mit {device_name} ({device_ip})...")
+            QApplication.processEvents()
+        else:
+            # Connect without credentials
+            cmd = f'net use \\{device_ip}\IPC$'
+            self.statusBar().showMessage(f"Verbinde mit {device_name} ({device_ip})...")
+            QApplication.processEvents()
+
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=30
+            )
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                QMessageBox.critical(
+                    self, "Connection Failed",
+                    f"Could not connect to {device_name} ({device_ip}).\n\n{error_msg}"
+                )
+                self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+                return
+        except subprocess.TimeoutExpired:
+            QMessageBox.critical(
+                self, "Connection Timeout",
+                f"Connection to {device_name} ({device_ip}) timed out."
+            )
+            self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+            return
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Connection Error",
+                f"Could not connect to {device_name} ({device_ip}).\n\n{str(e)}"
+            )
+            self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+            return
+
+        # Step 2: Shutdown the remote PC
+        shutdown_cmd = f'shutdown /m \\\\{device_ip} /s /t 0 /f'
+        self.statusBar().showMessage(f"Fahre {device_name} herunter...")
+        QApplication.processEvents()
+        try:
+            result = subprocess.run(
+                shutdown_cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=30
+            )
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                QMessageBox.critical(
+                    self, "Shutdown Failed",
+                    f"Could not shut down {device_name} ({device_ip}).\n\n{error_msg}"
+                )
+                self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+                return
+        except subprocess.TimeoutExpired:
+            QMessageBox.critical(
+                self, "Shutdown Timeout",
+                f"Shutdown command for {device_name} ({device_ip}) timed out."
+            )
+            self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+            return
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Shutdown Error",
+                f"Could not shut down {device_name} ({device_ip}).\n\n{str(e)}"
+            )
+            self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+            return
+
+        QMessageBox.information(
+            self, "Shutdown Successful",
+            f"{device_name} ({device_ip}) is shutting down."
+        )
+        self.statusBar().showMessage(f"{device_name} shutdown initiated successfully.")
 
     def _wake_all(self):
         """Wake all enabled devices."""
