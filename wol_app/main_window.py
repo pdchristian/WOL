@@ -27,10 +27,17 @@ class StatusWorker(QObject):
     def __init__(self, engine):
         super().__init__()
         self.engine = engine
+        self._cancelled = False
+
+    def cancel(self):
+        """Signal the worker to stop."""
+        self._cancelled = True
 
     def run(self):
         results = []
         for device in self.engine.config.get_devices():
+            if self._cancelled:
+                break
             if device.get("enabled", True):
                 status, msg = self.engine.check_device_status(device["id"])
                 results.append((device["id"], device["name"], status, msg))
@@ -51,6 +58,7 @@ class MainWindow(QMainWindow):
         # Keep references to prevent garbage collection while thread runs
         self._status_thread = None
         self._status_worker = None
+        self._status_check_running = False
 
         self._setup_menu()
         self._setup_ui()
@@ -208,17 +216,13 @@ class MainWindow(QMainWindow):
 
     def _refresh_statuses(self):
         """Ping all devices and update statuses (runs in background thread)."""
-        self.statusBar().showMessage("Checking device statuses...")
+        # Prevent concurrent status checks – ignore if one is already running
+        if self._status_check_running:
+            self.statusBar().showMessage("Status check already in progress...")
+            return
 
-        # Cancel any previous running status check
-        if self._status_thread is not None:
-            try:
-                if self._status_thread.isRunning():
-                    self._status_thread.quit()
-                    self._status_thread.wait(1000)
-            except RuntimeError:
-                # Thread was already deleted, reset reference
-                self._status_thread = None
+        self._status_check_running = True
+        self.statusBar().showMessage("Checking device statuses...")
 
         self._status_worker = StatusWorker(self.engine)
         self._status_thread = QThread()
@@ -229,8 +233,9 @@ class MainWindow(QMainWindow):
         self._status_worker.finished.connect(self._status_worker.deleteLater)
 
         def on_thread_finished():
+            self._status_check_running = False
             self._status_thread.deleteLater()
-            self._status_thread = None  # Clear reference after deletion
+            self._status_thread = None
 
         self._status_thread.finished.connect(on_thread_finished)
         self._status_thread.start()
@@ -350,7 +355,7 @@ class MainWindow(QMainWindow):
             "<h3>Wake-on-LAN Manager</h3>"
             "<p>Send magic packets to wake up computers on your network.</p>"
             "<p>Supports up to 8 devices with scheduling and status monitoring.</p>"
-            "<p>Version 1.1.1</p>"
+            "<p>Version 1.1.2</p>"
         )
 
     def closeEvent(self, event):
@@ -358,6 +363,12 @@ class MainWindow(QMainWindow):
         self.engine.stop_scheduler()
         if self.status_timer:
             self.status_timer.stop()
+
+        # Wait for any running status check thread to finish before closing
+        if self._status_thread is not None and self._status_thread.isRunning():
+            self._status_thread.quit()
+            self._status_thread.wait(3000)
+
         event.accept()
 
 
