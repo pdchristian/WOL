@@ -10,7 +10,7 @@ from typing import Optional
 # Default configuration
 DEFAULT_CONFIG = {
     "devices": [],
-    # Each device: {"id": uuid, "name": str, "mac": str, "enabled": bool}
+    # Each device: {"id": uuid, "name": str, "mac": str, "ip": str, "username": str, "password": str, "enabled": bool}
     "network": {
         "broadcast_ip": "255.255.255.255",
         "broadcast_port": 9,
@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
     # Each log: {"timestamp": str, "device_name": str, "action": str, "status": str, "message": str}
     "max_logs": 100,
     "ui": {
-        "device_sort_column": 0,  # 0: Name, 1: MAC, 2: IP
+        "device_sort_column": 0,  # 0: Name, 1: MAC, 2: IP, 3: Username, 4: Password
         "device_sort_order": "ascending"
     }
 }
@@ -89,6 +89,8 @@ class ConfigManager:
             "name": name,
             "mac": mac.upper(),
             "enabled": True,
+            "username": "",
+            "password": "",
         }
         self.config.setdefault("devices", []).append(device)
         self.save()
@@ -104,7 +106,7 @@ class ConfigManager:
         return False
 
     def update_device(self, device_id: str, **kwargs) -> bool:
-        """Update device fields. Updates name, mac, ip, enabled."""
+        """Update device fields. Updates name, mac, ip, enabled, username, password."""
         for dev in self.config.get("devices", []):
             if dev["id"] == device_id:
                 if "name" in kwargs:
@@ -115,6 +117,10 @@ class ConfigManager:
                     dev["ip"] = kwargs["ip"]
                 if "enabled" in kwargs:
                     dev["enabled"] = kwargs["enabled"]
+                if "username" in kwargs:
+                    dev["username"] = kwargs["username"]
+                if "password" in kwargs:
+                    dev["password"] = kwargs["password"]
                 self.save()
                 return True
         return False

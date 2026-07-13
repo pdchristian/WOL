@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Fractal",
+    "mac": "50:EB:F6:B7:8B:0C",
+    "ip": "192.168.2.62",
+    "username": "",
+    "password": "",
+    "enabled": true
+  },
+  {
+    "name": "A4-H20",
+    "mac": "60:CF:84:84:31:29",
+    "ip": "192.168.2.50",
+    "username": "",
+    "password": "",
+    "enabled": true
+  },
+  {
+    "name": "A4-TV",
+    "mac": "A0:AD:9F:1C:09:FF",
+    "ip": "192.168.2.111",
+    "username": "",
+    "password": "",
+    "enabled": true
+  },
+  {
+    "name": "GS105E.lan",
+    "mac": "C2:39:6F:AC:29:24",
+    "ip": "192.168.2.34",
+    "username": "cp",
+    "password": "karTon63:-",
+    "enabled": true
+  }
+]

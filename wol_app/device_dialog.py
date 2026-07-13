@@ -49,6 +49,19 @@ class DeviceDialog(QDialog):
         self.ip_input.setPlaceholderText("e.g., 192.168.1.100 (optional)")
         ip_layout.addRow("IP Address:", self.ip_input)
 
+        # Username
+        username_layout = QFormLayout()
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("Benutzername (optional)")
+        username_layout.addRow("Nutzer:", self.username_input)
+
+        # Password (displayed as asterisks)
+        password_layout = QFormLayout()
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("Passwort (optional)")
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        password_layout.addRow("Passwort:", self.password_input)
+
         # Enabled checkbox
         self.enabled_check = QCheckBox("Device is enabled")
         self.enabled_check.setChecked(True)
@@ -66,6 +79,8 @@ class DeviceDialog(QDialog):
         layout.addLayout(name_layout)
         layout.addLayout(mac_layout)
         layout.addLayout(ip_layout)
+        layout.addLayout(username_layout)
+        layout.addLayout(password_layout)
         layout.addWidget(self.enabled_check)
         layout.addLayout(btn_layout)
 
@@ -73,6 +88,8 @@ class DeviceDialog(QDialog):
         self.name_input.setText(device.get("name", ""))
         self.mac_input.setText(device.get("mac", ""))
         self.ip_input.setText(device.get("ip", ""))
+        self.username_input.setText(device.get("username", ""))
+        self.password_input.setText(device.get("password", ""))
         self.enabled_check.setChecked(device.get("enabled", True))
 
     def _save(self):
@@ -90,10 +107,17 @@ class DeviceDialog(QDialog):
             QMessageBox.warning(self, "Invalid MAC", "MAC address format is invalid.\nUse format: AA:BB:CC:DD:EE:FF")
             return
 
+        username = self.username_input.text().strip()
+        password = self.password_input.text().strip()
+
         if self.editing_device:
             updates = {"name": name, "mac": mac, "enabled": self.enabled_check.isChecked()}
             if ip:
                 updates["ip"] = ip
+            if username:
+                updates["username"] = username
+            if password:
+                updates["password"] = password
             self.config.update_device(self.editing_device["id"], **updates)
             # Re-fetch updated device
             updated = self.config.get_device_by_id(self.editing_device["id"])
@@ -103,6 +127,10 @@ class DeviceDialog(QDialog):
             if device:
                 if ip:
                     self.config.update_device(device["id"], ip=ip)
+                if username:
+                    self.config.update_device(device["id"], username=username)
+                if password:
+                    self.config.update_device(device["id"], password=password)
                 self.device_saved.emit(self.config.get_device_by_id(device["id"]))
             else:
                 QMessageBox.warning(self, "Error", "Failed to add device.")
@@ -135,7 +163,7 @@ class DeviceManagerDialog(QDialog):
         sort_layout = QHBoxLayout()
         sort_label = QLabel("Sort by:")
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems(["Name", "MAC Address", "IP Address"])
+        self.sort_combo.addItems(["Name", "MAC Address", "IP Address", "Nutzer", "Passwort"])
         self.sort_combo.currentIndexChanged.connect(self._change_sort)
         sort_layout.addWidget(sort_label)
         sort_layout.addWidget(self.sort_combo)
@@ -143,12 +171,16 @@ class DeviceManagerDialog(QDialog):
 
         # Device Table
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Name", "MAC Address", "IP Address", "Enabled", "Status", ""])
+        self.table.setColumnCount(8)
+        self.table.setHorizontalHeaderLabels(["Name", "MAC Address", "IP Address", "Nutzer", "Passwort", "Enabled", "Status", ""])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(1, 160)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(3, 120)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(4, 120)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSortingEnabled(True)
@@ -202,7 +234,13 @@ class DeviceManagerDialog(QDialog):
             0: "name",  # Name
             1: "mac",  # MAC Address
             2: "ip",   # IP Address
+            3: "username",  # Username
+            4: "password",  # Password
         }
+        
+        # Ensure sort_column is within valid range for backwards compatibility
+        if sort_column < 0 or sort_column >= len(sort_key_map):
+            sort_column = 0  # Default to name
         
         key = sort_key_map.get(sort_column, "name")
         value = device.get(key, "")
@@ -235,13 +273,19 @@ class DeviceManagerDialog(QDialog):
             self.table.setItem(row, 0, QTableWidgetItem(device.get("name", "")))
             self.table.setItem(row, 1, QTableWidgetItem(device.get("mac", "")))
             self.table.setItem(row, 2, QTableWidgetItem(device.get("ip", "")))
+            self.table.setItem(row, 3, QTableWidgetItem(device.get("username", "")))
+            
+            # Password column - display as asterisks
+            password = device.get("password", "")
+            password_display = "*" * len(password) if password else ""
+            self.table.setItem(row, 4, QTableWidgetItem(password_display))
 
             enabled_check = QCheckBox()
             enabled_check.setChecked(device.get("enabled", True))
             enabled_check.toggled.connect(
                 lambda checked, d_id=device["id"]: self.config.update_device(d_id, enabled=checked)
             )
-            self.table.setCellWidget(row, 3, enabled_check)
+            self.table.setCellWidget(row, 5, enabled_check)
 
             status_text = device.get("_status", "unknown")
             status_item = QTableWidgetItem(status_text)
@@ -249,12 +293,12 @@ class DeviceManagerDialog(QDialog):
                 status_item.setForeground(Qt.GlobalColor.darkGreen)
             elif status_text == "offline":
                 status_item.setForeground(Qt.GlobalColor.darkRed)
-            self.table.setItem(row, 4, status_item)
+            self.table.setItem(row, 6, status_item)
             
             delete_btn = QPushButton("🗑️")
             delete_btn.setProperty("device_id", device["id"])
             delete_btn.clicked.connect(self._delete_device_from_row)
-            self.table.setCellWidget(row, 5, delete_btn)
+            self.table.setCellWidget(row, 7, delete_btn)
 
     def _add_device(self):
         dialog = DeviceDialog(self.config, parent=self)
@@ -333,6 +377,8 @@ class DeviceManagerDialog(QDialog):
                 "name": dev.get("name", ""),
                 "mac": dev.get("mac", ""),
                 "ip": dev.get("ip", ""),
+                "username": dev.get("username", ""),
+                "password": dev.get("password", ""),
                 "enabled": dev.get("enabled", True),
             })
 
@@ -385,6 +431,8 @@ class DeviceManagerDialog(QDialog):
                     existing["id"],
                     mac=mac,
                     ip=dev_data.get("ip", ""),
+                    username=dev_data.get("username", ""),
+                    password=dev_data.get("password", ""),
                     enabled=dev_data.get("enabled", True),
                 )
                 updated += 1
@@ -395,6 +443,8 @@ class DeviceManagerDialog(QDialog):
                     self.config.update_device(
                         device["id"],
                         ip=dev_data.get("ip", ""),
+                        username=dev_data.get("username", ""),
+                        password=dev_data.get("password", ""),
                         enabled=dev_data.get("enabled", True),
                     )
                     imported += 1
