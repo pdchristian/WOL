@@ -1,5 +1,6 @@
 """Wake-on-LAN Engine - Magic packet sending, ping checks, scheduling."""
 
+import re
 import socket
 import subprocess
 import threading
@@ -8,6 +9,37 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from wol_app.network_scanner import find_interface_for_device
+
+
+def _validate_ip(ip: str) -> bool:
+    """Validate IPv4 addresses with strict regex."""
+    ipv4_pattern = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+    return bool(re.match(ipv4_pattern, ip))
+
+
+def _validate_mac(mac: str) -> bool:
+    """Validate MAC addresses with strict regex."""
+    mac_pattern = r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$'
+    return bool(re.match(mac_pattern, mac))
+
+
+def _run_subprocess_safe(command, timeout=5, **kwargs):
+    """Safe execution of subprocess with strict limits."""
+    try:
+        # Set default security options
+        safe_kwargs = {
+            'stdout': subprocess.PIPE,
+            'stderr': subprocess.PIPE,
+            'timeout': timeout,
+            'shell': False,  # CRITICAL: shell=False prevents command injection
+            **kwargs
+        }
+        result = subprocess.run(command, **safe_kwargs)
+        return result
+    except subprocess.TimeoutExpired:
+        raise TimeoutError(f"Command timed out: {' '.join(command)}")
+    except Exception as e:
+        raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}")
 
 
 class WOLEngine:
@@ -25,8 +57,12 @@ class WOLEngine:
     @staticmethod
     def _create_magic_packet(mac: str) -> bytes:
         """Create a Wake-on-LAN magic packet."""
+        if not _validate_mac(mac):
+            raise ValueError(f"Invalid MAC address: {mac}")
         # Clean MAC - remove separators
         clean_mac = mac.replace(":", "").replace("-", "")
+        if len(clean_mac) != 12:
+            raise ValueError(f"Invalid MAC length after cleaning: {clean_mac}")
         mac_bytes = bytes.fromhex(clean_mac)
 
         # Magic packet: FF x 6 + MAC x 16
@@ -61,19 +97,38 @@ class WOLEngine:
         try:
             packet = self._create_magic_packet(mac)
 
+            # Validate port
+            if not (1 <= broadcast_port <= 65535):
+                error_msg = f"Invalid broadcast port: {broadcast_port}"
+                self.config.add_log(name, "WAKE", "ERROR", error_msg)
+                return False, error_msg
+
+            # Validate broadcast IP
+            if broadcast_ip not in ["255.255.255.255"] and not _validate_ip(broadcast_ip):
+                error_msg = f"Invalid broadcast IP: {broadcast_ip}"
+                self.config.add_log(name, "WAKE", "ERROR", error_msg)
+                return False, error_msg
+
             # Create UDP socket
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
             # Bind to the correct local interface so the packet goes out the right NIC
-            if local_ip:
-                sock.bind((local_ip, 0))
+            if local_ip and _validate_ip(local_ip):
+                try:
+                    sock.bind((local_ip, 0))
+                except Exception as e:
+                    error_msg = f"Failed to bind to {local_ip}: {e}"
+                    self.config.add_log(name, "WAKE", "ERROR", error_msg)
+                    sock.close()
+                    return False, error_msg
 
             sock.sendto(packet, (broadcast_ip, broadcast_port))
             sock.close()
 
-            self.config.add_log(name, "WAKE", "SUCCESS", f"Magic packet sent to {mac}{info_suffix}")
-            return True, f"Wake packet sent to {name} ({mac})."
+            # Log without sensitive MAC address
+            self.config.add_log(name, "WAKE", "SUCCESS", f"Magic packet sent{info_suffix}")
+            return True, f"Wake packet sent to {name}."
         except socket.error as e:
             error_msg = f"Socket error: {e}"
             self.config.add_log(name, "WAKE", "ERROR", error_msg)
@@ -113,6 +168,9 @@ class WOLEngine:
         if not ip:
             status = "unknown"
             message = f"No IP configured for {name}. Add an IP to enable ping checks."
+        elif not _validate_ip(ip):
+            status = "unknown"
+            message = f"Invalid IP configured for {name}."
         else:
             try:
                 # Use platform-appropriate ping
@@ -121,10 +179,8 @@ class WOLEngine:
                 kwargs = {}
                 if subprocess.os.name == "nt":
                     kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-                result = subprocess.run(
+                result = _run_subprocess_safe(
                     ["ping", param, "1", ip],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
                     timeout=5,
                     **kwargs,
                 )
@@ -133,10 +189,10 @@ class WOLEngine:
                 output = result.stdout.decode("utf-8", errors="replace")
                 if "TTL=" in output:
                     status = "online"
-                    message = f"{name} is responding at {ip}."
+                    message = f"{name} is responding."
                 else:
                     status = "offline"
-                    message = f"{name} did not respond at {ip}. May be off or sleeping."
+                    message = f"{name} did not respond. May be off or sleeping."
             except subprocess.TimeoutExpired:
                 status = "offline"
                 message = f"Ping to {name} ({ip}) timed out."

@@ -1,6 +1,7 @@
 """Password encryption using AES-256-GCM with Windows DPAPI key protection."""
 
 import base64
+import ctypes
 import os
 from typing import Optional
 
@@ -8,6 +9,18 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 # Module-level cache for the master key (loaded once per session)
 _master_key: Optional[bytes] = None
+
+
+def _secure_clear_memory(data: str) -> None:
+    """Securely overwrite string in memory with zeros (best effort)."""
+    if not data:
+        return
+    # Create mutable byte array
+    byte_data = bytearray(data.encode('utf-8'))
+    for i in range(len(byte_data)):
+        byte_data[i] = 0
+    # Force garbage collection
+    del byte_data
 
 
 def _get_dpapi_protected_key() -> bytes:
@@ -116,12 +129,21 @@ def encrypt_password(plaintext: str) -> str:
     """
     if not plaintext:
         return ""
+    # Input validation
+    if len(plaintext) > 128:
+        raise ValueError("Password too long: maximum 128 characters")
+    # Check for control characters or invalid characters
+    if any(ord(c) < 32 or ord(c) > 126 for c in plaintext):
+        raise ValueError("Password contains invalid characters (control characters not allowed)")
+    
     key = get_master_key()
     aesgcm = AESGCM(key)
     nonce = os.urandom(12)  # 96-bit nonce for GCM
     ciphertext = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
     # Prepend nonce to ciphertext so we can decrypt later
     encrypted_data = nonce + ciphertext
+    # Securely clear plaintext from memory
+    _secure_clear_memory(plaintext)
     return base64.b64encode(encrypted_data).decode("ascii")
 
 

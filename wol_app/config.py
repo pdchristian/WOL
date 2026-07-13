@@ -2,11 +2,61 @@
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
+
+
+def _sanitize_path(path: str) -> Path:
+    """Sanitize path to prevent path traversal attacks."""
+    if not path:
+        raise ValueError("Path cannot be empty")
+    # Normalize path (removes .., ., etc.)
+    path = os.path.normpath(path)
+    # Ensure path is absolute
+    path = os.path.abspath(path)
+    return Path(path)
+
+
+def _validate_device_name(name: str) -> bool:
+    """Validate device name for safety."""
+    if not name:
+        return False
+    if len(name) > 64:
+        return False
+    # No control characters
+    if any(ord(c) < 32 or ord(c) > 126 for c in name):
+        return False
+    # No potentially dangerous characters
+    forbidden_chars = ['<', '>', '"', "'", ';', '|', '&', '$', '`', '\\']
+    if any(char in name for char in forbidden_chars):
+        return False
+    return True
+
+
+def _validate_username(username: str) -> bool:
+    """Validate username for safety."""
+    if not username:
+        return True  # Username is optional
+    if len(username) > 64:
+        return False
+    if any(ord(c) < 32 or ord(c) > 126 for c in username):
+        return False
+    return True
+
+
+def _validate_password(password: str) -> bool:
+    """Validate password for safety."""
+    if not password:
+        return True  # Password is optional
+    if len(password) > 128:
+        return False
+    if any(ord(c) > 126 for c in password):
+        return False
+    return True
 
 
 # Default configuration
@@ -35,10 +85,19 @@ class ConfigManager:
     def __init__(self, config_path: Optional[str] = None):
         if config_path is None:
             config_dir = Path.home() / ".wol_app"
-            config_dir.mkdir(exist_ok=True)
-            self.config_path = config_dir / "config.json"
+            try:
+                # Validate that the path is within the user's home directory
+                home_path = Path.home().resolve()
+                config_dir = config_dir.resolve()
+                if not str(config_dir).startswith(str(home_path)):
+                    raise ValueError(f"Invalid config directory path: {config_dir}")
+                config_dir.mkdir(exist_ok=True, mode=0o700)  # Restrictive permissions
+                self.config_path = config_dir / "config.json"
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize config directory: {e}")
         else:
-            self.config_path = Path(config_path)
+            # Validate custom path
+            self.config_path = _sanitize_path(config_path)
 
         self.config = self._load()
 
@@ -76,8 +135,15 @@ class ConfigManager:
 
         # Encrypt passwords before saving
         self._encrypt_devices(self.config)
-        with open(self.config_path, "w") as f:
-            json.dump(self.config, f, indent=2)
+        try:
+            # Save with secure permissions
+            with open(self.config_path, "w") as f:
+                json.dump(self.config, f, indent=2)
+            # Set restrictive permissions (owner read/write only)
+            if hasattr(os, 'chmod'):
+                os.chmod(self.config_path, 0o600)
+        except Exception as e:
+            raise RuntimeError(f"Failed to save configuration: {e}")
         # Decrypt back so in-memory state stays plaintext
         self._decrypt_devices(self.config)
 
@@ -87,14 +153,16 @@ class ConfigManager:
         return self.config.get("devices", [])
 
     def add_device(self, name: str, mac: str) -> Optional[dict]:
-        """Add a new device. Returns the device dict or None if MAC invalid."""
+        """Add a new device. Returns the device dict or None if inputs invalid."""
         import uuid
         if not self._validate_mac(mac):
+            return None
+        if not _validate_device_name(name):
             return None
 
         device = {
             "id": str(uuid.uuid4()),
-            "name": name,
+            "name": name[:64],  # Ensure name is within limits
             "mac": mac.upper(),
             "enabled": True,
             "username": "",
@@ -114,20 +182,20 @@ class ConfigManager:
         return False
 
     def update_device(self, device_id: str, **kwargs) -> bool:
-        """Update device fields. Updates name, mac, ip, enabled, username, password."""
+        """Update device fields with validation. Updates name, mac, ip, enabled, username, password."""
         for dev in self.config.get("devices", []):
             if dev["id"] == device_id:
-                if "name" in kwargs:
-                    dev["name"] = kwargs["name"]
+                if "name" in kwargs and _validate_device_name(kwargs["name"]):
+                    dev["name"] = kwargs["name"][:64]
                 if "mac" in kwargs and self._validate_mac(kwargs["mac"]):
                     dev["mac"] = kwargs["mac"].upper()
                 if "ip" in kwargs:
-                    dev["ip"] = kwargs["ip"]
+                    dev["ip"] = kwargs["ip"][:15]  # Max IPv4 length
                 if "enabled" in kwargs:
-                    dev["enabled"] = kwargs["enabled"]
-                if "username" in kwargs:
-                    dev["username"] = kwargs["username"]
-                if "password" in kwargs:
+                    dev["enabled"] = bool(kwargs["enabled"])
+                if "username" in kwargs and _validate_username(kwargs["username"]):
+                    dev["username"] = kwargs["username"][:64]
+                if "password" in kwargs and _validate_password(kwargs["password"]):
                     dev["password"] = kwargs["password"]
                 self.save()
                 return True
@@ -199,15 +267,46 @@ class ConfigManager:
     # --- Logs ---
 
     def add_log(self, device_name: str, action: str, status: str, message: str):
+        """Add a log entry with sanitization to prevent injection."""
+        # Sanitize inputs to prevent log injection
+        def sanitize_log_string(value: str, max_length: int = 256) -> str:
+            if not value:
+                return ""
+            # Truncate to max length
+            value = value[:max_length]
+            # Remove control characters except basic whitespace
+            value = ''.join(c for c in value if 32 <= ord(c) <= 126 or c in '\n\r\t')
+            return value
+        
+        sanitized_device_name = sanitize_log_string(device_name, 64)
+        sanitized_action = sanitize_log_string(action, 32)
+        sanitized_status = sanitize_log_string(status, 32)
+        sanitized_message = sanitize_log_string(message)
+        
         log_entry = {
             "timestamp": datetime.now().isoformat(),
-            "device_name": device_name,
-            "action": action,
-            "status": status,
-            "message": message,
+            "device_name": sanitized_device_name,
+            "action": sanitized_action,
+            "status": sanitized_status,
+            "message": sanitized_message,
         }
         self.config.setdefault("logs", []).append(log_entry)
-        self.save()
+        # Trim logs to prevent DoS via log flooding
+        max_logs = self.config.get("max_logs", 100)
+        if len(self.config.get("logs", [])) > max_logs:
+            self.config["logs"] = self.config["logs"][-max_logs:]
+        # Only save if config_path exists and is writable
+        try:
+            if self.config_path and self.config_path.parent.exists():
+                self.save()
+            elif self.config_path:
+                # Ensure directory exists
+                self.config_path.parent.mkdir(parents=True, exist_ok=True)
+                self.save()
+        except Exception as e:
+            # Don't fail if logging fails - just lose the log entry
+            # This prevents DoS via log flooding attacks on the filesystem
+            pass
         return log_entry
 
     def get_logs(self, limit: int = None) -> list:

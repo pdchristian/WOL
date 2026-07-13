@@ -22,7 +22,7 @@ from pathlib import Path
 
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 APP_PUBLISHER = "Wake-on-LAN"
 APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"
@@ -51,12 +51,33 @@ def get_resource_path(filename):
 
 
 def remove_user_data():
-    """Remove user configuration data from ~/.wol_app/."""
+    """Remove user configuration data from ~/.wol_app/ securely."""
     try:
         wol_dir = Path.home() / ".wol_app"
         if wol_dir.exists():
-            shutil.rmtree(wol_dir)
-            print("  Removed existing user data.")
+            # First, securely wipe files containing sensitive data
+            config_file = wol_dir / "config.json"
+            master_key_file = wol_dir / "master_key.dat"
+            
+            if config_file.exists():
+                try:
+                    # Overwrite config file with zeros before deletion
+                    config_file.write_bytes(b'\x00' * config_file.stat().st_size)
+                except Exception:
+                    pass
+                config_file.unlink()
+            
+            if master_key_file.exists():
+                try:
+                    # Overwrite master key file with zeros before deletion
+                    master_key_file.write_bytes(b'\x00' * master_key_file.stat().st_size)
+                except Exception:
+                    pass
+                master_key_file.unlink()
+            
+            # Remove the entire directory
+            shutil.rmtree(wol_dir, ignore_errors=True)
+            print("  Securely removed existing user data.")
             return True
         return True
     except Exception as e:

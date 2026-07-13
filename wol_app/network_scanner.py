@@ -1,5 +1,6 @@
 """Network Scanner - Discover active devices on the local subnet."""
 
+import re
 import socket
 import struct
 import subprocess
@@ -8,16 +9,55 @@ import threading
 from typing import List, Dict, Optional
 
 
+# Safety constants
+MAX_CONCURRENT_THREADS = 16
+MAX_SCAN_TIMEOUT = 2
+MAX_SUBNET_SIZE = 256
+
+
+def _validate_ip(ip: str) -> bool:
+    """Validate IPv4 addresses with strict regex."""
+    ipv4_pattern = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+    return bool(re.match(ipv4_pattern, ip))
+
+
+def _validate_mac(mac: str) -> bool:
+    """Validate MAC addresses with strict regex."""
+    mac_pattern = r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$'
+    return bool(re.match(mac_pattern, mac))
+
+
+def _run_subprocess_safe(command, timeout=5, **kwargs):
+    """Safe execution of subprocess with strict limits."""
+    try:
+        # Set default security options
+        safe_kwargs = {
+            'stdout': subprocess.PIPE,
+            'stderr': subprocess.PIPE,
+            'timeout': timeout,
+            'shell': False,  # CRITICAL: shell=False prevents command injection
+            **kwargs
+        }
+        result = subprocess.run(command, **safe_kwargs)
+        return result
+    except subprocess.TimeoutExpired:
+        raise TimeoutError(f"Command timed out: {' '.join(command)}")
+    except Exception as e:
+        raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}")
+
+
 def get_local_interfaces() -> List[Dict]:
     """Get all local network interfaces with their IPv4 addresses and netmasks."""
     interfaces = []
     try:
         # Use ipconfig on Windows to get interface info
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        result = subprocess.run(
+        result = _run_subprocess_safe(
             ["ipconfig"],
-            capture_output=True, text=True, timeout=10,
-            creationflags=creation_flags
+            timeout=10,
+            creationflags=creation_flags,
+            capture_output=True,
+            text=True
         )
         lines = result.stdout.splitlines()
         current_ip = None
@@ -72,13 +112,19 @@ def get_subnet_range(ip: str, netmask: str) -> List[str]:
 
 def ping_host(ip: str, timeout: int = 1) -> bool:
     """Ping a host and return True if reachable."""
+    if not _validate_ip(ip):
+        return False
+    if timeout > MAX_SCAN_TIMEOUT:
+        timeout = MAX_SCAN_TIMEOUT
     try:
         param = "-n" if platform.system() == "Windows" else "-c"
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        result = subprocess.run(
+        result = _run_subprocess_safe(
             ["ping", param, "1", "-w", str(timeout * 1000), ip],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout + 1,
-            creationflags=creation_flags
+            timeout=timeout + 1,
+            creationflags=creation_flags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
         )
         return result.returncode == 0
     except Exception:
@@ -87,6 +133,8 @@ def ping_host(ip: str, timeout: int = 1) -> bool:
 
 def resolve_hostname(ip: str) -> Optional[str]:
     """Try to resolve hostname for an IP address."""
+    if not _validate_ip(ip):
+        return None
     try:
         hostname, _, _ = socket.gethostbyaddr(ip)
         return hostname
@@ -98,12 +146,16 @@ def get_ipv6_from_nd(mac: str) -> Optional[str]:
     """Look up IPv6 address for a MAC from the Neighbor Discovery cache."""
     if not mac or mac == "Unknown":
         return None
+    if not _validate_mac(mac):
+        return None
     try:
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        result = subprocess.run(
+        result = _run_subprocess_safe(
             ["netsh", "interface", "ipv6", "show", "neighbors"],
-            capture_output=True, text=True, timeout=5,
-            creationflags=creation_flags
+            timeout=5,
+            creationflags=creation_flags,
+            capture_output=True,
+            text=True
         )
         # Normalize MAC: remove all separators and uppercase for comparison
         mac_normalized = mac.replace(":", "").replace("-", "").upper()
@@ -125,11 +177,13 @@ def get_ipv6_from_nd(mac: str) -> Optional[str]:
 
 def get_mac_from_arp(ip: str) -> Optional[str]:
     """Get MAC address from ARP cache after pinging the host."""
+    if not _validate_ip(ip):
+        return None
     # First ping to ensure ARP entry exists
     try:
         param = "-n" if platform.system() == "Windows" else "-c"
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        subprocess.run(
+        _run_subprocess_safe(
             ["ping", param, "1", "-w", "1000", ip],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2,
             creationflags=creation_flags
@@ -140,10 +194,12 @@ def get_mac_from_arp(ip: str) -> Optional[str]:
     # Read ARP table
     try:
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        result = subprocess.run(
+        result = _run_subprocess_safe(
             ["arp", "-a"],
-            capture_output=True, text=True, timeout=5,
-            creationflags=creation_flags
+            timeout=5,
+            creationflags=creation_flags,
+            capture_output=True,
+            text=True
         )
         for line in result.stdout.splitlines():
             if ip.lower() in line.lower():
@@ -205,8 +261,19 @@ def find_interface_for_device(target_ip: str) -> Optional[Dict]:
 
 def scan_subnet(ip: str, netmask: str, timeout: int = 1,
                 progress_callback=None) -> List[Dict]:
-    """Scan a subnet for active hosts."""
-    hosts = get_subnet_range(ip, netmask)
+    """Scan a subnet for active hosts with safety limits."""
+    if not _validate_ip(ip):
+        return []
+    if timeout > MAX_SCAN_TIMEOUT:
+        timeout = MAX_SCAN_TIMEOUT
+    try:
+        hosts = get_subnet_range(ip, netmask)
+        # Limit the number of hosts to scan
+        if len(hosts) > MAX_SUBNET_SIZE:
+            hosts = hosts[:MAX_SUBNET_SIZE]
+    except Exception:
+        return []
+    
     results = []
 
     def scan_host(target_ip: str):
@@ -223,7 +290,7 @@ def scan_subnet(ip: str, netmask: str, timeout: int = 1,
 
     threads = []
     # Limit concurrent threads to avoid overwhelming the network
-    max_threads = min(32, len(hosts))
+    max_threads = min(MAX_CONCURRENT_THREADS, len(hosts))
 
     for i, host_ip in enumerate(hosts):
         if progress_callback:
@@ -242,6 +309,8 @@ def scan_subnet(ip: str, netmask: str, timeout: int = 1,
 
 def scan_network(timeout: int = 1, progress_callback=None) -> List[Dict]:
     """Scan all local subnets for active hosts."""
+    if timeout > MAX_SCAN_TIMEOUT:
+        timeout = MAX_SCAN_TIMEOUT
     interfaces = get_local_interfaces()
     all_results = []
     seen_ips = set()

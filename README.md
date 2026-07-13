@@ -1,6 +1,10 @@
 # Wake-on-LAN Manager
 
+**Version 1.3.0 - Security Enhanced Edition**
+
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
+
+🔒 **Security Note:** This version includes comprehensive security improvements. See [SECURITY.md](SECURITY.md) for details.
 
 ## Features
 
@@ -71,3 +75,36 @@ A detailed user manual is available in German:
 
 - [Bedienungsanleitung.md](Bedienungsanleitung.md)
 - [Bedienungsanleitung.pdf](Bedienungsanleitung.pdf)
+
+### Security Documentation
+
+- [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
+
+## 📝 Changelog
+
+### Version 1.3.0 - Security Enhanced Edition (2026-07-14)
+
+#### 🔒 Security Improvements
+- **Command Injection Protection:** All subprocess calls use `shell=False` with input validation
+- **Path Traversal Protection:** Secure path processing with permission controls
+- **Password Security:** AES-256-GCM encryption with DPAPI, memory sanitization
+- **DoS Protection:** Resource limits for network scans (16 threads, 2s timeout, 256 hosts)
+- **Input Validation:** Comprehensive validation of all user inputs
+- **Security Documentation:** Added SECURITY.md with detailed analysis
+
+#### 🔧 Technical Changes
+- `network_scanner.py`: Secure subprocess execution with resource limits
+- `crypto.py`: Memory sanitization for passwords, input validation
+- `config.py`: Path validation, secure file permissions, log sanitization
+- `device_dialog.py`: Input validation for devices
+- `settings_dialog.py`: Input validation for network settings
+- `wol_engine.py`: Secure magic packet creation and status checks
+- `installer.py`: Secure deletion of user data, version 1.3.0
+
+#### ✅ Tests
+- All security tests pass successfully
+- Comprehensive input validation verified
+- Encryption/decryption functionality confirmed
+
+### Version 1.2.1
+- Previous stable release

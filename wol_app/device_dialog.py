@@ -1,6 +1,7 @@
 """Device Management Dialog for Wake-on-LAN Application."""
 
 import json
+import re
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QMessageBox, QGroupBox,
@@ -12,6 +13,47 @@ from PyQt6.QtGui import QFont
 
 from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
+
+
+def _validate_device_name(name: str) -> bool:
+    """Validate device name for safety."""
+    if not name or len(name) > 64:
+        return False
+    # No control characters
+    if any(ord(c) < 32 or ord(c) > 126 for c in name):
+        return False
+    forbidden_chars = ['<', '>', '"', "'", ';', '|', '&', '$', '`', '\\']
+    if any(char in name for char in forbidden_chars):
+        return False
+    return True
+
+
+def _validate_mac(mac: str) -> bool:
+    """Validate MAC address format."""
+    mac_pattern = r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$'
+    return bool(re.match(mac_pattern, mac.strip()))
+
+
+def _validate_username(username: str) -> bool:
+    """Validate username for safety."""
+    if not username:
+        return True
+    if len(username) > 64:
+        return False
+    if any(ord(c) < 32 or ord(c) > 126 for c in username):
+        return False
+    return True
+
+
+def _validate_password(password: str) -> bool:
+    """Validate password for safety."""
+    if not password:
+        return True
+    if len(password) > 128:
+        return False
+    if any(ord(c) > 126 for c in password):
+        return False
+    return True
 
 
 class DeviceDialog(QDialog):
@@ -101,15 +143,26 @@ class DeviceDialog(QDialog):
         if not name:
             QMessageBox.warning(self, "Missing Name", "Please enter a device name.")
             return
+        if not _validate_device_name(name):
+            QMessageBox.warning(self, "Invalid Name", "Device name contains invalid characters or is too long.")
+            return
         if not mac:
             QMessageBox.warning(self, "Missing MAC", "Please enter a MAC address.")
             return
-        if not self.config._validate_mac(mac):
+        if not _validate_mac(mac):
             QMessageBox.warning(self, "Invalid MAC", "MAC address format is invalid.\nUse format: AA:BB:CC:DD:EE:FF")
             return
 
         username = self.username_input.text().strip()
         password = self.password_input.text().strip()
+
+        # Validate username and password
+        if username and not _validate_username(username):
+            QMessageBox.warning(self, "Invalid Username", "Username contains invalid characters or is too long.")
+            return
+        if password and not _validate_password(password):
+            QMessageBox.warning(self, "Invalid Password", "Password contains invalid characters or is too long.")
+            return
 
         if self.editing_device:
             updates = {"name": name, "mac": mac, "enabled": self.enabled_check.isChecked()}
@@ -137,6 +190,8 @@ class DeviceDialog(QDialog):
                 QMessageBox.warning(self, "Error", "Failed to add device.")
                 return
 
+        # Clear password from input field for security
+        self.password_input.clear()
         self.accept()
 
 
