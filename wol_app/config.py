@@ -20,6 +20,10 @@ DEFAULT_CONFIG = {
     "logs": [],
     # Each log: {"timestamp": str, "device_name": str, "action": str, "status": str, "message": str}
     "max_logs": 100,
+    "ui": {
+        "device_sort_column": 0,  # 0: Name, 1: MAC, 2: IP
+        "device_sort_order": "ascending"
+    }
 }
 
 
@@ -200,6 +204,21 @@ class ConfigManager:
 
     def clear_logs(self):
         self.config["logs"] = []
+        self.save()
+
+    # --- UI Settings ---
+
+    def get_device_sort_settings(self):
+        ui_config = self.config.get("ui", {})
+        return {
+            "sort_column": ui_config.get("device_sort_column", 0),
+            "sort_order": ui_config.get("device_sort_order", "ascending")
+        }
+
+    def set_device_sort_settings(self, sort_column: int, sort_order: str):
+        self.config.setdefault("ui", {})
+        self.config["ui"]["device_sort_column"] = sort_column
+        self.config["ui"]["device_sort_order"] = sort_order
         self.save()
 
     # --- Validation ---

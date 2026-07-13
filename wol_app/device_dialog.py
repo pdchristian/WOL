@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QMessageBox, QGroupBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QFileDialog,
+    QFileDialog, QComboBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -119,11 +119,27 @@ class DeviceManagerDialog(QDialog):
         self.config = config_manager
         self.setWindowTitle("Manage Devices")
         self.setMinimumSize(700, 500)
+        
+        # Load sort settings from config
+        sort_settings = self.config.get_device_sort_settings()
+        self.sort_column = sort_settings["sort_column"]
+        self.sort_order = Qt.SortOrder.AscendingOrder if sort_settings["sort_order"] == "ascending" else Qt.SortOrder.DescendingOrder
+        
         self._setup_ui()
         self._refresh_table()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
+
+        # Sort Control
+        sort_layout = QHBoxLayout()
+        sort_label = QLabel("Sort by:")
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["Name", "MAC Address", "IP Address"])
+        self.sort_combo.currentIndexChanged.connect(self._change_sort)
+        sort_layout.addWidget(sort_label)
+        sort_layout.addWidget(self.sort_combo)
+        sort_layout.addStretch()
 
         # Device Table
         self.table = QTableWidget()
@@ -135,6 +151,9 @@ class DeviceManagerDialog(QDialog):
         header.resizeSection(1, 160)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSortingEnabled(True)
+
+        layout.addLayout(sort_layout)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -166,9 +185,50 @@ class DeviceManagerDialog(QDialog):
         layout.addWidget(self.table)
         layout.addLayout(btn_layout)
 
+    def _get_ip_key(self, ip_str):
+        """Convert IP address string to a tuple of integers for proper numerical sorting."""
+        try:
+            parts = list(map(int, ip_str.split('.') if ip_str else [0, 0, 0, 0]))
+            # Pad with zeros if not exactly 4 parts
+            while len(parts) < 4:
+                parts.append(0)
+            return tuple(parts)
+        except (ValueError, AttributeError):
+            return (0, 0, 0, 0)
+
+    def _get_sort_key(self, device, sort_column):
+        """Get sort key for a device based on sort column with special handling for IPs."""
+        sort_key_map = {
+            0: "name",  # Name
+            1: "mac",  # MAC Address
+            2: "ip",   # IP Address
+        }
+        
+        key = sort_key_map.get(sort_column, "name")
+        value = device.get(key, "")
+        
+        # Special handling for IP addresses
+        if sort_column == 2:  # IP Address
+            return self._get_ip_key(value)
+        
+        return value
+
+    def _get_sorted_devices(self):
+        devices = self.config.get_devices()
+        
+        return sorted(devices, key=lambda d: self._get_sort_key(d, self.sort_column), reverse=(self.sort_order == Qt.SortOrder.DescendingOrder))
+
+    def _change_sort(self, index):
+        self.sort_column = index
+        sort_order = "ascending" if self.sort_order == Qt.SortOrder.AscendingOrder else "descending"
+        self.config.set_device_sort_settings(self.sort_column, sort_order)
+        self._refresh_table()
+
     def _refresh_table(self):
         self.table.setRowCount(0)
-        for device in self.config.get_devices():
+        sorted_devices = self._get_sorted_devices()
+        
+        for device in sorted_devices:
             row = self.table.rowCount()
             self.table.insertRow(row)
 
@@ -190,6 +250,11 @@ class DeviceManagerDialog(QDialog):
             elif status_text == "offline":
                 status_item.setForeground(Qt.GlobalColor.darkRed)
             self.table.setItem(row, 4, status_item)
+            
+            delete_btn = QPushButton("🗑️")
+            delete_btn.setProperty("device_id", device["id"])
+            delete_btn.clicked.connect(self._delete_device_from_row)
+            self.table.setCellWidget(row, 5, delete_btn)
 
     def _add_device(self):
         dialog = DeviceDialog(self.config, parent=self)
@@ -217,10 +282,10 @@ class DeviceManagerDialog(QDialog):
             QMessageBox.information(self, "Select Device", "Please select a device to delete.")
             return
 
-        devices = self.config.get_devices()
-        if current_row >= len(devices):
+        sorted_devices = self._get_sorted_devices()
+        if current_row >= len(sorted_devices):
             return
-        device = devices[current_row]
+        device = sorted_devices[current_row]
 
         reply = QMessageBox.question(
             self, "Confirm Delete",
@@ -230,6 +295,21 @@ class DeviceManagerDialog(QDialog):
         if reply == QMessageBox.StandardButton.Yes:
             self.config.remove_device(device["id"])
             self._refresh_table()
+
+    def _delete_device_from_row(self):
+        sender = self.sender()
+        device_id = sender.property("device_id")
+        device = self.config.get_device_by_id(device_id)
+        
+        if device:
+            reply = QMessageBox.question(
+                self, "Confirm Delete",
+                f"Are you sure you want to delete '{device['name']}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.config.remove_device(device["id"])
+                self._refresh_table()
 
     def _scan_network(self):
         """Open network scan dialog to discover active devices."""

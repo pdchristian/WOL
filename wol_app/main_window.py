@@ -52,6 +52,11 @@ class MainWindow(QMainWindow):
         self.config = ConfigManager()
         self.engine = WOLEngine(self.config)
 
+        # Load device sort settings
+        sort_settings = self.config.get_device_sort_settings()
+        self.device_sort_column = sort_settings["sort_column"]
+        self.device_sort_order = sort_settings["sort_order"]
+
         self.setWindowTitle("Wake-on-LAN Manager")
         self.setMinimumSize(800, 600)
 
@@ -188,10 +193,47 @@ class MainWindow(QMainWindow):
         # Status bar
         self.statusBar().showMessage("Ready")
 
+    def _get_ip_key(self, ip_str):
+        """Convert IP address string to a tuple of integers for proper numerical sorting."""
+        try:
+            parts = list(map(int, ip_str.split('.') if ip_str else [0, 0, 0, 0]))
+            # Pad with zeros if not exactly 4 parts
+            while len(parts) < 4:
+                parts.append(0)
+            return tuple(parts)
+        except (ValueError, AttributeError):
+            return (0, 0, 0, 0)
+
+    def _get_sort_key(self, device, sort_column):
+        """Get sort key for a device based on sort column with special handling for IPs."""
+        sort_key_map = {
+            0: "name",    # Name
+            1: "mac",     # MAC Address
+            2: "ip",      # IP Address
+        }
+        
+        key = sort_key_map.get(sort_column, "name")
+        value = device.get(key, "")
+        
+        # Special handling for IP addresses
+        if sort_column == 2:  # IP Address
+            return self._get_ip_key(value)
+        
+        return value
+
+    def _get_sorted_devices(self):
+        """Get devices sorted according to current settings."""
+        devices = self.config.get_devices()
+        reverse_sort = self.device_sort_order == "descending"
+        
+        return sorted(devices, key=lambda d: self._get_sort_key(d, self.device_sort_column), reverse=reverse_sort)
+
     def _refresh_device_table(self):
         """Refresh the device table with current data."""
         self.device_table.setRowCount(0)
-        for device in self.config.get_devices():
+        sorted_devices = self._get_sorted_devices()
+        
+        for device in sorted_devices:
             row = self.device_table.rowCount()
             self.device_table.insertRow(row)
 
@@ -265,10 +307,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Select Device", "Please select a device to wake.")
             return
 
-        devices = self.config.get_devices()
-        if current_row >= len(devices):
+        sorted_devices = self._get_sorted_devices()
+        if current_row >= len(sorted_devices):
             return
-        device = devices[current_row]
+        device = sorted_devices[current_row]
 
         if not device.get("enabled", True):
             QMessageBox.warning(self, "Device Disabled", f"'{device['name']}' is disabled.")
@@ -287,10 +329,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Select Device", "Please select a device to ping.")
             return
 
-        devices = self.config.get_devices()
-        if current_row >= len(devices):
+        sorted_devices = self._get_sorted_devices()
+        if current_row >= len(sorted_devices):
             return
-        device = devices[current_row]
+        device = sorted_devices[current_row]
 
         status, msg = self.engine.check_device_status(device["id"])
         QMessageBox.information(self, f"Status: {status.upper()}", msg)
