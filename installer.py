@@ -28,6 +28,7 @@ APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"
 UNINSTALLER_NAME = "uninstall.exe"
 ICON_NAME = "icon.ico"
+REG_KEY_NAME = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN"
 
 
 def is_admin():
@@ -85,6 +86,29 @@ def remove_user_data():
         return False
 
 
+def fix_wol_app_permissions():
+    """Ensure the .wol_app directory is owned by the current user, not Administrator.
+    This is important because the installer runs with elevated privileges,
+    which can cause the directory to be created with admin-only permissions."""
+    try:
+        wol_dir = Path.home() / ".wol_app"
+        if wol_dir.exists():
+            username = os.environ.get("USERNAME", "")
+            userdomain = os.environ.get("USERDOMAIN", ".")
+            if username:
+                # Use icacls to grant full control to the current user
+                subprocess.run(
+                    ["icacls", str(wol_dir), "/grant:f", f"{userdomain}\\{username}",
+                     "/T", "/C", "/Q"],
+                    capture_output=True, timeout=10
+                )
+                print(f"  Fixed permissions for: {wol_dir}")
+        return True
+    except Exception as e:
+        print(f"  Warning: Could not fix .wol_app permissions: {e}")
+        return False
+
+
 def rollback_installation(install_dir, created_items):
     """Rollback installation if something fails."""
     print("\nERROR: Installation failed! Rolling back...")
@@ -100,8 +124,7 @@ def rollback_installation(install_dir, created_items):
 
     # Remove registry entry
     try:
-        winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE,
-                         r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN")
+        winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE, REG_KEY_NAME)
     except Exception:
         pass
 
@@ -150,7 +173,7 @@ $shortcut.Save()
 
 def register_app_in_registry(install_dir, exe_path, uninstaller_path):
     """Register the application in Windows Add/Remove Programs list."""
-    reg_key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN"
+    reg_key_path = REG_KEY_NAME
 
     try:
         key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, reg_key_path)
@@ -201,7 +224,7 @@ def register_app_in_registry(install_dir, exe_path, uninstaller_path):
 
 def unregister_app_from_registry():
     """Remove the application from Windows Add/Remove Programs list."""
-    reg_key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN"
+    reg_key_path = REG_KEY_NAME
 
     try:
         # Try to delete the key
@@ -440,6 +463,10 @@ def main():
     print("Registering application...")
     if not register_app_in_registry(install_dir, exe_dest, uninstall_path):
         print("WARNING: Registry registration failed, but installation will continue.")
+
+    # Fix permissions on user data directory (installer runs as admin)
+    print("Fixing user data permissions...")
+    fix_wol_app_permissions()
 
     # Summary
     print("\n" + "=" * 50)

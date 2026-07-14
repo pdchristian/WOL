@@ -10,6 +10,25 @@ from typing import Optional
 from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
 
 
+def _fix_directory_permissions(config_dir: Path):
+    """Ensure the config directory is accessible by the current user.
+    When the app runs elevated (as admin), the directory may be created
+    with admin-only permissions, blocking normal user access."""
+    try:
+        import subprocess
+        username = os.environ.get("USERNAME", "")
+        userdomain = os.environ.get("USERDOMAIN", ".")
+        if username and hasattr(os, 'name') and os.name == 'nt':
+            # Use icacls to grant full control to the current user
+            subprocess.run(
+                ["icacls", str(config_dir), "/grant:f", f"{userdomain}\\{username}",
+                 "/T", "/C", "/Q"],
+                capture_output=True, timeout=5
+            )
+    except Exception:
+        pass
+
+
 def _sanitize_path(path: str) -> Path:
     """Sanitize path to prevent path traversal attacks."""
     if not path:
@@ -93,6 +112,8 @@ class ConfigManager:
                     raise ValueError(f"Invalid config directory path: {config_dir}")
                 config_dir.mkdir(exist_ok=True, mode=0o700)  # Restrictive permissions
                 self.config_path = config_dir / "config.json"
+                # Fix ownership if running elevated (e.g., started as admin)
+                _fix_directory_permissions(config_dir)
             except Exception as e:
                 raise RuntimeError(f"Failed to initialize config directory: {e}")
         else:

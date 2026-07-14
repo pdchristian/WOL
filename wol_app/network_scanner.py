@@ -31,13 +31,22 @@ def _run_subprocess_safe(command, timeout=5, **kwargs):
     """Safe execution of subprocess with strict limits."""
     try:
         # Set default security options
-        safe_kwargs = {
-            'stdout': subprocess.PIPE,
-            'stderr': subprocess.PIPE,
-            'timeout': timeout,
-            'shell': False,  # CRITICAL: shell=False prevents command injection
-            **kwargs
-        }
+        # Only set stdout/stderr explicitly if capture_output is NOT used
+        # (capture_output and explicit stdout/stderr are mutually exclusive in Python)
+        if kwargs.get('capture_output') is not None:
+            safe_kwargs = {
+                'timeout': timeout,
+                'shell': False,  # CRITICAL: shell=False prevents command injection
+                **kwargs
+            }
+        else:
+            safe_kwargs = {
+                'stdout': subprocess.PIPE,
+                'stderr': subprocess.PIPE,
+                'timeout': timeout,
+                'shell': False,  # CRITICAL: shell=False prevents command injection
+                **kwargs
+            }
         result = subprocess.run(command, **safe_kwargs)
         return result
     except subprocess.TimeoutExpired:
