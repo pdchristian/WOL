@@ -87,14 +87,36 @@ def remove_user_data():
         return False
 
 
+def user_has_full_control(directory):
+    """Check if the current user already has full control on a directory.
+    Uses icacls query to check effective permissions - much faster than
+    trying to fix permissions that are already correct."""
+    try:
+        result = subprocess.run(
+            ["icacls", str(directory)],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return False  # Can't read permissions, assume we need to fix
+
+        username = os.environ.get("USERNAME", "")
+        output = result.stdout.lower()
+        # Check if current user has (F)ull or (M)odify access
+        user_lower = username.lower()
+        return user_lower in output and ("(f)" in output or "(m)" in output)
+    except Exception:
+        return False  # On any error, assume fix is needed
+
+
 def fix_wol_app_permissions():
     """Ensure the .wol_app directory is owned by the current user, not Administrator.
     This is important because the installer runs with elevated privileges,
     which can cause the directory to be created with admin-only permissions.
 
     Steps:
-    1. Take ownership for the current user (takeown)
-    2. Reset DACL and grant full control recursively (icacls)
+    1. Check if user already has full control - skip if yes (fast path)
+    2. Take ownership for the current user (takeown)
+    3. Reset DACL and grant full control recursively (icacls)
     """
     try:
         wol_dir = Path.home() / ".wol_app"
@@ -108,10 +130,16 @@ def fix_wol_app_permissions():
 
         user_account = f"{userdomain}\\{username}"
 
+        # Fast path: skip if user already has full control
+        # This is common when migrating data from a previous installation
+        if user_has_full_control(wol_dir):
+            print(f"  Permissions OK for: {wol_dir}")
+            return True
+
         # Step 1: Take ownership recursively (including all files/subdirs)
         takeown_result = subprocess.run(
             ["takeown", "/F", str(wol_dir), "/R", "/D", "Y"],
-            capture_output=True, timeout=30
+            capture_output=True, timeout=15
         )
         if takeown_result.returncode != 0:
             print(f"  Warning: takeown failed (rc={takeown_result.returncode})")
@@ -119,26 +147,19 @@ def fix_wol_app_permissions():
         # Step 2: Reset the DACL and grant full control to the current user recursively
         icacls_result = subprocess.run(
             ["icacls", str(wol_dir), "/reset", "/T", "/C", "/Q"],
-            capture_output=True, timeout=30
+            capture_output=True, timeout=15
         )
         if icacls_result.returncode != 0:
             print(f"  Warning: icacls reset failed (rc={icacls_result.returncode})")
 
         # Step 3: Grant full control to the current user recursively
+        # Note: use /grant with (F) flag, NOT /grant:f (which is invalid syntax)
         icacls_grant = subprocess.run(
-            ["icacls", str(wol_dir), "/grant:f", user_account, "/T", "/C", "/Q"],
-            capture_output=True, timeout=30
+            ["icacls", str(wol_dir), "/grant", f"{user_account}:(CI)(OI)F", "/T", "/C", "/Q"],
+            capture_output=True, timeout=15
         )
         if icacls_grant.returncode != 0:
             print(f"  Warning: icacls grant failed (rc={icacls_grant.returncode})")
-
-        # Step 4: Also fix the parent directory's permissions so new files inherit correctly
-        parent = wol_dir.parent
-        if parent.exists():
-            subprocess.run(
-                ["icacls", str(parent), "/grant", f"{user_account}:(OI)(CI)F", "/C", "/Q"],
-                capture_output=True, timeout=30
-            )
 
         print(f"  Fixed permissions for: {wol_dir}")
         return True
