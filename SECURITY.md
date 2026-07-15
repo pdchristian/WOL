@@ -11,7 +11,7 @@
 
 ## 🎯 Einleitung
 
-Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.3.0** implementiert wurden. 
+Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.3.1** implementiert wurden. 
 
 Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden.
 
@@ -254,7 +254,7 @@ Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfol
 
 | **Version** | **Datum** | **Sicherheitsverbesserungen** | **Status** |
 |-------------|-----------|--------------------------------|------------|
-| **1.3.0** | 2026-07-14 | Umfassende Sicherheitsüberarbeitung (15 Risiken behoben) | ✅ **AKTUELL** |
+| **1.3.1** | 2026-07-14 | Umfassende Sicherheitsüberarbeitung (15 Risiken behoben) | ✅ **AKTUELL** |
 | 1.2.1 | - | Vorherige Version mit bekannten Sicherheitsrisiken | ⚠️ Veraltet |
 
 ---

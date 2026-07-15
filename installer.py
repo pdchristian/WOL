@@ -17,6 +17,7 @@ import ctypes
 import subprocess
 import tempfile
 import winreg
+from datetime import datetime
 from pathlib import Path
 
 
@@ -194,7 +195,7 @@ def register_app_in_registry(install_dir, exe_path, uninstaller_path):
             ("DisplayVersion", version),
             ("Publisher", publisher),
             ("InstallLocation", install_location),
-            ("InstallDate", "20260708"),
+            ("InstallDate", datetime.now().strftime("%Y%m%d")),
             ("UninstallString", uninstall_string),
             ("QuietCustomActions", quiet_uninstall),
             ("NoModify", no_modify),

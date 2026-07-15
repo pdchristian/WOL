@@ -82,7 +82,7 @@ A detailed user manual is available in German:
 
 ## 📝 Changelog
 
-### Version 1.3.0 - Security Enhanced Edition (2026-07-14)
+### Version 1.3.1 - Security Enhanced Edition (2026-07-14)
 
 #### 🔒 Security Improvements
 - **Command Injection Protection:** All subprocess calls use `shell=False` with input validation
@@ -99,7 +99,7 @@ A detailed user manual is available in German:
 - `device_dialog.py`: Input validation for devices
 - `settings_dialog.py`: Input validation for network settings
 - `wol_engine.py`: Secure magic packet creation and status checks
-- `installer.py`: Secure deletion of user data, version 1.3.0
+- `installer.py`: Secure deletion of user data, version 1.3.1
 
 #### ✅ Tests
 - All security tests pass successfully

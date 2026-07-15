@@ -264,133 +264,96 @@ def cleanup_start_menu():
     delete_directory(user_start_menu)
 
 
-def _write_cleanup_script(install_dir):
-    """Write a robust cleanup script to %TEMP% (outside the install directory).
+def _schedule_for_reboot_delete(paths):
+    """Schedule files/directories for deletion on next reboot using MoveFileExW.
 
-    The script retries deletion with exponential backoff and self-deletes.
-    Writing to %TEMP% ensures the script survives even if the install directory
-    becomes partially inaccessible.
+    This is the most reliable method on Windows — the kernel handles deletion
+    before any user processes start, so even locked/antivirus-scanned files
+    will be removed.
     """
-    escaped_dir = install_dir.replace("'", "''")
+    MOVEFILE_DELAY_UNTIL_REBOOT = 0x00000004
+    deleted = []
+    failed = []
 
-    ps_script = r'''
-        $ErrorActionPreference = "SilentlyContinue"
-        $dir = DIR_PLACEHOLDER
-        $maxRetries = 10
-        $baseDelay = 2
+    for p in paths:
+        # Convert to wide string for MoveFileExW
+        wide_path = ctypes.c_wchar_p(str(p))
+        if ctypes.windll.kernel32.MoveFileExW(wide_path, None, MOVEFILE_DELAY_UNTIL_REBOOT):
+            deleted.append(p)
+        else:
+            failed.append(p)
 
-        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
-            if (-not (Test-Path $dir)) {
-                break
-            }
-
-            try {
-                Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop
-                if (-not (Test-Path $dir)) {
-                    break
-                }
-            } catch {
-                # File may be locked, wait and retry
-            }
-
-            $delay = [Math]::Min($baseDelay * [Math]::Pow(2, $attempt - 1), 30)
-            Start-Sleep -Seconds $delay
-        }
-
-        # Self-cleanup: delete this script
-        $scriptPath = $MyInvocation.MyCommand.Definition
-        if (Test-Path $scriptPath) {
-            try { Remove-Item -LiteralPath $scriptPath -Force } catch {}
-        }
-    '''.replace("DIR_PLACEHOLDER", f"'{escaped_dir}'")
-
-    temp_dir = os.environ.get("TEMP", "C:\\Windows\\Temp")
-    script_path = os.path.join(temp_dir, "wol_cleanup_temp.ps1")
-
-    try:
-        with open(script_path, "w", encoding="utf-8") as f:
-            f.write(ps_script)
-        return script_path
-    except Exception:
-        return None
+    return deleted, failed
 
 
 def cleanup_install_directory(install_dir):
-    """Remove the installation directory using a robust multi-retry approach.
+    """Remove the installation directory using a robust multi-layer approach.
 
     Strategy:
-    1. Immediately delete non-executable files (config, docs, icon, etc.)
-    2. Write a retry-based PowerShell cleanup script to %TEMP% (outside install dir)
-    3. Launch the script as a detached process — it retries up to 10 times
-       with exponential backoff and self-deletes when done
-    4. As a secondary fallback, also launch a simpler inline command with a
-       longer delay in case the script file fails to execute
+    1. Immediately delete all files in the install directory
+    2. Try to remove the empty directory
+    3. For anything that survives (locked by AV, etc.), schedule for deletion on reboot
     """
     if not os.path.exists(install_dir):
         print("  Install directory not found (already clean).")
         return True
 
-    # Delete all files in the install directory EXCEPT our executables and uninstaller
+    # Collect files that need special handling
+    locked_files = []
+
+    # Delete ALL files in the install directory
     try:
         for filename in sorted(os.listdir(install_dir)):
             filepath = os.path.join(install_dir, filename)
 
-            # Skip our own executables - they will be removed when PowerShell deletes the whole folder
-            if filename == "uninstall.exe":
-                print(f"  Skipping uninstaller: {filename}")
-                continue
-            if filename in (APP_EXE_NAME, APP_INSTALL_DIR_NAME):
-                print(f"  Skipping application file: {filename}")
-                continue
-
-            # Skip directories - let PowerShell handle them
+            # Skip subdirectories - handle them after files
             if os.path.isdir(filepath):
                 continue
 
             try:
                 os.remove(filepath)
                 print(f"  Removed: {filename}")
+            except PermissionError:
+                print(f"  Locked (will retry): {filename}")
+                locked_files.append(filepath)
             except Exception as e:
                 print(f"  Warning: Could not remove {filename}: {e}")
+                locked_files.append(filepath)
     except Exception as e:
         print(f"  Warning: Could not list install directory: {e}")
 
-    # --- Primary cleanup: retry-based script written to %TEMP% ---
-    script_path = _write_cleanup_script(install_dir)
-    primary_launched = False
+    # Retry locked files once with a short delay (AV scan may have finished)
+    import time
+    if locked_files:
+        time.sleep(1)
+        still_locked = []
+        for filepath in locked_files:
+            try:
+                os.remove(filepath)
+                print(f"  Removed (retry): {os.path.basename(filepath)}")
+            except Exception:
+                still_locked.append(filepath)
+        locked_files = still_locked
 
-    if script_path and os.path.exists(script_path):
-        try:
-            subprocess.Popen(
-                ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
-                 "-ExecutionPolicy", "Bypass", "-File", script_path],
-                creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
-            )
-            primary_launched = True
-        except Exception as e:
-            print(f"  Warning: Could not launch cleanup script: {e}")
-
-    # --- Secondary fallback: inline command with longer delay ---
-    # This runs even if the script failed to launch, providing redundancy.
-    escaped_dir = install_dir.replace("'", "''")
-    ps_fallback = f'''
-        Start-Sleep -Seconds 5;
-        if (Test-Path '{escaped_dir}') {{
-            Remove-Item -LiteralPath '{escaped_dir}' -Recurse -Force -ErrorAction SilentlyContinue
-        }}
-    '''
+    # Try to remove the directory itself
     try:
-        subprocess.Popen(
-            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_fallback],
-            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
-        )
-    except Exception as e:
-        print(f"  Warning: Could not schedule fallback cleanup: {e}")
+        if os.path.exists(install_dir):
+            shutil.rmtree(install_dir, ignore_errors=False)
+            print(f"  Removed directory: {install_dir}")
+    except Exception:
+        # Directory not empty or locked — schedule for reboot
+        if locked_files:
+            locked_files.append(install_dir)
+        else:
+            locked_files.append(install_dir)
 
-    if primary_launched:
-        print(f"  Scheduled for removal (with retry): {install_dir}")
-    else:
-        print(f"  Scheduled for removal (fallback only): {install_dir}")
+    # Schedule remaining items for deletion on reboot
+    if locked_files:
+        deleted, failed = _schedule_for_reboot_delete(locked_files)
+        for f in deleted:
+            print(f"  Scheduled for removal on reboot: {os.path.basename(f)}")
+        for f in failed:
+            print(f"  Warning: Could not schedule for removal: {os.path.basename(f)}")
 
     return True
 
@@ -423,8 +386,8 @@ def main():
         print(f"  - Start Menu and Desktop shortcuts")
         print(f"  - Registry entries")
         print()
-        response = input("Are you sure you want to continue? (y/n): ").lower()
-        if response != "y":
+        response = input("Are you sure you want to continue? [y]: ").lower()
+        if response not in ("y", ""):
             print("Uninstallation cancelled.")
             sys.exit(0)
 

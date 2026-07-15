@@ -10,7 +10,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "=======================================" -ForegroundColor Cyan
-Write-Host "  Wake-on-LAN Manager v1.3.0 - Build Script" -ForegroundColor Cyan
+Write-Host "  Wake-on-LAN Manager v1.3.1 - Build Script" -ForegroundColor Cyan
 Write-Host "  Security Enhanced Edition" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
