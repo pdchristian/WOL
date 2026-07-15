@@ -1,10 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 1.3.1 - Security Enhanced Edition with Uninstaller Fixes**
+**Version 1.3.2 - Installer Permissions Fix Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
-🔒 **Security Note:** This version includes comprehensive security improvements and fixes for the uninstaller (orphaned registry cleanup). See [SECURITY.md](SECURITY.md) for details.
+🔒 **Security Note:** This version includes optimized installer permissions handling and fixes for smooth installation with data migration. See [SECURITY.md](SECURITY.md) for details.
 
 ## Features
 
@@ -81,6 +81,14 @@ A detailed user manual is available in German:
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
 ## 📝 Changelog
+
+### Version 1.3.2 - Installer Permissions Fix Edition (2026-07-15)
+
+#### 🔧 Installer Improvements
+- **Permissions Fast-Path:** Added pre-check to skip permission fixes when user already has full control (~1 sec vs ~30+ sec on data migration)
+- **Fixed icacls syntax:** Corrected `/grant:f` (invalid) to `/grant` with `(CI)(OI)F` flag
+- **Removed parent directory fix:** Eliminated unnecessary `icacls` on entire user home directory (`C:\Users\cp`) that caused 30-second timeouts
+- **Reduced timeouts:** All permission commands reduced from 30s to 15s per step
 
 ### Version 1.3.1 - Security Enhanced Edition (2026-07-14)
 

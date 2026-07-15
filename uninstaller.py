@@ -18,7 +18,7 @@ from pathlib import Path
 
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"
 REG_KEY_NAME = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN"

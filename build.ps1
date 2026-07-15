@@ -1,6 +1,6 @@
 # ============================================================================
 # Wake-on-LAN Manager - Build Script
-# Version: 1.3.1 - Uninstaller Fixes Edition
+# Version: 1.3.2 - Installer Permissions Fix Edition
 # Date: 2026-07-15
 # ============================================================================
 # This script builds the application, uninstaller, and final installer.
@@ -10,7 +10,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "=======================================" -ForegroundColor Cyan
-Write-Host "  Wake-on-LAN Manager v1.3.1 - Build Script" -ForegroundColor Cyan
+Write-Host "  Wake-on-LAN Manager v1.3.2 - Build Script" -ForegroundColor Cyan
 Write-Host "  Security Enhanced Edition" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
