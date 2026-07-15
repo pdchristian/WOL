@@ -19,6 +19,8 @@ a = Analysis(
         (os.path.join(SPEC_DIR, 'dist', 'Wake-on-LAN Manager.exe'), '.'),
         (os.path.join(SPEC_DIR, 'dist', 'uninstall.exe'), '.'),
         ('Bedienungsanleitung.md', '.'),
+        ('Bedienungsanleitung.pdf', '.'),
+        ('Wake-on-LAN.reg', '.'),
         ('icon.ico', '.'),
     ],
     hiddenimports=['winreg'],

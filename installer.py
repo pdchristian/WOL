@@ -90,20 +90,57 @@ def remove_user_data():
 def fix_wol_app_permissions():
     """Ensure the .wol_app directory is owned by the current user, not Administrator.
     This is important because the installer runs with elevated privileges,
-    which can cause the directory to be created with admin-only permissions."""
+    which can cause the directory to be created with admin-only permissions.
+
+    Steps:
+    1. Take ownership for the current user (takeown)
+    2. Reset DACL and grant full control recursively (icacls)
+    """
     try:
         wol_dir = Path.home() / ".wol_app"
-        if wol_dir.exists():
-            username = os.environ.get("USERNAME", "")
-            userdomain = os.environ.get("USERDOMAIN", ".")
-            if username:
-                # Use icacls to grant full control to the current user
-                subprocess.run(
-                    ["icacls", str(wol_dir), "/grant:f", f"{userdomain}\\{username}",
-                     "/T", "/C", "/Q"],
-                    capture_output=True, timeout=10
-                )
-                print(f"  Fixed permissions for: {wol_dir}")
+        if not wol_dir.exists():
+            return True
+
+        username = os.environ.get("USERNAME", "")
+        userdomain = os.environ.get("USERDOMAIN", ".")
+        if not username:
+            return False
+
+        user_account = f"{userdomain}\\{username}"
+
+        # Step 1: Take ownership recursively (including all files/subdirs)
+        takeown_result = subprocess.run(
+            ["takeown", "/F", str(wol_dir), "/R", "/D", "Y"],
+            capture_output=True, timeout=30
+        )
+        if takeown_result.returncode != 0:
+            print(f"  Warning: takeown failed (rc={takeown_result.returncode})")
+
+        # Step 2: Reset the DACL and grant full control to the current user recursively
+        icacls_result = subprocess.run(
+            ["icacls", str(wol_dir), "/reset", "/T", "/C", "/Q"],
+            capture_output=True, timeout=30
+        )
+        if icacls_result.returncode != 0:
+            print(f"  Warning: icacls reset failed (rc={icacls_result.returncode})")
+
+        # Step 3: Grant full control to the current user recursively
+        icacls_grant = subprocess.run(
+            ["icacls", str(wol_dir), "/grant:f", user_account, "/T", "/C", "/Q"],
+            capture_output=True, timeout=30
+        )
+        if icacls_grant.returncode != 0:
+            print(f"  Warning: icacls grant failed (rc={icacls_grant.returncode})")
+
+        # Step 4: Also fix the parent directory's permissions so new files inherit correctly
+        parent = wol_dir.parent
+        if parent.exists():
+            subprocess.run(
+                ["icacls", str(parent), "/grant", f"{user_account}:(OI)(CI)F", "/C", "/Q"],
+                capture_output=True, timeout=30
+            )
+
+        print(f"  Fixed permissions for: {wol_dir}")
         return True
     except Exception as e:
         print(f"  Warning: Could not fix .wol_app permissions: {e}")
@@ -439,6 +476,30 @@ def main():
             input("\nPress Enter to exit...")
             sys.exit(1)
 
+    # Copy PDF manual
+    pdf_source = get_resource_path("Bedienungsanleitung.pdf")
+    if os.path.exists(pdf_source):
+        try:
+            shutil.copy2(pdf_source, os.path.join(install_dir, "Bedienungsanleitung.pdf"))
+            print("  Copied: Bedienungsanleitung.pdf")
+        except Exception as e:
+            print(f"ERROR: Could not copy PDF manual: {e}")
+            rollback_installation(install_dir, created_items)
+            input("\nPress Enter to exit...")
+            sys.exit(1)
+
+    # Copy registry file
+    reg_source = get_resource_path("Wake-on-LAN.reg")
+    if os.path.exists(reg_source):
+        try:
+            shutil.copy2(reg_source, os.path.join(install_dir, "Wake-on-LAN.reg"))
+            print("  Copied: Wake-on-LAN.reg")
+        except Exception as e:
+            print(f"ERROR: Could not copy registry file: {e}")
+            rollback_installation(install_dir, created_items)
+            input("\nPress Enter to exit...")
+            sys.exit(1)
+
     # Copy icon for Add/Remove Programs display
     icon_source = get_resource_path(ICON_NAME)
     if os.path.exists(icon_source):
@@ -499,7 +560,17 @@ def main():
     # Launch app?
     response = input("Start Wake-on-LAN Manager now? [y]: ").lower()
     if response in ('', 'y'):
-        subprocess.Popen([exe_dest])
+        # Launch without elevation so the app doesn't create admin-only files in .wol_app.
+        # Use ShellExecute with "open" verb which runs under the standard user token.
+        try:
+            import ctypes
+            SW_SHOWNORMAL = 1
+            ctypes.windll.shell32.ShellExecuteW(
+                None, "open", exe_dest, None, None, SW_SHOWNORMAL
+            )
+        except Exception:
+            # Fallback: launch normally (may still be elevated, but permission fix in config.py will handle it)
+            subprocess.Popen([exe_dest])
 
     input("\nPress Enter to exit...")
 

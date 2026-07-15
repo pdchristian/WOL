@@ -13,18 +13,39 @@ from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
 def _fix_directory_permissions(config_dir: Path):
     """Ensure the config directory is accessible by the current user.
     When the app runs elevated (as admin), the directory may be created
-    with admin-only permissions, blocking normal user access."""
+    with admin-only permissions, blocking normal user access.
+    
+    Steps:
+    1. Take ownership recursively (takeown)
+    2. Reset DACL (icacls /reset)
+    3. Grant full control to current user (icacls /grant:f)
+    """
     try:
         import subprocess
         username = os.environ.get("USERNAME", "")
         userdomain = os.environ.get("USERDOMAIN", ".")
-        if username and hasattr(os, 'name') and os.name == 'nt':
-            # Use icacls to grant full control to the current user
-            subprocess.run(
-                ["icacls", str(config_dir), "/grant:f", f"{userdomain}\\{username}",
-                 "/T", "/C", "/Q"],
-                capture_output=True, timeout=5
-            )
+        if not username or os.name != 'nt':
+            return
+
+        user_account = f"{userdomain}\\{username}"
+
+        # Step 1: Take ownership recursively
+        subprocess.run(
+            ["takeown", "/F", str(config_dir), "/R", "/D", "Y"],
+            capture_output=True, timeout=10
+        )
+
+        # Step 2: Reset DACL
+        subprocess.run(
+            ["icacls", str(config_dir), "/reset", "/T", "/C", "/Q"],
+            capture_output=True, timeout=10
+        )
+
+        # Step 3: Grant full control to current user recursively
+        subprocess.run(
+            ["icacls", str(config_dir), "/grant:f", user_account, "/T", "/C", "/Q"],
+            capture_output=True, timeout=10
+        )
     except Exception:
         pass
 
