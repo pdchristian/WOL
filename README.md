@@ -1,10 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 1.3.0 - Security Enhanced Edition**
+**Version 1.3.1 - Security Enhanced Edition with Uninstaller Fixes**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
-🔒 **Security Note:** This version includes comprehensive security improvements. See [SECURITY.md](SECURITY.md) for details.
+🔒 **Security Note:** This version includes comprehensive security improvements and fixes for the uninstaller (orphaned registry cleanup). See [SECURITY.md](SECURITY.md) for details.
 
 ## Features
 

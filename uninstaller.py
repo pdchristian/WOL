@@ -18,7 +18,7 @@ from pathlib import Path
 
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"
 REG_KEY_NAME = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN"
@@ -52,20 +52,46 @@ def get_user_profile_dir():
 
 
 def get_install_dir():
-    """Get the installation directory from registry or default path."""
+    """Get the installation directory.
+    
+    Priority:
+    1. Directory of the running uninstaller executable (most reliable)
+    2. Registry InstallLocation value  
+    3. Default Program Files path
+    """
+    # Primary: use the directory where the uninstaller itself lives
+    try:
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            print(f"  Using executable location: {exe_dir}")
+            return exe_dir
+        else:
+            # Development mode - look in dist folder
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            dist_dir = os.path.join(script_dir, 'dist')
+            if os.path.exists(dist_dir):
+                print(f"  Using development location: {dist_dir}")
+                return dist_dir
+    except Exception as e:
+        pass
+
+    # Secondary: registry (only for non-frozen executables)
     try:
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, REG_KEY_NAME) as key:
             install_location = winreg.QueryValueEx(key, "InstallLocation")[0]
             if install_location and os.path.exists(install_location):
+                print(f"  Using registry location: {install_location}")
                 return install_location
     except (FileNotFoundError, OSError):
         pass
 
     # Fallback to default path
-    return os.path.join(
+    fallback = os.path.join(
         os.environ.get("ProgramFiles", "C:\\Program Files"),
         APP_INSTALL_DIR_NAME
     )
+    print(f"  Using fallback location: {fallback}")
+    return fallback
 
 
 def kill_app_process():
@@ -107,6 +133,53 @@ def delete_registry_key():
     except Exception as e:
         print(f"  Warning: Could not remove registry key: {e}")
         return False
+
+
+def cleanup_orphaned_registry_keys():
+    """Remove any orphaned registry keys from previous versions.
+    
+    Previous versions may have used different key names (UUIDs, etc.).
+    We look for keys with DisplayName containing 'Wake-on-LAN' and remove them.
+    """
+    base_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    cleaned = False
+
+    for root in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+        try:
+            with winreg.OpenKey(root, base_path) as parent:
+                i = 0
+                keys_to_delete = []
+                while True:
+                    try:
+                        subkey_name = winreg.EnumKey(parent, i)
+                        # Skip the current key - already handled
+                        if subkey_name == "WakeOnLAN":
+                            i += 1
+                            continue
+                        try:
+                            with winreg.OpenKey(root, f"{base_path}\\{subkey_name}") as subkey:
+                                display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                                if "Wake-on-LAN" in display_name or "wake-on-lan" in display_name.lower():
+                                    keys_to_delete.append(subkey_name)
+                        except (FileNotFoundError, OSError):
+                            pass
+                        i += 1
+                    except OSError:
+                        break
+
+                for key_name in keys_to_delete:
+                    try:
+                        winreg.DeleteKey(root, f"{base_path}\\{key_name}")
+                        print(f"  Removed orphaned registry key: {key_name}")
+                        cleaned = True
+                    except Exception as e:
+                        print(f"  Warning: Could not remove orphaned key {key_name}: {e}")
+        except (FileNotFoundError, OSError):
+            pass
+
+    if cleaned:
+        print("  Cleaned up orphaned registry entries from previous versions.")
+    return True
 
 
 def delete_shortcut(shortcut_path):
@@ -191,36 +264,135 @@ def cleanup_start_menu():
     delete_directory(user_start_menu)
 
 
+def _write_cleanup_script(install_dir):
+    """Write a robust cleanup script to %TEMP% (outside the install directory).
+
+    The script retries deletion with exponential backoff and self-deletes.
+    Writing to %TEMP% ensures the script survives even if the install directory
+    becomes partially inaccessible.
+    """
+    escaped_dir = install_dir.replace("'", "''")
+
+    ps_script = r'''
+        $ErrorActionPreference = "SilentlyContinue"
+        $dir = DIR_PLACEHOLDER
+        $maxRetries = 10
+        $baseDelay = 2
+
+        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+            if (-not (Test-Path $dir)) {
+                break
+            }
+
+            try {
+                Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop
+                if (-not (Test-Path $dir)) {
+                    break
+                }
+            } catch {
+                # File may be locked, wait and retry
+            }
+
+            $delay = [Math]::Min($baseDelay * [Math]::Pow(2, $attempt - 1), 30)
+            Start-Sleep -Seconds $delay
+        }
+
+        # Self-cleanup: delete this script
+        $scriptPath = $MyInvocation.MyCommand.Definition
+        if (Test-Path $scriptPath) {
+            try { Remove-Item -LiteralPath $scriptPath -Force } catch {}
+        }
+    '''.replace("DIR_PLACEHOLDER", f"'{escaped_dir}'")
+
+    temp_dir = os.environ.get("TEMP", "C:\\Windows\\Temp")
+    script_path = os.path.join(temp_dir, "wol_cleanup_temp.ps1")
+
+    try:
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(ps_script)
+        return script_path
+    except Exception:
+        return None
+
+
 def cleanup_install_directory(install_dir):
-    """Remove the installation directory."""
+    """Remove the installation directory using a robust multi-retry approach.
+
+    Strategy:
+    1. Immediately delete non-executable files (config, docs, icon, etc.)
+    2. Write a retry-based PowerShell cleanup script to %TEMP% (outside install dir)
+    3. Launch the script as a detached process — it retries up to 10 times
+       with exponential backoff and self-deletes when done
+    4. As a secondary fallback, also launch a simpler inline command with a
+       longer delay in case the script file fails to execute
+    """
     if not os.path.exists(install_dir):
         print("  Install directory not found (already clean).")
         return True
 
-    # Try direct removal first
+    # Delete all files in the install directory EXCEPT our executables and uninstaller
     try:
-        shutil.rmtree(install_dir, ignore_errors=True)
-        if not os.path.exists(install_dir):
-            print(f"  Removed: {install_dir}")
-            return True
-    except Exception:
-        pass
+        for filename in sorted(os.listdir(install_dir)):
+            filepath = os.path.join(install_dir, filename)
 
-    # If still exists, schedule delayed removal via PowerShell
-    ps_command = (
-        f"Start-Sleep -Seconds 2; "
-        f"Remove-Item -LiteralPath '{install_dir}' -Recurse -Force -ErrorAction SilentlyContinue"
-    )
+            # Skip our own executables - they will be removed when PowerShell deletes the whole folder
+            if filename == "uninstall.exe":
+                print(f"  Skipping uninstaller: {filename}")
+                continue
+            if filename in (APP_EXE_NAME, APP_INSTALL_DIR_NAME):
+                print(f"  Skipping application file: {filename}")
+                continue
+
+            # Skip directories - let PowerShell handle them
+            if os.path.isdir(filepath):
+                continue
+
+            try:
+                os.remove(filepath)
+                print(f"  Removed: {filename}")
+            except Exception as e:
+                print(f"  Warning: Could not remove {filename}: {e}")
+    except Exception as e:
+        print(f"  Warning: Could not list install directory: {e}")
+
+    # --- Primary cleanup: retry-based script written to %TEMP% ---
+    script_path = _write_cleanup_script(install_dir)
+    primary_launched = False
+
+    if script_path and os.path.exists(script_path):
+        try:
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
+                 "-ExecutionPolicy", "Bypass", "-File", script_path],
+                creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
+            )
+            primary_launched = True
+        except Exception as e:
+            print(f"  Warning: Could not launch cleanup script: {e}")
+
+    # --- Secondary fallback: inline command with longer delay ---
+    # This runs even if the script failed to launch, providing redundancy.
+    escaped_dir = install_dir.replace("'", "''")
+    ps_fallback = f'''
+        Start-Sleep -Seconds 5;
+        if (Test-Path '{escaped_dir}') {{
+            Remove-Item -LiteralPath '{escaped_dir}' -Recurse -Force -ErrorAction SilentlyContinue
+        }}
+    '''
     try:
         subprocess.Popen(
-            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_command],
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_fallback],
             creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
         )
-        print(f"  Scheduled for removal: {install_dir}")
-        return True
     except Exception as e:
-        print(f"  Warning: Could not schedule cleanup: {e}")
-        return False
+        print(f"  Warning: Could not schedule fallback cleanup: {e}")
+
+    if primary_launched:
+        print(f"  Scheduled for removal (with retry): {install_dir}")
+    else:
+        print(f"  Scheduled for removal (fallback only): {install_dir}")
+
+    return True
 
 
 def main():
@@ -263,6 +435,9 @@ def main():
 
     # Step 2: Remove registry entry
     delete_registry_key()
+
+    # Step 2b: Clean up orphaned registry keys from previous versions
+    cleanup_orphaned_registry_keys()
 
     # Step 3: Remove Start Menu shortcuts
     cleanup_start_menu()

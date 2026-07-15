@@ -22,7 +22,7 @@ from pathlib import Path
 
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 APP_PUBLISHER = "Wake-on-LAN"
 APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"
@@ -223,7 +223,8 @@ def register_app_in_registry(install_dir, exe_path, uninstaller_path):
 
 
 def unregister_app_from_registry():
-    """Remove the application from Windows Add/Remove Programs list."""
+    """Remove the application from Windows Add/Remove Programs list,
+    including any orphaned keys from previous versions."""
     reg_key_path = REG_KEY_NAME
 
     try:
@@ -242,7 +243,23 @@ def unregister_app_from_registry():
         if "WakeOnLAN" in subkeys:
             winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE, reg_key_path)
             print("  Removed from Add/Remove Programs.")
-            return True
+
+        # Also clean up any orphaned keys from previous versions
+        for subkey_name in subkeys:
+            if subkey_name == "WakeOnLAN":
+                continue  # Already handled above
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                    rf"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{subkey_name}") as subkey:
+                    display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                    if "Wake-on-LAN" in display_name or "wake-on-lan" in display_name.lower():
+                        winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE,
+                                        rf"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{subkey_name}")
+                        print(f"  Removed orphaned registry key: {subkey_name}")
+            except (FileNotFoundError, OSError):
+                pass
+
+        return True
     except FileNotFoundError:
         print("  Not registered in Add/Remove Programs (already clean).")
         return True

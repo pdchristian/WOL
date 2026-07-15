@@ -1,7 +1,7 @@
 # ============================================================================
 # Wake-on-LAN Manager - Build Script
-# Version: 1.3.0 - Security Enhanced Edition
-# Date: 2026-07-14
+# Version: 1.3.1 - Uninstaller Fixes Edition
+# Date: 2026-07-15
 # ============================================================================
 # This script builds the application, uninstaller, and final installer.
 # Run with: .\build.ps1
