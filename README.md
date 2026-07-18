@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 1.3.2 - Installer Permissions Fix Edition**
+**Version 1.3.3 - Console Flash Fix Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
@@ -81,6 +81,11 @@ A detailed user manual is available in German:
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
 ## 📝 Changelog
+
+### Version 1.3.3 - Console Flash Fix Edition (2026-07-18)
+
+#### 🐛 Bug Fixes
+- **Eliminated console flash on startup:** Added `creationflags=subprocess.CREATE_NO_WINDOW` to all permission-related subprocess calls (`takeown`/`icacls`) in `_fix_directory_permissions()` — no more flickering terminal windows at app launch
 
 ### Version 1.3.2 - Installer Permissions Fix Edition (2026-07-15)
 

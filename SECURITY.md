@@ -2,8 +2,8 @@
 
 ## 📋 Dokumentinformationen
 
-- **Version:** 1.3.2
-- **Datum:** 2026-07-15
+- **Version:** 1.3.3
+- **Datum:** 2026-07-18
 - **Status:** alle kritischen Sicherheitsrisiken behoben
 - **Verantwortlicher:** GitHub Copilot (automatisierte Sicherheitsanalyse)
 
@@ -11,7 +11,7 @@
 
 ## 🎯 Einleitung
 
-Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.3.2** implementiert wurden. 
+Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.3.3** implementiert wurden. 
 
 Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden.
 
@@ -254,7 +254,8 @@ Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfol
 
 | **Version** | **Datum** | **Sicherheitsverbesserungen** | **Status** |
 |-------------|-----------|--------------------------------|------------|
-| **1.3.2** | 2026-07-15 | Installer-Berechtigungslogik optimiert (Fast-Path, korrekte icacls-Syntax) | ✅ **AKTUELL** |
+| **1.3.3** | 2026-07-18 | Console-Flash behoben (CREATE_NO_WINDOW für takeown/icacls) | ✅ **AKTUELL** |
+| **1.3.2** | 2026-07-15 | Installer-Berechtigungslogik optimiert (Fast-Path, korrekte icacls-Syntax) | ⚠️ Veraltet |
 | 1.3.1 | 2026-07-14 | Umfassende Sicherheitsüberarbeitung (15 Risiken behoben) | ⚠️ Veraltet |
 | 1.2.1 | - | Vorherige Version mit bekannten Sicherheitsrisiken | ⚠️ Veraltet |
 

@@ -32,19 +32,22 @@ def _fix_directory_permissions(config_dir: Path):
         # Step 1: Take ownership recursively
         subprocess.run(
             ["takeown", "/F", str(config_dir), "/R", "/D", "Y"],
-            capture_output=True, timeout=10
+            capture_output=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
 
         # Step 2: Reset DACL
         subprocess.run(
             ["icacls", str(config_dir), "/reset", "/T", "/C", "/Q"],
-            capture_output=True, timeout=10
+            capture_output=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
 
         # Step 3: Grant full control to current user recursively
         subprocess.run(
             ["icacls", str(config_dir), "/grant:f", user_account, "/T", "/C", "/Q"],
-            capture_output=True, timeout=10
+            capture_output=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
     except Exception:
         pass
