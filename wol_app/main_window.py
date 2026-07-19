@@ -14,6 +14,7 @@ from PyQt6.QtGui import QAction, QFont, QIcon, QPalette, QColor
 import subprocess
 import shlex
 
+from wol_app import __version__
 from wol_app.config import ConfigManager
 from wol_app.wol_engine import WOLEngine
 from wol_app.device_dialog import DeviceManagerDialog
@@ -21,6 +22,18 @@ from wol_app.settings_dialog import SettingsDialog
 from wol_app.schedule_dialog import ScheduleDialog
 from wol_app.log_dialog import LogDialog
 from wol_app.network_scan_dialog import NetworkScanDialog
+from wol_app.updater import UpdateChecker, check_for_updates_sync
+from wol_app.update_dialog import (
+    UpdateAvailableDialog, UpdateInfoDialog, UpdateErrorDialog,
+)
+
+# Module-level registry to hold thread references until native threads truly finish
+# Prevents premature GC of QThread wrapper objects while C-level I/O is blocked
+_active_threads = []
+
+# Headless/test mode: disables all background threads to avoid QThread shutdown warnings
+# Set WOL_HEADLESS=1 in test/headless environments (CI, automated tests, no display)
+HEADLESS_MODE = os.environ.get("WOL_HEADLESS", "").lower() in ("1", "true", "yes")
 
 
 class StatusWorker(QObject):
@@ -63,25 +76,114 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Wake-on-LAN Manager")
         self.setMinimumSize(800, 600)
 
-        # Keep references to prevent garbage collection while thread runs
+        # Keep references to prevent garbage collection while threads run
         self._status_thread = None
         self._status_worker = None
         self._status_check_running = False
+
+        # Update checker references
+        self._update_thread = None
+        self._update_worker = None
+        self._update_check_running = False
+
 
         self._setup_menu()
         self._setup_ui()
         self._refresh_device_table()
 
-        # Initial status check on startup
-        self._refresh_statuses()
+        # Initial status check on startup (skip in headless mode)
+        if not HEADLESS_MODE:
+            try:
+                if self.screen() is not None:
+                    self._refresh_statuses()
+            except Exception:
+                pass  # Skip status check if display unavailable
 
-        # Start scheduler
-        self.engine.start_scheduler(self._on_scheduled_wake)
+        # Start scheduler (skip in headless mode)
+        if not HEADLESS_MODE:
+            self.engine.start_scheduler(self._on_scheduled_wake)
 
-        # Auto-refresh status every 30 seconds
-        self.status_timer = QTimer(self)
-        self.status_timer.timeout.connect(self._refresh_statuses)
-        self.status_timer.start(30000)
+        # Auto-check for updates on startup (skip if no display/headless mode)
+        if not HEADLESS_MODE:
+            try:
+                from PyQt6.QtGui import QScreen
+                if self.screen() is not None and self.config.should_check_for_updates():
+                    QTimer.singleShot(5000, self._check_for_updates_async)
+            except Exception:
+                pass  # Skip update check if display unavailable
+
+        # Auto-refresh status every 30 seconds (skip in headless mode)
+        if not HEADLESS_MODE:
+            self.status_timer = QTimer(self)
+            self.status_timer.timeout.connect(self._refresh_statuses)
+            self.status_timer.start(30000)
+        else:
+            self.status_timer = None
+
+    # ---- Update Checker Methods ------------------------------------------------
+
+    def _check_for_updates_async(self):
+        """Check for updates in a background thread (follows StatusWorker pattern)."""
+        if self._update_check_running:
+            return
+        self._update_check_running = True
+
+        self._update_worker = UpdateChecker(current_version=__version__)
+        self._update_thread = QThread()
+        self._update_worker.moveToThread(self._update_thread)
+
+        self._update_thread.started.connect(self._update_worker.run)
+        self._update_worker.finished.connect(self._on_update_check_finished)
+        self._update_worker.finished.connect(self._update_thread.quit)
+        self._update_thread.finished.connect(self._update_thread.deleteLater)
+
+        def on_async_done():
+            self._update_check_running = False
+            if self._update_worker is not None:
+                self._update_worker.deleteLater()
+            # Remove from module-level registry after thread finishes
+            if self._update_thread is not None and self._update_thread in _active_threads:
+                _active_threads.remove(self._update_thread)
+            self._update_worker = None
+            self._update_thread = None
+        self._update_thread.finished.connect(on_async_done)
+        
+        # Track in module-level registry to prevent GC while native thread runs
+        _active_threads.append(self._update_thread)
+        self._update_thread.start()
+
+    def _on_update_check_finished(self, release_info, has_update):
+        """Handle result of background update check."""
+        if has_update and release_info:
+            # Show update available dialog for the auto-check
+            dlg = UpdateAvailableDialog(release_info, __version__, self)
+            dlg.exec()
+
+    def _manual_update_check(self):
+        """Manually check for updates via Help menu."""
+        if self._update_check_running:
+            QMessageBox.information(
+                self, "Update Check Running",
+                "An update check is already in progress. Please wait.",
+            )
+            return
+
+        result = check_for_updates_sync(current_version=__version__)
+
+        if result is None:
+            # No internet / network error
+            dlg = UpdateErrorDialog(self)
+            dlg.exec()
+            return
+
+        release_info, has_update = result
+        if has_update and release_info:
+            dlg = UpdateAvailableDialog(release_info, __version__, self)
+            dlg.exec()
+        else:
+            # Current version is up to date
+            dlg = UpdateInfoDialog(self)
+            dlg.exec()
 
     def _setup_menu(self):
         menubar = self.menuBar()
@@ -121,6 +223,12 @@ class MainWindow(QMainWindow):
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
+        check_updates_action = QAction("Nach &Updates suchen...", self)
+        check_updates_action.setShortcut("Ctrl+U")
+        check_updates_action.triggered.connect(self._manual_update_check)
+        help_menu.addAction(check_updates_action)
+        help_menu.addSeparator()
+
         about_action = QAction("&About", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
@@ -285,10 +393,15 @@ class MainWindow(QMainWindow):
 
         def on_thread_finished():
             self._status_check_running = False
-            self._status_thread.deleteLater()
+            # Remove from module-level registry after thread finishes
+            if self._status_thread is not None and self._status_thread in _active_threads:
+                _active_threads.remove(self._status_thread)
             self._status_thread = None
 
         self._status_thread.finished.connect(on_thread_finished)
+        
+        # Track in module-level registry to prevent GC while native thread runs
+        _active_threads.append(self._status_thread)
         self._status_thread.start()
 
     def _on_status_check_finished(self, results):
@@ -564,21 +677,45 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self, "About Wake-on-LAN Manager",
             "<h3>Wake-on-LAN Manager</h3>"
+            f"<p>Version {__version__}</p>"
             "<p>Send magic packets to wake up computers on your network.</p>"
             "<p>Supports up to 8 devices with scheduling and status monitoring.</p>"
-            "<p>Version 1.3.3</p>"
         )
 
     def closeEvent(self, event):
-        """Cleanup on close."""
-        self.engine.stop_scheduler()
+        """Wait for all background threads to finish before closing."""
         if self.status_timer:
             self.status_timer.stop()
 
-        # Wait for any running status check thread to finish before closing
+        # Cancel all workers
+        if hasattr(self, '_status_worker') and self._status_worker is not None:
+            self._status_worker.cancel()
+        if self._update_worker is not None:
+            self._update_worker.cancel()
+
+        self.engine.stop_scheduler()
+
+        # Wait for threads to actually finish (blocking C-level I/O needs time)
+        # urlopen(timeout=2) + 3 devices × subprocess ping (~2s each) = ~8-10s worst case
         if self._status_thread is not None and self._status_thread.isRunning():
             self._status_thread.quit()
-            self._status_thread.wait(3000)
+            self._status_thread.wait(10000)
+        if self._update_thread is not None and self._update_thread.isRunning():
+            self._update_thread.quit()
+            self._update_thread.wait(5000)
+
+        # Clear worker references — don't use deleteLater (needs running event loop)
+        if hasattr(self, '_status_worker') and self._status_worker is not None:
+            self._status_worker = None
+        if self._update_worker is not None:
+            self._update_worker = None
+        if self._status_thread is not None:
+            self._status_thread = None
+        if self._update_thread is not None:
+            self._update_thread = None
+
+        # Clear module-level registry — threads will be GC'd when MainWindow is destroyed
+        _active_threads.clear()
 
         event.accept()
 

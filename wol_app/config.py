@@ -118,7 +118,12 @@ DEFAULT_CONFIG = {
     "ui": {
         "device_sort_column": 0,  # 0: Name, 1: MAC, 2: IP, 3: Username, 4: Password
         "device_sort_order": "ascending"
-    }
+    },
+    "updates": {
+        "auto_check_enabled": True,
+        "check_interval_hours": 24,
+        "last_check_timestamp": None,
+    },
 }
 
 
@@ -399,6 +404,49 @@ class ConfigManager:
                     dev["password"] = decrypt_password(pw)
                 except Exception:
                     dev["password"] = ""
+
+    # --- Validation ---
+
+    # --- Update Settings ---
+
+    def get_update_settings(self) -> dict:
+        """Return the updates configuration block, creating it with defaults if missing."""
+        return self.config.setdefault("updates", DEFAULT_CONFIG["updates"].copy())
+
+    def update_last_check_time(self):
+        """Record the current time as the last update check and save."""
+        settings = self.get_update_settings()
+        settings["last_check_timestamp"] = datetime.now().isoformat()
+        self.save()
+
+    def should_check_for_updates(self) -> bool:
+        """Determine whether an update check is due based on interval and last-check time."""
+        from datetime import timedelta
+        settings = self.get_update_settings()
+        if not settings.get("auto_check_enabled", True):
+            return False
+
+        last_check = settings.get("last_check_timestamp")
+        interval_hours = settings.get("check_interval_hours", 24)
+
+        if not last_check:
+            return True
+
+        try:
+            last_dt = datetime.fromisoformat(last_check)
+        except (ValueError, TypeError):
+            return True
+
+        return datetime.now() > last_dt + timedelta(hours=interval_hours)
+
+    def update_update_settings(self, auto_check_enabled: bool = None, check_interval_hours: int = None):
+        """Persist user-chosen update preferences."""
+        settings = self.get_update_settings()
+        if auto_check_enabled is not None:
+            settings["auto_check_enabled"] = bool(auto_check_enabled)
+        if check_interval_hours is not None:
+            settings["check_interval_hours"] = int(check_interval_hours)
+        self.save()
 
     # --- Validation ---
 

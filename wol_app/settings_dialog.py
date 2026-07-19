@@ -2,8 +2,9 @@
 
 import re
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QPushButton, QMessageBox, QSpinBox,
+    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
+    QLabel, QLineEdit, QPushButton, QMessageBox, QSpinBox, QComboBox,
+    QCheckBox, QGroupBox,
 )
 
 
@@ -49,6 +50,27 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(form)
 
+        # --- Auto-Update Group ---
+        update_group = QGroupBox("Auto-Update")
+        update_layout = QVBoxLayout()
+
+        self.auto_update_checkbox = QCheckBox("Automatisch nach Updates suchen")
+        update_layout.addWidget(self.auto_update_checkbox)
+
+        grid = QGridLayout()
+        grid.setColumnStretch(1, 1)
+        interval_label = QLabel("Prüfintervall:")
+        grid.addWidget(interval_label, 0, 0)
+        self.update_interval_combo = QComboBox()
+        self.update_interval_combo.addItem("Jeden Tag", 24)
+        self.update_interval_combo.addItem("Alle 12 Stunden", 12)
+        self.update_interval_combo.addItem("Alle 6 Stunden", 6)
+        grid.addWidget(self.update_interval_combo, 0, 1)
+        update_layout.addLayout(grid)
+
+        update_group.setLayout(update_layout)
+        layout.addWidget(update_group)
+
         # Info label
         info_label = QLabel(
             "Wake-on-LAN uses UDP broadcast packets.\n"
@@ -76,6 +98,15 @@ class SettingsDialog(QDialog):
         self.broadcast_ip_input.setText(net.get("broadcast_ip", "255.255.255.255"))
         self.broadcast_port_input.setValue(net.get("broadcast_port", 9))
 
+        # Load update settings
+        update_settings = self.config.get_update_settings()
+        self.auto_update_checkbox.setChecked(update_settings.get("auto_check_enabled", True))
+        interval_hours = update_settings.get("check_interval_hours", 24)
+        for idx in range(self.update_interval_combo.count()):
+            if self.update_interval_combo.itemData(idx) == interval_hours:
+                self.update_interval_combo.setCurrentIndex(idx)
+                break
+
     def _save(self):
         ip = self.broadcast_ip_input.text().strip()
         port = self.broadcast_port_input.value()
@@ -99,5 +130,14 @@ class SettingsDialog(QDialog):
             return
 
         self.config.update_network_settings(broadcast_ip=ip, broadcast_port=port)
-        QMessageBox.information(self, "Saved", "Network settings saved successfully.")
+
+        # Save update settings
+        auto_check = self.auto_update_checkbox.isChecked()
+        interval_hours = self.update_interval_combo.currentData()
+        self.config.update_update_settings(
+            auto_check_enabled=auto_check,
+            check_interval_hours=interval_hours,
+        )
+
+        QMessageBox.information(self, "Saved", "Settings saved successfully.")
         self.accept()

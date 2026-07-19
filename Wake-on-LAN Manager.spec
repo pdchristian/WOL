@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 1.3.3 - Console Flash Fix Edition
+# Wake-on-LAN Manager Version 1.4.0 - Auto-Update Fix Edition
 # Generated on 2026-07-15
 
 a = Analysis(
