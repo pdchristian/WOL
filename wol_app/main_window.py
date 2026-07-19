@@ -209,10 +209,12 @@ class MainWindow(QMainWindow):
         # Tools menu
         tools_menu = menubar.addMenu("&Tools")
         network_scan_action = QAction("Netzwerk &scannen...", self)
+        network_scan_action.setShortcut("Ctrl+N")
         network_scan_action.triggered.connect(self._open_network_scan)
         tools_menu.addAction(network_scan_action)
 
         settings_action = QAction("&Network Settings...", self)
+        settings_action.setShortcut("Ctrl+E")
         settings_action.triggered.connect(self._open_settings)
         tools_menu.addAction(settings_action)
 
@@ -247,23 +249,6 @@ class MainWindow(QMainWindow):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title_label)
 
-        # Quick action buttons
-        actions_frame = QFrame()
-        actions_layout = QHBoxLayout(actions_frame)
-
-        self.wake_all_btn = QPushButton("Wake All Devices")
-        self.wake_all_btn.setObjectName("primaryButton")
-        self.wake_all_btn.clicked.connect(self._wake_all)
-        self.wake_all_btn.setMinimumHeight(40)
-
-        self.refresh_btn = QPushButton("Refresh Status")
-        self.refresh_btn.clicked.connect(self._refresh_statuses)
-        self.refresh_btn.setMinimumHeight(40)
-
-        actions_layout.addWidget(self.wake_all_btn)
-        actions_layout.addWidget(self.refresh_btn)
-        main_layout.addWidget(actions_frame)
-
         # Device list
         devices_group = QGroupBox("Devices")
         devices_layout = QVBoxLayout(devices_group)
@@ -285,24 +270,34 @@ class MainWindow(QMainWindow):
         self.device_table.setPalette(palette)
         devices_layout.addWidget(self.device_table)
 
-        # Per-device action buttons row
+        # Action buttons row
         device_btn_layout = QHBoxLayout()
+
         self.shutdown_btn = QPushButton("Shut Down")
         self.shutdown_btn.clicked.connect(self._shutdown_selected)
         self.shutdown_btn.setMinimumHeight(35)
         device_btn_layout.addWidget(self.shutdown_btn)
 
-        device_btn_layout.addStretch()
-
-        self.wake_selected_btn = QPushButton("Wake Selected")
-        self.wake_selected_btn.clicked.connect(self._wake_selected)
-        self.wake_selected_btn.setMinimumHeight(35)
-        device_btn_layout.addWidget(self.wake_selected_btn)
+        self.refresh_btn = QPushButton("Refresh Status")
+        self.refresh_btn.clicked.connect(self._refresh_statuses)
+        self.refresh_btn.setMinimumHeight(35)
+        device_btn_layout.addWidget(self.refresh_btn)
 
         ping_selected_btn = QPushButton("Ping Selected")
         ping_selected_btn.clicked.connect(self._ping_selected)
         ping_selected_btn.setMinimumHeight(35)
         device_btn_layout.addWidget(ping_selected_btn)
+
+        self.wake_all_btn = QPushButton("Wake All Devices")
+        self.wake_all_btn.setObjectName("primaryButton")
+        self.wake_all_btn.clicked.connect(self._wake_all)
+        self.wake_all_btn.setMinimumHeight(35)
+        device_btn_layout.addWidget(self.wake_all_btn)
+
+        self.wake_selected_btn = QPushButton("Wake Selected")
+        self.wake_selected_btn.clicked.connect(self._wake_selected)
+        self.wake_selected_btn.setMinimumHeight(35)
+        device_btn_layout.addWidget(self.wake_selected_btn)
 
         devices_layout.addLayout(device_btn_layout)
         main_layout.addWidget(devices_group, 1)  # Stretch factor 1
@@ -561,6 +556,7 @@ class MainWindow(QMainWindow):
             )
             if result.returncode != 0:
                 error_msg = result.stderr.strip() or result.stdout.strip()
+                self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Connection failed: {error_msg}")
                 QMessageBox.critical(
                     self, "Connection Failed",
                     f"Could not connect to {device_name} ({device_ip}).\n\n{error_msg}"
@@ -568,6 +564,7 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
                 return
         except subprocess.TimeoutExpired:
+            self.config.add_log(device_name, "SHUTDOWN", "ERROR", "Connection timed out")
             QMessageBox.critical(
                 self, "Connection Timeout",
                 f"Connection to {device_name} ({device_ip}) timed out."
@@ -575,6 +572,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
             return
         except Exception as e:
+            self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Connection error: {str(e)}")
             QMessageBox.critical(
                 self, "Connection Error",
                 f"Could not connect to {device_name} ({device_ip}).\n\n{str(e)}"
@@ -592,6 +590,7 @@ class MainWindow(QMainWindow):
             )
             if result.returncode != 0:
                 error_msg = result.stderr.strip() or result.stdout.strip()
+                self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Shutdown failed: {error_msg}")
                 QMessageBox.critical(
                     self, "Shutdown Failed",
                     f"Could not shut down {device_name} ({device_ip}).\n\n{error_msg}"
@@ -599,6 +598,7 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
                 return
         except subprocess.TimeoutExpired:
+            self.config.add_log(device_name, "SHUTDOWN", "ERROR", "Shutdown command timed out")
             QMessageBox.critical(
                 self, "Shutdown Timeout",
                 f"Shutdown command for {device_name} ({device_ip}) timed out."
@@ -606,6 +606,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
             return
         except Exception as e:
+            self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Shutdown error: {str(e)}")
             QMessageBox.critical(
                 self, "Shutdown Error",
                 f"Could not shut down {device_name} ({device_ip}).\n\n{str(e)}"
@@ -613,6 +614,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
             return
 
+        self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", "Shutdown initiated successfully")
         QMessageBox.information(
             self, "Shutdown Successful",
             f"{device_name} ({device_ip}) is shutting down."

@@ -63,8 +63,8 @@ class SettingsDialog(QDialog):
         grid.addWidget(interval_label, 0, 0)
         self.update_interval_combo = QComboBox()
         self.update_interval_combo.addItem("Jeden Tag", 24)
-        self.update_interval_combo.addItem("Alle 12 Stunden", 12)
-        self.update_interval_combo.addItem("Alle 6 Stunden", 6)
+        self.update_interval_combo.addItem("Jede Woche", 168)
+        self.update_interval_combo.addItem("Jeden Monat", 720)
         grid.addWidget(self.update_interval_combo, 0, 1)
         update_layout.addLayout(grid)
 
