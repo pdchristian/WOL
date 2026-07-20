@@ -279,9 +279,13 @@ class ConfigManager:
     # --- Schedules ---
 
     def get_schedules(self) -> list:
-        return self.config.get("schedules", [])
+        schedules = self.config.get("schedules", [])
+        # Ensure all schedules have an "action" field (default: "wake")
+        for s in schedules:
+            s.setdefault("action", "wake")
+        return schedules
 
-    def add_schedule(self, device_id: str, hour: int, minute: int, days: list, enabled: bool = True) -> dict:
+    def add_schedule(self, device_id: str, hour: int, minute: int, days: list, enabled: bool = True, action: str = "wake") -> dict:
         import uuid
         schedule = {
             "id": str(uuid.uuid4()),
@@ -290,6 +294,7 @@ class ConfigManager:
             "minute": minute,
             "days": days,  # e.g. ["Mon", "Tue", "Wed"]
             "enabled": enabled,
+            "action": action,  # "wake" or "shutdown"
         }
         self.config.setdefault("schedules", []).append(schedule)
         self.save()
@@ -307,7 +312,7 @@ class ConfigManager:
     def update_schedule(self, schedule_id: str, **kwargs) -> bool:
         for sched in self.config.get("schedules", []):
             if sched["id"] == schedule_id:
-                for key in ["hour", "minute", "days", "enabled", "device_id"]:
+                for key in ["hour", "minute", "days", "enabled", "device_id", "action"]:
                     if key in kwargs:
                         sched[key] = kwargs[key]
                 self.save()

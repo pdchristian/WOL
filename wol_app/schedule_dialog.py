@@ -26,7 +26,7 @@ class ScheduleDialog(QDialog):
         # Schedule Table
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Device", "Time", "Days", "Enabled", "", ""])
+        self.table.setHorizontalHeaderLabels(["Device", "Time", "Action", "Days", "Enabled", ""])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -70,18 +70,20 @@ class ScheduleDialog(QDialog):
             device_name = device["name"] if device else "Unknown Device"
 
             time_str = f"{schedule.get('hour', 0):02d}:{schedule.get('minute', 0):02d}"
+            action_str = "Wake" if schedule.get("action", "wake") == "wake" else "Shut Down"
             days_str = self._days_to_string(schedule.get("days", []))
 
             self.table.setItem(row, 0, QTableWidgetItem(device_name))
             self.table.setItem(row, 1, QTableWidgetItem(time_str))
-            self.table.setItem(row, 2, QTableWidgetItem(days_str))
+            self.table.setItem(row, 2, QTableWidgetItem(action_str))
+            self.table.setItem(row, 3, QTableWidgetItem(days_str))
 
             enabled_check = QCheckBox()
             enabled_check.setChecked(schedule.get("enabled", True))
             enabled_check.toggled.connect(
                 lambda checked, s_id=schedule["id"]: self.config.update_schedule(s_id, enabled=checked)
             )
-            self.table.setCellWidget(row, 3, enabled_check)
+            self.table.setCellWidget(row, 4, enabled_check)
 
     def _add_schedule(self):
         devices = self.config.get_devices()
@@ -115,8 +117,8 @@ class ScheduleDialog(QDialog):
             QMessageBox.information(self, "Select Schedule", "Please select a schedule to delete.")
             return
 
-        schedules = self.config.get("schedules", [])
-        if current_row >= len(schedules):
+        schedules = self.config.get_schedules()
+        if not schedules or current_row >= len(schedules):
             return
         schedule = schedules[current_row]
 
@@ -127,6 +129,7 @@ class ScheduleDialog(QDialog):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.config.remove_schedule(schedule["id"])
+            self.table.clearSelection()
             self._refresh_table()
 
 
@@ -154,6 +157,12 @@ class ScheduleEditDialog(QDialog):
         for dev in self.devices:
             self.device_combo.addItem(dev["name"], dev["id"])
         form.addRow("Device:", self.device_combo)
+
+        # Action selector
+        self.action_combo = QComboBox()
+        self.action_combo.addItem("Wake", "wake")
+        self.action_combo.addItem("Shut Down", "shutdown")
+        form.addRow("Action:", self.action_combo)
 
         # Time
         time_layout = QHBoxLayout()
@@ -211,6 +220,9 @@ class ScheduleEditDialog(QDialog):
             if self.device_combo.itemData(i) == schedule.get("device_id", ""):
                 self.device_combo.setCurrentIndex(i)
                 break
+        action = schedule.get("action", "wake")
+        if action == "shutdown":
+            self.action_combo.setCurrentIndex(1)
         self.hour_spin.setValue(schedule.get("hour", 0))
         self.minute_spin.setValue(schedule.get("minute", 0))
         selected_days = schedule.get("days", [])
@@ -220,6 +232,7 @@ class ScheduleEditDialog(QDialog):
 
     def _save(self):
         device_id = self.device_combo.currentData()
+        action = self.action_combo.currentData() or "wake"
         hour = self.hour_spin.value()
         minute = self.minute_spin.value()
         days = [day for day, cb in self.day_checks.items() if cb.isChecked()]
@@ -232,9 +245,9 @@ class ScheduleEditDialog(QDialog):
         if self.editing_schedule:
             self.config.update_schedule(
                 self.editing_schedule["id"],
-                device_id=device_id, hour=hour, minute=minute, days=days, enabled=enabled
+                device_id=device_id, hour=hour, minute=minute, days=days, enabled=enabled, action=action
             )
         else:
-            self.config.add_schedule(device_id, hour, minute, days, enabled)
+            self.config.add_schedule(device_id, hour, minute, days, enabled, action=action)
 
         self.accept()

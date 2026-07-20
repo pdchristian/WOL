@@ -218,10 +218,11 @@ class WOLEngine:
 
     # --- Scheduler ---
 
-    def start_scheduler(self, callback: Callable[[str], None]):
+    def start_scheduler(self, callback: Callable[[str, str], None]):
         """
         Start the scheduling timer.
-        Callback receives device_id when a scheduled wake should fire.
+        Callback receives (device_id, action) when a scheduled action should fire.
+        Action is either "wake" or "shutdown".
         """
         self._scheduler_callback = callback
         self._run_scheduler_check()
@@ -250,14 +251,17 @@ class WOLEngine:
             if current_hour == sched_hour and current_minute == sched_minute:
                 if current_day in days:
                     device_id = schedule["device_id"]
+                    action = schedule.get("action", "wake")
                     # Verify device still exists
                     if self.config.get_device_by_id(device_id):
                         if self._scheduler_callback:
+                            action_log = "AUTO_WAKE" if action == "wake" else "AUTO_SHUTDOWN"
+                            action_desc = "wake" if action == "wake" else "shutdown"
                             self.config.add_log(
-                                "Scheduler", "AUTO_WAKE", "TRIGGERED",
-                                f"Scheduled wake for device {device_id}"
+                                "Scheduler", action_log, "TRIGGERED",
+                                f"Scheduled {action_desc} for device {device_id}"
                             )
-                            self._scheduler_callback(device_id)
+                            self._scheduler_callback(device_id, action)
 
         # Re-arm for next check (every 60 seconds)
         if self._scheduler_timer:

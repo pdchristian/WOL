@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
 
         # Start scheduler (skip in headless mode)
         if not HEADLESS_MODE:
-            self.engine.start_scheduler(self._on_scheduled_wake)
+            self.engine.start_scheduler(self._on_schedule_fired)
 
         # Auto-check for updates on startup (skip if no display/headless mode)
         if not HEADLESS_MODE:
@@ -646,10 +646,74 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Wake All Complete", msg)
         self.statusBar().showMessage(msg)
 
-    @pyqtSlot(str)
-    def _on_scheduled_wake(self, device_id: str):
-        """Handle scheduled wake trigger."""
-        self.engine.send_wake_packet(device_id)
+    @pyqtSlot(str, str)
+    def _on_schedule_fired(self, device_id: str, action: str):
+        """Handle scheduled action trigger - dispatch to wake or shutdown."""
+        if action == "shutdown":
+            self._scheduled_shutdown(device_id)
+        else:
+            self.engine.send_wake_packet(device_id)
+
+    def _scheduled_shutdown(self, device_id: str):
+        """Execute remote shutdown for a scheduled entry (no confirmation dialog)."""
+        device = self.config.get_device_by_id(device_id)
+        if not device:
+            msg = f"Device {device_id} not found - scheduled shutdown skipped"
+            self.statusBar().showMessage(msg, 5000)
+            return
+
+        device_name = device.get("name", "Unknown")
+        ip = device.get("ip", "")
+        
+        self.statusBar().showMessage(f"Shutting down {device_name} ({ip})...", 0)
+        self.config.add_log(device_name, "SHUTDOWN", "IN_PROGRESS", f"Scheduled shutdown for {device_name}")
+        
+        try:
+            # Step 1: Establish IPC$ connection
+            username = device.get("username", "")
+            password = device.get("password", "")
+            
+            if username:
+                cmd = rf'net use \\{ip}\IPC$ "{password}" /user:"{username}"'
+            else:
+                cmd = rf'net use \\{ip}\IPC$'
+            
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=15
+            )
+            
+            if result.returncode != 0:
+                msg = f"SHUTDOWN FAILED - Could not connect to {device_name}: {result.stderr.strip()}"
+                self.statusBar().showMessage(msg, 5000)
+                self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
+                QApplication.processEvents()
+                return
+            
+            # Step 2: Execute remote shutdown
+            cmd = rf'shutdown /m \\{ip} /s /t 0 /f'
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=30
+            )
+            
+            if result.returncode == 0:
+                msg = f"Successfully initiated shutdown for {device_name}"
+                self.statusBar().showMessage(msg, 5000)
+                self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", msg)
+            else:
+                msg = f"SHUTDOWN FAILED for {device_name}: {result.stderr.strip()}"
+                self.statusBar().showMessage(msg, 5000)
+                self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
+                
+        except subprocess.TimeoutExpired:
+            msg = f"SHUTDOWN TIMEOUT for {device_name}"
+            self.statusBar().showMessage(msg, 5000)
+            self.config.add_log(device_name, "SHUTDOWN", "TIMEOUT", msg)
+        except Exception as e:
+            msg = f"SHUTDOWN ERROR for {device_name}: {str(e)}"
+            self.statusBar().showMessage(msg, 5000)
+            self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
+        
+        QApplication.processEvents()
 
     # --- Dialog openers ---
 
