@@ -16,6 +16,7 @@ import shlex
 
 from wol_app import __version__
 from wol_app.config import ConfigManager
+from wol_app.translations import Translations
 from wol_app.wol_engine import WOLEngine
 from wol_app.device_dialog import DeviceManagerDialog
 from wol_app.settings_dialog import SettingsDialog
@@ -66,6 +67,11 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = ConfigManager()
+
+        # Load language from config and initialize translations BEFORE any UI setup
+        saved_language = self.config.config.get("ui", {}).get("language", "en")
+        Translations.set_language(saved_language)
+
         self.engine = WOLEngine(self.config)
 
         # Load device sort settings
@@ -73,7 +79,7 @@ class MainWindow(QMainWindow):
         self.device_sort_column = sort_settings["sort_column"]
         self.device_sort_order = sort_settings["sort_order"]
 
-        self.setWindowTitle("Wake-on-LAN Manager")
+        self.setWindowTitle(Translations.tr("app.name"))
         self.setMinimumSize(800, 600)
 
         # Keep references to prevent garbage collection while threads run
@@ -85,6 +91,9 @@ class MainWindow(QMainWindow):
         self._update_thread = None
         self._update_worker = None
         self._update_check_running = False
+
+        # References to refreshable UI widgets for language switching
+        self._title_label = None
 
 
         self._setup_menu()
@@ -190,49 +199,49 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
 
         # File menu
-        file_menu = menubar.addMenu("&File")
-        devices_action = QAction("Manage &Devices...", self)
+        file_menu = menubar.addMenu(Translations.tr("menu.file.title"))
+        devices_action = QAction(Translations.tr("menu.file.device"), self)
         devices_action.setShortcut("Ctrl+D")
         devices_action.triggered.connect(self._open_device_manager)
         file_menu.addAction(devices_action)
 
-        schedules_action = QAction("Manage &Schedules...", self)
+        schedules_action = QAction(Translations.tr("menu.file.schedule"), self)
         schedules_action.setShortcut("Ctrl+S")
         schedules_action.triggered.connect(self._open_schedule_manager)
         file_menu.addAction(schedules_action)
 
         file_menu.addSeparator()
-        exit_action = QAction("E&xit", self)
+        exit_action = QAction(Translations.tr("menu.file.exit"), self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
         # Tools menu
-        tools_menu = menubar.addMenu("&Tools")
-        network_scan_action = QAction("Netzwerk &scannen...", self)
+        tools_menu = menubar.addMenu(Translations.tr("menu.tools.title"))
+        network_scan_action = QAction(Translations.tr("menu.file.scan"), self)
         network_scan_action.setShortcut("Ctrl+N")
         network_scan_action.triggered.connect(self._open_network_scan)
         tools_menu.addAction(network_scan_action)
 
-        settings_action = QAction("&Network Settings...", self)
+        settings_action = QAction(Translations.tr("menu.tools.settings"), self)
         settings_action.setShortcut("Ctrl+E")
         settings_action.triggered.connect(self._open_settings)
         tools_menu.addAction(settings_action)
 
-        logs_action = QAction("View &Logs...", self)
+        logs_action = QAction(Translations.tr("menu.file.logs"), self)
         logs_action.setShortcut("Ctrl+L")
         logs_action.triggered.connect(self._open_logs)
         tools_menu.addAction(logs_action)
 
         # Help menu
-        help_menu = menubar.addMenu("&Help")
-        check_updates_action = QAction("Nach &Updates suchen...", self)
+        help_menu = menubar.addMenu(Translations.tr("menu.help.title"))
+        check_updates_action = QAction(Translations.tr("menu.tools.update"), self)
         check_updates_action.setShortcut("Ctrl+U")
         check_updates_action.triggered.connect(self._manual_update_check)
         help_menu.addAction(check_updates_action)
         help_menu.addSeparator()
 
-        about_action = QAction("&About", self)
+        about_action = QAction(Translations.tr("menu.help.about"), self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
@@ -242,21 +251,26 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central)
 
         # Title
-        title_label = QLabel("Wake-on-LAN Manager")
+        self._title_label = QLabel(Translations.tr("app.name"))
         title_font = QFont()
         title_font.setBold(True)
         title_font.setPointSize(18)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(title_label)
+        self._title_label.setFont(title_font)
+        self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self._title_label)
 
         # Device list
-        devices_group = QGroupBox("Devices")
-        devices_layout = QVBoxLayout(devices_group)
+        self._devices_group = QGroupBox(Translations.tr("ui.devices_group"))
+        devices_layout = QVBoxLayout(self._devices_group)
 
         self.device_table = QTableWidget()
         self.device_table.setColumnCount(4)
-        self.device_table.setHorizontalHeaderLabels(["Name", "MAC Address", "IP", "Status"])
+        self.device_table.setHorizontalHeaderLabels([
+            Translations.tr("table.header.name"),
+            Translations.tr("table.header.mac"),
+            Translations.tr("table.header.ip"),
+            Translations.tr("table.header.status")
+        ])
         header = self.device_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
@@ -274,37 +288,37 @@ class MainWindow(QMainWindow):
         # Action buttons row
         device_btn_layout = QHBoxLayout()
 
-        self.shutdown_btn = QPushButton("Shut Down")
+        self.shutdown_btn = QPushButton(Translations.tr("button.shutdown"))
         self.shutdown_btn.clicked.connect(self._shutdown_selected)
         self.shutdown_btn.setMinimumHeight(35)
         device_btn_layout.addWidget(self.shutdown_btn)
 
-        self.refresh_btn = QPushButton("Refresh Status")
+        self.refresh_btn = QPushButton(Translations.tr("button.refresh"))
         self.refresh_btn.clicked.connect(self._refresh_statuses)
         self.refresh_btn.setMinimumHeight(35)
         device_btn_layout.addWidget(self.refresh_btn)
 
-        ping_selected_btn = QPushButton("Ping Selected")
-        ping_selected_btn.clicked.connect(self._ping_selected)
-        ping_selected_btn.setMinimumHeight(35)
-        device_btn_layout.addWidget(ping_selected_btn)
+        self.ping_btn = QPushButton(Translations.tr("button.ping"))
+        self.ping_btn.clicked.connect(self._ping_selected)
+        self.ping_btn.setMinimumHeight(35)
+        device_btn_layout.addWidget(self.ping_btn)
 
-        self.wake_all_btn = QPushButton("Wake All Devices")
+        self.wake_all_btn = QPushButton(Translations.tr("button.wake_all"))
         self.wake_all_btn.setObjectName("primaryButton")
         self.wake_all_btn.clicked.connect(self._wake_all)
         self.wake_all_btn.setMinimumHeight(35)
         device_btn_layout.addWidget(self.wake_all_btn)
 
-        self.wake_selected_btn = QPushButton("Wake Selected")
+        self.wake_selected_btn = QPushButton(Translations.tr("button.wake_selected"))
         self.wake_selected_btn.clicked.connect(self._wake_selected)
         self.wake_selected_btn.setMinimumHeight(35)
         device_btn_layout.addWidget(self.wake_selected_btn)
 
         devices_layout.addLayout(device_btn_layout)
-        main_layout.addWidget(devices_group, 1)  # Stretch factor 1
+        main_layout.addWidget(self._devices_group, 1)  # Stretch factor 1
 
         # Status bar
-        self.statusBar().showMessage("Ready")
+        self.statusBar().showMessage(Translations.tr("status.ready"))
 
     def _get_ip_key(self, ip_str):
         """Convert IP address string to a tuple of integers for proper numerical sorting."""
@@ -353,7 +367,7 @@ class MainWindow(QMainWindow):
             name_item = QTableWidgetItem(device.get("name", ""))
             if not device.get("enabled", True):
                 name_item.setForeground(Qt.GlobalColor.gray)
-                name_item.setText(f"{device['name']} (disabled)")
+                name_item.setText(f"{device['name']} {Translations.tr('device.disabled')}")
             self.device_table.setItem(row, 0, name_item)
 
             self.device_table.setItem(row, 1, QTableWidgetItem(device.get("mac", "")))
@@ -373,11 +387,11 @@ class MainWindow(QMainWindow):
         """Ping all devices and update statuses (runs in background thread)."""
         # Prevent concurrent status checks – ignore if one is already running
         if self._status_check_running:
-            self.statusBar().showMessage("Status check already in progress...")
+            self.statusBar().showMessage(Translations.tr("status.check_in_progress"))
             return
 
         self._status_check_running = True
-        self.statusBar().showMessage("Checking device statuses...")
+        self.statusBar().showMessage(Translations.tr("status.checking"))
 
         self._status_worker = StatusWorker(self.engine)
         self._status_thread = QThread()
@@ -416,13 +430,13 @@ class MainWindow(QMainWindow):
                         status_item.setForeground(Qt.GlobalColor.darkYellow)
                     self.device_table.setItem(row, 3, status_item)
                     break
-        self.statusBar().showMessage(f"Status check complete at {datetime.now().strftime('%H:%M:%S')}")
+        self.statusBar().showMessage(Translations.tr("status.check_complete", time=datetime.now().strftime('%H:%M:%S')))
 
     def _wake_selected(self):
         """Wake the currently selected device."""
         current_row = self.device_table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Select Device", "Please select a device to wake.")
+            QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device.message"))
             return
 
         sorted_devices = self._get_sorted_devices()
@@ -431,20 +445,20 @@ class MainWindow(QMainWindow):
         device = sorted_devices[current_row]
 
         if not device.get("enabled", True):
-            QMessageBox.warning(self, "Device Disabled", f"'{device['name']}' is disabled.")
+            QMessageBox.warning(self, Translations.tr("dialog.device_disabled.title"), Translations.tr("dialog.device_disabled.message", name=device["name"]))
             return
 
         success, msg = self.engine.send_wake_packet(device["id"])
         if success:
             self.statusBar().showMessage(msg)
         else:
-            QMessageBox.warning(self, "Wake Failed", msg)
+            QMessageBox.warning(self, Translations.tr("dialog.wake_failed.title"), msg)
 
     def _ping_selected(self):
         """Ping the currently selected device."""
         current_row = self.device_table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Select Device", "Please select a device to ping.")
+            QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device_ping.message"))
             return
 
         sorted_devices = self._get_sorted_devices()
@@ -453,13 +467,13 @@ class MainWindow(QMainWindow):
         device = sorted_devices[current_row]
 
         status, msg = self.engine.check_device_status(device["id"])
-        QMessageBox.information(self, f"Status: {status.upper()}", msg)
+        QMessageBox.information(self, Translations.tr("dialog.status_result.title", status=status.upper()), msg)
 
     def _shutdown_selected(self):
         """Show shutdown confirmation dialog for the selected device."""
         current_row = self.device_table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Select Device", "Please select a device to shut down.")
+            QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device_shutdown.message"))
             return
 
         sorted_devices = self._get_sorted_devices()
@@ -471,25 +485,24 @@ class MainWindow(QMainWindow):
         device_ip = device.get("ip", "")
 
         if not device_ip:
-            QMessageBox.warning(self, "No IP Address", f"'{device_name}' has no IP address configured.")
+            QMessageBox.warning(self, Translations.tr("dialog.no_ip.title"), Translations.tr("dialog.no_ip.message", name=device_name))
             return
 
         # Build confirmation dialog
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"Shut Down {device_name}")
+        dialog.setWindowTitle(Translations.tr("dialog.shutdown_confirm.title", name=device_name))
         dialog.setMinimumWidth(450)
         layout = QVBoxLayout(dialog)
 
-        label1 = QLabel(f"Would you like to shut down {device_name}?")
+        label1 = QLabel(Translations.tr("dialog.shutdown_confirm.label1", name=device_name))
         layout.addWidget(label1)
 
         label2 = QLabel(
-            "If local user and password do not match the remote device, "
-            "they have to be added to the device entry."
+            Translations.tr("dialog.shutdown_confirm.label2")
         )
         layout.addWidget(label2)
 
-        label3 = QLabel("To shut down device remotely following Settings are required:")
+        label3 = QLabel(Translations.tr("dialog.shutdown_confirm.label3"))
         layout.addWidget(label3)
 
         registry_text = QTextEdit()
@@ -497,7 +510,7 @@ class MainWindow(QMainWindow):
             "- [HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Policies\\\\System]\n"
             "  \"LocalAccountTokenFilterPolicy\"=dword:00000001\n"
             "\n"
-            "- File- and Printer Sharing activated"
+            "- " + Translations.tr("dialog.shutdown_confirm.sharing_activated")
         )
         registry_text.setReadOnly(True)
         registry_text.setMaximumHeight(80)
@@ -505,9 +518,9 @@ class MainWindow(QMainWindow):
 
         # Buttons
         button_layout = QHBoxLayout()
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton(Translations.tr("button.cancel"))
         cancel_btn.clicked.connect(dialog.reject)
-        shutdown_confirm_btn = QPushButton("Shut Down")
+        shutdown_confirm_btn = QPushButton(Translations.tr("button.shutdown_confirm"))
         shutdown_confirm_btn.setObjectName("primaryButton")
         shutdown_confirm_btn.clicked.connect(lambda: self._execute_shutdown(device, dialog))
         button_layout.addWidget(cancel_btn)
@@ -525,14 +538,14 @@ class MainWindow(QMainWindow):
         username = device.get("username", "")
         password = device.get("password", "")
 
-        self.statusBar().showMessage(f"Shutting down {device_name}...")
+        self.statusBar().showMessage(Translations.tr("status.shutting_down", name=device_name))
         QApplication.processEvents()
 
         # Step 1: Connect to remote IPC$
         if username:
             # Delete any existing connection first
             delete_cmd = f'net use \\\\{device_ip} /delete /y'
-            self.statusBar().showMessage(f"Lösche bestehende Verbindung zu {device_name}...")
+            self.statusBar().showMessage(Translations.tr("status.deleting_connection", name=device_name))
             QApplication.processEvents()
             try:
                 subprocess.run(
@@ -543,12 +556,12 @@ class MainWindow(QMainWindow):
 
             # Connect with username and password
             cmd = f'net use \\\\{device_ip}\\IPC$ /user:{username} {password}'
-            self.statusBar().showMessage(f"Verbinde mit {device_name} ({device_ip})...")
+            self.statusBar().showMessage(Translations.tr("status.connecting", name=device_name, ip=device_ip))
             QApplication.processEvents()
         else:
             # Connect without credentials
             cmd = f'net use \\\\{device_ip}\\IPC$'
-            self.statusBar().showMessage(f"Verbinde mit {device_name} ({device_ip})...")
+            self.statusBar().showMessage(Translations.tr("status.connecting", name=device_name, ip=device_ip))
             QApplication.processEvents()
 
         try:
@@ -559,31 +572,31 @@ class MainWindow(QMainWindow):
                 error_msg = result.stderr.strip() or result.stdout.strip()
                 self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Connection failed: {error_msg}")
                 QMessageBox.critical(
-                    self, "Connection Failed",
-                    f"Could not connect to {device_name} ({device_ip}).\n\n{error_msg}"
+                    self, Translations.tr("dialog.connection_failed.title"),
+                    Translations.tr("dialog.connection_failed.message", name=device_name, ip=device_ip, error=error_msg)
                 )
-                self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+                self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
                 return
         except subprocess.TimeoutExpired:
             self.config.add_log(device_name, "SHUTDOWN", "ERROR", "Connection timed out")
             QMessageBox.critical(
-                self, "Connection Timeout",
-                f"Connection to {device_name} ({device_ip}) timed out."
+                self, Translations.tr("dialog.connection_timeout.title"),
+                Translations.tr("dialog.connection_timeout.message", name=device_name, ip=device_ip)
             )
-            self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
             return
         except Exception as e:
             self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Connection error: {str(e)}")
             QMessageBox.critical(
-                self, "Connection Error",
-                f"Could not connect to {device_name} ({device_ip}).\n\n{str(e)}"
+                self, Translations.tr("dialog.connection_error.title"),
+                Translations.tr("dialog.connection_error.message", name=device_name, ip=device_ip, error=str(e))
             )
-            self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
             return
 
         # Step 2: Shutdown the remote PC
         shutdown_cmd = f'shutdown /m \\\\{device_ip} /s /t 0 /f'
-        self.statusBar().showMessage(f"Fahre {device_name} herunter...")
+        self.statusBar().showMessage(Translations.tr("status.shutting_down_remote", name=device_name))
         QApplication.processEvents()
         try:
             result = subprocess.run(
@@ -593,45 +606,45 @@ class MainWindow(QMainWindow):
                 error_msg = result.stderr.strip() or result.stdout.strip()
                 self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Shutdown failed: {error_msg}")
                 QMessageBox.critical(
-                    self, "Shutdown Failed",
-                    f"Could not shut down {device_name} ({device_ip}).\n\n{error_msg}"
+                    self, Translations.tr("dialog.shutdown_failed.title"),
+                    Translations.tr("dialog.shutdown_failed.message", name=device_name, ip=device_ip, error=error_msg)
                 )
-                self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+                self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
                 return
         except subprocess.TimeoutExpired:
             self.config.add_log(device_name, "SHUTDOWN", "ERROR", "Shutdown command timed out")
             QMessageBox.critical(
-                self, "Shutdown Timeout",
-                f"Shutdown command for {device_name} ({device_ip}) timed out."
+                self, Translations.tr("dialog.shutdown_timeout.title"),
+                Translations.tr("dialog.shutdown_timeout.message", name=device_name, ip=device_ip)
             )
-            self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
             return
         except Exception as e:
             self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Shutdown error: {str(e)}")
             QMessageBox.critical(
-                self, "Shutdown Error",
-                f"Could not shut down {device_name} ({device_ip}).\n\n{str(e)}"
+                self, Translations.tr("dialog.shutdown_error.title"),
+                Translations.tr("dialog.shutdown_error.message", name=device_name, ip=device_ip, error=str(e))
             )
-            self.statusBar().showMessage(f"Shutdown of {device_name} failed.")
+            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
             return
 
         self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", "Shutdown initiated successfully")
         QMessageBox.information(
-            self, "Shutdown Successful",
-            f"{device_name} ({device_ip}) is shutting down."
+            self, Translations.tr("dialog.shutdown_successful.title"),
+            Translations.tr("dialog.shutdown_successful.message", name=device_name, ip=device_ip)
         )
-        self.statusBar().showMessage(f"{device_name} shutdown initiated successfully.")
+        self.statusBar().showMessage(Translations.tr("status.shutdown_success", name=device_name))
 
     def _wake_all(self):
         """Wake all enabled devices."""
         devices = [d for d in self.config.get_devices() if d.get("enabled", True)]
         if not devices:
-            QMessageBox.information(self, "No Devices", "No enabled devices to wake.")
+            QMessageBox.information(self, Translations.tr("dialog.no_devices.title"), Translations.tr("dialog.no_devices.message"))
             return
 
         reply = QMessageBox.question(
-            self, "Wake All",
-            f"Wake all {len(devices)} enabled device(s)?",
+            self, Translations.tr("dialog.wake_all.title"),
+            Translations.tr("dialog.wake_all.message", count=len(devices)),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
@@ -641,10 +654,10 @@ class MainWindow(QMainWindow):
         success_count = sum(1 for _, s, _ in results if s)
         fail_count = len(results) - success_count
 
-        msg = f"Wake complete:\n{success_count} succeeded"
+        msg = Translations.tr("dialog.wake_all_complete.success", count=success_count)
         if fail_count:
-            msg += f", {fail_count} failed"
-        QMessageBox.information(self, "Wake All Complete", msg)
+            msg += " " + Translations.tr("dialog.wake_all_complete.fail", count=fail_count)
+        QMessageBox.information(self, Translations.tr("dialog.wake_all_complete.title"), msg)
         self.statusBar().showMessage(msg)
 
     @pyqtSlot(str, str)
@@ -659,15 +672,15 @@ class MainWindow(QMainWindow):
         """Execute remote shutdown for a scheduled entry (no confirmation dialog)."""
         device = self.config.get_device_by_id(device_id)
         if not device:
-            msg = f"Device {device_id} not found - scheduled shutdown skipped"
+            msg = Translations.tr("status.device_not_found", device_id=device_id)
             self.statusBar().showMessage(msg, 5000)
             return
 
-        device_name = device.get("name", "Unknown")
+        device_name = device.get("name", Translations.tr("device.unknown"))
         ip = device.get("ip", "")
         
-        self.statusBar().showMessage(f"Shutting down {device_name} ({ip})...", 0)
-        self.config.add_log(device_name, "SHUTDOWN", "IN_PROGRESS", f"Scheduled shutdown for {device_name}")
+        self.statusBar().showMessage(Translations.tr("status.scheduled_shutdown_starting", name=device_name, ip=ip), 0)
+        self.config.add_log(device_name, "SHUTDOWN", "IN_PROGRESS", Translations.tr("status.scheduled_shutdown_progress", name=device_name))
         
         try:
             # Step 1: Establish IPC$ connection
@@ -684,7 +697,7 @@ class MainWindow(QMainWindow):
             )
             
             if result.returncode != 0:
-                msg = f"SHUTDOWN FAILED - Could not connect to {device_name}: {result.stderr.strip()}"
+                msg = Translations.tr("status.scheduled_shutdown_conn_fail", name=device_name, error=result.stderr.strip())
                 self.statusBar().showMessage(msg, 5000)
                 self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
                 QApplication.processEvents()
@@ -697,20 +710,20 @@ class MainWindow(QMainWindow):
             )
             
             if result.returncode == 0:
-                msg = f"Successfully initiated shutdown for {device_name}"
+                msg = Translations.tr("status.scheduled_shutdown_success", name=device_name)
                 self.statusBar().showMessage(msg, 5000)
                 self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", msg)
             else:
-                msg = f"SHUTDOWN FAILED for {device_name}: {result.stderr.strip()}"
+                msg = Translations.tr("status.scheduled_shutdown_fail", name=device_name, error=result.stderr.strip())
                 self.statusBar().showMessage(msg, 5000)
                 self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
                 
         except subprocess.TimeoutExpired:
-            msg = f"SHUTDOWN TIMEOUT for {device_name}"
+            msg = Translations.tr("status.scheduled_shutdown_timeout", name=device_name)
             self.statusBar().showMessage(msg, 5000)
             self.config.add_log(device_name, "SHUTDOWN", "TIMEOUT", msg)
         except Exception as e:
-            msg = f"SHUTDOWN ERROR for {device_name}: {str(e)}"
+            msg = Translations.tr("status.scheduled_shutdown_error", name=device_name, error=str(e))
             self.statusBar().showMessage(msg, 5000)
             self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
         
@@ -730,7 +743,44 @@ class MainWindow(QMainWindow):
 
     def _open_settings(self):
         dialog = SettingsDialog(self.config, parent=self)
-        dialog.exec()
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._apply_language()
+
+    def _apply_language(self):
+        """Refresh all UI text after language change."""
+        # Refresh window title
+        self.setWindowTitle(Translations.tr("app.name"))
+
+        # Rebuild menu bar
+        for child in self.menuBar().actions():
+            self.menuBar().removeAction(child)
+        self._setup_menu()
+
+        # Refresh title label
+        if self._title_label is not None:
+            self._title_label.setText(Translations.tr("app.name"))
+
+        # Refresh devices group box
+        if self._devices_group is not None:
+            self._devices_group.setTitle(Translations.tr("ui.devices_group"))
+
+        # Refresh table headers
+        self.device_table.setHorizontalHeaderLabels([
+            Translations.tr("table.header.name"),
+            Translations.tr("table.header.mac"),
+            Translations.tr("table.header.ip"),
+            Translations.tr("table.header.status")
+        ])
+
+        # Refresh action buttons
+        self.shutdown_btn.setText(Translations.tr("button.shutdown"))
+        self.refresh_btn.setText(Translations.tr("button.refresh"))
+        self.ping_btn.setText(Translations.tr("button.ping"))
+        self.wake_all_btn.setText(Translations.tr("button.wake_all"))
+        self.wake_selected_btn.setText(Translations.tr("button.wake_selected"))
+
+        # Refresh status bar
+        self.statusBar().showMessage(Translations.tr("status.ready"))
 
     def _open_schedule_manager(self):
         dialog = ScheduleDialog(self.config, parent=self)
@@ -742,11 +792,11 @@ class MainWindow(QMainWindow):
 
     def _show_about(self):
         QMessageBox.about(
-            self, "About Wake-on-LAN Manager",
+            self, Translations.tr("dialog.about.title"),
             "<h3>Wake-on-LAN Manager</h3>"
-            f"<p>Version {__version__}</p>"
-            "<p>Send magic packets to wake up computers on your network.</p>"
-            "<p>Supports up to 8 devices with scheduling and status monitoring.</p>"
+            f"<p>{Translations.tr('dialog.about.version')} {__version__}</p>"
+            f"<p>{Translations.tr('dialog.about.description')}</p>"
+            f"<p>{Translations.tr('dialog.about.supports')}</p>"
         )
 
     def closeEvent(self, event):
@@ -801,6 +851,12 @@ def get_resource_path(filename):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")  # Clean modern look on Windows
+
+    # Initialize config and translations
+    config = ConfigManager()
+    trans = Translations()
+    language = config.config.get("ui", {}).get("language", "en")
+    trans.load(language)
 
     icon_path = get_resource_path("icon.ico")
     if os.path.exists(icon_path):

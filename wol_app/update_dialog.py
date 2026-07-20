@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .translations import Translations
 from wol_app.updater import DownloadWorker
 
 
@@ -57,7 +58,7 @@ class UpdateAvailableDialog(QDialog):
         super().__init__(parent)
         self.release_info = release_info
         self.current_version = current_version
-        self.setWindowTitle("Update Verfübar")
+        self.setWindowTitle(Translations.tr("update_dialog.title"))
         self.setMinimumSize(520, 420)
         self._setup_ui()
 
@@ -67,9 +68,9 @@ class UpdateAvailableDialog(QDialog):
         # Title with version info
         tag_name = self.release_info.get("tag_name", "")
         title_label = QLabel(
-            f"Ein Update für Wake-on-LAN Manager ist verfügbar!<br>"
-            f"<b>Aktuelle Version:</b> {self.current_version}<br>"
-            f"<b>Neue Version:</b> {tag_name}"
+            f"{Translations.tr('update_dialog.update_available')}<br>"
+            f"<b>{Translations.tr('update_dialog.current_version')}</b> {self.current_version}<br>"
+            f"<b>{Translations.tr('update_dialog.new_version')}</b> {tag_name}"
         )
         title_label.setStyleSheet("font-size: 14px; padding: 8px;")
         title_label.setWordWrap(True)
@@ -80,39 +81,39 @@ class UpdateAvailableDialog(QDialog):
         if published_at:
             try:
                 dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-                date_label = QLabel(f"Veröffentlicht am: {dt.strftime('%d.%m.%Y')}")
+                date_label = QLabel(f"{Translations.tr('update_dialog.published_at')}: {dt.strftime('%d.%m.%Y')}")
                 date_label.setStyleSheet("padding: 4px;")
                 layout.addWidget(date_label)
             except (ValueError, TypeError):
                 pass
 
         # Release notes
-        section_label = QLabel("<b>Release Notes:</b>")
+        section_label = QLabel(f"<b>{Translations.tr('update_dialog.release_notes')}:</b>")
         layout.addWidget(section_label)
 
         self.release_notes = QTextBrowser()
-        body = self.release_info.get("body", "Keine Release Notes verfügbar.")
+        body = self.release_info.get("body", Translations.tr("update_dialog.no_release_notes"))
         self.release_notes.setMarkdown(body)
         self.release_notes.setOpenExternalLinks(True)
         layout.addWidget(self.release_notes, 1)
 
         # Skip version checkbox
-        self.skip_checkbox = QCheckBox("Dieses Update überspringen")
+        self.skip_checkbox = QCheckBox(Translations.tr("update_dialog.skip_this_update"))
         layout.addWidget(self.skip_checkbox)
 
         # Buttons
         btn_layout = QHBoxLayout()
 
-        self.download_btn = QPushButton("Herunterladen und Installieren")
+        self.download_btn = QPushButton(Translations.tr("update_dialog.download_and_install"))
         self.download_btn.setObjectName("primaryButton")
         self.download_btn.clicked.connect(self._download_and_install)
         btn_layout.addWidget(self.download_btn)
 
-        later_btn = QPushButton("Nicht Jetzt")
+        later_btn = QPushButton(Translations.tr("update_dialog.not_now"))
         later_btn.clicked.connect(self._reject_without_skip)
         btn_layout.addWidget(later_btn)
 
-        github_btn = QPushButton("Auf GitHub ansehen")
+        github_btn = QPushButton(Translations.tr("update_dialog.view_on_github"))
         github_btn.clicked.connect(self._open_github)
         btn_layout.addWidget(github_btn)
 
@@ -141,19 +142,19 @@ class UpdateAvailableDialog(QDialog):
                     break
 
         if not installer_asset:
-            self._show_error("Kein Installationsprogramm gefunden.")
+            self._show_error(Translations.tr("update_dialog.no_installer_found"))
             return
 
         download_url = installer_asset.get("browser_download_url", "")
         if not download_url:
-            self._show_error("Download-URL nicht verfügbar.")
+            self._show_error(Translations.tr("update_dialog.download_url_unavailable"))
             return
 
         # Show progress dialog
         self._progress = QProgressDialog(
-            "Update wird heruntergeladen...", "Abbrechen", 0, 100, self
+            Translations.tr("update_dialog.downloading_update"), Translations.tr("common.cancel"), 0, 100, self
         )
-        self._progress.setWindowTitle("Update Download")
+        self._progress.setWindowTitle(Translations.tr("update_dialog.update_download"))
         self._progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         self._progress.setAutoClose(False)
         self._progress.setAutoReset(False)
@@ -303,19 +304,13 @@ class UpdateAvailableDialog(QDialog):
         """Handle download failure."""
         if hasattr(self, '_progress') and self._progress:
             self._progress.close()
-        self._show_error(f"Download fehlgeschlagen: {message}")
-
-    def _show_error(self, message: str):
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.warning(self, "Update-Fehler", message)
-
-
+            self._show_error(Translations.tr("update_dialog.download_failed_msg", message=message))
 class UpdateInfoDialog(QDialog):
     """Simple confirmation dialog when the user is already on the latest version."""
 
     def __init__(self, current_version: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Aktualitäts-Prüfung")
+        self.setWindowTitle(Translations.tr("update_info.title"))
         self.setMinimumWidth(380)
         self._setup_ui(current_version)
 
@@ -328,7 +323,7 @@ class UpdateInfoDialog(QDialog):
         layout.addWidget(icon_label)
 
         info_label = QLabel(
-            f"<b>Sie verwenden die aktuellste Version.</b><br>"
+            f"<b>{Translations.tr('update_info.up_to_date')}</b><br>"
             f"Wake-on-LAN Manager {version}"
         )
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -348,7 +343,7 @@ class UpdateErrorDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Update-Prüfung fehlgeschlagen")
+        self.setWindowTitle(Translations.tr("update_error.title"))
         self.setMinimumWidth(380)
         self._setup_ui()
 
@@ -361,8 +356,8 @@ class UpdateErrorDialog(QDialog):
         layout.addWidget(icon_label)
 
         info_label = QLabel(
-            "<b>Die Aktualitätsprüfung konnte nicht durchgeführt werden.</b><br><br>"
-            "Überprüfen Sie Ihre Internetverbindung und versuchen Sie es später erneut."
+            f"<b>{Translations.tr('update_error.check_failed')}</b><br><br>"
+            f"{Translations.tr('update_error.check_connection_msg')}"
         )
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setWordWrap(True)

@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
 )
 from PyQt6.QtCore import Qt
+from wol_app.translations import Translations
 
 
 class LogDialog(QDialog):
@@ -14,7 +15,7 @@ class LogDialog(QDialog):
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.config = config_manager
-        self.setWindowTitle("Wake Log History")
+        self.setWindowTitle(Translations.tr("log_dialog.title"))
         self.setMinimumSize(700, 450)
         self._setup_ui()
         self._refresh_table()
@@ -25,7 +26,13 @@ class LogDialog(QDialog):
         # Log Table
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Timestamp", "Device", "Action", "Status", "Message"])
+        self.table.setHorizontalHeaderLabels([
+            Translations.tr("log_dialog.col.timestamp"),
+            Translations.tr("log_dialog.col.device"),
+            Translations.tr("log_dialog.col.action"),
+            Translations.tr("log_dialog.col.status"),
+            Translations.tr("log_dialog.col.message"),
+        ])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(0, 180)
@@ -39,16 +46,16 @@ class LogDialog(QDialog):
 
         # Buttons
         btn_layout = QHBoxLayout()
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton(Translations.tr("log_dialog.button.refresh"))
         refresh_btn.clicked.connect(self._refresh_table)
-        clear_btn = QPushButton("Clear Logs")
+        clear_btn = QPushButton(Translations.tr("log_dialog.button.clear_logs"))
         clear_btn.clicked.connect(self._clear_logs)
 
         btn_layout.addWidget(refresh_btn)
         btn_layout.addWidget(clear_btn)
         btn_layout.addStretch()
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(Translations.tr("dialog.button.close"))
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
 
@@ -85,12 +92,12 @@ class LogDialog(QDialog):
                 status_item.setForeground(Qt.GlobalColor.darkYellow)
             self.table.setItem(row, 3, status_item)
 
-            self.table.setItem(row, 4, QTableWidgetItem(log.get("message", "")))
+            self.table.setItem(row, 4, QTableWidgetItem(log.get("message", Translations.tr("log_dialog.unknown"))))
 
     def _clear_logs(self):
         reply = QMessageBox.question(
-            self, "Clear Logs",
-            "Are you sure you want to clear all logs?",
+            self, Translations.tr("log_dialog.confirm_clear.title"),
+            Translations.tr("log_dialog.confirm_clear.message"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:

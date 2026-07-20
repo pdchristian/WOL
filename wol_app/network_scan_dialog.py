@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import QFont, QPalette, QColor
 
 from wol_app.network_scanner import get_local_interfaces, scan_subnet
+from wol_app.translations import Translations
 
 
 class ScanWorker(QObject):
@@ -26,7 +27,7 @@ class ScanWorker(QObject):
         seen_ips = set()
 
         for iface in self.interfaces:
-            iface_msg = f"Scanne Subnetz {iface['ip']}..."
+            iface_msg = Translations.tr("scan.scanning_subnet", ip=iface["ip"])
             self.progress.emit(iface_msg, 0, 0)
 
             try:
@@ -42,9 +43,13 @@ class ScanWorker(QObject):
                         seen_ips.add(host["ipv4"])
                         all_results.append(host)
             except Exception as e:
-                self.progress.emit(f"Fehler bei {iface['ip']}: {e}", 0, 0)
+                self.progress.emit(
+                    Translations.tr("scan.error_interface", ip=iface["ip"], error=str(e)), 0, 0
+                )
 
-        self.progress.emit(f"Gesamt {len(all_results)} Gerät(e) gefunden.", 0, 0)
+        self.progress.emit(
+            Translations.tr("scan.total_found", count=len(all_results)), 0, 0
+        )
         self.finished.emit(all_results)
 
 
@@ -54,7 +59,7 @@ class NetworkScanDialog(QDialog):
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.config = config_manager
-        self.setWindowTitle("Netzwerk-Scan: Laufende Geräte erkennen")
+        self.setWindowTitle(Translations.tr("scan_dialog.title"))
         self.setMinimumSize(800, 500)
 
         # Keep references to prevent garbage collection while thread runs
@@ -62,7 +67,6 @@ class NetworkScanDialog(QDialog):
         self._scan_worker = None
 
         self._setup_ui()
-        # Do NOT auto-scan; let user select networks first
 
     def _get_interfaces(self):
         """Return list of local network interfaces."""
@@ -72,7 +76,7 @@ class NetworkScanDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # --- Network selection group ---
-        net_group = QGroupBox("Netzwerk auswählen")
+        net_group = QGroupBox(Translations.tr("scan_dialog.group.network_select"))
         net_layout = QVBoxLayout(net_group)
 
         self.net_checkboxes = []
@@ -83,7 +87,7 @@ class NetworkScanDialog(QDialog):
             net_layout.addWidget(cb)
 
         if not self.net_checkboxes:
-            no_net_label = QLabel("Keine Netzwerkschnittstellen gefunden.")
+            no_net_label = QLabel(Translations.tr("scan_dialog.no_interfaces"))
             no_net_label.setForeground(Qt.GlobalColor.red)
             net_layout.addWidget(no_net_label)
 
@@ -92,14 +96,14 @@ class NetworkScanDialog(QDialog):
         # --- Scan button ---
         scan_btn_layout = QHBoxLayout()
         scan_btn_layout.addStretch()
-        self.scan_btn = QPushButton("Scannen")
+        self.scan_btn = QPushButton(Translations.tr("scan_dialog.button.scan"))
         self.scan_btn.clicked.connect(self._start_scan)
         self.scan_btn.setMinimumHeight(35)
         scan_btn_layout.addWidget(self.scan_btn)
         layout.addLayout(scan_btn_layout)
 
         # Info label
-        self.info_label = QLabel("Bitte Netzwerk auswählen und \"Scannen\" klicken.")
+        self.info_label = QLabel(Translations.tr("scan_dialog.info.initial"))
         info_font = QFont()
         info_font.setItalic(True)
         self.info_label.setFont(info_font)
@@ -116,7 +120,12 @@ class NetworkScanDialog(QDialog):
         # Results table
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Name", "IPv4-Adresse", "IPv6-Adresse", "MAC-Adresse"])
+        self.table.setHorizontalHeaderLabels([
+            Translations.tr("scan_dialog.col.name"),
+            Translations.tr("scan_dialog.col.ipv4"),
+            Translations.tr("scan_dialog.col.ipv6"),
+            Translations.tr("scan_dialog.col.mac"),
+        ])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -134,12 +143,12 @@ class NetworkScanDialog(QDialog):
         # Buttons
         btn_layout = QHBoxLayout()
 
-        self.add_btn = QPushButton("Ausgewähltes Gerät hinzufügen")
+        self.add_btn = QPushButton(Translations.tr("scan_dialog.button.add_selected"))
         self.add_btn.clicked.connect(self._add_selected_device)
         self.add_btn.setEnabled(False)
         btn_layout.addWidget(self.add_btn)
 
-        close_btn = QPushButton("Schließen")
+        close_btn = QPushButton(Translations.tr("dialog.button.close"))
         close_btn.clicked.connect(self.accept)
         btn_layout.addStretch()
         btn_layout.addWidget(close_btn)
@@ -160,8 +169,8 @@ class NetworkScanDialog(QDialog):
         selected = self._get_selected_interfaces()
         if not selected:
             QMessageBox.warning(
-                self, "Kein Netzwerk ausgewählt",
-                "Bitte wählen Sie mindestens ein Netzwerk aus."
+                self, Translations.tr("scan_dialog.no_network_selected"),
+                Translations.tr("scan_dialog.no_network_selected_msg")
             )
             return
 
@@ -170,7 +179,7 @@ class NetworkScanDialog(QDialog):
         self.progress_bar.show()
         self.progress_bar.setValue(0)
         self.scan_btn.setEnabled(False)
-        self.info_label.setText("Scanne ausgewählte Netzwerke nach aktiven Geräten...")
+        self.info_label.setText(Translations.tr("scan_dialog.scanning"))
 
         # Cancel any previous running scan
         if self._scan_thread is not None:
@@ -208,7 +217,9 @@ class NetworkScanDialog(QDialog):
     def _on_scan_finished(self, results: list):
         """Populate table with scan results."""
         self.progress_bar.setValue(100)
-        self.info_label.setText(f"Scan abgeschlossen: {len(results)} Gerät(e) gefunden.")
+        self.info_label.setText(
+            Translations.tr("scan_dialog.complete", count=len(results))
+        )
         self.table.setRowCount(0)
 
         for host in results:
@@ -235,8 +246,8 @@ class NetworkScanDialog(QDialog):
         current_row = self.table.currentRow()
         if current_row < 0:
             QMessageBox.information(
-                self, "Keine Auswahl",
-                "Bitte wählen Sie ein Gerät aus der Liste aus."
+                self, Translations.tr("scan_dialog.no_selection"),
+                Translations.tr("scan_dialog.no_selection_msg")
             )
             return
 
@@ -247,9 +258,10 @@ class NetworkScanDialog(QDialog):
         # Check if MAC is valid (not "Unknown")
         if mac == "Unknown":
             reply = QMessageBox.question(
-                self, "MAC-Adresse unbekannt",
-                f"Die MAC-Adresse für '{hostname}' ({ipv4}) konnte nicht ermittelt werden.\n\n"
-                "Möchten Sie das Gerät trotzdem hinzufügen? Sie müssen die MAC-Adresse später manuell ergänzen.",
+                self, Translations.tr("scan_dialog.mac_unknown"),
+                Translations.tr(
+                    "scan_dialog.mac_unknown_msg", hostname=hostname, ip=ipv4
+                ),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -262,8 +274,8 @@ class NetworkScanDialog(QDialog):
         for dev in existing_devices:
             if dev.get("mac", "").upper() == mac.upper():
                 QMessageBox.warning(
-                    self, "Bereits vorhanden",
-                    f"Ein Gerät mit der MAC-Adresse {mac} ist bereits konfiguriert."
+                    self, Translations.tr("scan_dialog.already_exists"),
+                    Translations.tr("scan_dialog.already_exists_msg", mac=mac)
                 )
                 return
 
@@ -273,18 +285,11 @@ class NetworkScanDialog(QDialog):
             # Set IP address
             self.config.update_device(device["id"], ip=ipv4)
             QMessageBox.information(
-                self, "Erfolgreich",
-                f"Gerät '{hostname}' wurde zur Konfiguration hinzugefügt."
+                self, Translations.tr("scan_dialog.success"),
+                Translations.tr("scan_dialog.success_msg", hostname=hostname)
             )
-            # Update progress label
-            for i in range(self.layout().count()):
-                item = self.layout().itemAt(i)
-                if item and item.widget() and isinstance(item.widget(), QLabel):
-                    current_text = item.widget().text()
-                    item.widget().setText(f"{current_text} Gerät '{hostname}' hinzugefügt.")
-                    break
         else:
             QMessageBox.critical(
-                self, "Fehler",
-                f"Konnte Gerät '{hostname}' nicht hinzufügen."
+                self, Translations.tr("dialog.error"),
+                Translations.tr("scan_dialog.add_failed", hostname=hostname)
             )

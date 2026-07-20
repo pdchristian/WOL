@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
+from wol_app.translations import Translations
 from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
 
@@ -65,7 +66,7 @@ class DeviceDialog(QDialog):
         super().__init__(parent)
         self.config = config_manager
         self.editing_device = device
-        self.setWindowTitle("Edit Device" if device else "Add Device")
+        self.setWindowTitle(Translations.tr("device_dialog.title.edit") if device else Translations.tr("device_dialog.title.add"))
         self.setMinimumWidth(450)
         self._setup_ui()
         if device:
@@ -78,42 +79,42 @@ class DeviceDialog(QDialog):
         name_layout = QFormLayout()
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("e.g., Office PC, Gaming Rig")
-        name_layout.addRow("Device Name:", self.name_input)
+        name_layout.addRow(Translations.tr("device_dialog.label.name"), self.name_input)
 
         # MAC Address
         mac_layout = QFormLayout()
         self.mac_input = QLineEdit()
         self.mac_input.setPlaceholderText("e.g., AA:BB:CC:DD:EE:FF")
-        mac_layout.addRow("MAC Address:", self.mac_input)
+        mac_layout.addRow(Translations.tr("device_dialog.label.mac"), self.mac_input)
 
         # Optional IP (for ping status checks)
         ip_layout = QFormLayout()
         self.ip_input = QLineEdit()
         self.ip_input.setPlaceholderText("e.g., 192.168.1.100 (optional)")
-        ip_layout.addRow("IP Address:", self.ip_input)
+        ip_layout.addRow(Translations.tr("device_dialog.label.ip"), self.ip_input)
 
         # Username
         username_layout = QFormLayout()
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Benutzername (optional)")
-        username_layout.addRow("Nutzer:", self.username_input)
+        username_layout.addRow(Translations.tr("device_dialog.label.user"), self.username_input)
 
         # Password (displayed as asterisks)
         password_layout = QFormLayout()
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText("Passwort (optional)")
+        self.password_input.setPlaceholderText(Translations.tr("device_dialog.placeholder.password"))
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        password_layout.addRow("Passwort:", self.password_input)
+        password_layout.addRow(Translations.tr("device_dialog.label.password"), self.password_input)
 
         # Enabled checkbox
-        self.enabled_check = QCheckBox("Device is enabled")
+        self.enabled_check = QCheckBox(Translations.tr("device_dialog.enabled"))
         self.enabled_check.setChecked(True)
 
         # Buttons
         btn_layout = QHBoxLayout()
-        self.save_btn = QPushButton("Save" if not self.editing_device else "Update")
+        self.save_btn = QPushButton(Translations.tr("device_dialog.button.save") if not self.editing_device else Translations.tr("device_dialog.button.update"))
         self.save_btn.clicked.connect(self._save)
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(Translations.tr("device_dialog.button.cancel"))
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addStretch()
         btn_layout.addWidget(self.save_btn)
@@ -141,16 +142,16 @@ class DeviceDialog(QDialog):
         ip = self.ip_input.text().strip()
 
         if not name:
-            QMessageBox.warning(self, "Missing Name", "Please enter a device name.")
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.missing_name"))
             return
         if not _validate_device_name(name):
-            QMessageBox.warning(self, "Invalid Name", "Device name contains invalid characters or is too long.")
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_name"))
             return
         if not mac:
-            QMessageBox.warning(self, "Missing MAC", "Please enter a MAC address.")
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.missing_mac"))
             return
         if not _validate_mac(mac):
-            QMessageBox.warning(self, "Invalid MAC", "MAC address format is invalid.\nUse format: AA:BB:CC:DD:EE:FF")
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_mac"))
             return
 
         username = self.username_input.text().strip()
@@ -158,10 +159,10 @@ class DeviceDialog(QDialog):
 
         # Validate username and password
         if username and not _validate_username(username):
-            QMessageBox.warning(self, "Invalid Username", "Username contains invalid characters or is too long.")
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_username"))
             return
         if password and not _validate_password(password):
-            QMessageBox.warning(self, "Invalid Password", "Password contains invalid characters or is too long.")
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_password"))
             return
 
         if self.editing_device:
@@ -187,7 +188,7 @@ class DeviceDialog(QDialog):
                     self.config.update_device(device["id"], password=password)
                 self.device_saved.emit(self.config.get_device_by_id(device["id"]))
             else:
-                QMessageBox.warning(self, "Error", "Failed to add device.")
+                QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.save_failed"))
                 return
 
         # Clear password from input field for security
@@ -201,7 +202,7 @@ class DeviceManagerDialog(QDialog):
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.config = config_manager
-        self.setWindowTitle("Manage Devices")
+        self.setWindowTitle(Translations.tr("device_manager.title"))
         self.setMinimumSize(700, 500)
         
         # Load sort settings from config
@@ -217,9 +218,14 @@ class DeviceManagerDialog(QDialog):
 
         # Sort Control
         sort_layout = QHBoxLayout()
-        sort_label = QLabel("Sort by:")
+        sort_label = QLabel(Translations.tr("device_manager.sort_by"))
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems(["Name", "MAC Address", "IP Address", "Nutzer"])
+        self.sort_combo.addItems([
+            Translations.tr("device_manager.sort.name"),
+            Translations.tr("device_manager.sort.mac"),
+            Translations.tr("device_manager.sort.ip"),
+            Translations.tr("device_manager.sort.username")
+        ])
         self.sort_combo.currentIndexChanged.connect(self._change_sort)
         sort_layout.addWidget(sort_label)
         sort_layout.addWidget(self.sort_combo)
@@ -228,7 +234,13 @@ class DeviceManagerDialog(QDialog):
         # Device Table
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Name", "MAC Address", "IP Address", "Nutzer", "Passwort"])
+        self.table.setHorizontalHeaderLabels([
+            Translations.tr("device_manager.table.header.name"),
+            Translations.tr("device_manager.table.header.mac"),
+            Translations.tr("device_manager.table.header.ip"),
+            Translations.tr("device_manager.table.header.username"),
+            Translations.tr("device_manager.table.header.password")
+        ])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
@@ -246,17 +258,17 @@ class DeviceManagerDialog(QDialog):
 
         # Buttons
         btn_layout = QHBoxLayout()
-        add_btn = QPushButton("+ Add Device")
+        add_btn = QPushButton(Translations.tr("device_manager.button.add"))
         add_btn.clicked.connect(self._add_device)
-        edit_btn = QPushButton("Edit")
+        edit_btn = QPushButton(Translations.tr("device_manager.button.edit"))
         edit_btn.clicked.connect(self._edit_device)
-        delete_btn = QPushButton("Delete")
+        delete_btn = QPushButton(Translations.tr("device_manager.button.delete"))
         delete_btn.clicked.connect(self._delete_device)
-        import_btn = QPushButton("Import")
+        import_btn = QPushButton(Translations.tr("device_manager.button.import"))
         import_btn.clicked.connect(self._import_devices)
-        export_btn = QPushButton("Export")
+        export_btn = QPushButton(Translations.tr("device_manager.button.export"))
         export_btn.clicked.connect(self._export_devices)
-        refresh_btn = QPushButton("Netzwerk scannen")
+        refresh_btn = QPushButton(Translations.tr("device_manager.button.scan_network"))
         refresh_btn.clicked.connect(self._scan_network)
 
         btn_layout.addWidget(add_btn)
@@ -267,7 +279,7 @@ class DeviceManagerDialog(QDialog):
         btn_layout.addStretch()
         btn_layout.addWidget(refresh_btn)
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(Translations.tr("device_manager.button.close"))
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
 
@@ -344,7 +356,7 @@ class DeviceManagerDialog(QDialog):
     def _edit_device(self):
         current_row = self.table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Select Device", "Please select a device to edit.")
+            QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device.message"))
             return
 
         sorted_devices = self._get_sorted_devices()
@@ -359,7 +371,11 @@ class DeviceManagerDialog(QDialog):
     def _delete_device(self):
         current_row = self.table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Select Device", "Please select a device to delete.")
+            QMessageBox.information(
+                self,
+                Translations.tr("dialog.select_device.title"),
+                Translations.tr("dialog.select_device.message"),
+            )
             return
 
         sorted_devices = self._get_sorted_devices()
@@ -368,8 +384,9 @@ class DeviceManagerDialog(QDialog):
         device = sorted_devices[current_row]
 
         reply = QMessageBox.question(
-            self, "Confirm Delete",
-            f"Are you sure you want to delete '{device['name']}'?",
+            self,
+            Translations.tr("dialog.confirm_delete.title"),
+            Translations.tr("dialog.confirm_delete.message", name=device["name"]),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -385,7 +402,7 @@ class DeviceManagerDialog(QDialog):
     def _export_devices(self):
         """Export configured devices to a JSON file."""
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Devices", "", "JSON Files (*.json)"
+            self, Translations.tr("dialog.export.title"), "", "JSON Files (*.json)"
         )
         if not file_path:
             return
@@ -407,14 +424,22 @@ class DeviceManagerDialog(QDialog):
         try:
             with open(file_path, "w") as f:
                 json.dump(export_data, f, indent=2)
-            QMessageBox.information(self, "Export Success", f"{len(export_data)} device(s) exported to:\n{file_path}")
+            QMessageBox.information(
+                self,
+                Translations.tr("dialog.export.success.title"),
+                Translations.tr("dialog.export.success.message", count=len(export_data), path=file_path),
+            )
         except IOError as e:
-            QMessageBox.critical(self, "Export Error", f"Failed to save file:\n{e}")
+            QMessageBox.critical(
+                self,
+                Translations.tr("dialog.export.error.title"),
+                Translations.tr("dialog.export.error.message", error=str(e)),
+            )
 
     def _import_devices(self):
         """Import devices from a JSON file. Existing devices with the same name are overwritten."""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Import Devices", "", "JSON Files (*.json)"
+            self, Translations.tr("dialog.import.title"), "", "JSON Files (*.json)"
         )
         if not file_path:
             return
@@ -423,11 +448,19 @@ class DeviceManagerDialog(QDialog):
             with open(file_path, "r") as f:
                 import_data = json.load(f)
         except (json.JSONDecodeError, IOError) as e:
-            QMessageBox.critical(self, "Import Error", f"Failed to read file:\n{e}")
+            QMessageBox.critical(
+                self,
+                Translations.tr("dialog.import.error.title"),
+                Translations.tr("dialog.import.read_error", error=str(e)),
+            )
             return
 
         if not isinstance(import_data, list):
-            QMessageBox.critical(self, "Import Error", "Invalid file format. Expected a JSON array.")
+            QMessageBox.critical(
+                self,
+                Translations.tr("dialog.import.error.title"),
+                Translations.tr("dialog.import.invalid_format"),
+            )
             return
 
         imported = 0
@@ -439,11 +472,15 @@ class DeviceManagerDialog(QDialog):
             mac = dev_data.get("mac", "").strip()
 
             if not name or not mac:
-                errors.append(f"Zeile {idx + 1}: Fehlender Name oder MAC-Adresse.")
+                errors.append(
+                    Translations.tr("dialog.import.missing_field", line=idx + 1)
+                )
                 continue
 
             if not self.config._validate_mac(mac):
-                errors.append(f"Zeile {idx + 1} ('{name}'): Ungültiges MAC-Format.")
+                errors.append(
+                    Translations.tr("dialog.import.invalid_mac", line=idx + 1, name=name)
+                )
                 continue
 
             existing = self.config.get_device_by_name(name)
@@ -478,12 +515,23 @@ class DeviceManagerDialog(QDialog):
                     imported += 1
 
         # Build summary message
-        summary_lines = [f"Neu importiert: {imported}", f"Aktualisiert: {updated}"]
+        summary_lines = [
+            Translations.tr("dialog.import.summary.imported", count=imported),
+            Translations.tr("dialog.import.summary.updated", count=updated),
+        ]
         if errors:
-            summary_lines.append(f"Fehler: {len(errors)}")
+            summary_lines.append(
+                Translations.tr("dialog.import.summary.errors", count=len(errors))
+            )
             summary_lines.extend(errors[:5])  # Show max 5 errors
             if len(errors) > 5:
-                summary_lines.append(f"... und {len(errors) - 5} weitere Fehler")
+                summary_lines.append(
+                    Translations.tr("dialog.import.summary.more_errors", count=len(errors) - 5)
+                )
 
-        QMessageBox.information(self, "Import Ergebnis", "\n".join(summary_lines))
+        QMessageBox.information(
+            self,
+            Translations.tr("dialog.import.result.title"),
+            "\n".join(summary_lines),
+        )
         self._refresh_table()

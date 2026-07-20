@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 1.4.0 - Auto-Update Fix Edition
+# Wake-on-LAN Manager Version 1.5.0 - Auto-Update Fix Edition
 # Generated on 2026-07-15
 
 a = Analysis(
     ['run.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.')],
+    datas=[('icon.ico', '.'), ('wol_app/locales/*.json', 'wol_app/locales')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

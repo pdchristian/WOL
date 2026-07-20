@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QSpinBox, QGridLayout,
 )
 from PyQt6.QtCore import Qt
+from .translations import Translations
 
 
 class ScheduleDialog(QDialog):
@@ -15,7 +16,7 @@ class ScheduleDialog(QDialog):
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.config = config_manager
-        self.setWindowTitle("Manage Schedules")
+        self.setWindowTitle(Translations.tr("schedule_dialog.title"))
         self.setMinimumSize(650, 450)
         self._setup_ui()
         self._refresh_table()
@@ -26,7 +27,14 @@ class ScheduleDialog(QDialog):
         # Schedule Table
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Device", "Time", "Action", "Days", "Enabled", ""])
+        self.table.setHorizontalHeaderLabels([
+            Translations.tr("schedule_dialog.col.device"),
+            Translations.tr("schedule_dialog.col.time"),
+            Translations.tr("schedule_dialog.col.action"),
+            Translations.tr("schedule_dialog.col.days"),
+            Translations.tr("schedule_dialog.col.enabled"),
+            ""
+        ])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -35,11 +43,11 @@ class ScheduleDialog(QDialog):
 
         # Buttons
         btn_layout = QHBoxLayout()
-        add_btn = QPushButton("+ Add Schedule")
+        add_btn = QPushButton(Translations.tr("schedule_dialog.button.add_schedule"))
         add_btn.clicked.connect(self._add_schedule)
-        edit_btn = QPushButton("Edit")
+        edit_btn = QPushButton(Translations.tr("schedule_dialog.button.edit"))
         edit_btn.clicked.connect(self._edit_schedule)
-        delete_btn = QPushButton("Delete")
+        delete_btn = QPushButton(Translations.tr("schedule_dialog.button.delete"))
         delete_btn.clicked.connect(self._delete_schedule)
 
         btn_layout.addWidget(add_btn)
@@ -47,7 +55,7 @@ class ScheduleDialog(QDialog):
         btn_layout.addWidget(delete_btn)
         btn_layout.addStretch()
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(Translations.tr("schedule_dialog.button.close"))
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
 
@@ -68,10 +76,10 @@ class ScheduleDialog(QDialog):
             self.table.insertRow(row)
 
             device = self.config.get_device_by_id(schedule.get("device_id", ""))
-            device_name = device["name"] if device else "Unknown Device"
+            device_name = device["name"] if device else Translations.tr("schedule_dialog.unknown_device")
 
             time_str = f"{schedule.get('hour', 0):02d}:{schedule.get('minute', 0):02d}"
-            action_str = "Wake" if schedule.get("action", "wake") == "wake" else "Shut Down"
+            action_str = Translations.tr("schedule_dialog.action.wake") if schedule.get("action", "wake") == "wake" else Translations.tr("schedule_dialog.action.shutdown")
             days_str = self._days_to_string(schedule.get("days", []))
 
             self.table.setItem(row, 0, QTableWidgetItem(device_name))
@@ -89,7 +97,7 @@ class ScheduleDialog(QDialog):
     def _add_schedule(self):
         devices = self.config.get_devices()
         if not devices:
-            QMessageBox.warning(self, "No Devices", "Add a device first before creating a schedule.")
+            QMessageBox.warning(self, Translations.tr("schedule_dialog.no_devices"), Translations.tr("schedule_dialog.no_devices_msg"))
             return
 
         dialog = ScheduleEditDialog(self.config, devices, parent=self)
@@ -99,7 +107,7 @@ class ScheduleDialog(QDialog):
     def _edit_schedule(self):
         current_row = self.table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Select Schedule", "Please select a schedule to edit.")
+            QMessageBox.information(self, Translations.tr("schedule_dialog.select_schedule"), Translations.tr("schedule_dialog.select_schedule_edit_msg"))
             return
 
         schedules = self.config.get_schedules()
@@ -115,7 +123,7 @@ class ScheduleDialog(QDialog):
     def _delete_schedule(self):
         current_row = self.table.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "Select Schedule", "Please select a schedule to delete.")
+            QMessageBox.information(self, Translations.tr("schedule_dialog.select_schedule"), Translations.tr("schedule_dialog.select_schedule_delete_msg"))
             return
 
         schedules = self.config.get_schedules()
@@ -124,8 +132,8 @@ class ScheduleDialog(QDialog):
         schedule = schedules[current_row]
 
         reply = QMessageBox.question(
-            self, "Confirm Delete",
-            "Are you sure you want to delete this schedule?",
+            self, Translations.tr("schedule_dialog.confirm_delete"),
+            Translations.tr("schedule_dialog.confirm_delete_msg"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -142,7 +150,7 @@ class ScheduleEditDialog(QDialog):
         self.config = config_manager
         self.devices = devices
         self.editing_schedule = schedule
-        self.setWindowTitle("Edit Schedule" if schedule else "New Schedule")
+        self.setWindowTitle(Translations.tr("schedule_edit.title.edit") if schedule else Translations.tr("schedule_edit.title.add"))
         self.setMinimumWidth(400)
         self._setup_ui()
         if schedule:
@@ -157,13 +165,13 @@ class ScheduleEditDialog(QDialog):
         self.device_combo = QComboBox()
         for dev in self.devices:
             self.device_combo.addItem(dev["name"], dev["id"])
-        form.addRow("Device:", self.device_combo)
+        form.addRow(Translations.tr("schedule_edit.device"), self.device_combo)
 
         # Action selector
         self.action_combo = QComboBox()
-        self.action_combo.addItem("Wake", "wake")
-        self.action_combo.addItem("Shut Down", "shutdown")
-        form.addRow("Action:", self.action_combo)
+        self.action_combo.addItem(Translations.tr("schedule_edit.action.wake"), "wake")
+        self.action_combo.addItem(Translations.tr("schedule_edit.action.shutdown"), "shutdown")
+        form.addRow(Translations.tr("schedule_edit.action_label"), self.action_combo)
 
         # Time
         time_layout = QHBoxLayout()
@@ -175,7 +183,7 @@ class ScheduleEditDialog(QDialog):
         self.minute_spin.setSuffix(" m")
         time_layout.addWidget(self.hour_spin)
         time_layout.addWidget(self.minute_spin)
-        form.addRow("Wake Time:", time_layout)
+        form.addRow(Translations.tr("schedule_edit.wake_time"), time_layout)
 
         # Days of week
         days_layout = QHBoxLayout()
@@ -188,7 +196,7 @@ class ScheduleEditDialog(QDialog):
         form.addRow("Days:", QLabel())  # Placeholder - we'll add checks manually
 
         # Insert day checkboxes properly
-        days_group = QGroupBox("Days of Week")
+        days_group = QGroupBox(Translations.tr("schedule_edit.days_of_week"))
         days_grid = QGridLayout()
         for i, day in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
             cb = QCheckBox(day)
@@ -198,14 +206,14 @@ class ScheduleEditDialog(QDialog):
         days_group.setLayout(days_grid)
 
         # Enabled
-        self.enabled_check = QCheckBox("Schedule is enabled")
+        self.enabled_check = QCheckBox(Translations.tr("schedule_edit.enabled"))
         self.enabled_check.setChecked(True)
 
         # Buttons
         btn_layout = QHBoxLayout()
-        save_btn = QPushButton("Save" if not self.editing_schedule else "Update")
+        save_btn = QPushButton(Translations.tr("schedule_edit.button.save") if not self.editing_schedule else Translations.tr("schedule_edit.button.update"))
         save_btn.clicked.connect(self._save)
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton(Translations.tr("schedule_edit.button.cancel"))
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addStretch()
         btn_layout.addWidget(save_btn)
@@ -240,7 +248,7 @@ class ScheduleEditDialog(QDialog):
         enabled = self.enabled_check.isChecked()
 
         if not days:
-            QMessageBox.warning(self, "No Days", "Please select at least one day of the week.")
+            QMessageBox.warning(self, Translations.tr("schedule_edit.no_days"), Translations.tr("schedule_edit.no_days_msg"))
             return
 
         if self.editing_schedule:

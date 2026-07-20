@@ -1,8 +1,10 @@
 """Wake-on-LAN Application - Configuration Manager"""
 
+import copy
 import json
 import os
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -117,7 +119,8 @@ DEFAULT_CONFIG = {
     "max_logs": 100,
     "ui": {
         "device_sort_column": 0,  # 0: Name, 1: MAC, 2: IP, 3: Username, 4: Password
-        "device_sort_order": "ascending"
+        "device_sort_order": "ascending",
+        "language": "en"
     },
     "updates": {
         "auto_check_enabled": True,
@@ -131,6 +134,9 @@ class ConfigManager:
     """Manages application configuration stored in a JSON file."""
 
     def __init__(self, config_path: Optional[str] = None):
+        # Thread-safe access to logs
+        self._logs_lock = threading.Lock()
+        
         if config_path is None:
             config_dir = Path.home() / ".wol_app"
             try:
@@ -275,7 +281,16 @@ class ConfigManager:
         if broadcast_port is not None:
             net["broadcast_port"] = broadcast_port
         self.save()
-
+    def update_ui_settings(self, language: str = None, device_sort_column: int = None, device_sort_order: str = None):
+        """Update UI-related settings."""
+        ui = self.config.setdefault("ui", {})
+        if language is not None:
+            ui["language"] = language
+        if device_sort_column is not None:
+            ui["device_sort_column"] = device_sort_column
+        if device_sort_order is not None:
+            ui["device_sort_order"] = device_sort_order
+        self.save()
     # --- Schedules ---
 
     def get_schedules(self) -> list:
@@ -345,11 +360,12 @@ class ConfigManager:
             "status": sanitized_status,
             "message": sanitized_message,
         }
-        self.config.setdefault("logs", []).append(log_entry)
-        # Trim logs to prevent DoS via log flooding
-        max_logs = self.config.get("max_logs", 100)
-        if len(self.config.get("logs", [])) > max_logs:
-            self.config["logs"] = self.config["logs"][-max_logs:]
+        with self._logs_lock:
+            self.config.setdefault("logs", []).append(log_entry)
+            # Trim logs to prevent DoS via log flooding
+            max_logs = self.config.get("max_logs", 100)
+            if len(self.config.get("logs", [])) > max_logs:
+                self.config["logs"] = self.config["logs"][-max_logs:]
         # Only save if config_path exists and is writable
         try:
             if self.config_path and self.config_path.parent.exists():
@@ -365,13 +381,16 @@ class ConfigManager:
         return log_entry
 
     def get_logs(self, limit: int = None) -> list:
-        logs = self.config.get("logs", [])
-        if limit:
-            return logs[-limit:]
-        return logs
+        """Return a **copy** of the logs list to avoid concurrent modification."""
+        with self._logs_lock:
+            logs = self.config.get("logs", [])
+            if limit:
+                return copy.deepcopy(logs[-limit:])
+            return copy.deepcopy(logs)
 
     def clear_logs(self):
-        self.config["logs"] = []
+        with self._logs_lock:
+            self.config["logs"] = []
         self.save()
 
     # --- UI Settings ---
