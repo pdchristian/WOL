@@ -6,7 +6,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Optional
 
 from wol_app.network_scanner import find_interface_for_device
 
@@ -42,13 +42,17 @@ def _run_subprocess_safe(command, timeout=5, **kwargs):
         raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}")
 
 
-class WOLEngine:
+from PyQt6.QtCore import QObject, pyqtSignal
+
+class WOLEngine(QObject):
     """Handles Wake-on-LAN magic packets, device status checks, and scheduling."""
 
+    schedule_fired = pyqtSignal(str, str)  # (device_id, action)
+
     def __init__(self, config_manager):
+        super().__init__()
         self.config = config_manager
         self._scheduler_timer = None
-        self._scheduler_callback = None
         # Map of device_id -> last known status
         self._device_status = {}
 
@@ -218,13 +222,8 @@ class WOLEngine:
 
     # --- Scheduler ---
 
-    def start_scheduler(self, callback: Callable[[str, str], None]):
-        """
-        Start the scheduling timer.
-        Callback receives (device_id, action) when a scheduled action should fire.
-        Action is either "wake" or "shutdown".
-        """
-        self._scheduler_callback = callback
+    def start_scheduler(self):
+        """Start the scheduling timer (every 60 seconds)."""
         self._run_scheduler_check()
 
     def stop_scheduler(self):
@@ -235,6 +234,10 @@ class WOLEngine:
 
     def _run_scheduler_check(self):
         """Check schedules and re-arm timer for next minute."""
+        # Cancel any pending timer before starting a new one
+        if self._scheduler_timer:
+            self._scheduler_timer.cancel()
+
         now = datetime.now()
         current_day = now.strftime("%a")  # e.g. "Mon"
         current_hour = now.hour
@@ -254,18 +257,16 @@ class WOLEngine:
                     action = schedule.get("action", "wake")
                     # Verify device still exists
                     if self.config.get_device_by_id(device_id):
-                        if self._scheduler_callback:
-                            action_log = "AUTO_WAKE" if action == "wake" else "AUTO_SHUTDOWN"
-                            action_desc = "wake" if action == "wake" else "shutdown"
-                            self.config.add_log(
-                                "Scheduler", action_log, "TRIGGERED",
-                                f"Scheduled {action_desc} for device {device_id}"
-                            )
-                            self._scheduler_callback(device_id, action)
+                        action_log = "AUTO_WAKE" if action == "wake" else "AUTO_SHUTDOWN"
+                        action_desc = "wake" if action == "wake" else "shutdown"
+                        self.config.add_log(
+                            "Scheduler", action_log, "TRIGGERED",
+                            f"Scheduled {action_desc} for device {device_id}"
+                        )
+                        # Emit signal to safely dispatch to main Qt thread
+                        self.schedule_fired.emit(device_id, action)
 
-        # Re-arm for next check (every 60 seconds)
-        if self._scheduler_timer:
-            self._scheduler_timer.cancel()
+        # Re-arm timer for next 60-second check
         self._scheduler_timer = threading.Timer(60.0, self._run_scheduler_check)
         self._scheduler_timer.daemon = True
         self._scheduler_timer.start()

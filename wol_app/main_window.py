@@ -101,7 +101,8 @@ class MainWindow(QMainWindow):
 
         # Start scheduler (skip in headless mode)
         if not HEADLESS_MODE:
-            self.engine.start_scheduler(self._on_schedule_fired)
+            self.engine.schedule_fired.connect(self._on_schedule_fired)
+            self.engine.start_scheduler()
 
         # Auto-check for updates on startup (skip if no display/headless mode)
         if not HEADLESS_MODE:
@@ -679,7 +680,7 @@ class MainWindow(QMainWindow):
                 cmd = rf'net use \\{ip}\IPC$'
             
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=15
+                cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=15
             )
             
             if result.returncode != 0:
@@ -692,7 +693,7 @@ class MainWindow(QMainWindow):
             # Step 2: Execute remote shutdown
             cmd = rf'shutdown /m \\{ip} /s /t 0 /f'
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=30
+                cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30
             )
             
             if result.returncode == 0:

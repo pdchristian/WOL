@@ -31,6 +31,7 @@ class ScheduleDialog(QDialog):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.itemDoubleClicked.connect(lambda item: self._edit_schedule())
 
         # Buttons
         btn_layout = QHBoxLayout()

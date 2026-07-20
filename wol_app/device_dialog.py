@@ -240,6 +240,7 @@ class DeviceManagerDialog(QDialog):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSortingEnabled(True)
+        self.table.itemDoubleClicked.connect(lambda item: self._edit_device())
 
         layout.addLayout(sort_layout)
 
