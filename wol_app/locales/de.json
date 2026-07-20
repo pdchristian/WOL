@@ -247,7 +247,7 @@
   "status.check_in_progress": "Statusüberprüfung läuft...",
   "status.checking": "Geräte werden überprüft...",
   "status.cleaning": "Lösche bestehende Verbindung zu {device_name}...",
-  "status.connecting": "Verbinde mit {device_name} ({device_ip})...",
+  "status.connecting": "Verbinde mit {name} ({ip})...",
   "status.deleting_connection": "Verbindung zu {name} wird gelöscht...",
   "status.device_not_found": "Gerät mit ID {device_id} nicht gefunden",
   "status.ready": "Bereit",

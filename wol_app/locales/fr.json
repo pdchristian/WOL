@@ -247,7 +247,7 @@
   "status.check_in_progress": "Vérification de l'état en cours...",
   "status.checking": "Vérification des appareils...",
   "status.cleaning": "Fermeture de la connexion à {device_name}...",
-  "status.connecting": "Connexion à {device_name} ({device_ip})...",
+  "status.connecting": "Connexion à {name} ({ip})...",
   "status.deleting_connection": "Suppression de la connexion à {name}...",
   "status.device_not_found": "Appareil avec l'ID {device_id} non trouvé",
   "status.ready": "Prêt",
