@@ -1,6 +1,5 @@
 """Wake-on-LAN Engine - Magic packet sending, ping checks, scheduling."""
 
-import re
 import socket
 import subprocess
 import threading
@@ -8,41 +7,10 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from wol_app.network_scanner import find_interface_for_device
-
-
-def _validate_ip(ip: str) -> bool:
-    """Validate IPv4 addresses with strict regex."""
-    ipv4_pattern = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-    return bool(re.match(ipv4_pattern, ip))
-
-
-def _validate_mac(mac: str) -> bool:
-    """Validate MAC addresses with strict regex."""
-    mac_pattern = r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$'
-    return bool(re.match(mac_pattern, mac))
-
-
-def _run_subprocess_safe(command, timeout=5, **kwargs):
-    """Safe execution of subprocess with strict limits."""
-    try:
-        # Set default security options
-        safe_kwargs = {
-            'stdout': subprocess.PIPE,
-            'stderr': subprocess.PIPE,
-            'timeout': timeout,
-            'shell': False,  # CRITICAL: shell=False prevents command injection
-            **kwargs
-        }
-        result = subprocess.run(command, **safe_kwargs)
-        return result
-    except subprocess.TimeoutExpired:
-        raise TimeoutError(f"Command timed out: {' '.join(command)}")
-    except Exception as e:
-        raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}")
-
-
 from PyQt6.QtCore import QObject, pyqtSignal
+
+from wol_app.network_scanner import find_interface_for_device
+from wol_app.utils import validate_ip, validate_mac, run_subprocess_safe
 
 class WOLEngine(QObject):
     """Handles Wake-on-LAN magic packets, device status checks, and scheduling."""
@@ -61,7 +29,7 @@ class WOLEngine(QObject):
     @staticmethod
     def _create_magic_packet(mac: str) -> bytes:
         """Create a Wake-on-LAN magic packet."""
-        if not _validate_mac(mac):
+        if not validate_mac(mac):
             raise ValueError(f"Invalid MAC address: {mac}")
         # Clean MAC - remove separators
         clean_mac = mac.replace(":", "").replace("-", "")
@@ -108,7 +76,7 @@ class WOLEngine(QObject):
                 return False, error_msg
 
             # Validate broadcast IP
-            if broadcast_ip not in ["255.255.255.255"] and not _validate_ip(broadcast_ip):
+            if broadcast_ip not in ["255.255.255.255"] and not validate_ip(broadcast_ip):
                 error_msg = f"Invalid broadcast IP: {broadcast_ip}"
                 self.config.add_log(name, "WAKE", "ERROR", error_msg)
                 return False, error_msg
@@ -118,7 +86,7 @@ class WOLEngine(QObject):
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
             # Bind to the correct local interface so the packet goes out the right NIC
-            if local_ip and _validate_ip(local_ip):
+            if local_ip and validate_ip(local_ip):
                 try:
                     sock.bind((local_ip, 0))
                 except Exception as e:
@@ -172,7 +140,7 @@ class WOLEngine(QObject):
         if not ip:
             status = "unknown"
             message = f"No IP configured for {name}. Add an IP to enable ping checks."
-        elif not _validate_ip(ip):
+        elif not validate_ip(ip):
             status = "unknown"
             message = f"Invalid IP configured for {name}."
         else:
@@ -183,7 +151,7 @@ class WOLEngine(QObject):
                 kwargs = {}
                 if subprocess.os.name == "nt":
                     kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-                result = _run_subprocess_safe(
+                result = run_subprocess_safe(
                     ["ping", param, "1", ip],
                     timeout=5,
                     **kwargs,

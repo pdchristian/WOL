@@ -4,6 +4,8 @@ Shows release notes when a new version is available and provides
 buttons to download, dismiss, or skip the update.
 """
 
+from _thread import lock
+from io import BufferedWriter
 import json
 import os
 import subprocess
@@ -11,6 +13,7 @@ import sys
 import tempfile
 import threading
 from datetime import datetime
+from typing import Any
 
 from PyQt6.QtCore import QUrl, QTimer, Qt
 from PyQt6.QtGui import QDesktopServices
@@ -54,15 +57,15 @@ def _launch_installer_safe(temp_path: str) -> bool:
 class UpdateAvailableDialog(QDialog):
     """Dialog shown when a new version is detected."""
 
-    def __init__(self, release_info: dict, current_version: str, parent=None):
+    def __init__(self, release_info: dict, current_version: str, parent=None) -> None:
         super().__init__(parent)
         self.release_info = release_info
-        self.current_version = current_version
+        self.current_version: str = current_version
         self.setWindowTitle(Translations.tr("update_dialog.title"))
         self.setMinimumSize(520, 420)
         self._setup_ui()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         # Title with version info
@@ -80,7 +83,7 @@ class UpdateAvailableDialog(QDialog):
         published_at = self.release_info.get("published_at", "")
         if published_at:
             try:
-                dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+                dt: datetime = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
                 date_label = QLabel(f"{Translations.tr('update_dialog.published_at')}: {dt.strftime('%d.%m.%Y')}")
                 date_label.setStyleSheet("padding: 4px;")
                 layout.addWidget(date_label)
@@ -119,11 +122,11 @@ class UpdateAvailableDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
-    def _reject_without_skip(self):
+    def _reject_without_skip(self) -> None:
         """Close dialog without marking version as skipped."""
         self.reject()
 
-    def _download_and_install(self):
+    def _download_and_install(self) -> None:
         """Download the latest installer .exe and launch it."""
         assets = self.release_info.get("assets", [])
         installer_asset = None
@@ -168,9 +171,9 @@ class UpdateAvailableDialog(QDialog):
             "downloaded": 0,
             "total": 0,
         }
-        self._download_lock = threading.Lock()
+        self._download_lock: lock = threading.Lock()
 
-        def download_worker(url, state, lock):
+        def download_worker(url, state, lock) -> None:
             """Download in background thread and update state dict."""
             fd = -1
             try:
@@ -182,7 +185,7 @@ class UpdateAvailableDialog(QDialog):
 
                     fd, temp_path = tempfile.mkstemp(suffix=".exe")
                     try:
-                        with os.fdopen(fd, "wb") as f:
+                        with os.fdopen(fd, "wb") as f: BufferedWriter:
                             fd = -1  # fd now owned by the file object
                             while True:
                                 chunk = response.read(65536)
@@ -200,7 +203,7 @@ class UpdateAvailableDialog(QDialog):
 
                 with lock:
                     state["temp_path"] = temp_path
-            except Exception as e:
+            except Exception as e: Exception:
                 with lock:
                     state["error"] = str(e)
                 if fd >= 0:
@@ -225,17 +228,17 @@ class UpdateAvailableDialog(QDialog):
         self._poll_timer.timeout.connect(self._on_poll_progress)
         self._poll_timer.start(200)  # Update every 200ms
 
-    def _on_poll_progress(self):
+    def _on_poll_progress(self) -> None:
         """Poll download state from background thread and update UI."""
-        state = getattr(self, '_download_state', None)
+        state: Any | None = getattr(self, '_download_state', None)
         if not state:
             return
 
-        progress = getattr(self, '_progress', None)
+        progress: Any | None = getattr(self, '_progress', None)
         if not progress:
             return
 
-        lock = getattr(self, '_download_lock', threading.Lock())
+        lock: Any | lock = getattr(self, '_download_lock', threading.Lock())
         with lock:
             total = state.get("total", 0)
             downloaded = state.get("downloaded", 0)
@@ -259,25 +262,25 @@ class UpdateAvailableDialog(QDialog):
                 self._on_download_finished(temp_path)
             return
 
-    def _open_github(self):
+    def _open_github(self) -> None:
         """Open the GitHub release page in browser."""
         tag_name = self.release_info.get("tag_name", "")
-        url = QUrl.fromUserInput(f"https://github.com/pdchristian/WOL/releases/tag/{tag_name}")
+        url: QUrl = QUrl.fromUserInput(f"https://github.com/pdchristian/WOL/releases/tag/{tag_name}")
         QDesktopServices.openUrl(url)
 
-    def _on_download_finished(self, temp_path: str):
+    def _on_download_finished(self, temp_path: str) -> None:
         """Schedule shutdown sequence on main Qt thread to avoid race conditions."""
         if hasattr(self, '_progress') and self._progress:
             self._progress.close()
 
         # Store installer path for deferred execution on main thread
-        self._installer_path = temp_path
+        self._installer_path: str = temp_path
 
         # Schedule shutdown on the main Qt event loop — ensures closeEvent
         # can properly stop QThread workers before exit
         QTimer.singleShot(100, self._perform_shutdown)
 
-    def _perform_shutdown(self):
+    def _perform_shutdown(self) -> None:
         """Execute on main Qt thread: launch installer → close dialog → exit.
 
         IMPORTANT: The installer MUST be launched BEFORE closing the dialog.
@@ -290,7 +293,7 @@ class UpdateAvailableDialog(QDialog):
         fully alive, then close cleanly afterward.
         """
         # 1. Launch installer FIRST — while dialog is still fully alive
-        success = _launch_installer_safe(self._installer_path)
+        success: bool = _launch_installer_safe(self._installer_path)
 
         # 2. Close the dialog (this triggers exec() → return on MainWindow)
         self.accept()
@@ -300,7 +303,7 @@ class UpdateAvailableDialog(QDialog):
         if success:
             QApplication.instance().exit(0)
 
-    def _on_download_error(self, message: str):
+    def _on_download_error(self, message: str) -> None:
         """Handle download failure."""
         if hasattr(self, '_progress') and self._progress:
             self._progress.close()
@@ -308,13 +311,13 @@ class UpdateAvailableDialog(QDialog):
 class UpdateInfoDialog(QDialog):
     """Simple confirmation dialog when the user is already on the latest version."""
 
-    def __init__(self, current_version: str, parent=None):
+    def __init__(self, current_version: str, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(Translations.tr("update_info.title"))
         self.setMinimumWidth(380)
         self._setup_ui(current_version)
 
-    def _setup_ui(self, version: str):
+    def _setup_ui(self, version: str) -> None:
         layout = QVBoxLayout(self)
 
         icon_label = QLabel("✅")
@@ -341,13 +344,13 @@ class UpdateInfoDialog(QDialog):
 class UpdateErrorDialog(QDialog):
     """Shown when the update check itself fails (network error, etc.)."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(Translations.tr("update_error.title"))
         self.setMinimumWidth(380)
         self._setup_ui()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         icon_label = QLabel("⚠️")

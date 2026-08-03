@@ -1,9 +1,11 @@
 """Network Scan Dialog - Discover and add devices from the local network."""
 
+from typing import Any
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QProgressBar, QWidget, QCheckBox, QGroupBox,
+    QProgressBar, QWidget, QCheckBox, QGroupBox, StandardButton,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import QFont, QPalette, QColor
@@ -17,21 +19,21 @@ class ScanWorker(QObject):
     progress = pyqtSignal(str, int, int)  # message, current, total
     finished = pyqtSignal(list)
 
-    def __init__(self, interfaces: list, timeout: int = 1):
+    def __init__(self, interfaces: list, timeout: int = 1) -> None:
         super().__init__()
         self.interfaces = interfaces
-        self.timeout = timeout
+        self.timeout: int = timeout
 
-    def run(self):
+    def run(self) -> None:
         all_results = []
         seen_ips = set()
 
         for iface in self.interfaces:
-            iface_msg = Translations.tr("scan.scanning_subnet", ip=iface["ip"])
+            iface_msg: str = Translations.tr("scan.scanning_subnet", ip=iface["ip"])
             self.progress.emit(iface_msg, 0, 0)
 
             try:
-                def on_progress(current, total, msg):
+                def on_progress(current, total, msg) -> None:
                     self.progress.emit(msg, current, total)
 
                 hosts = scan_subnet(
@@ -42,7 +44,7 @@ class ScanWorker(QObject):
                     if host["ipv4"] not in seen_ips:
                         seen_ips.add(host["ipv4"])
                         all_results.append(host)
-            except Exception as e:
+            except Exception as e: Exception:
                 self.progress.emit(
                     Translations.tr("scan.error_interface", ip=iface["ip"], error=str(e)), 0, 0
                 )
@@ -56,9 +58,9 @@ class ScanWorker(QObject):
 class NetworkScanDialog(QDialog):
     """Dialog to scan the network and display discovered devices."""
 
-    def __init__(self, config_manager, parent=None):
+    def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
-        self.config = config_manager
+        self.config: Any = config_manager
         self.setWindowTitle(Translations.tr("scan_dialog.title"))
         self.setMinimumSize(800, 500)
 
@@ -72,7 +74,7 @@ class NetworkScanDialog(QDialog):
         """Return list of local network interfaces."""
         return get_local_interfaces()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         # --- Network selection group ---
@@ -126,7 +128,7 @@ class NetworkScanDialog(QDialog):
             Translations.tr("scan_dialog.col.ipv6"),
             Translations.tr("scan_dialog.col.mac"),
         ])
-        header = self.table.horizontalHeader()
+        header: QHeaderView | None = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
@@ -135,7 +137,7 @@ class NetworkScanDialog(QDialog):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        palette = self.table.palette()
+        palette: QPalette = self.table.palette()
         palette.setColor(QPalette.ColorRole.AlternateBase, QColor(75, 75, 75))
         self.table.setPalette(palette)
         layout.addWidget(self.table)
@@ -164,7 +166,7 @@ class NetworkScanDialog(QDialog):
                 selected.append(iface)
         return selected
 
-    def _start_scan(self):
+    def _start_scan(self) -> None:
         """Start network scan in background thread."""
         selected = self._get_selected_interfaces()
         if not selected:
@@ -199,7 +201,7 @@ class NetworkScanDialog(QDialog):
         self._scan_worker.finished.connect(self._scan_thread.quit)
         self._scan_worker.finished.connect(self._scan_worker.deleteLater)
 
-        def on_thread_finished():
+        def on_thread_finished() -> None:
             self._scan_thread.deleteLater()
             self._scan_thread = None
             self.scan_btn.setEnabled(True)  # Re-enable scan button
@@ -207,14 +209,14 @@ class NetworkScanDialog(QDialog):
         self._scan_thread.finished.connect(on_thread_finished)
         self._scan_thread.start()
 
-    def _on_scan_progress(self, message: str, current: int, total: int):
+    def _on_scan_progress(self, message: str, current: int, total: int) -> None:
         """Update progress display."""
         self.info_label.setText(message)
         if total > 0:
             percentage = int((current / total) * 100)
             self.progress_bar.setValue(percentage)
 
-    def _on_scan_finished(self, results: list):
+    def _on_scan_finished(self, results: list) -> None:
         """Populate table with scan results."""
         self.progress_bar.setValue(100)
         self.info_label.setText(
@@ -223,7 +225,7 @@ class NetworkScanDialog(QDialog):
         self.table.setRowCount(0)
 
         for host in results:
-            row = self.table.rowCount()
+            row: int = self.table.rowCount()
             self.table.insertRow(row)
 
             hostname_item = QTableWidgetItem(host.get("hostname", "Unknown"))
@@ -241,9 +243,9 @@ class NetworkScanDialog(QDialog):
 
         self.add_btn.setEnabled(len(results) > 0)
 
-    def _add_selected_device(self):
+    def _add_selected_device(self) -> None:
         """Add the selected device to configured devices."""
-        current_row = self.table.currentRow()
+        current_row: int = self.table.currentRow()
         if current_row < 0:
             QMessageBox.information(
                 self, Translations.tr("scan_dialog.no_selection"),
@@ -251,13 +253,13 @@ class NetworkScanDialog(QDialog):
             )
             return
 
-        hostname = self.table.item(current_row, 0).text()
-        ipv4 = self.table.item(current_row, 1).text()
-        mac = self.table.item(current_row, 3).text()
+        hostname: str = self.table.item(current_row, 0).text()
+        ipv4: str = self.table.item(current_row, 1).text()
+        mac: str = self.table.item(current_row, 3).text()
 
         # Check if MAC is valid (not "Unknown")
         if mac == "Unknown":
-            reply = QMessageBox.question(
+            reply: QMessageBox.StandardButton = QMessageBox.question(
                 self, Translations.tr("scan_dialog.mac_unknown"),
                 Translations.tr(
                     "scan_dialog.mac_unknown_msg", hostname=hostname, ip=ipv4

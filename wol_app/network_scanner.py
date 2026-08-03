@@ -1,12 +1,13 @@
 """Network Scanner - Discover active devices on the local subnet."""
 
-import re
 import socket
 import struct
 import subprocess
 import platform
 import threading
 from typing import List, Dict, Optional
+
+from wol_app.utils import validate_ip, validate_mac, run_subprocess_safe
 
 
 # Safety constants
@@ -15,53 +16,13 @@ MAX_SCAN_TIMEOUT = 2
 MAX_SUBNET_SIZE = 256
 
 
-def _validate_ip(ip: str) -> bool:
-    """Validate IPv4 addresses with strict regex."""
-    ipv4_pattern = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-    return bool(re.match(ipv4_pattern, ip))
-
-
-def _validate_mac(mac: str) -> bool:
-    """Validate MAC addresses with strict regex."""
-    mac_pattern = r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$'
-    return bool(re.match(mac_pattern, mac))
-
-
-def _run_subprocess_safe(command, timeout=5, **kwargs):
-    """Safe execution of subprocess with strict limits."""
-    try:
-        # Set default security options
-        # Only set stdout/stderr explicitly if capture_output is NOT used
-        # (capture_output and explicit stdout/stderr are mutually exclusive in Python)
-        if kwargs.get('capture_output') is not None:
-            safe_kwargs = {
-                'timeout': timeout,
-                'shell': False,  # CRITICAL: shell=False prevents command injection
-                **kwargs
-            }
-        else:
-            safe_kwargs = {
-                'stdout': subprocess.PIPE,
-                'stderr': subprocess.PIPE,
-                'timeout': timeout,
-                'shell': False,  # CRITICAL: shell=False prevents command injection
-                **kwargs
-            }
-        result = subprocess.run(command, **safe_kwargs)
-        return result
-    except subprocess.TimeoutExpired:
-        raise TimeoutError(f"Command timed out: {' '.join(command)}")
-    except Exception as e:
-        raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}")
-
-
 def get_local_interfaces() -> List[Dict]:
     """Get all local network interfaces with their IPv4 addresses and netmasks."""
     interfaces = []
     try:
         # Use ipconfig on Windows to get interface info
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        result = _run_subprocess_safe(
+        result = run_subprocess_safe(
             ["ipconfig"],
             timeout=10,
             creationflags=creation_flags,
@@ -121,14 +82,14 @@ def get_subnet_range(ip: str, netmask: str) -> List[str]:
 
 def ping_host(ip: str, timeout: int = 1) -> bool:
     """Ping a host and return True if reachable."""
-    if not _validate_ip(ip):
+    if not validate_ip(ip):
         return False
     if timeout > MAX_SCAN_TIMEOUT:
         timeout = MAX_SCAN_TIMEOUT
     try:
         param = "-n" if platform.system() == "Windows" else "-c"
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        result = _run_subprocess_safe(
+        result = run_subprocess_safe(
             ["ping", param, "1", "-w", str(timeout * 1000), ip],
             timeout=timeout + 1,
             creationflags=creation_flags,
@@ -142,7 +103,7 @@ def ping_host(ip: str, timeout: int = 1) -> bool:
 
 def resolve_hostname(ip: str) -> Optional[str]:
     """Try to resolve hostname for an IP address."""
-    if not _validate_ip(ip):
+    if not validate_ip(ip):
         return None
     try:
         hostname, _, _ = socket.gethostbyaddr(ip)
@@ -155,11 +116,11 @@ def get_ipv6_from_nd(mac: str) -> Optional[str]:
     """Look up IPv6 address for a MAC from the Neighbor Discovery cache."""
     if not mac or mac == "Unknown":
         return None
-    if not _validate_mac(mac):
+    if not validate_mac(mac):
         return None
     try:
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        result = _run_subprocess_safe(
+        result = run_subprocess_safe(
             ["netsh", "interface", "ipv6", "show", "neighbors"],
             timeout=5,
             creationflags=creation_flags,
@@ -186,13 +147,13 @@ def get_ipv6_from_nd(mac: str) -> Optional[str]:
 
 def get_mac_from_arp(ip: str) -> Optional[str]:
     """Get MAC address from ARP cache after pinging the host."""
-    if not _validate_ip(ip):
+    if not validate_ip(ip):
         return None
     # First ping to ensure ARP entry exists
     try:
         param = "-n" if platform.system() == "Windows" else "-c"
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        _run_subprocess_safe(
+        run_subprocess_safe(
             ["ping", param, "1", "-w", "1000", ip],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2,
             creationflags=creation_flags
@@ -203,7 +164,7 @@ def get_mac_from_arp(ip: str) -> Optional[str]:
     # Read ARP table
     try:
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-        result = _run_subprocess_safe(
+        result = run_subprocess_safe(
             ["arp", "-a"],
             timeout=5,
             creationflags=creation_flags,
@@ -271,7 +232,7 @@ def find_interface_for_device(target_ip: str) -> Optional[Dict]:
 def scan_subnet(ip: str, netmask: str, timeout: int = 1,
                 progress_callback=None) -> List[Dict]:
     """Scan a subnet for active hosts with safety limits."""
-    if not _validate_ip(ip):
+    if not validate_ip(ip):
         return []
     if timeout > MAX_SCAN_TIMEOUT:
         timeout = MAX_SCAN_TIMEOUT

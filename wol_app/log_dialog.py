@@ -1,9 +1,12 @@
 """Log Viewer Dialog for Wake-on-LAN Application."""
 
+from datetime import datetime
+from typing import Any
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-    QMessageBox,
+    QMessageBox, StandardButton,
 )
 from PyQt6.QtCore import Qt
 from wol_app.translations import Translations
@@ -12,15 +15,15 @@ from wol_app.translations import Translations
 class LogDialog(QDialog):
     """Dialog to view wake attempt logs/history."""
 
-    def __init__(self, config_manager, parent=None):
+    def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
-        self.config = config_manager
+        self.config: Any = config_manager
         self.setWindowTitle(Translations.tr("log_dialog.title"))
         self.setMinimumSize(700, 450)
         self._setup_ui()
         self._refresh_table()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         # Log Table
@@ -33,7 +36,7 @@ class LogDialog(QDialog):
             Translations.tr("log_dialog.col.status"),
             Translations.tr("log_dialog.col.message"),
         ])
-        header = self.table.horizontalHeader()
+        header: QHeaderView | None = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(0, 180)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -62,19 +65,19 @@ class LogDialog(QDialog):
         layout.addWidget(self.table)
         layout.addLayout(btn_layout)
 
-    def _refresh_table(self):
+    def _refresh_table(self) -> None:
         from datetime import datetime
         self.table.setRowCount(0)
         logs = self.config.get_logs()
 
         for log in reversed(logs):  # Show newest first
-            row = self.table.rowCount()
+            row: int = self.table.rowCount()
             self.table.insertRow(row)
 
             # Parse timestamp
             try:
-                ts = datetime.fromisoformat(log["timestamp"])
-                ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
+                ts: datetime = datetime.fromisoformat(log["timestamp"])
+                ts_str: str = ts.strftime("%Y-%m-%d %H:%M:%S")
             except (ValueError, KeyError):
                 ts_str = log.get("timestamp", "Unknown")
 
@@ -94,8 +97,8 @@ class LogDialog(QDialog):
 
             self.table.setItem(row, 4, QTableWidgetItem(log.get("message", Translations.tr("log_dialog.unknown"))))
 
-    def _clear_logs(self):
-        reply = QMessageBox.question(
+    def _clear_logs(self) -> None:
+        reply: QMessageBox.StandardButton = QMessageBox.question(
             self, Translations.tr("log_dialog.confirm_clear.title"),
             Translations.tr("log_dialog.confirm_clear.message"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,

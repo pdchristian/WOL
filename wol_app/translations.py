@@ -8,7 +8,7 @@ Supported languages: en, de, fr, es.
 import importlib.resources
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 class Translations:
@@ -21,22 +21,23 @@ class Translations:
         trans.set_language("fr")   # Switch to French at runtime
     """
 
-    _languages = {
+    _languages: dict[str, str] = {
         "en": "English",
         "de": "Deutsch",
         "fr": "Français",
         "es": "Español",
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         if not hasattr(Translations, "_instance"):
             Translations._current_language = "en"
             Translations._translations: dict = {}
-            Translations._instance = self
+            Translations._english_translations: dict = {}
+            Translations._instance: Self = self
 
     def __getattr__(self, name):
         # Forward all attribute access to the singleton instance
-        instance = getattr(Translations, "_instance", None)
+        instance: Any | None = getattr(Translations, "_instance", None)
         if instance is None:
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
         return getattr(instance, name)
@@ -51,21 +52,38 @@ class Translations:
             # Fallback for older Python versions
             return Path(__file__).parent / "locales" / filename
 
-    def load(self, language: str) -> None:
-        """Load the locale file for *language* (falls back to English)."""
-        Translations._current_language = language
-        locale_file = self._locale_path(f"{language}.json")
+    @staticmethod
+    def _load_locale_dict(filename: str) -> dict:
+        """Load a locale JSON file into a dict."""
+        locale_file: Path = Translations._locale_path(filename)
         try:
-            text = locale_file.read_text(encoding="utf-8")
-            Translations._translations = json.loads(text)
-        except FileNotFoundError:
-            # Fall back to English if requested locale is missing
-            fallback = self._locale_path("en.json")
-            Translations._translations = json.loads(
-                fallback.read_text(encoding="utf-8")
-            )
-        except json.JSONDecodeError:
-            Translations._translations = {}
+            text: str = locale_file.read_text(encoding="utf-8")
+            return json.loads(text)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def load(self, language: str) -> None:
+        """Load the locale file for *language* (falls back to English).
+
+        Also pre-loads English translations into a cache so the fallback
+        in ``tr()`` never touches the disk again.
+        """
+        Translations._current_language: str = language
+
+        # Pre-load English into the cache (only once per session)
+        if not Translations._english_translations:
+            Translations._english_translations = self._load_locale_dict("en.json")
+
+        # Load the requested locale
+        if language == "en":
+            Translations._translations = Translations._english_translations.copy()
+        else:
+            locale_dict = self._load_locale_dict(f"{language}.json")
+            if locale_dict:
+                Translations._translations = locale_dict
+            else:
+                # Fall back to English if requested locale is missing
+                Translations._translations = Translations._english_translations.copy()
 
     @staticmethod
     def tr(key: str, **format_kwargs) -> str:
@@ -73,7 +91,7 @@ class Translations:
 
         Fallback chain:
         1. Current language translation
-        2. English translation (if current language is not English)
+        2. Cached English translation (if current language is not English)
         3. The key string itself
 
         Supports ``.format()``-style placeholders via keyword arguments, e.g.:
@@ -81,14 +99,9 @@ class Translations:
         """
         value = Translations._translations.get(key)
 
-        # Fallback to English if key not found and current language is not English
+        # Fallback to cached English if key not found and current language is not English
         if value is None and Translations._current_language != "en":
-            try:
-                en_locale = Path(__file__).parent / "locales" / "en.json"
-                en_translations = json.loads(en_locale.read_text(encoding="utf-8"))
-                value = en_translations.get(key)
-            except (FileNotFoundError, json.JSONDecodeError):
-                pass
+            value = Translations._english_translations.get(key)
 
         # Final fallback: return the key itself
         if value is None:
@@ -103,19 +116,20 @@ class Translations:
     @staticmethod
     def set_language(language: str) -> None:
         """Switch the active language at runtime (reloads locale file)."""
-        Translations._current_language = language
-        locale_file = Path(__file__).parent / "locales" / f"{language}.json"
-        try:
-            text = locale_file.read_text(encoding="utf-8")
-            Translations._translations = json.loads(text)
-        except FileNotFoundError:
-            # Fall back to English if requested locale is missing
-            fallback = Path(__file__).parent / "locales" / "en.json"
-            Translations._translations = json.loads(
-                fallback.read_text(encoding="utf-8")
-            )
-        except json.JSONDecodeError:
-            Translations._translations = {}
+        Translations._current_language: str = language
+
+        # Ensure English is cached
+        if not Translations._english_translations:
+            Translations._english_translations = Translations._load_locale_dict("en.json")
+
+        if language == "en":
+            Translations._translations = Translations._english_translations.copy()
+        else:
+            locale_dict = Translations._load_locale_dict(f"{language}.json")
+            if locale_dict:
+                Translations._translations = locale_dict
+            else:
+                Translations._translations = Translations._english_translations.copy()
 
     @staticmethod
     def get_language() -> str:

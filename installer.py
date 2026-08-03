@@ -20,6 +20,8 @@ import winreg
 from datetime import datetime
 from pathlib import Path
 
+from wol_app.utils import get_resource_path
+
 
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
@@ -38,18 +40,6 @@ def is_admin():
         return ctypes.windll.shell32.IsUserAnAdmin()
     except Exception:
         return False
-
-
-def get_resource_path(filename):
-    """Get path to bundled resource file."""
-    if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS
-    else:
-        # Development mode - look in dist folder
-        base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dist')
-        if not os.path.exists(os.path.join(base_path, filename)):
-            base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, filename)
 
 
 def remove_user_data():

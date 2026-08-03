@@ -1,10 +1,12 @@
 """Schedule Management Dialog for Wake-on-LAN Application."""
 
+from typing import Any
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QMessageBox, QGroupBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QComboBox, QSpinBox, QGridLayout,
+    QComboBox, QSpinBox, QGridLayout, StandardButton,
 )
 from PyQt6.QtCore import Qt
 from .translations import Translations
@@ -13,15 +15,15 @@ from .translations import Translations
 class ScheduleDialog(QDialog):
     """Dialog for managing scheduled wake-ups."""
 
-    def __init__(self, config_manager, parent=None):
+    def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
-        self.config = config_manager
+        self.config: Any = config_manager
         self.setWindowTitle(Translations.tr("schedule_dialog.title"))
         self.setMinimumSize(650, 450)
         self._setup_ui()
         self._refresh_table()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         # Schedule Table
@@ -35,7 +37,7 @@ class ScheduleDialog(QDialog):
             Translations.tr("schedule_dialog.col.enabled"),
             ""
         ])
-        header = self.table.horizontalHeader()
+        header: QHeaderView | None = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -63,24 +65,24 @@ class ScheduleDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def _days_to_string(self, days: list) -> str:
-        day_names = {
+        day_names: dict[str, str] = {
             "Mon": "Mon", "Tue": "Tue", "Wed": "Wed",
             "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun"
         }
         return ", ".join(day_names.get(d, d) for d in days) if days else "Every day"
 
-    def _refresh_table(self):
+    def _refresh_table(self) -> None:
         self.table.setRowCount(0)
         for schedule in self.config.get_schedules():
-            row = self.table.rowCount()
+            row: int = self.table.rowCount()
             self.table.insertRow(row)
 
             device = self.config.get_device_by_id(schedule.get("device_id", ""))
             device_name = device["name"] if device else Translations.tr("schedule_dialog.unknown_device")
 
-            time_str = f"{schedule.get('hour', 0):02d}:{schedule.get('minute', 0):02d}"
-            action_str = Translations.tr("schedule_dialog.action.wake") if schedule.get("action", "wake") == "wake" else Translations.tr("schedule_dialog.action.shutdown")
-            days_str = self._days_to_string(schedule.get("days", []))
+            time_str: str = f"{schedule.get('hour', 0):02d}:{schedule.get('minute', 0):02d}"
+            action_str: str = Translations.tr("schedule_dialog.action.wake") if schedule.get("action", "wake") == "wake" else Translations.tr("schedule_dialog.action.shutdown")
+            days_str: str = self._days_to_string(schedule.get("days", []))
 
             self.table.setItem(row, 0, QTableWidgetItem(device_name))
             self.table.setItem(row, 1, QTableWidgetItem(time_str))
@@ -94,7 +96,7 @@ class ScheduleDialog(QDialog):
             )
             self.table.setCellWidget(row, 4, enabled_check)
 
-    def _add_schedule(self):
+    def _add_schedule(self) -> None:
         devices = self.config.get_devices()
         if not devices:
             QMessageBox.warning(self, Translations.tr("schedule_dialog.no_devices"), Translations.tr("schedule_dialog.no_devices_msg"))
@@ -104,8 +106,8 @@ class ScheduleDialog(QDialog):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh_table()
 
-    def _edit_schedule(self):
-        current_row = self.table.currentRow()
+    def _edit_schedule(self) -> None:
+        current_row: int = self.table.currentRow()
         if current_row < 0:
             QMessageBox.information(self, Translations.tr("schedule_dialog.select_schedule"), Translations.tr("schedule_dialog.select_schedule_edit_msg"))
             return
@@ -120,8 +122,8 @@ class ScheduleDialog(QDialog):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._refresh_table()
 
-    def _delete_schedule(self):
-        current_row = self.table.currentRow()
+    def _delete_schedule(self) -> None:
+        current_row: int = self.table.currentRow()
         if current_row < 0:
             QMessageBox.information(self, Translations.tr("schedule_dialog.select_schedule"), Translations.tr("schedule_dialog.select_schedule_delete_msg"))
             return
@@ -131,7 +133,7 @@ class ScheduleDialog(QDialog):
             return
         schedule = schedules[current_row]
 
-        reply = QMessageBox.question(
+        reply: QMessageBox.StandardButton = QMessageBox.question(
             self, Translations.tr("schedule_dialog.confirm_delete"),
             Translations.tr("schedule_dialog.confirm_delete_msg"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -145,7 +147,7 @@ class ScheduleDialog(QDialog):
 class ScheduleEditDialog(QDialog):
     """Dialog for adding/editing a single schedule."""
 
-    def __init__(self, config_manager, devices: list, schedule: dict = None, parent=None):
+    def __init__(self, config_manager, devices: list, schedule: dict = None, parent=None) -> None:
         super().__init__(parent)
         self.config = config_manager
         self.devices = devices
@@ -156,7 +158,7 @@ class ScheduleEditDialog(QDialog):
         if schedule:
             self._fill_form(schedule)
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
@@ -224,7 +226,7 @@ class ScheduleEditDialog(QDialog):
         layout.addWidget(self.enabled_check)
         layout.addLayout(btn_layout)
 
-    def _fill_form(self, schedule: dict):
+    def _fill_form(self, schedule: dict) -> None:
         for i in range(self.device_combo.count()):
             if self.device_combo.itemData(i) == schedule.get("device_id", ""):
                 self.device_combo.setCurrentIndex(i)
@@ -239,13 +241,13 @@ class ScheduleEditDialog(QDialog):
             cb.setChecked(day in selected_days)
         self.enabled_check.setChecked(schedule.get("enabled", True))
 
-    def _save(self):
+    def _save(self) -> None:
         device_id = self.device_combo.currentData()
-        action = self.action_combo.currentData() or "wake"
-        hour = self.hour_spin.value()
-        minute = self.minute_spin.value()
+        action: Any | str = self.action_combo.currentData() or "wake"
+        hour: int = self.hour_spin.value()
+        minute: int = self.minute_spin.value()
         days = [day for day, cb in self.day_checks.items() if cb.isChecked()]
-        enabled = self.enabled_check.isChecked()
+        enabled: bool = self.enabled_check.isChecked()
 
         if not days:
             QMessageBox.warning(self, Translations.tr("schedule_edit.no_days"), Translations.tr("schedule_edit.no_days_msg"))

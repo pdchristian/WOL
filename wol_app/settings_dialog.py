@@ -1,6 +1,7 @@
 """Settings Dialog for Wake-on-LAN Application."""
 
 import re
+from typing import Any
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QMessageBox, QSpinBox, QComboBox,
@@ -26,15 +27,15 @@ def _validate_port(port: int) -> bool:
 class SettingsDialog(QDialog):
     """Dialog for configuring network and broadcast settings."""
 
-    def __init__(self, config_manager, parent=None):
+    def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
-        self.config = config_manager
+        self.config: Any = config_manager
         self.setWindowTitle(Translations.tr("settings.title"))
         self.setMinimumWidth(400)
         self._setup_ui()
         self._load_settings()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         # Network settings form
@@ -105,7 +106,7 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         layout.addLayout(btn_layout)
 
-    def _load_settings(self):
+    def _load_settings(self) -> None:
         net = self.config.get_network_settings()
         self.broadcast_ip_input.setText(net.get("broadcast_ip", "255.255.255.255"))
         self.broadcast_port_input.setValue(net.get("broadcast_port", 9))
@@ -126,9 +127,9 @@ class SettingsDialog(QDialog):
                 self.update_interval_combo.setCurrentIndex(idx)
                 break
 
-    def _save(self):
-        ip = self.broadcast_ip_input.text().strip()
-        port = self.broadcast_port_input.value()
+    def _save(self) -> None:
+        ip: str = self.broadcast_ip_input.text().strip()
+        port: int = self.broadcast_port_input.value()
 
         # Input-Validierung
         if not ip:
@@ -157,7 +158,7 @@ class SettingsDialog(QDialog):
             Translations.set_language(selected_lang)
 
         # Save update settings
-        auto_check = self.auto_update_checkbox.isChecked()
+        auto_check: bool = self.auto_update_checkbox.isChecked()
         interval_hours = self.update_interval_combo.currentData()
         self.config.update_update_settings(
             auto_check_enabled=auto_check,
