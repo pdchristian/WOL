@@ -103,7 +103,7 @@ class DownloadWorker(QObject):
                 # Write to a temp file with .exe extension
                 fd, temp_path = tempfile.mkstemp(suffix=".exe")
                 try:
-                    with open(fd, "wb") as f: BufferedWriter:
+                    with open(fd, "wb") as f:
                         while True:
                             chunk = response.read(65536)
                             if not chunk:
@@ -118,7 +118,7 @@ class DownloadWorker(QObject):
                     raise
 
             self.finished.emit(temp_path)
-        except Exception as e: Exception:
+        except Exception as e:
             self.error.emit(str(e))
 
 

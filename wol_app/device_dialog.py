@@ -8,9 +8,9 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QMessageBox, QGroupBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QFileDialog, QComboBox, StandardButton,
+    QFileDialog, QComboBox,
 )
-from PyQt6.QtCore import Qt, SortOrder, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from wol_app.translations import Translations
@@ -379,7 +379,7 @@ class DeviceManagerDialog(QDialog):
             })
 
         try:
-            with open(file_path, "w") as f: TextIOWrapper:
+            with open(file_path, "w") as f:
                 json.dump(export_data, f, indent=2)
             QMessageBox.information(
                 self,
@@ -402,9 +402,9 @@ class DeviceManagerDialog(QDialog):
             return
 
         try:
-            with open(file_path, "r") as f: TextIOWrapper:
+            with open(file_path, "r") as f:
                 import_data = json.load(f)
-        except (json.JSONDecodeError, IOError) as e: json.JSONDecodeError | OSError:
+        except (json.JSONDecodeError, IOError) as e:
             QMessageBox.critical(
                 self,
                 Translations.tr("dialog.import.error.title"),

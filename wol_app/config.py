@@ -120,7 +120,7 @@ class ConfigManager:
                 self.config_path: Path = config_dir / "config.json"
                 # Fix ownership if running elevated (e.g., started as admin)
                 _fix_directory_permissions(config_dir)
-            except Exception as e: Exception:
+            except Exception as e:
                 raise RuntimeError(f"Failed to initialize config directory: {e}")
         else:
             # Validate custom path
@@ -132,7 +132,7 @@ class ConfigManager:
         """Load configuration from file, auto-decrypt passwords and migrate old format."""
         if self.config_path.exists():
             try:
-                with open(self.config_path, "r") as f: TextIOWrapper:
+                with open(self.config_path, "r") as f:
                     data = json.load(f)
                 # Deep merge with defaults to ensure all keys exist
                 merged = self._deep_merge(DEFAULT_CONFIG.copy(), data)
@@ -164,12 +164,12 @@ class ConfigManager:
         self._encrypt_devices(self.config)
         try:
             # Save with secure permissions
-            with open(self.config_path, "w") as f: TextIOWrapper:
+            with open(self.config_path, "w") as f:
                 json.dump(self.config, f, indent=2)
             # Set restrictive permissions (owner read/write only)
             if hasattr(os, 'chmod'):
                 os.chmod(self.config_path, 0o600)
-        except Exception as e: Exception:
+        except Exception as e:
             raise RuntimeError(f"Failed to save configuration: {e}")
         # Decrypt back so in-memory state stays plaintext
         self._decrypt_devices(self.config)
@@ -345,7 +345,7 @@ class ConfigManager:
                 # Ensure directory exists
                 self.config_path.parent.mkdir(parents=True, exist_ok=True)
                 self.save()
-        except Exception as e: Exception:
+        except Exception as e:
             # Don't fail if logging fails - just lose the log entry
             # This prevents DoS via log flooding attacks on the filesystem
             pass

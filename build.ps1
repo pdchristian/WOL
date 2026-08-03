@@ -1,7 +1,7 @@
 # ============================================================================
 # Wake-on-LAN Manager - Build Script
-# Version: 1.5.1 - Scheduler Fix Edition
-# Date: 2026-07-21
+# Version: 1.5.2 - Refactoring Edition
+# Date: 2026-08-03
 # ============================================================================
 # This script builds the application, uninstaller, and final installer.
 # Run with: .\build.ps1
@@ -10,7 +10,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "=======================================" -ForegroundColor Cyan
-Write-Host "  Wake-on-LAN Manager v1.5.1 - Build Script" -ForegroundColor Cyan
+Write-Host "  Wake-on-LAN Manager v1.5.2 - Build Script" -ForegroundColor Cyan
 Write-Host "  Scheduler Fix Edition" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""

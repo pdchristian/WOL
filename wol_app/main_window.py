@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
     QMessageBox, QMenuBar, QMenu, QStatusBar, QGroupBox, QFrame,
-    QDialog, QTextEdit, StandardButton,
+    QDialog, QTextEdit,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import QAction, QFont, QIcon, QPalette, QColor
@@ -576,7 +576,7 @@ class MainWindow(QMainWindow):
             )
             self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
             return
-        except Exception as e: Exception:
+        except Exception as e:
             self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Connection error: {str(e)}")
             QMessageBox.critical(
                 self, Translations.tr("dialog.connection_error.title"),
@@ -610,7 +610,7 @@ class MainWindow(QMainWindow):
             )
             self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
             return
-        except Exception as e: Exception:
+        except Exception as e:
             self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Shutdown error: {str(e)}")
             QMessageBox.critical(
                 self, Translations.tr("dialog.shutdown_error.title"),
@@ -713,7 +713,7 @@ class MainWindow(QMainWindow):
             msg: str = Translations.tr("status.scheduled_shutdown_timeout", name=device_name)
             self.statusBar().showMessage(msg, 5000)
             self.config.add_log(device_name, "SHUTDOWN", "TIMEOUT", msg)
-        except Exception as e: Exception:
+        except Exception as e:
             msg: str = Translations.tr("status.scheduled_shutdown_error", name=device_name, error=str(e))
             self.statusBar().showMessage(msg, 5000)
             self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)

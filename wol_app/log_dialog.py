@@ -6,7 +6,7 @@ from typing import Any
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-    QMessageBox, StandardButton,
+    QMessageBox,
 )
 from PyQt6.QtCore import Qt
 from wol_app.translations import Translations

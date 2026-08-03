@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QMessageBox, QGroupBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QComboBox, QSpinBox, QGridLayout, StandardButton,
+    QComboBox, QSpinBox, QGridLayout,
 )
 from PyQt6.QtCore import Qt
 from .translations import Translations

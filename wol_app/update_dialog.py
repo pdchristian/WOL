@@ -185,7 +185,7 @@ class UpdateAvailableDialog(QDialog):
 
                     fd, temp_path = tempfile.mkstemp(suffix=".exe")
                     try:
-                        with os.fdopen(fd, "wb") as f: BufferedWriter:
+                        with os.fdopen(fd, "wb") as f:
                             fd = -1  # fd now owned by the file object
                             while True:
                                 chunk = response.read(65536)
@@ -203,7 +203,7 @@ class UpdateAvailableDialog(QDialog):
 
                 with lock:
                     state["temp_path"] = temp_path
-            except Exception as e: Exception:
+            except Exception as e:
                 with lock:
                     state["error"] = str(e)
                 if fd >= 0:

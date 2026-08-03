@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 1.5.1 - Auto-Update Fix Edition
+# Wake-on-LAN Manager Version 1.5.2 - Refactoring Edition
 # Generated on 2026-07-15
 
 a = Analysis(
@@ -9,7 +9,24 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('icon.ico', '.'), ('wol_app/locales/*.json', 'wol_app/locales')],
-    hiddenimports=[],
+    hiddenimports=[
+        'wol_app',
+        'wol_app.__init__',
+        'wol_app.config',
+        'wol_app.crypto',
+        'wol_app.device_dialog',
+        'wol_app.log_dialog',
+        'wol_app.main_window',
+        'wol_app.network_scan_dialog',
+        'wol_app.network_scanner',
+        'wol_app.schedule_dialog',
+        'wol_app.settings_dialog',
+        'wol_app.translations',
+        'wol_app.update_dialog',
+        'wol_app.updater',
+        'wol_app.utils',
+        'wol_app.wol_engine',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

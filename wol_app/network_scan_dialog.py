@@ -5,7 +5,7 @@ from typing import Any
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QProgressBar, QWidget, QCheckBox, QGroupBox, StandardButton,
+    QProgressBar, QWidget, QCheckBox, QGroupBox,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import QFont, QPalette, QColor
@@ -44,7 +44,7 @@ class ScanWorker(QObject):
                     if host["ipv4"] not in seen_ips:
                         seen_ips.add(host["ipv4"])
                         all_results.append(host)
-            except Exception as e: Exception:
+            except Exception as e:
                 self.progress.emit(
                     Translations.tr("scan.error_interface", ip=iface["ip"], error=str(e)), 0, 0
                 )

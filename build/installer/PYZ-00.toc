@@ -338,6 +338,8 @@
   ('urllib.parse',
    'C:\\Users\\cp\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\urllib\\parse.py',
    'PYMODULE'),
+  ('wol_app', 'C:\\Python\\WOL\\wol_app\\__init__.py', 'PYMODULE'),
+  ('wol_app.utils', 'C:\\Python\\WOL\\wol_app\\utils.py', 'PYMODULE'),
   ('zipfile',
    'C:\\Users\\cp\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\zipfile\\__init__.py',
    'PYMODULE'),
