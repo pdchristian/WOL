@@ -3,12 +3,11 @@
 import base64
 import ctypes
 import os
-from typing import Optional
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 # Module-level cache for the master key (loaded once per session)
-_master_key: Optional[bytes] = None
+_master_key: bytes | None = None
 
 
 def _secure_clear_memory(data: str) -> None:
@@ -31,12 +30,11 @@ def _get_dpapi_protected_key() -> bytes:
     can decrypt the stored key. We store the encrypted blob in
     ~/.wol_app/master_key.dat alongside config.json.
     """
-    import ctypes
     import ctypes.wintypes as wintypes
     from pathlib import Path
 
     # --- DPAPI structures ---
-    class DATA_BLOB(ctypes.Structure):
+    class DATA_BLOB(ctypes.Structure):  # noqa: N801 - ctypes structure name kept as-is
         _fields_ = [
             ("cbData", wintypes.DWORD),
             ("pbData", ctypes.POINTER(ctypes.c_char)),

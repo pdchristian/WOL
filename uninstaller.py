@@ -16,9 +16,11 @@ import subprocess
 import winreg
 from pathlib import Path
 
+from wol_app import __version__
+
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
-APP_VERSION = "1.5.0"
+APP_VERSION = __version__
 APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"
 REG_KEY_NAME = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN"

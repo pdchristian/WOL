@@ -2,13 +2,23 @@
 
 from typing import Any
 
+from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QProgressBar, QWidget, QCheckBox, QGroupBox,
+    QCheckBox,
+    QDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMenu,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject
-from PyQt6.QtGui import QFont, QPalette, QColor
 
 from wol_app.network_scanner import get_local_interfaces, scan_subnet
 from wol_app.translations import Translations
@@ -140,6 +150,9 @@ class NetworkScanDialog(QDialog):
         palette: QPalette = self.table.palette()
         palette.setColor(QPalette.ColorRole.AlternateBase, QColor(75, 75, 75))
         self.table.setPalette(palette)
+        # Right-click context menu on the scan results table
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_scan_context_menu)
         layout.addWidget(self.table)
 
         # Buttons
@@ -161,7 +174,7 @@ class NetworkScanDialog(QDialog):
         """Return list of interfaces the user checked."""
         selected = []
         all_ifaces = self._get_interfaces()
-        for cb, iface in zip(self.net_checkboxes, all_ifaces):
+        for cb, iface in zip(self.net_checkboxes, all_ifaces, strict=False):
             if cb.isChecked():
                 selected.append(iface)
         return selected
@@ -242,6 +255,22 @@ class NetworkScanDialog(QDialog):
             self.table.setItem(row, 3, mac_item)
 
         self.add_btn.setEnabled(len(results) > 0)
+
+    def _show_scan_context_menu(self, pos) -> None:
+        """Show the right-click context menu for the scan result at *pos*."""
+        row: int = self.table.rowAt(pos.y())
+        if row < 0:
+            return
+        # Select the row under the cursor so the action applies to it
+        self.table.selectRow(row)
+        self.table.setCurrentCell(row, 0)
+
+        menu = QMenu(self)
+        menu.addAction(
+            Translations.tr("scan_dialog.button.add_selected"),
+            self._add_selected_device,
+        )
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _add_selected_device(self) -> None:
         """Add the selected device to configured devices."""

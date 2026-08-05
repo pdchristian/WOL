@@ -1,27 +1,35 @@
 """Device Management Dialog for Wake-on-LAN Application."""
 
-from _io import TextIOWrapper
-from io import TextIOWrapper
 import json
 from typing import Any
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QPushButton, QMessageBox, QGroupBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QFileDialog, QComboBox,
-)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
 
-from wol_app.translations import Translations
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+)
+
+from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.network_scan_dialog import NetworkScanDialog
-from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
+from wol_app.translations import Translations
 from wol_app.utils import (
+    get_ip_key,
     validate_device_name,
     validate_mac,
-    validate_username,
     validate_password,
-    get_ip_key,
+    validate_username,
 )
 
 
@@ -386,7 +394,7 @@ class DeviceManagerDialog(QDialog):
                 Translations.tr("dialog.export.success.title"),
                 Translations.tr("dialog.export.success.message", count=len(export_data), path=file_path),
             )
-        except IOError as e:
+        except OSError as e:
             QMessageBox.critical(
                 self,
                 Translations.tr("dialog.export.error.title"),
@@ -402,9 +410,9 @@ class DeviceManagerDialog(QDialog):
             return
 
         try:
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 import_data = json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
+        except (OSError, json.JSONDecodeError) as e:
             QMessageBox.critical(
                 self,
                 Translations.tr("dialog.import.error.title"),

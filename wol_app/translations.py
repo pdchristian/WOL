@@ -8,7 +8,7 @@ Supported languages: en, de, fr, es.
 import importlib.resources
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Self
 
 
 class Translations:

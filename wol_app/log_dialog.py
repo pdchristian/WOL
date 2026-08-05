@@ -1,14 +1,22 @@
 """Log Viewer Dialog for Wake-on-LAN Application."""
 
+import csv
 from datetime import datetime
 from typing import Any
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-    QMessageBox,
-)
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+)
+
 from wol_app.translations import Translations
 
 
@@ -51,10 +59,13 @@ class LogDialog(QDialog):
         btn_layout = QHBoxLayout()
         refresh_btn = QPushButton(Translations.tr("log_dialog.button.refresh"))
         refresh_btn.clicked.connect(self._refresh_table)
+        export_btn = QPushButton(Translations.tr("log_dialog.button.export"))
+        export_btn.clicked.connect(self._export_logs)
         clear_btn = QPushButton(Translations.tr("log_dialog.button.clear_logs"))
         clear_btn.clicked.connect(self._clear_logs)
 
         btn_layout.addWidget(refresh_btn)
+        btn_layout.addWidget(export_btn)
         btn_layout.addWidget(clear_btn)
         btn_layout.addStretch()
 
@@ -66,7 +77,6 @@ class LogDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def _refresh_table(self) -> None:
-        from datetime import datetime
         self.table.setRowCount(0)
         logs = self.config.get_logs()
 
@@ -96,6 +106,43 @@ class LogDialog(QDialog):
             self.table.setItem(row, 3, status_item)
 
             self.table.setItem(row, 4, QTableWidgetItem(log.get("message", Translations.tr("log_dialog.unknown"))))
+
+    def _export_logs(self) -> None:
+        """Export the current log entries to a CSV file."""
+        logs = self.config.get_logs()
+        if not logs:
+            QMessageBox.information(self, Translations.tr("log_dialog.title"),
+                                    Translations.tr("log_dialog.unknown"))
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, Translations.tr("log_dialog.button.export"),
+            "wol_logs.csv", "CSV Files (*.csv)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["timestamp", "device_name", "action", "status", "message"])
+                for log in logs:
+                    writer.writerow([
+                        log.get("timestamp", ""),
+                        log.get("device_name", ""),
+                        log.get("action", ""),
+                        log.get("status", ""),
+                        log.get("message", ""),
+                    ])
+            QMessageBox.information(
+                self, Translations.tr("log_dialog.title"),
+                Translations.tr("log_dialog.export.success", path=path),
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, Translations.tr("log_dialog.title"),
+                Translations.tr("log_dialog.export.error", error=str(e)),
+            )
 
     def _clear_logs(self) -> None:
         reply: QMessageBox.StandardButton = QMessageBox.question(

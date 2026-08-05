@@ -2,11 +2,23 @@
 
 import re
 from typing import Any
+
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
-    QLabel, QLineEdit, QPushButton, QMessageBox, QSpinBox, QComboBox,
-    QCheckBox, QGroupBox,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
 )
+
 from wol_app.translations import Translations
 
 
@@ -86,6 +98,19 @@ class SettingsDialog(QDialog):
         update_group.setLayout(update_layout)
         layout.addWidget(update_group)
 
+        # --- Log Settings Group ---
+        log_group = QGroupBox(Translations.tr("settings.group.logs"))
+        log_layout = QFormLayout()
+
+        self.max_logs_input = QSpinBox()
+        self.max_logs_input.setRange(10, 10000)
+        self.max_logs_input.setSingleStep(50)
+        self.max_logs_input.setValue(100)
+        log_layout.addRow(Translations.tr("settings.label.max_logs"), self.max_logs_input)
+
+        log_group.setLayout(log_layout)
+        layout.addWidget(log_group)
+
         # Info label
         info_label = QLabel(
             Translations.tr("settings.info.text")
@@ -127,6 +152,9 @@ class SettingsDialog(QDialog):
                 self.update_interval_combo.setCurrentIndex(idx)
                 break
 
+        # Load log settings
+        self.max_logs_input.setValue(self.config.get_max_logs())
+
     def _save(self) -> None:
         ip: str = self.broadcast_ip_input.text().strip()
         port: int = self.broadcast_port_input.value()
@@ -164,6 +192,9 @@ class SettingsDialog(QDialog):
             auto_check_enabled=auto_check,
             check_interval_hours=interval_hours,
         )
+
+        # Save log settings
+        self.config.set_max_logs(self.max_logs_input.value())
 
         QMessageBox.information(self, Translations.tr("dialog.saved.title"), Translations.tr("dialog.saved.message"))
         self.accept()

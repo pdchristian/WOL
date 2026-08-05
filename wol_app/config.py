@@ -1,65 +1,106 @@
 """Wake-on-LAN Application - Configuration Manager"""
 
-from _io import TextIOWrapper
-from _thread import lock
 import copy
-from io import TextIOWrapper
 import json
+import logging
 import os
-import re
 import threading
+from _thread import lock
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from wol_app.crypto import encrypt_password, decrypt_password, is_encrypted
+from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.utils import (
     validate_device_name,
-    validate_username,
-    validate_password,
     validate_mac,
+    validate_password,
+    validate_username,
 )
+
+# ── Logging ─────────────────────────────────────────────────────────────────
+# Lightweight file-based logger so security-relevant failures are never
+# silently swallowed. Writes to ~/.wol_app/app.log alongside config.json.
+_logger = logging.getLogger("wol_app.config")
+if not _logger.handlers:
+    _logger.setLevel(logging.INFO)
+    try:
+        _log_dir = Path.home() / ".wol_app"
+        _log_dir.mkdir(exist_ok=True, mode=0o700)
+        _handler = logging.FileHandler(_log_dir / "app.log", encoding="utf-8")
+        _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        _logger.addHandler(_handler)
+    except Exception:
+        # If logging cannot be initialized, fall back to stderr only
+        _handler = logging.StreamHandler()
+        _handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        _logger.addHandler(_handler)
+
+
+# Marker file name used to skip redundant permission fixes on subsequent starts
+_PERMISSIONS_FIXED_MARKER = "permissions_fixed.marker"
 
 
 def _fix_directory_permissions(config_dir: Path) -> None:
     """Ensure the config directory is accessible by the current user.
+
     When the app runs elevated (as admin), the directory may be created
     with admin-only permissions, blocking normal user access.
-    
+
+    **Lazy behaviour:** the fix only runs once per user profile (tracked by a
+    marker file). It is re-run automatically only if a later ``PermissionError``
+    indicates the directory became inaccessible again.
+
     Steps:
     1. Take ownership recursively (takeown)
     2. Reset DACL (icacls /reset)
-    3. Grant full control to current user (icacls /grant:f)
+    3. Grant full control to current user (icacls /grant)
     """
-    try:
-        import subprocess
-        username: str = os.environ.get("USERNAME", "")
-        userdomain: str = os.environ.get("USERDOMAIN", ".")
-        if not username or os.name != 'nt':
-            return
+    marker = config_dir / _PERMISSIONS_FIXED_MARKER
+    if marker.exists():
+        return  # Already fixed for this profile — skip subprocess calls
 
-        user_account: str = f"{userdomain}\\{username}"
+    if os.name != "nt":
+        return
 
+    import subprocess
+    username: str = os.environ.get("USERNAME", "")
+    userdomain: str = os.environ.get("USERDOMAIN", ".")
+    if not username:
+        return
+
+    user_account: str = f"{userdomain}\\{username}"
+
+    steps = [
         # Step 1: Take ownership recursively
-        subprocess.run(
-            ["takeown", "/F", str(config_dir), "/R", "/D", "Y"],
-            capture_output=True, timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-
+        (["takeown", "/F", str(config_dir), "/R", "/D", "Y"], "takeown"),
         # Step 2: Reset DACL
-        subprocess.run(
-            ["icacls", str(config_dir), "/reset", "/T", "/C", "/Q"],
-            capture_output=True, timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-
+        (["icacls", str(config_dir), "/reset", "/T", "/C", "/Q"], "icacls/reset"),
         # Step 3: Grant full control to current user recursively
-        subprocess.run(
-            ["icacls", str(config_dir), "/grant:f", user_account, "/T", "/C", "/Q"],
-            capture_output=True, timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
+        (["icacls", str(config_dir), "/grant", user_account, "/T", "/C", "/Q"], "icacls/grant"),
+    ]
+
+    for cmd, label in steps:
+        try:
+            subprocess.run(
+                cmd, capture_output=True, timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except Exception as e:
+            _logger.warning("Permission fix step '%s' failed: %s", label, e)
+            return  # Do not write marker — fix will retry next start
+
+    try:
+        marker.write_text("fixed", encoding="utf-8")
+    except Exception as e:
+        _logger.warning("Could not write permission marker: %s", e)
+
+
+def _clear_permissions_fix_marker(config_dir: Path) -> None:
+    """Remove the marker so the permission fix re-runs on next start."""
+    marker = config_dir / _PERMISSIONS_FIXED_MARKER
+    try:
+        if marker.exists():
+            marker.unlink()
     except Exception:
         pass
 
@@ -104,7 +145,7 @@ DEFAULT_CONFIG = {
 class ConfigManager:
     """Manages application configuration stored in a JSON file."""
 
-    def __init__(self, config_path: Optional[str] = None) -> None:
+    def __init__(self, config_path: str | None = None) -> None:
         # Thread-safe access to logs
         self._logs_lock: lock = threading.Lock()
         
@@ -118,13 +159,15 @@ class ConfigManager:
                     raise ValueError(f"Invalid config directory path: {config_dir}")
                 config_dir.mkdir(exist_ok=True, mode=0o700)  # Restrictive permissions
                 self.config_path: Path = config_dir / "config.json"
-                # Fix ownership if running elevated (e.g., started as admin)
+                self._config_dir = config_dir
+                # Fix ownership only once per profile (lazy, see marker)
                 _fix_directory_permissions(config_dir)
             except Exception as e:
-                raise RuntimeError(f"Failed to initialize config directory: {e}")
+                raise RuntimeError(f"Failed to initialize config directory: {e}") from e
         else:
             # Validate custom path
             self.config_path: Path = _sanitize_path(config_path)
+            self._config_dir = self.config_path.parent
 
         self.config = self._load()
 
@@ -132,16 +175,38 @@ class ConfigManager:
         """Load configuration from file, auto-decrypt passwords and migrate old format."""
         if self.config_path.exists():
             try:
-                with open(self.config_path, "r") as f:
+                with open(self.config_path) as f:
                     data = json.load(f)
                 # Deep merge with defaults to ensure all keys exist
                 merged = self._deep_merge(DEFAULT_CONFIG.copy(), data)
                 # Auto-decrypt passwords on load
                 self._decrypt_devices(merged)
+                # Detect legacy plaintext passwords and re-encrypt them (Phase 1.3)
+                self.config = merged
+                self._reencrypt_plaintext_passwords(merged)
                 return merged
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError) as e:
+                _logger.warning("Could not load config file: %s", e)
                 return DEFAULT_CONFIG.copy()
         return DEFAULT_CONFIG.copy()
+
+    def _reencrypt_plaintext_passwords(self, config: dict) -> None:
+        """Detect legacy plaintext passwords and persist them encrypted.
+
+        Older versions stored passwords unencrypted in JSON. On load we
+        encrypt them immediately so nothing sensitive is written back to
+        disk as plaintext.
+        """
+        plaintext_found = False
+        for dev in config.get("devices", []):
+            pw = dev.get("password", "")
+            if pw and not is_encrypted(pw):
+                plaintext_found = True
+                dev["password"] = encrypt_password(pw)
+
+        if plaintext_found:
+            _logger.warning("Legacy plaintext passwords detected — re-encrypting on save")
+            self.save()
 
     @staticmethod
     def _deep_merge(base: dict, override: dict) -> dict:
@@ -169,8 +234,14 @@ class ConfigManager:
             # Set restrictive permissions (owner read/write only)
             if hasattr(os, 'chmod'):
                 os.chmod(self.config_path, 0o600)
+        except PermissionError as e:
+            # Directory became inaccessible — re-run the permission fix on next start
+            _logger.warning("Permission error while saving config: %s", e)
+            _clear_permissions_fix_marker(self._config_dir)
+            raise RuntimeError(f"Failed to save configuration (permission error): {e}") from e
         except Exception as e:
-            raise RuntimeError(f"Failed to save configuration: {e}")
+            _logger.error("Failed to save configuration: %s", e)
+            raise RuntimeError(f"Failed to save configuration: {e}") from e
         # Decrypt back so in-memory state stays plaintext
         self._decrypt_devices(self.config)
 
@@ -179,7 +250,7 @@ class ConfigManager:
     def get_devices(self) -> list:
         return self.config.get("devices", [])
 
-    def add_device(self, name: str, mac: str) -> Optional[dict]:
+    def add_device(self, name: str, mac: str) -> dict | None:
         """Add a new device. Returns the device dict or None if inputs invalid."""
         import uuid
         if not validate_mac(mac):
@@ -228,13 +299,13 @@ class ConfigManager:
                 return True
         return False
 
-    def get_device_by_id(self, device_id: str) -> Optional[dict]:
+    def get_device_by_id(self, device_id: str) -> dict | None:
         for dev in self.config.get("devices", []):
             if dev["id"] == device_id:
                 return dev
         return None
 
-    def get_device_by_name(self, name: str) -> Optional[dict]:
+    def get_device_by_name(self, name: str) -> dict | None:
         for dev in self.config.get("devices", []):
             if dev["name"] == name:
                 return dev
@@ -345,7 +416,7 @@ class ConfigManager:
                 # Ensure directory exists
                 self.config_path.parent.mkdir(parents=True, exist_ok=True)
                 self.save()
-        except Exception as e:
+        except Exception:
             # Don't fail if logging fails - just lose the log entry
             # This prevents DoS via log flooding attacks on the filesystem
             pass
@@ -377,6 +448,20 @@ class ConfigManager:
         self.config.setdefault("ui", {})
         self.config["ui"]["device_sort_column"] = sort_column
         self.config["ui"]["device_sort_order"] = sort_order
+        self.save()
+
+    # --- Column Widths ---
+
+    def get_column_widths(self) -> list[int]:
+        """Return the saved device-table column widths (empty if unset)."""
+        ui_config = self.config.get("ui", {})
+        widths = ui_config.get("device_column_widths", [])
+        return [int(w) for w in widths] if isinstance(widths, list) else []
+
+    def set_column_widths(self, widths: list[int]) -> None:
+        """Persist the device-table column widths."""
+        self.config.setdefault("ui", {})
+        self.config["ui"]["device_column_widths"] = [int(w) for w in widths]
         self.save()
 
     # --- Encryption Helpers ---
@@ -441,6 +526,18 @@ class ConfigManager:
             settings["auto_check_enabled"] = bool(auto_check_enabled)
         if check_interval_hours is not None:
             settings["check_interval_hours"] = int(check_interval_hours)
+        self.save()
+
+    # --- Log Settings ---
+
+    def get_max_logs(self) -> int:
+        """Return the configured maximum number of log entries."""
+        return int(self.config.get("max_logs", 100))
+
+    def set_max_logs(self, max_logs: int) -> None:
+        """Set the maximum number of log entries to keep."""
+        max_logs = max(10, min(int(max_logs), 10000))  # Clamp for safety
+        self.config["max_logs"] = max_logs
         self.save()
 
     # --- Validation ---

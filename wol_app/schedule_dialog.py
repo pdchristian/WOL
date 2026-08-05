@@ -3,12 +3,23 @@
 from typing import Any
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QPushButton, QMessageBox, QGroupBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QComboBox, QSpinBox, QGridLayout,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
 )
-from PyQt6.QtCore import Qt
+
 from .translations import Translations
 
 

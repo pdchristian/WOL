@@ -3,14 +3,16 @@
 import socket
 import subprocess
 import threading
-import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from wol_app.network_scanner import find_interface_for_device
-from wol_app.utils import validate_ip, validate_mac, run_subprocess_safe
+from wol_app.utils import run_subprocess_safe, validate_ip, validate_mac
+
+# Max concurrent magic packets when waking all devices (network-friendly)
+MAX_CONCURRENT_WAKE = 8
 
 class WOLEngine(QObject):
     """Handles Wake-on-LAN magic packets, device status checks, and scheduling."""
@@ -101,7 +103,7 @@ class WOLEngine(QObject):
             # Log without sensitive MAC address
             self.config.add_log(name, "WAKE", "SUCCESS", f"Magic packet sent{info_suffix}")
             return True, f"Wake packet sent to {name}."
-        except socket.error as e:
+        except OSError as e:
             error_msg = f"Socket error: {e}"
             self.config.add_log(name, "WAKE", "ERROR", error_msg)
             return False, error_msg
@@ -111,14 +113,35 @@ class WOLEngine(QObject):
             return False, error_msg
 
     def wake_all(self) -> list[tuple[str, bool, str]]:
-        """Wake all enabled devices. Returns list of (name, success, message)."""
-        results = []
-        for device in self.config.get_devices():
-            if device.get("enabled", True):
-                success, msg = self.send_wake_packet(device["id"])
-                results.append((device["name"], success, msg))
-                time.sleep(0.1)  # Small delay between packets
-        return results
+        """Wake all enabled devices in parallel.
+
+        Returns list of (name, success, message) in original device order.
+        Uses a bounded thread pool so many devices are woken concurrently
+        without overwhelming the network.
+        """
+        enabled = [d for d in self.config.get_devices() if d.get("enabled", True)]
+        if not enabled:
+            return []
+
+        results: dict[str, tuple[str, bool, str]] = {}
+
+        def _wake(device_id: str) -> tuple[str, bool, str]:
+            device = self.config.get_device_by_id(device_id)
+            name = device["name"] if device else "?"
+            success, msg = self.send_wake_packet(device_id)
+            return (name, success, msg)
+
+        with ThreadPoolExecutor(max_workers=min(MAX_CONCURRENT_WAKE, len(enabled))) as pool:
+            future_map = {pool.submit(_wake, d["id"]): d["id"] for d in enabled}
+            for future in as_completed(future_map):
+                device_id = future_map[future]
+                try:
+                    results[device_id] = future.result()
+                except Exception as e:
+                    results[device_id] = ("?", False, str(e))
+
+        # Return in original order
+        return [results[d["id"]] for d in enabled]
 
     # --- Status Check (Ping) ---
 

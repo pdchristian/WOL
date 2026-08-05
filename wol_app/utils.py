@@ -7,9 +7,6 @@ utility functions used across multiple modules.
 import os
 import re
 import subprocess
-from pathlib import Path
-from typing import Optional
-
 
 # ── Validation ──────────────────────────────────────────────────────────────
 
@@ -90,10 +87,10 @@ def run_subprocess_safe(command, timeout: int = 5, **kwargs):
             }
         result = subprocess.run(command, **safe_kwargs)
         return result
-    except subprocess.TimeoutExpired:
-        raise TimeoutError(f"Command timed out: {' '.join(command)}")
+    except subprocess.TimeoutExpired as e:
+        raise TimeoutError(f"Command timed out: {' '.join(command)}") from e
     except Exception as e:
-        raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}")
+        raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}") from e
 
 
 # ── Sorting helpers ────────────────────────────────────────────────────────

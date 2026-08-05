@@ -1,14 +1,12 @@
 """Network Scanner - Discover active devices on the local subnet."""
 
+import platform
 import socket
 import struct
 import subprocess
-import platform
 import threading
-from typing import List, Dict, Optional
 
-from wol_app.utils import validate_ip, validate_mac, run_subprocess_safe
-
+from wol_app.utils import run_subprocess_safe, validate_ip, validate_mac
 
 # Safety constants
 MAX_CONCURRENT_THREADS = 16
@@ -16,11 +14,35 @@ MAX_SCAN_TIMEOUT = 2
 MAX_SUBNET_SIZE = 256
 
 
-def get_local_interfaces() -> List[Dict]:
-    """Get all local network interfaces with their IPv4 addresses and netmasks."""
+def get_local_interfaces() -> list[dict]:
+    """Get all local network interfaces with their IPv4 addresses and netmasks.
+
+    Preferred path: psutil (robust, locale-independent). Falls back to parsing
+    ``ipconfig`` output when psutil is unavailable.
+    """
+    # 1) Try psutil first — it is locale-independent and cross-platform
+    try:
+        import psutil  # type: ignore
+        interfaces = []
+        for _name, addrs in psutil.net_if_addrs().items():
+            netmask = None
+            ip = None
+            for addr in addrs:
+                if addr.family == getattr(__import__("socket"), "AF_INET", None):
+                    ip = addr.address
+                    netmask = addr.netmask
+                    break
+            if ip and netmask and not ip.startswith("127."):
+                interfaces.append({"ip": ip, "netmask": netmask})
+        return interfaces
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # 2) Fallback: parse ipconfig output (English/German/French/Spanish labels)
     interfaces = []
     try:
-        # Use ipconfig on Windows to get interface info
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         result = run_subprocess_safe(
             ["ipconfig"],
@@ -35,11 +57,15 @@ def get_local_interfaces() -> List[Dict]:
 
         for line in lines:
             line_stripped = line.strip()
-            # Support both English ("IPv4 Address") and German ("IPv4-Adresse")
-            if "ipv4" in line_stripped.lower() and ":" in line_stripped:
+            lower = line_stripped.lower()
+            # IPv4 address labels across languages
+            ipv4_keywords = ("ipv4", "adresse ipv4", "dirección ipv4", "adresse ip")
+            if any(k in lower for k in ipv4_keywords) and ":" in line_stripped:
                 current_ip = line_stripped.split(":")[-1].strip()
-            # Support both English ("Subnet Mask") and German ("Subnetzmaske")
-            if ("subnet mask" in line_stripped.lower() or "subnetzmaske" in line_stripped.lower()) and ":" in line_stripped:
+            # Subnet mask labels across languages
+            mask_keywords = ("subnet mask", "subnetzmaske", "masque de sous-réseau",
+                             "máscara de subred", "masque sous-réseau")
+            if any(k in lower for k in mask_keywords) and ":" in line_stripped:
                 current_mask = line_stripped.split(":")[-1].strip()
 
             if current_ip and current_mask:
@@ -66,7 +92,7 @@ def netmask_to_cidr(netmask: str) -> int:
         return 24
 
 
-def get_subnet_range(ip: str, netmask: str) -> List[str]:
+def get_subnet_range(ip: str, netmask: str) -> list[str]:
     """Get all IP addresses in the subnet."""
     cidr = netmask_to_cidr(netmask)
     ip_int = struct.unpack("!I", socket.inet_aton(ip))[0]
@@ -101,18 +127,97 @@ def ping_host(ip: str, timeout: int = 1) -> bool:
         return False
 
 
-def resolve_hostname(ip: str) -> Optional[str]:
-    """Try to resolve hostname for an IP address."""
+def get_dns_servers() -> list[str]:
+    """Return the configured DNS server IPs from the local system.
+
+    Parses ``ipconfig /all`` output, matching the existing locale-independent
+    parsing pattern used for interfaces. psutil does not expose DNS servers,
+    so ``ipconfig /all`` is the primary source.
+    """
+    dns_servers: list[str] = []
+    try:
+        creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+        result = run_subprocess_safe(
+            ["ipconfig", "/all"],
+            timeout=10,
+            creationflags=creation_flags,
+            capture_output=True,
+        )
+        # Decode bytes manually to survive non-ASCII / locale-specific output
+        output = result.stdout.decode("utf-8", errors="replace")
+        for line in output.splitlines():
+            lower = line.strip().lower()
+            # DNS server labels across languages (English/German/French/Spanish)
+            dns_keywords = (
+                "dns servers", "dns-server", "dns-servers",
+                "dns-server", "serveurs dns", "serveur dns",
+                "servidores dns", "servidor dns",
+            )
+            if any(k in lower for k in dns_keywords) and ":" in line:
+                value = line.split(":", 1)[1].strip()
+                # Multiple servers may be separated by commas or spaces
+                for token in value.replace(",", " ").split():
+                    # Accept IPv4 servers, or IPv6 servers (strip %scope suffix)
+                    candidate = token.split("%")[0]
+                    if validate_ip(candidate):
+                        dns_servers.append(candidate)
+                    elif ":" in candidate:
+                        try:
+                            socket.inet_pton(socket.AF_INET6, candidate)
+                            dns_servers.append(candidate)
+                        except (OSError, ValueError):
+                            continue
+    except Exception:
+        pass
+
+    return dns_servers
+
+
+def resolve_hostname(ip: str) -> str | None:
+    """Try to resolve the hostname for an IP address.
+
+    1. First uses ``socket.gethostbyaddr`` (system reverse-DNS lookup).
+    2. Falls back to querying each configured DNS server directly via
+       ``nslookup`` for the PTR record, so name resolution works even
+       when the system resolver fails.
+    """
     if not validate_ip(ip):
         return None
+
+    # 1) System reverse-DNS lookup
     try:
         hostname, _, _ = socket.gethostbyaddr(ip)
-        return hostname
+        if hostname:
+            return hostname
     except Exception:
-        return None
+        pass
+
+    # 2) Query each configured DNS server directly via nslookup
+    for dns_server in get_dns_servers():
+        try:
+            creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+            result = run_subprocess_safe(
+                ["nslookup", ip, dns_server],
+                timeout=5,
+                creationflags=creation_flags,
+                capture_output=True,
+                text=True,
+            )
+            output = result.stdout + "\n" + result.stderr
+            for line in output.splitlines():
+                lower = line.strip().lower()
+                # nslookup prints the resolved name as: "Name:   hostname"
+                if lower.startswith("name:") and ":" in line:
+                    name = line.split(":", 1)[1].strip()
+                    if name and name.lower() != ip.lower():
+                        return name
+        except Exception:
+            continue
+
+    return None
 
 
-def get_ipv6_from_nd(mac: str) -> Optional[str]:
+def get_ipv6_from_nd(mac: str) -> str | None:
     """Look up IPv6 address for a MAC from the Neighbor Discovery cache."""
     if not mac or mac == "Unknown":
         return None
@@ -145,7 +250,7 @@ def get_ipv6_from_nd(mac: str) -> Optional[str]:
     return None
 
 
-def get_mac_from_arp(ip: str) -> Optional[str]:
+def get_mac_from_arp(ip: str) -> str | None:
     """Get MAC address from ARP cache after pinging the host."""
     if not validate_ip(ip):
         return None
@@ -209,7 +314,7 @@ def ip_in_subnet(ip: str, subnet_ip: str, netmask: str) -> bool:
         return False
 
 
-def find_interface_for_device(target_ip: str) -> Optional[Dict]:
+def find_interface_for_device(target_ip: str) -> dict | None:
     """
     Find the local network interface that can reach the target IP.
     Returns dict with 'local_ip', 'netmask', and 'broadcast_ip' or None if no match.
@@ -230,7 +335,7 @@ def find_interface_for_device(target_ip: str) -> Optional[Dict]:
 
 
 def scan_subnet(ip: str, netmask: str, timeout: int = 1,
-                progress_callback=None) -> List[Dict]:
+                progress_callback=None) -> list[dict]:
     """Scan a subnet for active hosts with safety limits."""
     if not validate_ip(ip):
         return []
@@ -277,7 +382,7 @@ def scan_subnet(ip: str, netmask: str, timeout: int = 1,
     return results
 
 
-def scan_network(timeout: int = 1, progress_callback=None) -> List[Dict]:
+def scan_network(timeout: int = 1, progress_callback=None) -> list[dict]:
     """Scan all local subnets for active hosts."""
     if timeout > MAX_SCAN_TIMEOUT:
         timeout = MAX_SCAN_TIMEOUT

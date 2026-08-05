@@ -4,25 +4,37 @@ Checks GitHub Releases for a newer version and notifies the user.
 Uses only stdlib (urllib) — no external dependencies required.
 """
 
-from io import BufferedWriter
 import json
 import tempfile
-from datetime import datetime
 from typing import Any, Literal
-from urllib.request import Request, urlopen
 from urllib.error import URLError
+from urllib.request import Request, urlopen
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
 
 GITHUB_RELEASES_URL = "https://api.github.com/repos/pdchristian/WOL/releases/latest"
 USER_AGENT = "Wake-on-LAN-Manager"
 
 
 def _parse_version(version_str: str) -> tuple:
-    """Parse a version string like '1.2.3' or 'v1.2.3' into a comparable tuple."""
+    """Parse a version string like '1.2.3' or 'v1.2.3' into a comparable tuple.
+
+    Normalizes to at least 3 numeric segments (e.g. ``1.2`` -> ``(1, 2, 0)``).
+    Returns ``(0,)`` for invalid inputs so they are never treated as a valid
+    newer version.
+    """
+    if not version_str or not isinstance(version_str, str):
+        return (0,)
     try:
         clean: str = version_str.strip().lstrip("v")
-        return tuple(int(part) for part in clean.split("."))
+        parts: list[int] = [int(part) for part in clean.split(".")]
+        # Reject any non-numeric segment (e.g. "1.2.3-beta")
+        if len(parts) == 0:
+            return (0,)
+        # Normalize to at least 3 segments for stable comparisons
+        while len(parts) < 3:
+            parts.append(0)
+        return tuple(parts[:3])
     except (ValueError, AttributeError):
         return (0,)
 

@@ -20,12 +20,13 @@ import winreg
 from datetime import datetime
 from pathlib import Path
 
+from wol_app import __version__
 from wol_app.utils import get_resource_path
 
 
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
-APP_VERSION = "1.5.0"
+APP_VERSION = __version__
 APP_PUBLISHER = "Wake-on-LAN"
 APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"

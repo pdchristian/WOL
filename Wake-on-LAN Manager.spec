@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 1.5.2 - Refactoring Edition
-# Generated on 2026-07-15
+# Wake-on-LAN Manager Version 1.6.0 - Improvement Edition
+# Generated on 2026-08-05
 
 a = Analysis(
     ['run.py'],

@@ -4,33 +4,28 @@ Shows release notes when a new version is available and provides
 buttons to download, dismiss, or skip the update.
 """
 
-from _thread import lock
-from io import BufferedWriter
-import json
 import os
-import subprocess
-import sys
 import tempfile
 import threading
+from _thread import lock
 from datetime import datetime
 from typing import Any
 
-from PyQt6.QtCore import QUrl, QTimer, Qt
+from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
-    QDialog,
     QCheckBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QProgressDialog,
+    QPushButton,
     QTextBrowser,
     QVBoxLayout,
 )
 
 from .translations import Translations
-from wol_app.updater import DownloadWorker
 
 
 def _launch_installer_safe(temp_path: str) -> bool:
@@ -238,7 +233,7 @@ class UpdateAvailableDialog(QDialog):
         if not progress:
             return
 
-        lock: Any | lock = getattr(self, '_download_lock', threading.Lock())
+        lock: Any | threading.Lock = getattr(self, '_download_lock', threading.Lock())
         with lock:
             total = state.get("total", 0)
             downloaded = state.get("downloaded", 0)

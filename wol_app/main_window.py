@@ -1,38 +1,70 @@
 """Main Window for Wake-on-LAN Application."""
 
 import os
+import subprocess
 import sys
 from datetime import datetime
 from typing import Any, Literal, NoReturn
+
+from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPalette
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-    QMessageBox, QMenuBar, QMenu, QStatusBar, QGroupBox, QFrame,
-    QDialog, QTextEdit,
+    QApplication,
+    QDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QMenuBar,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSlot, QThread, pyqtSignal, QObject
-from PyQt6.QtGui import QAction, QFont, QIcon, QPalette, QColor
-import subprocess
-import shlex
 
 from wol_app import __version__
 from wol_app.config import ConfigManager
-from wol_app.translations import Translations
-from wol_app.wol_engine import WOLEngine
 from wol_app.device_dialog import DeviceManagerDialog
-from wol_app.settings_dialog import SettingsDialog
-from wol_app.schedule_dialog import ScheduleDialog
 from wol_app.log_dialog import LogDialog
 from wol_app.network_scan_dialog import NetworkScanDialog
-from wol_app.updater import UpdateChecker, check_for_updates_sync
+from wol_app.schedule_dialog import ScheduleDialog
+from wol_app.settings_dialog import SettingsDialog
+from wol_app.translations import Translations
 from wol_app.update_dialog import (
-    UpdateAvailableDialog, UpdateInfoDialog, UpdateErrorDialog,
+    UpdateAvailableDialog,
+    UpdateErrorDialog,
+    UpdateInfoDialog,
 )
+from wol_app.updater import UpdateChecker, check_for_updates_sync
 from wol_app.utils import get_ip_key, get_resource_path
+from wol_app.wol_engine import WOLEngine
 
 # Module-level registry to hold thread references until native threads truly finish
 # Prevents premature GC of QThread wrapper objects while C-level I/O is blocked
 _active_threads = []
+
+
+def _track_thread(thread: "QThread") -> None:
+    """Keep a strong reference to *thread* until it finishes, then auto-remove.
+
+    This guarantees the registry never grows unbounded even if a worker's
+    dedicated cleanup callback is missed or disconnected.
+    """
+    _active_threads.append(thread)
+
+    def _on_finished() -> None:
+        try:
+            if thread in _active_threads:
+                _active_threads.remove(thread)
+        except Exception:
+            pass
+
+    thread.finished.connect(_on_finished)
 
 # Headless/test mode: disables all background threads to avoid QThread shutdown warnings
 # Set WOL_HEADLESS=1 in test/headless environments (CI, automated tests, no display)
@@ -42,6 +74,9 @@ HEADLESS_MODE: bool = os.environ.get("WOL_HEADLESS", "").lower() in ("1", "true"
 class StatusWorker(QObject):
     """Background worker for checking device statuses without blocking the UI."""
     finished = pyqtSignal(list)  # Emits list of (device_id, name, status, msg)
+
+    # Max concurrent pings to avoid overwhelming the network
+    MAX_CONCURRENT = 16
 
     def __init__(self, engine) -> None:
         super().__init__()
@@ -53,18 +88,47 @@ class StatusWorker(QObject):
         self._cancelled = True
 
     def run(self) -> None:
-        results = []
-        for device in self.engine.config.get_devices():
-            if self._cancelled:
-                break
-            if device.get("enabled", True):
-                status, msg = self.engine.check_device_status(device["id"])
-                results.append((device["id"], device["name"], status, msg))
-        self.finished.emit(results)
+        import concurrent.futures
+        devices = [d for d in self.engine.config.get_devices() if d.get("enabled", True)]
+        if self._cancelled or not devices:
+            self.finished.emit([])
+            return
+
+        results: dict[str, tuple] = {}
+
+        def _check(device_id: str) -> tuple[str, str, str]:
+            status, msg = self.engine.check_device_status(device_id)
+            return (device_id, status, msg)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(self.MAX_CONCURRENT, len(devices))
+        ) as pool:
+            futures = {pool.submit(_check, d["id"]): d["id"] for d in devices}
+            for future in concurrent.futures.as_completed(futures):
+                if self._cancelled:
+                    break
+                device_id = futures[future]
+                try:
+                    did, status, msg = future.result()
+                    results[did] = (did, status, msg)
+                except Exception:
+                    results[device_id] = (device_id, "unknown", "Error checking status")
+
+        # Build ordered result list (device_id, name, status, msg)
+        ordered = []
+        for device in devices:
+            did = device["id"]
+            if did in results:
+                _, status, msg = results[did]
+                ordered.append((did, device["name"], status, msg))
+        self.finished.emit(ordered)
 
 
 class MainWindow(QMainWindow):
     """Main application window."""
+
+    # Minimum column width enforced while resizing (prevents columns collapsing)
+    _MIN_COLUMN_WIDTH = 50
 
     def __init__(self) -> None:
         super().__init__()
@@ -88,6 +152,9 @@ class MainWindow(QMainWindow):
         self._status_thread = None
         self._status_worker = None
         self._status_check_running = False
+
+        # Re-entrancy guard for programmatic column-width changes
+        self._updating_widths = False
 
         # Update checker references
         self._update_thread = None
@@ -118,7 +185,6 @@ class MainWindow(QMainWindow):
         # Auto-check for updates on startup (skip if no display/headless mode)
         if not HEADLESS_MODE:
             try:
-                from PyQt6.QtGui import QScreen
                 if self.screen() is not None and self.config.should_check_for_updates():
                     QTimer.singleShot(5000, self._check_for_updates_async)
             except Exception:
@@ -153,15 +219,12 @@ class MainWindow(QMainWindow):
             self._update_check_running = False
             if self._update_worker is not None:
                 self._update_worker.deleteLater()
-            # Remove from module-level registry after thread finishes
-            if self._update_thread is not None and self._update_thread in _active_threads:
-                _active_threads.remove(self._update_thread)
             self._update_worker = None
             self._update_thread = None
         self._update_thread.finished.connect(on_async_done)
         
-        # Track in module-level registry to prevent GC while native thread runs
-        _active_threads.append(self._update_thread)
+        # Track in module-level registry (auto-removes on finish) to prevent GC
+        _track_thread(self._update_thread)
         self._update_thread.start()
 
     def _on_update_check_finished(self, release_info, has_update) -> None:
@@ -274,10 +337,22 @@ class MainWindow(QMainWindow):
             Translations.tr("table.header.status")
         ])
         header: QHeaderView | None = self.device_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(1, 160)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        # All columns interactive so the user can resize them by dragging.
+        # Column 0 (Name) acts as a flexible buffer: it absorbs width changes
+        # of the fixed columns so the total table width stays constant.
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        # Restore saved column widths (or apply sensible defaults on first run)
+        saved_widths: list[int] = self.config.get_column_widths()
+        if saved_widths and len(saved_widths) == self.device_table.columnCount():
+            for col in range(self.device_table.columnCount()):
+                header.resizeSection(col, saved_widths[col])
+        else:
+            header.resizeSection(0, 300)   # Name
+            header.resizeSection(1, 160)   # MAC
+            header.resizeSection(2, 140)   # IP
+            header.resizeSection(3, 100)   # Status
+        # Persist column widths whenever the user changes them
+        header.sectionResized.connect(self._on_column_resized)
         self.device_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.device_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.device_table.setAlternatingRowColors(True)
@@ -285,6 +360,9 @@ class MainWindow(QMainWindow):
         palette: QPalette = self.device_table.palette()
         palette.setColor(QPalette.ColorRole.AlternateBase, QColor(75, 75, 75))
         self.device_table.setPalette(palette)
+        # Right-click context menu on the device list
+        self.device_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.device_table.customContextMenuRequested.connect(self._show_device_context_menu)
         devices_layout.addWidget(self.device_table)
 
         # Action buttons row
@@ -322,6 +400,107 @@ class MainWindow(QMainWindow):
         # Status bar
         self.statusBar().showMessage(Translations.tr("status.ready"))
 
+    @staticmethod
+    def _translated_status(status: str) -> str:
+        """Return the translated, display-ready status text for *status*."""
+        key_map: dict[str, str] = {
+            "online": "status.online",
+            "offline": "status.offline",
+            "unknown": "status.unknown",
+        }
+        key: str = key_map.get(status, "status.unknown")
+        return Translations.tr(key)
+
+    def _show_device_context_menu(self, pos) -> None:
+        """Show the right-click context menu for the device at *pos*."""
+        row: int = self.device_table.rowAt(pos.y())
+        if row < 0:
+            return
+        # Select the row under the cursor so actions apply to it
+        self.device_table.selectRow(row)
+        self.device_table.setCurrentCell(row, 0)
+
+        menu = QMenu(self)
+        menu.addAction(
+            Translations.tr("button.shutdown"),
+            lambda: self._shutdown_selected(),
+        )
+        menu.addAction(
+            Translations.tr("button.refresh"),
+            lambda: self._refresh_statuses(),
+        )
+        menu.addAction(
+            Translations.tr("button.ping"),
+            lambda: self._ping_selected(),
+        )
+        menu.addAction(
+            Translations.tr("button.wake_selected"),
+            lambda: self._wake_selected(),
+        )
+        menu.exec(self.device_table.viewport().mapToGlobal(pos))
+
+    def _on_column_resized(self, column: int, old_size: int, new_size: int) -> None:
+        """Keep the total table width constant when a column divider is dragged.
+
+        When the user drags the divider between *column* and *column+1*, the
+        dragged column changes size; the *next* column absorbs the inverse
+        delta so the divider moves but the total table width stays constant.
+        """
+        # Ignore programmatic width changes to avoid cascading resize signals
+        if self._updating_widths:
+            return
+        # The last column has no neighbour to absorb the change
+        if column >= self.device_table.columnCount() - 1:
+            return
+
+        delta = new_size - old_size
+        next_width = self.device_table.columnWidth(column + 1)
+        new_next_width = max(self._MIN_COLUMN_WIDTH, next_width - delta)
+
+        self._updating_widths = True
+        try:
+            self.device_table.setColumnWidth(column + 1, new_next_width)
+        finally:
+            self._updating_widths = False
+
+        widths: list[int] = [
+            self.device_table.columnWidth(col)
+            for col in range(self.device_table.columnCount())
+        ]
+        self.config.set_column_widths(widths)
+
+    def _fill_name_column(self) -> None:
+        """Resize column 0 (Name) so the table fills the current viewport width.
+
+        The fixed columns (1..n-1) keep their widths; column 0 absorbs the
+        remaining space so the table always spans the full window.
+        """
+        if self._updating_widths:
+            return
+        self._updating_widths = True
+        try:
+            fixed_total = sum(
+                self.device_table.columnWidth(col)
+                for col in range(1, self.device_table.columnCount())
+            )
+            table_width = self.device_table.viewport().width()
+            self.device_table.setColumnWidth(
+                0, max(self._MIN_COLUMN_WIDTH, table_width - fixed_total)
+            )
+        finally:
+            self._updating_widths = False
+
+    def resizeEvent(self, event) -> None:
+        """Keep the table filling the window: adjust the Name column on resize."""
+        super().resizeEvent(event)
+        self._fill_name_column()
+
+    def showEvent(self, event) -> None:
+        """After the window is shown, fill the Name column once the layout has its real width."""
+        super().showEvent(event)
+        # Defer until the window is mapped and the viewport has its final size
+        QTimer.singleShot(0, self._fill_name_column)
+
     def _get_sort_key(self, device, sort_column):
         """Get sort key for a device based on sort column with special handling for IPs."""
         sort_key_map: dict[int, str] = {
@@ -356,6 +535,7 @@ class MainWindow(QMainWindow):
             self.device_table.insertRow(row)
 
             name_item = QTableWidgetItem(device.get("name", ""))
+            name_item.setData(Qt.ItemDataRole.UserRole, device["id"])
             if not device.get("enabled", True):
                 name_item.setForeground(Qt.GlobalColor.gray)
                 name_item.setText(f"{device['name']} {Translations.tr('device.disabled')}")
@@ -365,7 +545,7 @@ class MainWindow(QMainWindow):
             self.device_table.setItem(row, 2, QTableWidgetItem(device.get("ip", "")))
 
             status: str = self.engine.get_device_status(device["id"])
-            status_item = QTableWidgetItem(status.capitalize())
+            status_item = QTableWidgetItem(self._translated_status(status))
             if status == "online":
                 status_item.setForeground(Qt.GlobalColor.darkGreen)
             elif status == "offline":
@@ -394,33 +574,38 @@ class MainWindow(QMainWindow):
 
         def on_thread_finished() -> None:
             self._status_check_running = False
-            # Remove from module-level registry after thread finishes
-            if self._status_thread is not None and self._status_thread in _active_threads:
-                _active_threads.remove(self._status_thread)
             self._status_thread = None
 
         self._status_thread.finished.connect(on_thread_finished)
         
-        # Track in module-level registry to prevent GC while native thread runs
-        _active_threads.append(self._status_thread)
+        # Track in module-level registry (auto-removes on finish) to prevent GC
+        _track_thread(self._status_thread)
         self._status_thread.start()
 
     def _on_status_check_finished(self, results) -> None:
         """Callback when status check completes."""
-        for device_id, name, status, msg in results:
-            # Update table by finding the row with matching device name
-            for row in range(self.device_table.rowCount()):
-                item_name: str = self.device_table.item(row, 0).text().replace(" (disabled)", "")
-                if item_name == name:
-                    status_item = QTableWidgetItem(status.capitalize())
-                    if status == "online":
-                        status_item.setForeground(Qt.GlobalColor.darkGreen)
-                    elif status == "offline":
-                        status_item.setForeground(Qt.GlobalColor.darkRed)
-                    else:
-                        status_item.setForeground(Qt.GlobalColor.darkYellow)
-                    self.device_table.setItem(row, 3, status_item)
-                    break
+        # Map device_id -> (name, status, msg) for robust lookups
+        by_id: dict[str, tuple[str, str, str]] = {
+            device_id: (name, status, msg)
+            for device_id, name, status, msg in results
+        }
+        # Update each table row using the device id stored in its item data
+        for row in range(self.device_table.rowCount()):
+            item = self.device_table.item(row, 0)
+            if item is None:
+                continue
+            device_id = item.data(Qt.ItemDataRole.UserRole)
+            if not device_id or device_id not in by_id:
+                continue
+            _, status, _msg = by_id[device_id]
+            status_item = QTableWidgetItem(self._translated_status(status))
+            if status == "online":
+                status_item.setForeground(Qt.GlobalColor.darkGreen)
+            elif status == "offline":
+                status_item.setForeground(Qt.GlobalColor.darkRed)
+            else:
+                status_item.setForeground(Qt.GlobalColor.darkYellow)
+            self.device_table.setItem(row, 3, status_item)
         self.statusBar().showMessage(Translations.tr("status.check_complete", time=datetime.now().strftime('%H:%M:%S')))
 
     def _wake_selected(self) -> None:
@@ -458,7 +643,7 @@ class MainWindow(QMainWindow):
         device = sorted_devices[current_row]
 
         status, msg = self.engine.check_device_status(device["id"])
-        QMessageBox.information(self, Translations.tr("dialog.status_result.title", status=status.upper()), msg)
+        QMessageBox.information(self, Translations.tr("dialog.status_result.title", status=self._translated_status(status)), msg)
 
     def _shutdown_selected(self) -> None:
         """Show shutdown confirmation dialog for the selected device."""
