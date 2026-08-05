@@ -127,14 +127,19 @@ def ping_host(ip: str, timeout: int = 1) -> bool:
         return False
 
 
-def get_dns_servers() -> list[str]:
-    """Return the configured DNS server IPs from the local system.
+def _parse_dns_servers_from_ipconfig() -> list[dict]:
+    """Parse ``ipconfig /all`` into per-interface DNS server lists.
 
-    Parses ``ipconfig /all`` output, matching the existing locale-independent
-    parsing pattern used for interfaces. psutil does not expose DNS servers,
-    so ``ipconfig /all`` is the primary source.
+    Returns a list of dicts: ``{"ip": iface_ip, "dns_servers": [server, ...]}``.
+    IPv4 servers are collected before IPv6 servers per interface so callers
+    can prefer IPv4 when available.
+
+    Handles multi-line DNS values (continuation lines) and the
+    ``(Bevorzugt)``/``(Preferred)`` suffixes on IPv4 addresses.
     """
-    dns_servers: list[str] = []
+    entries: list[dict] = []
+    current: dict | None = None
+    collecting_dns = False
     try:
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         result = run_subprocess_safe(
@@ -145,32 +150,104 @@ def get_dns_servers() -> list[str]:
         )
         # Decode bytes manually to survive non-ASCII / locale-specific output
         output = result.stdout.decode("utf-8", errors="replace")
-        for line in output.splitlines():
-            lower = line.strip().lower()
-            # DNS server labels across languages (English/German/French/Spanish)
-            dns_keywords = (
-                "dns servers", "dns-server", "dns-servers",
-                "dns-server", "serveurs dns", "serveur dns",
-                "servidores dns", "servidor dns",
-            )
-            if any(k in lower for k in dns_keywords) and ":" in line:
-                value = line.split(":", 1)[1].strip()
-                # Multiple servers may be separated by commas or spaces
+
+        # Locale-independent labels for interface sections
+        section_keywords = ("ethernet adapter", "wireless lan adapter", "local area connection",
+                            "drahtlose lan", "lan-verbindung", "ethernet-adapter",
+                            "connexion au réseau", "adaptateur", "conexión de área local",
+                            "adaptador", "connexion réseau")
+        ipv4_keywords = ("ipv4", "adresse ipv4", "dirección ipv4", "adresse ip")
+        dns_keywords = ("dns servers", "dns-server", "dns-servers",
+                        "serveurs dns", "serveur dns",
+                        "servidores dns", "servidor dns")
+
+        lines = output.splitlines()
+        for line in lines:
+            stripped = line.strip()
+            lower = stripped.lower()
+
+            # Start a new interface section when a new adapter header appears
+            if any(k in lower for k in section_keywords) and ":" in stripped:
+                current = {"ip": "", "dns_servers": []}
+                entries.append(current)
+                collecting_dns = False
+                continue
+
+            if current is None:
+                continue
+
+            # Capture the interface IPv4 address (strip (Preferred) suffix)
+            if any(k in lower for k in ipv4_keywords) and ":" in stripped:
+                value = stripped.split(":", 1)[1].strip()
+                value = value.split("(")[0].strip()
+                if validate_ip(value):
+                    current["ip"] = value
+                collecting_dns = False
+                continue
+
+            # DNS servers may span multiple continuation lines
+            if any(k in lower for k in dns_keywords) and ":" in stripped:
+                collecting_dns = True
+                value = stripped.split(":", 1)[1].strip()
                 for token in value.replace(",", " ").split():
-                    # Accept IPv4 servers, or IPv6 servers (strip %scope suffix)
-                    candidate = token.split("%")[0]
-                    if validate_ip(candidate):
-                        dns_servers.append(candidate)
-                    elif ":" in candidate:
-                        try:
-                            socket.inet_pton(socket.AF_INET6, candidate)
-                            dns_servers.append(candidate)
-                        except (OSError, ValueError):
-                            continue
+                    _append_dns_token(current, token)
+                continue
+
+            # Continuation lines of the DNS server list (indented, no label)
+            if collecting_dns and stripped and ":" not in stripped:
+                for token in stripped.replace(",", " ").split():
+                    _append_dns_token(current, token)
+                continue
+
+            # Any other labelled line ends the DNS continuation
+            if ":" in stripped:
+                collecting_dns = False
     except Exception:
         pass
 
-    return dns_servers
+    return entries
+
+
+def _append_dns_token(current: dict, token: str) -> None:
+    """Append a single DNS server token (IPv4 or IPv6) to the current entry."""
+    candidate = token.split("%")[0]
+    if validate_ip(candidate):
+        current["dns_servers"].append(candidate)
+    elif ":" in candidate:
+        try:
+            socket.inet_pton(socket.AF_INET6, candidate)
+            current["dns_servers"].append(candidate)
+        except (OSError, ValueError):
+            return
+
+
+def get_dns_servers() -> list[str]:
+    """Return the configured DNS server IPs from the local system.
+
+    IPv4 servers are listed before IPv6 servers so callers naturally prefer
+    IPv4 when both are configured.
+    """
+    servers: list[str] = []
+    for entry in _parse_dns_servers_from_ipconfig():
+        ipv4 = [s for s in entry["dns_servers"] if validate_ip(s)]
+        ipv6 = [s for s in entry["dns_servers"] if ":" in s and not validate_ip(s)]
+        servers.extend(ipv4)
+        servers.extend(ipv6)
+    return servers
+
+
+def get_dns_servers_for_interface(iface_ip: str) -> list[str]:
+    """Return the DNS servers configured for the interface with *iface_ip*.
+
+    IPv4 servers are preferred and listed first; IPv6 servers follow only if
+    no IPv4 server is available for that interface.
+    """
+    for entry in _parse_dns_servers_from_ipconfig():
+        if entry["ip"] == iface_ip:
+            ipv4 = [s for s in entry["dns_servers"] if validate_ip(s)]
+            ipv6 = [s for s in entry["dns_servers"] if ":" in s and not validate_ip(s)]
+            return ipv4 + ipv6
+    return []
 
 
 def resolve_hostname(ip: str) -> str | None:

@@ -173,6 +173,7 @@
   "scan_dialog.col.mac": "Dirección MAC",
   "scan_dialog.col.name": "Nombre",
   "scan_dialog.complete": "{count} dispositivo(s) encontrado(s)",
+  "scan_dialog.dns_server": "DNS: {dns}",
   "scan_dialog.group.network_select": "Seleccionar red",
   "scan_dialog.info.initial": "Por favor seleccione una red y haga clic en \"Escanear\".",
   "scan_dialog.mac_unknown": "Dirección MAC desconocida",

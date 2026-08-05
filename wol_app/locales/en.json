@@ -173,6 +173,7 @@
   "scan_dialog.col.mac": "MAC Address",
   "scan_dialog.col.name": "Name",
   "scan_dialog.complete": "Found {count} device(s)",
+  "scan_dialog.dns_server": "DNS: {dns}",
   "scan_dialog.group.network_select": "Select Network",
   "scan_dialog.info.initial": "Please select a network and click 'Scan'.",
   "scan_dialog.mac_unknown": "Unknown MAC Address",

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -12,6 +13,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -53,6 +55,9 @@ class ScheduleDialog(QDialog):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.itemDoubleClicked.connect(lambda item: self._edit_schedule())
+        # Right-click context menu on the schedule table
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_schedule_context_menu)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -106,6 +111,33 @@ class ScheduleDialog(QDialog):
                 lambda checked, s_id=schedule["id"]: self.config.update_schedule(s_id, enabled=checked)
             )
             self.table.setCellWidget(row, 4, enabled_check)
+
+    def _show_schedule_context_menu(self, pos) -> None:
+        """Show the right-click context menu for the schedule table.
+
+        Offers Add/Edit/Delete. Edit and Delete act on the row under the
+        cursor (selected automatically); Add is always available.
+        """
+        row: int = self.table.rowAt(pos.y())
+
+        menu = QMenu(self)
+        menu.addAction(
+            Translations.tr("schedule_dialog.button.add_schedule"),
+            self._add_schedule,
+        )
+        if row >= 0:
+            # Select the row under the cursor so Edit/Delete apply to it
+            self.table.selectRow(row)
+            self.table.setCurrentCell(row, 0)
+            menu.addAction(
+                Translations.tr("schedule_dialog.button.edit"),
+                self._edit_schedule,
+            )
+            menu.addAction(
+                Translations.tr("schedule_dialog.button.delete"),
+                self._delete_schedule,
+            )
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _add_schedule(self) -> None:
         devices = self.config.get_devices()

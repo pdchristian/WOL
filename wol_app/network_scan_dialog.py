@@ -20,7 +20,11 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from wol_app.network_scanner import get_local_interfaces, scan_subnet
+from wol_app.network_scanner import (
+    get_dns_servers_for_interface,
+    get_local_interfaces,
+    scan_subnet,
+)
 from wol_app.translations import Translations
 
 
@@ -93,7 +97,12 @@ class NetworkScanDialog(QDialog):
 
         self.net_checkboxes = []
         for idx, iface in enumerate(self._get_interfaces()):
-            cb = QCheckBox(f"{iface['ip']} / {iface['netmask']}")
+            dns_servers = get_dns_servers_for_interface(iface["ip"])
+            label_text = f"{iface['ip']} / {iface['netmask']}"
+            if dns_servers:
+                # Show the primary (preferred IPv4) DNS server next to the IP range
+                label_text += f"  |  {Translations.tr('scan_dialog.dns_server', dns=dns_servers[0])}"
+            cb = QCheckBox(label_text)
             cb.setChecked(idx == 0)  # Only first network selected by default
             self.net_checkboxes.append(cb)
             net_layout.addWidget(cb)

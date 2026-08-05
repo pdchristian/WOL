@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -229,6 +230,9 @@ class DeviceManagerDialog(QDialog):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSortingEnabled(True)
         self.table.itemDoubleClicked.connect(lambda item: self._edit_device())
+        # Right-click context menu on the device table
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_device_manager_context_menu)
 
         layout.addLayout(sort_layout)
 
@@ -312,6 +316,33 @@ class DeviceManagerDialog(QDialog):
             password = device.get("password", "")
             password_display: str = "*" * len(password) if password else ""
             self.table.setItem(row, 4, QTableWidgetItem(password_display))
+
+    def _show_device_manager_context_menu(self, pos) -> None:
+        """Show the right-click context menu for the device table.
+
+        Offers Add/Edit/Delete. Edit and Delete act on the row under the
+        cursor (selected automatically); Add is always available.
+        """
+        row: int = self.table.rowAt(pos.y())
+
+        menu = QMenu(self)
+        menu.addAction(
+            Translations.tr("device_manager.button.add"),
+            self._add_device,
+        )
+        if row >= 0:
+            # Select the row under the cursor so Edit/Delete apply to it
+            self.table.selectRow(row)
+            self.table.setCurrentCell(row, 0)
+            menu.addAction(
+                Translations.tr("device_manager.button.edit"),
+                self._edit_device,
+            )
+            menu.addAction(
+                Translations.tr("device_manager.button.delete"),
+                self._delete_device,
+            )
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _add_device(self) -> None:
         dialog = DeviceDialog(self.config, parent=self)
