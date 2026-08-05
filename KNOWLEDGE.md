@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 1.5.1                                                                  |
+| **version**         | 1.6.0                                                                  |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -602,6 +602,7 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
+| 1.6.0   | 2026-08-05 | Improvement Edition        | Lazy permissions fix, logging module, thread tracking, parallel wake/ping |
 | 1.5.1   | 2026-07-21 | Scheduler Fix Edition      | Scheduler reliability improvements              |
 | 1.5.0   | 2026-07-19 | Installer Pro Edition      | Professional installer with registry integration|
 | 1.3.3   | 2026-07-18 | Console Flash Fix Edition  | Fixed console flash on startup, icacls syntax    |

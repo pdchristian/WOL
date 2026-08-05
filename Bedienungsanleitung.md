@@ -345,4 +345,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 1.2.1 | Wake-on-LAN Manager*
+*Version 1.6.0 | Wake-on-LAN Manager*

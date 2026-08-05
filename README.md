@@ -1,19 +1,23 @@
 # Wake-on-LAN Manager
 
-**Version 1.3.3 - Console Flash Fix Edition**
+**Version 1.6.0 - Improvement Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
-🔒 **Security Note:** This version includes optimized installer permissions handling and fixes for smooth installation with data migration. See [SECURITY.md](SECURITY.md) for details.
+🔒 **Security Note:** Passwords are encrypted with AES-256-GCM (DPAPI-protected master key), legacy plaintext passwords are auto-re-encrypted on load, and all subprocess calls use `shell=False` with input validation. See [SECURITY.md](SECURITY.md) for details.
 
 ## Features
 
 - **Device Management** — Add, edit, and remove devices with friendly names, MAC addresses, and optional IP addresses (no device limit)
-- **Wake-on-LAN** — Send magic packets to individual devices or wake all at once
-- **Status Monitoring** — Ping devices to check online/offline status (auto-refresh every 30 seconds)
-- **Scheduling** — Schedule automatic wake-ups by time and day of week
+- **Wake-on-LAN** — Send magic packets to individual devices or wake all at once (parallel, up to 8 concurrent)
+- **Status Monitoring** — Ping devices to check online/offline status (auto-refresh every 30 seconds, up to 16 concurrent)
+- **Scheduling** — Schedule automatic wake-ups and remote shutdowns by time and day of week
+- **Network Scanner** — Auto-discover devices across all local network interfaces with DNS name resolution
+- **Remote Shutdown** — Shut down devices via the TCP shutdown client (port 8765)
 - **Network Settings** — Configure broadcast IP and port
-- **Activity Log** — Full history of all wake attempts with timestamps
+- **Activity Log** — Full history of all wake attempts with timestamps and CSV export
+- **Multi-Language** — English, German, French, and Spanish
+- **Auto-Update** — Checks GitHub Releases for new versions on startup
 
 ## Requirements
 
@@ -81,6 +85,38 @@ A detailed user manual is available in German:
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
 ## 📝 Changelog
+
+### Version 1.6.0 - Improvement Edition (2026-08-05)
+
+#### 🔒 Security & Startup
+- **Lazy permissions fix:** `_fix_directory_permissions()` uses a `permissions_fixed.marker` file in `~/.wol_app/` — the `takeown`/`icacls` subprocess calls only run once per user profile (no more slow startup)
+- **Logging via `logging` module** to `~/.wol_app/app.log` — security-relevant failures are never silently swallowed (`except: pass` removed)
+- **Legacy plaintext passwords** are auto-re-encrypted on load (`_reencrypt_plaintext_passwords`)
+
+#### 🛠️ Reliability
+- **Thread tracking:** `_track_thread()` in `main_window.py` auto-removes QThread references on finish — no memory leak
+- **Version parsing:** `_parse_version()` in `updater.py` normalizes to 3 segments and rejects invalid versions
+
+#### ⚡ Performance
+- **`wake_all()`** uses a `ThreadPoolExecutor` (max 8 concurrent)
+- **Status checks** run parallel pings (max 16 concurrent)
+
+#### 🧪 Tests & Maintenance
+- **pytest suite** in `tests/` (37 tests)
+- **`get_local_interfaces()`** prefers psutil, falls back to locale-aware `ipconfig` parsing
+- **ruff config** in `pyproject.toml` (runs clean)
+
+### Version 1.5.x - Scheduler/Installer Fix Editions (2026-07-19/21)
+
+- **1.5.1 (2026-07-21) — Scheduler Fix Edition:** Scheduler reliability improvements
+- **1.5.0 (2026-07-19) — Installer Pro Edition:** Professional installer with Windows registry (Add/Remove Programs) integration
+
+### Version 1.4.x - Feature Editions
+
+- Multi-language support (English, German, French, Spanish)
+- Network scanner with DNS name resolution
+- Remote shutdown via TCP shutdown client
+- Auto-update checking from GitHub Releases
 
 ### Version 1.3.3 - Console Flash Fix Edition (2026-07-18)
 

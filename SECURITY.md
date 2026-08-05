@@ -2,7 +2,7 @@
 
 ## 📋 Dokumentinformationen
 
-- **Version:** 1.3.3
+- **Version:** 1.6.0
 - **Datum:** 2026-07-18
 - **Status:** alle kritischen Sicherheitsrisiken behoben
 - **Verantwortlicher:** GitHub Copilot (automatisierte Sicherheitsanalyse)
@@ -11,9 +11,9 @@
 
 ## 🎯 Einleitung
 
-Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.3.3** implementiert wurden. 
+Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.6.0** implementiert wurden. 
 
-Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden.
+Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert.
 
 ---
 
@@ -254,7 +254,8 @@ Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfol
 
 | **Version** | **Datum** | **Sicherheitsverbesserungen** | **Status** |
 |-------------|-----------|--------------------------------|------------|
-| **1.3.3** | 2026-07-18 | Console-Flash behoben (CREATE_NO_WINDOW für takeown/icacls) | ✅ **AKTUELL** |
+| **1.6.0** | 2026-08-05 | Lazy-Permissions-Fix, Logging-Modul, Auto-Re-Encryption von Klartext-Passwörtern | ✅ **AKTUELL** |
+| **1.3.3** | 2026-07-18 | Console-Flash behoben (CREATE_NO_WINDOW für takeown/icacls) | ⚠️ Veraltet |
 | **1.3.2** | 2026-07-15 | Installer-Berechtigungslogik optimiert (Fast-Path, korrekte icacls-Syntax) | ⚠️ Veraltet |
 | 1.3.1 | 2026-07-14 | Umfassende Sicherheitsüberarbeitung (15 Risiken behoben) | ⚠️ Veraltet |
 | 1.2.1 | - | Vorherige Version mit bekannten Sicherheitsrisiken | ⚠️ Veraltet |

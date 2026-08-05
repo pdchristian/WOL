@@ -22,8 +22,18 @@ $UNINSTALLER_SPEC = "uninstaller.spec"
 $INSTALLER_SPEC = "installer.spec"
 $DIST_DIR = "dist"
 
+# --- Step 0: Sync version across documentation ---
+Write-Host "[0/6] Syncing version in docs..." -ForegroundColor Yellow
+$versionResult = python update_docs_version.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Version sync failed!" -ForegroundColor Red
+    exit 1
+}
+Write-Host $versionResult
+Write-Host "  Docs synced." -ForegroundColor Green
+
 # --- Step 1: Clean previous builds ---
-Write-Host "[1/5] Cleaning previous builds..." -ForegroundColor Yellow
+Write-Host "[1/6] Cleaning previous builds..." -ForegroundColor Yellow
 if (Test-Path $DIST_DIR) {
     Remove-Item -Recurse -Force $DIST_DIR
 }
@@ -32,7 +42,7 @@ Write-Host "  Clean." -ForegroundColor Green
 
 # --- Step 2: Build the main application ---
 Write-Host ""
-Write-Host "[2/5] Building main application..." -ForegroundColor Yellow
+Write-Host "[2/6] Building main application..." -ForegroundColor Yellow
 $appResult = pyinstaller "$APP_SPEC" --distpath $DIST_DIR --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Application build failed!" -ForegroundColor Red
@@ -49,7 +59,7 @@ if (-not (Test-Path $appExe)) {
 
 # --- Step 3: Build the uninstaller ---
 Write-Host ""
-Write-Host "[3/5] Building uninstaller..." -ForegroundColor Yellow
+Write-Host "[3/6] Building uninstaller..." -ForegroundColor Yellow
 $uninstallResult = pyinstaller "$UNINSTALLER_SPEC" --distpath $DIST_DIR --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Uninstaller build failed!" -ForegroundColor Red
@@ -66,7 +76,7 @@ if (-not (Test-Path $uninstallExe)) {
 
 # --- Step 4: Build the installer ---
 Write-Host ""
-Write-Host "[4/5] Building installer..." -ForegroundColor Yellow
+Write-Host "[4/6] Building installer..." -ForegroundColor Yellow
 $installerResult = pyinstaller "$INSTALLER_SPEC" --distpath $DIST_DIR --noconfirm --clean
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Installer build failed!" -ForegroundColor Red
@@ -83,7 +93,7 @@ if (-not (Test-Path $installerExe)) {
 
 # --- Step 5: Summary ---
 Write-Host ""
-Write-Host "[5/5] Build Summary" -ForegroundColor Yellow
+Write-Host "[5/6] Build Summary" -ForegroundColor Yellow
 Write-Host "========================================" -ForegroundColor Cyan
 
 $appSize = [math]::Round((Get-Item $appExe).Length / 1MB, 2)
