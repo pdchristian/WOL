@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .translations import Translations
+from .utils import sort_rows
 
 
 class ScheduleDialog(QDialog):
@@ -33,6 +34,9 @@ class ScheduleDialog(QDialog):
         self.config: Any = config_manager
         self.setWindowTitle(Translations.tr("schedule_dialog.title"))
         self.setMinimumSize(650, 450)
+        # Column header sort state (None = no sort, else column index)
+        self._sort_column: int | None = None
+        self._sort_descending: bool = False
         self._setup_ui()
         self._refresh_table()
 
@@ -54,6 +58,14 @@ class ScheduleDialog(QDialog):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        # Clicking a column header sorts the table (1st A-Z, 2nd Z-A)
+        header.setSortIndicatorShown(True)
+        header.setSectionsClickable(True)
+        header.sectionClicked.connect(self._on_header_clicked)
+        for col in range(self.table.columnCount()):
+            item = self.table.horizontalHeaderItem(col)
+            if item is not None:
+                item.setToolTip(Translations.tr("table.sort.tooltip"))
         self.table.itemDoubleClicked.connect(lambda item: self._edit_schedule())
         # Right-click context menu on the schedule table
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -87,18 +99,53 @@ class ScheduleDialog(QDialog):
         }
         return ", ".join(day_names.get(d, d) for d in days) if days else "Every day"
 
+    def _on_header_clicked(self, column: int) -> None:
+        """Sort by the clicked column: 1st click A-Z, 2nd click Z-A.
+
+        The Enabled column (4) and the empty actions column (5) are not sortable.
+        """
+        if column in (4, 5):
+            return
+        if self._sort_column == column:
+            self._sort_descending = not self._sort_descending
+        else:
+            self._sort_column = column
+            self._sort_descending = False
+        self._refresh_table()
+
     def _refresh_table(self) -> None:
         self.table.setRowCount(0)
-        for schedule in self.config.get_schedules():
-            row: int = self.table.rowCount()
-            self.table.insertRow(row)
+        schedules = self.config.get_schedules()
 
+        # Build sortable rows: (key, device_name, time_str, action_str, days_str, enabled)
+        rows: list[tuple] = []
+        for schedule in schedules:
             device = self.config.get_device_by_id(schedule.get("device_id", ""))
             device_name = device["name"] if device else Translations.tr("schedule_dialog.unknown_device")
 
             time_str: str = f"{schedule.get('hour', 0):02d}:{schedule.get('minute', 0):02d}"
             action_str: str = Translations.tr("schedule_dialog.action.wake") if schedule.get("action", "wake") == "wake" else Translations.tr("schedule_dialog.action.shutdown")
             days_str: str = self._days_to_string(schedule.get("days", []))
+            enabled = schedule.get("enabled", True)
+
+            values = [device_name, time_str, action_str, days_str]
+            if self._sort_column is None:
+                key = device_name
+            elif self._sort_column == 1:  # Time HH:MM -> numeric sort
+                key = schedule.get("hour", 0) * 60 + schedule.get("minute", 0)
+            else:
+                key = values[self._sort_column]
+            rows.append((key, device_name, time_str, action_str, days_str,
+                         enabled, schedule.get("id", "")))
+
+        if self._sort_column is None:
+            rows.sort(key=lambda r: r[0])
+        else:
+            rows = sort_rows(rows, 0, reverse=self._sort_descending)
+
+        for _key, device_name, time_str, action_str, days_str, enabled, s_id in rows:
+            row: int = self.table.rowCount()
+            self.table.insertRow(row)
 
             self.table.setItem(row, 0, QTableWidgetItem(device_name))
             self.table.setItem(row, 1, QTableWidgetItem(time_str))
@@ -106,11 +153,19 @@ class ScheduleDialog(QDialog):
             self.table.setItem(row, 3, QTableWidgetItem(days_str))
 
             enabled_check = QCheckBox()
-            enabled_check.setChecked(schedule.get("enabled", True))
+            enabled_check.setChecked(enabled)
             enabled_check.toggled.connect(
-                lambda checked, s_id=schedule["id"]: self.config.update_schedule(s_id, enabled=checked)
+                lambda checked, s_id=s_id: self.config.update_schedule(s_id, enabled=checked)
             )
             self.table.setCellWidget(row, 4, enabled_check)
+
+        # Show the active sort indicator on the header
+        header: QHeaderView | None = self.table.horizontalHeader()
+        if self._sort_column is not None:
+            order = Qt.SortOrder.DescendingOrder if self._sort_descending else Qt.SortOrder.AscendingOrder
+            header.setSortIndicator(self._sort_column, order)
+        else:
+            header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
 
     def _show_schedule_context_menu(self, pos) -> None:
         """Show the right-click context menu for the schedule table.

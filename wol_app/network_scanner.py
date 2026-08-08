@@ -250,6 +250,20 @@ def get_dns_servers_for_interface(iface_ip: str) -> list[str]:
     return []
 
 
+def _strip_domain(name: str | None) -> str | None:
+    """Strip the domain part from a resolved hostname (FQDN).
+
+    Returns only the first label before the first dot (e.g.
+    ``pc.example.local`` -> ``pc``). IP addresses are returned unchanged
+    as a safety guard, and empty/None inputs are returned as-is.
+    """
+    if not name:
+        return name
+    if validate_ip(name):
+        return name
+    return name.split(".", 1)[0]
+
+
 def resolve_hostname(ip: str) -> str | None:
     """Try to resolve the hostname for an IP address.
 
@@ -257,6 +271,9 @@ def resolve_hostname(ip: str) -> str | None:
     2. Falls back to querying each configured DNS server directly via
        ``nslookup`` for the PTR record, so name resolution works even
        when the system resolver fails.
+
+    The resolved FQDN is reduced to the bare hostname (without domain)
+    via :func:`_strip_domain`.
     """
     if not validate_ip(ip):
         return None
@@ -265,7 +282,7 @@ def resolve_hostname(ip: str) -> str | None:
     try:
         hostname, _, _ = socket.gethostbyaddr(ip)
         if hostname:
-            return hostname
+            return _strip_domain(hostname)
     except Exception:
         pass
 
@@ -287,7 +304,7 @@ def resolve_hostname(ip: str) -> str | None:
                 if lower.startswith("name:") and ":" in line:
                     name = line.split(":", 1)[1].strip()
                     if name and name.lower() != ip.lower():
-                        return name
+                        return _strip_domain(name)
         except Exception:
             continue
 

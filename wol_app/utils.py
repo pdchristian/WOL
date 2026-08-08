@@ -109,6 +109,31 @@ def get_ip_key(ip_str: str) -> tuple:
         return (0, 0, 0, 0)
 
 
+def make_sort_key(column: int, is_ip: bool = False):
+    """Return a key function that extracts a sortable value from a row tuple.
+
+    ``column`` is the index of the value inside the row tuple. When ``is_ip``
+    is True the value is treated as an IPv4 address and converted to a numeric
+    key so 10.0.0.2 sorts after 10.0.0.10 correctly.
+    """
+    def key(row) -> tuple:
+        value = row[column]
+        if is_ip:
+            return get_ip_key(str(value))
+        return value
+    return key
+
+
+def sort_rows(rows: list, column: int, reverse: bool = False,
+              is_ip: bool = False) -> list:
+    """Return *rows* sorted by the value at *column*.
+
+    ``is_ip`` enables numeric IP sorting (10.0.0.10 > 10.0.0.2).
+    """
+    key = make_sort_key(column, is_ip=is_ip)
+    return sorted(rows, key=key, reverse=reverse)
+
+
 # ── Path helpers ────────────────────────────────────────────────────────────
 
 def get_resource_path(filename: str) -> str:

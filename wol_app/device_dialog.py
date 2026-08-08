@@ -228,7 +228,15 @@ class DeviceManagerDialog(QDialog):
         header.resizeSection(4, 120)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setSortingEnabled(True)
+        # Clicking a column header sorts the table (1st A-Z, 2nd Z-A)
+        # Password column (4) is not sortable (masked display)
+        header.setSortIndicatorShown(True)
+        header.setSectionsClickable(True)
+        header.sectionClicked.connect(self._on_header_clicked)
+        for col in range(self.table.columnCount()):
+            item = self.table.horizontalHeaderItem(col)
+            if item is not None:
+                item.setToolTip(Translations.tr("table.sort.tooltip"))
         self.table.itemDoubleClicked.connect(lambda item: self._edit_device())
         # Right-click context menu on the device table
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -299,9 +307,33 @@ class DeviceManagerDialog(QDialog):
         self.config.set_device_sort_settings(self.sort_column, sort_order)
         self._refresh_table()
 
+    def _on_header_clicked(self, column: int) -> None:
+        """Sort by the clicked column: 1st click A-Z, 2nd click Z-A.
+
+        The password column (4) is not sortable because it is masked.
+        """
+        if column == 4:
+            return
+        if self.sort_column == column:
+            self.sort_order = Qt.SortOrder.DescendingOrder if self.sort_order == Qt.SortOrder.AscendingOrder else Qt.SortOrder.AscendingOrder
+        else:
+            self.sort_column = column
+            self.sort_order = Qt.SortOrder.AscendingOrder
+        # Keep the dropdown in sync with the clicked column
+        self.sort_combo.setCurrentIndex(column)
+        self._refresh_table()
+
     def _refresh_table(self) -> None:
         self.table.setRowCount(0)
         sorted_devices = self._get_sorted_devices()
+
+        # Show the active sort indicator on the header
+        header: QHeaderView | None = self.table.horizontalHeader()
+        if self.sort_column is not None:
+            order = Qt.SortOrder.DescendingOrder if self.sort_order == Qt.SortOrder.DescendingOrder else Qt.SortOrder.AscendingOrder
+            header.setSortIndicator(self.sort_column, order)
+        else:
+            header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         
         for device in sorted_devices:
             row: int = self.table.rowCount()

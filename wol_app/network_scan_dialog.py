@@ -26,6 +26,7 @@ from wol_app.network_scanner import (
     scan_subnet,
 )
 from wol_app.translations import Translations
+from wol_app.utils import get_ip_key, sort_rows
 
 
 class ScanWorker(QObject):
@@ -81,6 +82,11 @@ class NetworkScanDialog(QDialog):
         # Keep references to prevent garbage collection while thread runs
         self._scan_thread = None
         self._scan_worker = None
+        # Column header sort state (None = no sort, else column index)
+        self._sort_column: int | None = None
+        self._sort_descending: bool = False
+        # Last scan results so the table can be re-sorted without re-scanning
+        self._results: list = []
 
         self._setup_ui()
 
@@ -156,6 +162,14 @@ class NetworkScanDialog(QDialog):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
+        # Clicking a column header sorts the table (1st A-Z, 2nd Z-A)
+        header.setSortIndicatorShown(True)
+        header.setSectionsClickable(True)
+        header.sectionClicked.connect(self._on_header_clicked)
+        for col in range(self.table.columnCount()):
+            item = self.table.horizontalHeaderItem(col)
+            if item is not None:
+                item.setToolTip(Translations.tr("table.sort.tooltip"))
         palette: QPalette = self.table.palette()
         palette.setColor(QPalette.ColorRole.AlternateBase, QColor(75, 75, 75))
         self.table.setPalette(palette)
@@ -238,32 +252,78 @@ class NetworkScanDialog(QDialog):
             percentage = int((current / total) * 100)
             self.progress_bar.setValue(percentage)
 
+    def _on_header_clicked(self, column: int) -> None:
+        """Sort by the clicked column: 1st click A-Z, 2nd click Z-A."""
+        if self._sort_column == column:
+            self._sort_descending = not self._sort_descending
+        else:
+            self._sort_column = column
+            self._sort_descending = False
+        self._refresh_table()
+
+    def _refresh_table(self) -> None:
+        """(Re)fill the table from the stored scan results, applying sorting."""
+        self.table.setRowCount(0)
+        results = self._results
+
+        # Build sortable rows: (key, hostname, ipv4, ipv6, mac)
+        rows: list[tuple] = []
+        for host in results:
+            hostname = host.get("hostname", "Unknown")
+            ipv4 = host.get("ipv4", "")
+            ipv6 = host.get("ipv6", "N/A")
+            mac = host.get("mac", "Unknown")
+            values = [hostname, ipv4, ipv6, mac]
+            if self._sort_column is None:
+                key = hostname
+            elif self._sort_column in (1, 2):  # IPv4 / IPv6 -> numeric sort
+                key = get_ip_key(values[self._sort_column])
+            else:
+                key = values[self._sort_column]
+            rows.append((key, hostname, ipv4, ipv6, mac))
+
+        if self._sort_column is None:
+            rows.sort(key=lambda r: r[0])
+        else:
+            rows = sort_rows(rows, 0, reverse=self._sort_descending)
+
+        for _key, hostname, ipv4, ipv6, mac in rows:
+            row: int = self.table.rowCount()
+            self.table.insertRow(row)
+
+            hostname_item = QTableWidgetItem(hostname)
+            self.table.setItem(row, 0, hostname_item)
+
+            ipv4_item = QTableWidgetItem(ipv4)
+            self.table.setItem(row, 1, ipv4_item)
+
+            ipv6_item = QTableWidgetItem(ipv6)
+            ipv6_item.setForeground(Qt.GlobalColor.gray)
+            self.table.setItem(row, 2, ipv6_item)
+
+            mac_item = QTableWidgetItem(mac)
+            self.table.setItem(row, 3, mac_item)
+
+        # Show the active sort indicator on the header
+        header: QHeaderView | None = self.table.horizontalHeader()
+        if self._sort_column is not None:
+            order = Qt.SortOrder.DescendingOrder if self._sort_descending else Qt.SortOrder.AscendingOrder
+            header.setSortIndicator(self._sort_column, order)
+        else:
+            header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+
+        self.add_btn.setEnabled(len(results) > 0)
+
     def _on_scan_finished(self, results: list) -> None:
         """Populate table with scan results."""
         self.progress_bar.setValue(100)
         self.info_label.setText(
             Translations.tr("scan_dialog.complete", count=len(results))
         )
-        self.table.setRowCount(0)
-
-        for host in results:
-            row: int = self.table.rowCount()
-            self.table.insertRow(row)
-
-            hostname_item = QTableWidgetItem(host.get("hostname", "Unknown"))
-            self.table.setItem(row, 0, hostname_item)
-
-            ipv4_item = QTableWidgetItem(host.get("ipv4", ""))
-            self.table.setItem(row, 1, ipv4_item)
-
-            ipv6_item = QTableWidgetItem(host.get("ipv6", "N/A"))
-            ipv6_item.setForeground(Qt.GlobalColor.gray)
-            self.table.setItem(row, 2, ipv6_item)
-
-            mac_item = QTableWidgetItem(host.get("mac", "Unknown"))
-            self.table.setItem(row, 3, mac_item)
-
-        self.add_btn.setEnabled(len(results) > 0)
+        self._results = results
+        self._sort_column = None
+        self._sort_descending = False
+        self._refresh_table()
 
     def _show_scan_context_menu(self, pos) -> None:
         """Show the right-click context menu for the scan result at *pos*."""

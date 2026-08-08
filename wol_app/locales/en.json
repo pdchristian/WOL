@@ -279,6 +279,7 @@
   "table.header.num": "#",
   "table.header.status": "Status",
   "table.header.user": "User",
+  "table.sort.tooltip": "Click to sort",
   "toolbar.ping": "Ping Selected",
   "toolbar.shutdown": "Shut Down Selected",
   "toolbar.wake": "Wake Selected",

@@ -279,6 +279,7 @@
   "table.header.num": "#",
   "table.header.status": "Statut",
   "table.header.user": "Utilisateur",
+  "table.sort.tooltip": "Cliquer pour trier",
   "toolbar.ping": "Pinger la sélection",
   "toolbar.shutdown": "Arrêter la sélection",
   "toolbar.wake": "Réveiller la sélection",

@@ -353,6 +353,14 @@ class MainWindow(QMainWindow):
             header.resizeSection(3, 100)   # Status
         # Persist column widths whenever the user changes them
         header.sectionResized.connect(self._on_column_resized)
+        # Clicking a column header sorts the table (1st A-Z, 2nd Z-A)
+        header.setSortIndicatorShown(True)
+        header.setSectionsClickable(True)
+        header.sectionClicked.connect(self._on_header_clicked)
+        for col in range(self.device_table.columnCount()):
+            item = self.device_table.horizontalHeaderItem(col)
+            if item is not None:
+                item.setToolTip(Translations.tr("table.sort.tooltip"))
         self.device_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.device_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.device_table.setAlternatingRowColors(True)
@@ -516,7 +524,20 @@ class MainWindow(QMainWindow):
         if sort_column == 2:  # IP Address
             return get_ip_key(value)
         
+        # Status column (3) sorts by the raw status value
+        if sort_column == 3:
+            return self.engine.get_device_status(device["id"])
+        
         return value
+
+    def _on_header_clicked(self, column: int) -> None:
+        """Sort the device table by the clicked column: 1st A-Z, 2nd Z-A."""
+        if self.device_sort_column == column:
+            self.device_sort_order = "descending" if self.device_sort_order == "ascending" else "ascending"
+        else:
+            self.device_sort_column = column
+            self.device_sort_order = "ascending"
+        self._refresh_device_table()
 
     def _get_sorted_devices(self):
         """Get devices sorted according to current settings."""
@@ -529,6 +550,14 @@ class MainWindow(QMainWindow):
         """Refresh the device table with current data."""
         self.device_table.setRowCount(0)
         sorted_devices = self._get_sorted_devices()
+        
+        # Show the active sort indicator on the header
+        header: QHeaderView | None = self.device_table.horizontalHeader()
+        if self.device_sort_column is not None:
+            order = Qt.SortOrder.DescendingOrder if self.device_sort_order == "descending" else Qt.SortOrder.AscendingOrder
+            header.setSortIndicator(self.device_sort_column, order)
+        else:
+            header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         
         for device in sorted_devices:
             row: int = self.device_table.rowCount()
