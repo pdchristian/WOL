@@ -6,13 +6,11 @@ from typing import Any
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QLineEdit,
     QMenu,
     QMessageBox,
@@ -193,21 +191,6 @@ class DeviceManagerDialog(QDialog):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        # Sort Control
-        sort_layout = QHBoxLayout()
-        sort_label = QLabel(Translations.tr("device_manager.sort_by"))
-        self.sort_combo = QComboBox()
-        self.sort_combo.addItems([
-            Translations.tr("device_manager.sort.name"),
-            Translations.tr("device_manager.sort.mac"),
-            Translations.tr("device_manager.sort.ip"),
-            Translations.tr("device_manager.sort.username")
-        ])
-        self.sort_combo.currentIndexChanged.connect(self._change_sort)
-        sort_layout.addWidget(sort_label)
-        sort_layout.addWidget(self.sort_combo)
-        sort_layout.addStretch()
-
         # Device Table
         self.table = QTableWidget()
         self.table.setColumnCount(5)
@@ -241,8 +224,6 @@ class DeviceManagerDialog(QDialog):
         # Right-click context menu on the device table
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_device_manager_context_menu)
-
-        layout.addLayout(sort_layout)
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -301,12 +282,6 @@ class DeviceManagerDialog(QDialog):
         
         return sorted(devices, key=lambda d: self._get_sort_key(d, self.sort_column), reverse=(self.sort_order == Qt.SortOrder.DescendingOrder))
 
-    def _change_sort(self, index) -> None:
-        self.sort_column = index
-        sort_order: str = "ascending" if self.sort_order == Qt.SortOrder.AscendingOrder else "descending"
-        self.config.set_device_sort_settings(self.sort_column, sort_order)
-        self._refresh_table()
-
     def _on_header_clicked(self, column: int) -> None:
         """Sort by the clicked column: 1st click A-Z, 2nd click Z-A.
 
@@ -319,8 +294,6 @@ class DeviceManagerDialog(QDialog):
         else:
             self.sort_column = column
             self.sort_order = Qt.SortOrder.AscendingOrder
-        # Keep the dropdown in sync with the clicked column
-        self.sort_combo.setCurrentIndex(column)
         self._refresh_table()
 
     def _refresh_table(self) -> None:

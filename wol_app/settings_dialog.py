@@ -19,6 +19,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from PyQt6.QtWidgets import QApplication
+
+from wol_app.theme import apply_display_mode
 from wol_app.translations import Translations
 
 
@@ -76,6 +79,20 @@ class SettingsDialog(QDialog):
 
         lang_group.setLayout(lang_layout)
         layout.addWidget(lang_group)
+
+        # --- Display Mode Group ---
+        display_group = QGroupBox(Translations.tr("settings.group.display_mode"))
+        display_layout = QVBoxLayout()
+
+        self.display_mode_combo = QComboBox()
+        # Auto / Light / Dark
+        self.display_mode_combo.addItem(Translations.tr("settings.display_mode.auto"), "auto")
+        self.display_mode_combo.addItem(Translations.tr("settings.display_mode.light"), "light")
+        self.display_mode_combo.addItem(Translations.tr("settings.display_mode.dark"), "dark")
+        display_layout.addWidget(self.display_mode_combo)
+
+        display_group.setLayout(display_layout)
+        layout.addWidget(display_group)
 
         # --- Auto-Update Group ---
         update_group = QGroupBox(Translations.tr("settings.group.auto_update"))
@@ -143,6 +160,13 @@ class SettingsDialog(QDialog):
                 self.language_combo.setCurrentIndex(idx)
                 break
 
+        # Load display mode setting
+        current_mode = self.config.config.get("ui", {}).get("display_mode", "auto")
+        for idx in range(self.display_mode_combo.count()):
+            if self.display_mode_combo.itemData(idx) == current_mode:
+                self.display_mode_combo.setCurrentIndex(idx)
+                break
+
         # Load update settings
         update_settings = self.config.get_update_settings()
         self.auto_update_checkbox.setChecked(update_settings.get("auto_check_enabled", True))
@@ -184,6 +208,15 @@ class SettingsDialog(QDialog):
         if selected_lang:
             self.config.update_ui_settings(language=selected_lang)
             Translations.set_language(selected_lang)
+
+        # Save display mode setting
+        selected_mode = self.display_mode_combo.currentData()
+        if selected_mode:
+            self.config.update_ui_settings(display_mode=selected_mode)
+            # Apply the theme immediately (no restart required)
+            app = QApplication.instance()
+            if app is not None:
+                apply_display_mode(app, selected_mode)
 
         # Save update settings
         auto_check: bool = self.auto_update_checkbox.isChecked()

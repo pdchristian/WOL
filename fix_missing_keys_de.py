@@ -19,11 +19,6 @@ missing_de = {
     "device_dialog.error.invalid_password": "Ungültiges Passwort",
     "device_dialog.error.invalid_username": "Ungültiger Benutzername",
     "device_dialog.error.save_failed": "Gerät konnte nicht gespeichert werden",
-    # Device manager sort
-    "device_manager.sort.ip": "IP-Adresse",
-    "device_manager.sort.mac": "MAC-Adresse",
-    "device_manager.sort.name": "Name",
-    "device_manager.sort.username": "Benutzername",
     # About dialog
     "dialog.about.title": "Über Wake-on-LAN Manager",
     "dialog.about.version": "Version:",

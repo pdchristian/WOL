@@ -122,20 +122,24 @@ class LogDialog(QDialog):
                 status_item.setForeground(Qt.GlobalColor.darkYellow)
 
             message = log.get("message", Translations.tr("log_dialog.unknown"))
-            # Column 0 sorts numerically by datetime, others by string
-            sort_value = ts if self._sort_column == 0 else [
-                ts_str,
-                log.get("device_name", ""),
-                log.get("action", ""),
-                log.get("status", ""),
-                message,
-            ][self._sort_column]
+            # Column 0 (and the default order) sorts chronologically by the
+            # string timestamp; the other columns sort by their string value.
+            if self._sort_column is None or self._sort_column == 0:
+                sort_value = ts_str
+            else:
+                sort_value = [
+                    ts_str,
+                    log.get("device_name", ""),
+                    log.get("action", ""),
+                    log.get("status", ""),
+                    message,
+                ][self._sort_column]
             rows.append((sort_value, ts_str, log.get("device_name", ""),
                          log.get("action", ""), status_item, message))
 
         # Default order: newest first (timestamp descending)
         if self._sort_column is None:
-            rows.sort(key=lambda r: r[0] or "", reverse=True)
+            rows.sort(key=lambda r: r[0], reverse=True)
         else:
             rows = sort_rows(rows, 0, reverse=self._sort_descending)
 

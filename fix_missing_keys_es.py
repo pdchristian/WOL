@@ -19,11 +19,6 @@ missing_es = {
     "device_dialog.error.invalid_password": "Contraseña inválida",
     "device_dialog.error.invalid_username": "Nombre de usuario inválido",
     "device_dialog.error.save_failed": "No se pudo guardar el dispositivo",
-    # Device manager sort
-    "device_manager.sort.ip": "Dirección IP",
-    "device_manager.sort.mac": "Dirección MAC",
-    "device_manager.sort.name": "Nombre",
-    "device_manager.sort.username": "Nombre de usuario",
     # About dialog
     "dialog.about.title": "Acerca de Wake-on-LAN Manager",
     "dialog.about.version": "Versión:",

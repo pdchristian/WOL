@@ -323,7 +323,7 @@ class ConfigManager:
         if broadcast_port is not None:
             net["broadcast_port"] = broadcast_port
         self.save()
-    def update_ui_settings(self, language: str = None, device_sort_column: int = None, device_sort_order: str = None) -> None:
+    def update_ui_settings(self, language: str = None, device_sort_column: int = None, device_sort_order: str = None, display_mode: str = None) -> None:
         """Update UI-related settings."""
         ui = self.config.setdefault("ui", {})
         if language is not None:
@@ -332,6 +332,8 @@ class ConfigManager:
             ui["device_sort_column"] = device_sort_column
         if device_sort_order is not None:
             ui["device_sort_order"] = device_sort_order
+        if display_mode is not None:
+            ui["display_mode"] = display_mode
         self.save()
     # --- Schedules ---
 

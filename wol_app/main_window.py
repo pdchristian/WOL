@@ -40,6 +40,7 @@ from wol_app.update_dialog import (
     UpdateErrorDialog,
     UpdateInfoDialog,
 )
+from wol_app.theme import apply_display_mode
 from wol_app.updater import UpdateChecker, check_for_updates_sync
 from wol_app.utils import get_ip_key, get_resource_path
 from wol_app.wol_engine import WOLEngine
@@ -1051,6 +1052,10 @@ def main() -> NoReturn:
     trans = Translations()
     language = config.config.get("ui", {}).get("language", "en")
     trans.load(language)
+
+    # Apply display mode (auto / light / dark)
+    display_mode = config.config.get("ui", {}).get("display_mode", "auto")
+    apply_display_mode(app, display_mode)
 
     icon_path: str = get_resource_path("icon.ico")
     if os.path.exists(icon_path):
