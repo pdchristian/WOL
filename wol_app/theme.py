@@ -56,7 +56,7 @@ def _light_palette() -> QPalette:
     palette.setColor(QPalette.ColorRole.Window, QColor(240, 240, 240))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(0, 0, 0))
     palette.setColor(QPalette.ColorRole.Base, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(240, 240, 240))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(248, 248, 248))
     palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(255, 255, 255))
     palette.setColor(QPalette.ColorRole.ToolTipText, QColor(0, 0, 0))
     palette.setColor(QPalette.ColorRole.Text, QColor(0, 0, 0))
@@ -100,6 +100,7 @@ QMainWindow, QDialog, QGroupBox {
 QTableWidget, QTextEdit, QLineEdit, QComboBox, QSpinBox {
     background-color: #232323;
     color: #ffffff;
+    alternate-background-color: #4b4b4b;
 }
 QHeaderView::section {
     background-color: #353535;
@@ -119,6 +120,7 @@ QMainWindow, QDialog, QGroupBox {
 QTableWidget, QTextEdit, QLineEdit, QComboBox, QSpinBox {
     background-color: #ffffff;
     color: #000000;
+    alternate-background-color: #f8f8f8;
 }
 QHeaderView::section {
     background-color: #f0f0f0;

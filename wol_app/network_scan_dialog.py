@@ -3,7 +3,7 @@
 from typing import Any
 
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -170,9 +170,6 @@ class NetworkScanDialog(QDialog):
             item = self.table.horizontalHeaderItem(col)
             if item is not None:
                 item.setToolTip(Translations.tr("table.sort.tooltip"))
-        palette: QPalette = self.table.palette()
-        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(75, 75, 75))
-        self.table.setPalette(palette)
         # Right-click context menu on the scan results table
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_scan_context_menu)

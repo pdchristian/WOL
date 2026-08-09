@@ -58,6 +58,7 @@ class ScheduleDialog(QDialog):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
         # Clicking a column header sorts the table (1st A-Z, 2nd Z-A)
         header.setSortIndicatorShown(True)
         header.setSectionsClickable(True)

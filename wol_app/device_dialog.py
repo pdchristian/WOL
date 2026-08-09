@@ -211,6 +211,7 @@ class DeviceManagerDialog(QDialog):
         header.resizeSection(4, 120)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
         # Clicking a column header sorts the table (1st A-Z, 2nd Z-A)
         # Password column (4) is not sortable (masked display)
         header.setSortIndicatorShown(True)

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Literal, NoReturn
 
 from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPalette
+from PyQt6.QtGui import QAction, QFont, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -365,10 +365,6 @@ class MainWindow(QMainWindow):
         self.device_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.device_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.device_table.setAlternatingRowColors(True)
-        # Set alternating row color to a medium gray for better visibility
-        palette: QPalette = self.device_table.palette()
-        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(75, 75, 75))
-        self.device_table.setPalette(palette)
         # Right-click context menu on the device list
         self.device_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.device_table.customContextMenuRequested.connect(self._show_device_context_menu)

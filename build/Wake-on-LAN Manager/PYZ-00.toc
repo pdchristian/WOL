@@ -613,6 +613,7 @@
   ('wol_app.settings_dialog',
    'C:\\Python\\WOL\\wol_app\\settings_dialog.py',
    'PYMODULE'),
+  ('wol_app.theme', 'C:\\Python\\WOL\\wol_app\\theme.py', 'PYMODULE'),
   ('wol_app.translations',
    'C:\\Python\\WOL\\wol_app\\translations.py',
    'PYMODULE'),
