@@ -91,6 +91,10 @@ class UpdateAvailableDialog(QDialog):
 
         self.release_notes = QTextBrowser()
         body = self.release_info.get("body", Translations.tr("update_dialog.no_release_notes"))
+        # GitHub release bodies may contain plain line breaks that setMarkdown()
+        # does not render as <br>.  Convert bare newlines to Markdown hard-breaks
+        # so that bullet points / line items stay on separate lines.
+        body = body.replace("\r\n", "\n").replace("\n", "  \n")
         self.release_notes.setMarkdown(body)
         self.release_notes.setOpenExternalLinks(True)
         layout.addWidget(self.release_notes, 1)
