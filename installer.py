@@ -10,6 +10,7 @@ Features:
 - User data cleanup on reinstall
 """
 
+import argparse
 import ctypes
 import os
 import shutil
@@ -537,6 +538,84 @@ def create_start_menu_folder(install_dir, exe_dest):
     return app_link, uninstall_link
 
 
+# --- Custom Action modes (invoked by the Inno Setup installer via Exec) ---
+
+def cmd_preinstall_cleanup(install_dir, remove_data=False):
+    """Remove a previous installation before a fresh install.
+
+    Invoked by the Inno Setup installer (PrepareToInstall) when an existing
+    installation is detected. Non-interactive: the keep/remove-user-data
+    decision is passed in by the installer UI (``remove_data``).
+    """
+    # Kill a running application instance
+    try:
+        subprocess.run(["taskkill", "/f", "/im", APP_EXE_NAME],
+                       capture_output=True, timeout=5)
+    except Exception:
+        pass
+
+    # Remove the host service (SCM + firewall rule) before the dir is deleted
+    stop_and_remove_service()
+
+    # Remove the Add/Remove Programs registry entry
+    unregister_app_from_registry()
+
+    # Remove Start Menu shortcuts (all users)
+    start_menu_folder = os.path.join(
+        os.environ.get("ProgramData", ""),
+        "Microsoft", "Windows", "Start Menu", "Programs", APP_NAME,
+    )
+    try:
+        if os.path.exists(start_menu_folder):
+            shutil.rmtree(start_menu_folder)
+    except Exception:
+        pass
+
+    # Remove the public desktop shortcut
+    desktop_link = os.path.join(
+        os.environ.get("PUBLIC", ""), "Desktop", f"{APP_NAME}.lnk"
+    )
+    try:
+        if os.path.exists(desktop_link):
+            os.remove(desktop_link)
+    except Exception:
+        pass
+
+    # Remove the installation directory
+    try:
+        if os.path.exists(install_dir):
+            shutil.rmtree(install_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+    # Optionally wipe user data (devices, settings, master key)
+    if remove_data:
+        remove_user_data()
+
+    return 0
+
+
+def cmd_install_service(install_dir, variant):
+    """Install + start the WOL Host Service for the chosen variant.
+
+    Invoked by the Inno Setup installer (ssPostInstall). The host service
+    files themselves are copied by Inno; this only registers the Windows
+    service and the firewall rule.
+    """
+    ok = install_host_service(install_dir, variant)
+    return 0 if ok else 1
+
+
+def cmd_fix_permissions():
+    """Fix ownership/permissions on the user data directory.
+
+    Invoked by the Inno Setup installer (ssPostInstall). The installer runs
+    elevated, so the .wol_app directory may end up owned by the admin account.
+    """
+    fix_wol_app_permissions()
+    return 0
+
+
 def main():
     app_name = APP_NAME
     install_dir = os.path.join(os.environ["ProgramFiles"], APP_INSTALL_DIR_NAME)
@@ -786,5 +865,42 @@ def main():
     input("\nPress Enter to exit...")
 
 
+def _dispatch_custom_action(argv):
+    """Dispatch a non-interactive custom action (called by Inno Setup).
+
+    Returns an exit code. Used when the installer is launched with a leading
+    ``--`` argument; otherwise the interactive terminal installer runs.
+    """
+    parser = argparse.ArgumentParser(prog="installer", add_help=False)
+    parser.add_argument("--preinstall-cleanup", action="store_true")
+    parser.add_argument("--install-service", nargs="?", const="onedir")
+    parser.add_argument("--fix-permissions", action="store_true")
+    parser.add_argument("--install-dir", default=None)
+    parser.add_argument("--remove-data", action="store_true")
+    args = parser.parse_args(argv)
+
+    default_dir = os.path.join(os.environ["ProgramFiles"], APP_INSTALL_DIR_NAME)
+
+    if args.preinstall_cleanup:
+        return cmd_preinstall_cleanup(args.install_dir or default_dir,
+                                      args.remove_data)
+    if args.install_service:
+        return cmd_install_service(args.install_dir or default_dir,
+                                   args.install_service)
+    if args.fix_permissions:
+        return cmd_fix_permissions()
+    return 2
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1].startswith("--"):
+        sys.exit(_dispatch_custom_action(sys.argv[1:]))
+    # Invoked directly (not by Inno Setup). This helper is normally launched
+    # by the installer as a custom action; running it directly does nothing.
+    try:
+        print("Wake-on-LAN Manager installer helper.")
+        print("This program is invoked automatically by the Inno Setup installer.")
+        print("To install, run: Wake-on-LAN Manager WinInstaller.exe")
+        input("\nPress Enter to exit...")
+    except Exception:
+        pass

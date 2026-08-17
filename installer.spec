@@ -1,33 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
-import os
-
 """
-PyInstaller spec for Wake-on-LAN Manager Installer.
-Bundles the app executable, manual, and uninstaller into a single installer .exe.
+PyInstaller spec for the Wake-on-LAN Manager installer helper.
+
+This is NOT the user-facing installer anymore. The user-facing installer is
+built by Inno Setup (see setup.iss). This small helper EXE only carries the
+Python install logic (host-service SCM registration, .wol_app permission
+fixes, user-data handling, reinstall cleanup) and is invoked by the Inno
+Setup installer as a custom action via Exec.
+
+File copying, shortcuts, registry (Add/Remove Programs) and the GUI are all
+handled by Inno Setup, so this helper bundles only the Python code + wol_app.
 """
 
 block_cipher = None
-
-# Determine base directory (spec file location)
-SPEC_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.getcwd()
 
 a = Analysis(
     ['installer.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        (os.path.join(SPEC_DIR, 'dist', 'Wake-on-LAN Manager.exe'), '.'),
-        # Host service, onedir variant (exe + _internal)
-        (os.path.join(SPEC_DIR, 'dist', 'WOL Host Service'), 'WOL Host Service'),
-        # Host service, onefile variant (single exe) - optional, user chooses at install
-        (os.path.join(SPEC_DIR, 'dist_onefile', 'WOL Host Service.exe'), 'WOL Host Service OneFile'),
-        (os.path.join(SPEC_DIR, 'dist', 'uninstall.exe'), '.'),
-        ('Bedienungsanleitung.md', '.'),
-        ('Bedienungsanleitung.pdf', '.'),
-        ('Wake-on-LAN.reg', '.'),
-        ('icon.ico', '.'),
-    ],
-    hiddenimports=['winreg'],
+    datas=[],
+    hiddenimports=['winreg', 'wol_app', 'wol_app.utils'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -47,14 +39,14 @@ exe = EXE(
     a.datas,
     [],
     exclude_bin=True,
-    name='Wake-on-LAN Manager Installer',
+    name='installer',
     icon='icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
-    uac_admin=True,
+    console=False,
+    uac_admin=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

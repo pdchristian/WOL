@@ -8,6 +8,7 @@ Removes all traces of the application:
 - User configuration data (~/.wol_app/)
 """
 
+import argparse
 import ctypes
 import os
 import shutil
@@ -400,6 +401,36 @@ def cleanup_install_directory(install_dir):
     return True
 
 
+# --- Custom Action modes (invoked by the Inno Setup uninstaller via Exec) ---
+
+def cmd_remove_service():
+    """Stop and remove the WOL Host Service + its firewall rule.
+
+    Invoked by the Inno Setup uninstaller. Handles both install layouts
+    (onedir / onefile).
+    """
+    ok = remove_host_service()
+    return 0 if ok else 1
+
+
+def cmd_cleanup_user_data():
+    """Securely wipe user data (.wol_app) and the user desktop shortcut.
+
+    Invoked by the Inno Setup uninstaller.
+    """
+    cleanup_user_data(get_user_profile_dir())
+    return 0
+
+
+def cmd_cleanup_orphaned_registry():
+    """Remove orphaned Add/Remove Programs keys from previous versions.
+
+    Invoked by the Inno Setup uninstaller.
+    """
+    cleanup_orphaned_registry_keys()
+    return 0
+
+
 def main():
     silent = "/S" in sys.argv or "/s" in sys.argv
 
@@ -477,5 +508,28 @@ def main():
         input("\nPress Enter to exit...")
 
 
+def _dispatch_custom_action(argv):
+    """Dispatch a non-interactive custom action (called by Inno Setup).
+
+    Returns an exit code. Used when the uninstaller is launched with a
+    leading ``--`` argument; otherwise the interactive uninstaller runs.
+    """
+    parser = argparse.ArgumentParser(prog="uninstall", add_help=False)
+    parser.add_argument("--remove-service", action="store_true")
+    parser.add_argument("--cleanup-user-data", action="store_true")
+    parser.add_argument("--cleanup-orphaned-registry", action="store_true")
+    args = parser.parse_args(argv)
+
+    if args.remove_service:
+        return cmd_remove_service()
+    if args.cleanup_user_data:
+        return cmd_cleanup_user_data()
+    if args.cleanup_orphaned_registry:
+        return cmd_cleanup_orphaned_registry()
+    return 2
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1].startswith("--"):
+        sys.exit(_dispatch_custom_action(sys.argv[1:]))
     main()
