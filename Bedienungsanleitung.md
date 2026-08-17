@@ -8,13 +8,14 @@
 5. [Wake-on-LAN senden](#wake-on-lan-senden)
 6. [Status prüfen](#status-prüfen)
 7. [Remote Shutdown](#remote-shutdown)
-8. [Zeitpläne erstellen](#zeitpläne-erstellen)
-9. [Netzwerkeinstellungen](#netzwerkeinstellungen)
-10. [Protokoll anzeigen](#protokoll-anzeigen)
-11. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
-12. [Tastenkürzel](#tastenkürzel)
-13. [Häufige Fragen](#häufige-fragen)
-14. [Systemanforderungen](#systemanforderungen)
+8. [Herunterfahren mit Host-Service](#herunterfahren-mit-host-service)
+9. [Zeitpläne erstellen](#zeitpläne-erstellen)
+10. [Netzwerkeinstellungen](#netzwerkeinstellungen)
+11. [Protokoll anzeigen](#protokoll-anzeigen)
+12. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
+13. [Tastenkürzel](#tastenkürzel)
+14. [Häufige Fragen](#häufige-fragen)
+15. [Systemanforderungen](#systemanforderungen)
 
 ---
 
@@ -29,6 +30,7 @@
    - Erstellt eine Desktop-Verknüpfung
    - Registriert die Anwendung in der Windows-Programmliste (Deinstallationsprogramme)
 4. Bei einer **Neuinstallation** werden Sie gefragt, ob vorhandene Geräteeinträge und Einstellungen behalten oder gelöscht werden sollen.
+5. Der Installer fragt, ob der **WOL Host Service** mitinstalliert werden soll (Standard: **Ja**). Dieser Dienst erlaubt es anderen Wake-on-LAN-Manager-Instanzen (Windows oder Android), diesen PC remote herunterzufahren.
 
 ### Aus dem Quellcode starten
 1. Python 3.10+ installieren.
@@ -49,7 +51,7 @@
 2. Suchen Sie **Wake-on-LAN Manager** und klicken Sie auf **Deinstallieren**.
 3. Bestätigen Sie die Abfrage – alle Dateien, Verknüpfungen und Registrierungseinträge werden entfernt.
 
-> **Hinweis:** Bei der Deinstallation werden auch alle Geräteeinträge und Einstellungen gelöscht.
+> **Hinweis:** Bei der Deinstallation werden auch alle Geräteeinträge und Einstellungen gelöscht. Der Uninstaller fragt zusätzlich, ob der **WOL Host Service** entfernt werden soll (Standard: **Ja**).
 
 ---
 
@@ -193,6 +195,89 @@ Falls das Zielsystem eine Authentifizierung erfordert (z. B. bei Domänen-Konten
 > - Die Authentifizierung erfolgt über **Windows SMB (Server Message Block)**.
 > - Falls die Verbindung fehlschlägt, prüfen Sie die **Berechtigungen** des Benutzers auf dem Zielsystem.
 > - Das Passwort wird **verschlüsselt** gespeichert und ist nur auf dem aktuellen System lesbar.
+
+---
+
+## Herunterfahren mit Host-Service
+
+Diese zweite Shutdown-Variante setzt einen kleinen Windows-Dienst (**WOL Host Service**) auf dem Zielsystem voraus. Der Dienst lauscht auf **TCP-Port 8765** und akzeptiert JSON-Befehle (`shutdown`, `reboot`, `status`). Die Authentifizierung erfolgt mit den **im Geräteeintrag hinterlegten Windows-Benutzerdaten** – es sind also keine offenen Freigaben oder Registry-Anpassungen am Zielsystem nötig.
+
+### Voraussetzungen am Zielsystem
+1. Der **WOL Host Service** muss installiert und gestartet sein (Auto-Start). Installation bequem über den Installer oder manuell:
+   ```
+   "C:\Program Files\WakeOnLAN\WOL Host Service.exe" --install
+   ```
+2. Die **Inbound-Firewall-Regel** für TCP-Port 8765 muss vorhanden sein (wird bei `--install` automatisch angelegt).
+3. Eine **IP-Adresse** muss für das Gerät konfiguriert sein.
+4. Für das Gerät müssen **Benutzername und Passwort** eines Kontos mit Shutdown-Berechtigung hinterlegt sein (z. B. `Administrator` oder `DOMAIN\Benutzer`).
+
+### Shutdown-Methode pro Gerät wählen
+1. Öffnen Sie den **Geräte-Manager** (**Datei → Geräte verwalten...** oder `Strg+D`).
+2. Wählen Sie das Gerät aus und klicken Sie auf **Bearbeiten**.
+3. Setzen Sie im Feld **Shutdown-Methode** den Wert **Host-Service (empfohlen)** oder **SMB (Windows-Freigabe)**.
+4. Speichern Sie die Änderungen.
+
+> **Standard-Methode:** In den Einstellungen (**Tools → Einstellungen... → Remote-Herunterfahren**) können Sie die Standard-Methode für **neue** Geräte festlegen. Der anfängliche Standard ist **Host-Service**. Bestehende Geräte (vor v1.7.0) behalten die bisherige SMB-Methode.
+
+### Herunterfahren auslösen
+1. Wählen Sie das Gerät in der Hauptansicht aus.
+2. Klicken Sie auf **Herunterfahren** und bestätigen Sie den Dialog.
+3. Die Anwendung sendet den JSON-Befehl an den Host-Service des Zielsystems. Das Gerät wird sofort heruntergefahren.
+
+> **Hinweis:** Auch **geplante Shutdowns** (Zeitpläne) verwenden die pro Gerät gewählte Methode. Die **Android-App** nutzt ausschließlich den Host-Service.
+
+### Protokoll (Übersicht)
+- **Anfrage:** `{"command": "shutdown", "username": "...", "password": "..."}` (eine Zeile)
+- **Antwort:** `{"status": "ok", "message": "..."}` (eine Zeile)
+- Der Dienst prüft die Anmeldedaten vor der Ausführung und bestätigt die Anfrage, bevor das System heruntergefahren wird.
+
+### Bedienung des WOL Host Service
+Der **WOL Host Service** kann über die Kommandozeile gesteuert werden. Führen Sie die folgenden Befehle **als Administrator** aus (Rechtsklick → „Als Administrator ausführen“):
+
+| Befehl | Wirkung |
+|--------|---------|
+| `"WOL Host Service.exe" --install` | Dienst installieren (Auto-Start) + Firewall-Regel für TCP 8765 anlegen |
+| `"WOL Host Service.exe" --start` | Dienst starten |
+| `"WOL Host Service.exe" --stop` | Dienst stoppen |
+| `"WOL Host Service.exe" --status` | Dienststatus anzeigen (`RUNNING`, `STOPPED`, ...) |
+| `"WOL Host Service.exe" --uninstall` | Dienst entfernen (stoppt und löscht ihn) + Firewall-Regel entfernen |
+| `"WOL Host Service.exe" --run` | Dienst im Vordergrund ausführen (nur zum Testen/Debuggen, ohne Dienstcontroller) |
+
+**Beispiel (Installation, Start und Status):**
+```
+cd "C:\Program Files\WakeOnLAN"
+"WOL Host Service.exe" --install
+"WOL Host Service.exe" --start
+"WOL Host Service.exe" --status
+```
+
+> **Hinweis:** `--run` startet den TCP-Server nur im Vordergrund und ist für kurze Tests gedacht. Für den Dauerbetrieb (auch nach einem Neustart) muss der Dienst über `--install` + `--start` als Windows-Dienst registriert werden.
+
+### Dienst manuell entfernen (falls `--uninstall` nicht funktioniert)
+In seltenen Fällen kann der Dienst einen defekten Zustand haben – z. B. wenn die registrierte Binärdatei (`ImagePath`) nicht mehr existiert. Dann schlagen `--uninstall` oder `--install` mit dem Fehler *„Das System kann die angegebene Datei nicht finden“* fehl. In diesem Fall kann der Dienst **manuell** mit dem Windows-Befehl `sc.exe` entfernt werden:
+
+```
+sc.exe delete WOLHostService
+```
+
+**Ablauf:**
+1. **Als Administrator** eine Eingabeaufforderung oder PowerShell öffnen.
+2. Den Dienst löschen:
+   ```
+   sc.exe delete WOLHostService
+   ```
+3. Prüfen, dass der Dienst entfernt wurde:
+   ```
+   sc.exe query WOLHostService
+   ```
+   Erwartete Antwort: *„Der angegebene Dienst ist nicht als installierter Dienst vorhanden.“*
+
+Falls `sc.exe delete` ebenfalls fehlschlägt, kann der Registry-Schlüssel des Dienstes direkt gelöscht werden:
+```
+reg delete "HKLM\SYSTEM\CurrentControlSet\Services\WOLHostService" /f
+```
+
+Nach der Entfernung kann der Dienst mit `--install` und `--start` sauber neu registriert werden.
 
 ---
 
@@ -345,4 +430,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 1.6.2 | Wake-on-LAN Manager*
+*Version 1.7.0 | Wake-on-LAN Manager*

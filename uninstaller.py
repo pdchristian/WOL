@@ -8,11 +8,11 @@ Removes all traces of the application:
 - User configuration data (~/.wol_app/)
 """
 
-import os
-import sys
-import shutil
 import ctypes
+import os
+import shutil
 import subprocess
+import sys
 import winreg
 from pathlib import Path
 
@@ -74,7 +74,7 @@ def get_install_dir():
             if os.path.exists(dist_dir):
                 print(f"  Using development location: {dist_dir}")
                 return dist_dir
-    except Exception as e:
+    except Exception:
         pass
 
     # Secondary: registry (only for non-frozen executables)
@@ -94,6 +94,37 @@ def get_install_dir():
     )
     print(f"  Using fallback location: {fallback}")
     return fallback
+
+
+def remove_host_service():
+    """Stop and remove the WOL Host Service + its firewall rule."""
+    install_dir = get_install_dir()
+    service_exe = os.path.join(install_dir, "WOL Host Service", "WOL Host Service.exe")
+    if os.path.exists(service_exe):
+        try:
+            result = subprocess.run(
+                [service_exe, "--uninstall"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if result.returncode == 0:
+                print("  Host service removed.")
+                return True
+            print(f"  Warning: service --uninstall failed (rc={result.returncode})")
+        except Exception as e:
+            print(f"  Warning: could not run service --uninstall: {e}")
+    # Fallback: remove directly via sc.exe
+    try:
+        subprocess.run(["sc.exe", "stop", "WOLHostService"], capture_output=True, timeout=30)
+        subprocess.run(["sc.exe", "delete", "WOLHostService"], capture_output=True, timeout=30)
+        subprocess.run(
+            ["netsh", "advfirewall", "firewall", "delete", "rule", "name=WOL Host Service"],
+            capture_output=True, timeout=15,
+        )
+        print("  Host service removed (fallback).")
+        return True
+    except Exception as e:
+        print(f"  Warning: could not remove host service: {e}")
+        return False
 
 
 def kill_app_process():
@@ -384,9 +415,9 @@ def main():
     if not silent:
         print(f"This will remove {APP_NAME} and ALL associated data:")
         print(f"  - Installation files ({install_dir})")
-        print(f"  - User configuration (~/.wol_app/)")
-        print(f"  - Start Menu and Desktop shortcuts")
-        print(f"  - Registry entries")
+        print("  - User configuration (~/.wol_app/)")
+        print("  - Start Menu and Desktop shortcuts")
+        print("  - Registry entries")
         print()
         response = input("Are you sure you want to continue? [y]: ").lower()
         if response not in ("y", ""):
@@ -397,6 +428,20 @@ def main():
 
     # Step 1: Stop running application
     kill_app_process()
+
+    # Step 1b: Remove the host service (ask in interactive mode, default yes;
+    # silent mode removes unconditionally)
+    if not silent:
+        response = input(
+            "\nRemove the WOL Host Service (WOLHostService)? [y]: "
+        ).lower()
+        if response not in ('n', 'no'):
+            print("Removing host service...")
+            remove_host_service()
+        else:
+            print("  Keeping host service.")
+    else:
+        remove_host_service()
 
     # Step 2: Remove registry entry
     delete_registry_key()

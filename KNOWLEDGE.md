@@ -12,7 +12,7 @@
 | **runtime**         | Python 3.10+                                                          |
 | **author**          | pdchristian                                                           |
 | **repository**      | https://github.com/pdchristian/WOL                                     |
-| **description**     | A powerful desktop application for managing network devices via Wake-on-LAN magic packets, ICMP ping status monitoring, remote shutdown, and automated scheduling. Built with PyQt6 and hardened against CWE-2025 top security risks. |
+| **description**     | A powerful desktop application for managing network devices via Wake-on-LAN magic packets, ICMP ping status monitoring, remote shutdown (SMB and Host Service), and automated scheduling. Built with PyQt6 and hardened against CWE-2025 top security risks. |
 
 ---
 
@@ -24,6 +24,7 @@ Wake-on-LAN Manager is a Windows desktop GUI application that enables users to d
 - Send WoL magic packets to individual devices or all enabled devices simultaneously
 - Real-time device status monitoring (online/offline/unknown) via ICMP ping
 - Remote shutdown of devices via Windows SMB net use / shutdown.exe
+- Remote shutdown via the optional **WOL Host Service** (Windows service, JSON over TCP port 8765, Windows credential authentication)
 - Automated scheduling (cron-like, per-device with day-of-week selection)
 - Network discovery scanning across all local interfaces
 - Multi-language support (English, German, French, Spanish)

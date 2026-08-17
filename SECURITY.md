@@ -2,8 +2,8 @@
 
 ## 📋 Dokumentinformationen
 
-- **Version:** 1.6.2
-- **Datum:** 2026-07-18
+- **Version:** 1.7.0
+- **Datum:** 2026-08-16
 - **Status:** alle kritischen Sicherheitsrisiken behoben
 - **Verantwortlicher:** GitHub Copilot (automatisierte Sicherheitsanalyse)
 
@@ -13,7 +13,29 @@
 
 Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.6.0** implementiert wurden. 
 
-Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert.
+Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert. Seit **Version 1.7.0** kommt der optionale **WOL Host Service** hinzu (siehe unten).
+
+---
+
+## 🆕 Neue Angriffsfläche: WOL Host Service (v1.7.0)
+
+Mit Version 1.7.0 wird ein optionaler **WOL Host Service** eingeführt, der auf dem Zielsystem läuft und Remote-Shutdown-Befehle über **TCP-Port 8765** (JSON) annimmt. Diese neue Angriffsfläche wird wie folgt behandelt:
+
+### Bekannte Trade-offs
+- **Klartext-Anmeldedaten im LAN:** Das JSON-Protokoll überträgt Benutzername und Passwort unverschlüsselt (kein TLS in v1.7.0). Der Dienst läuft nur im lokalen Netzwerk; ein TLS-basiertes Protokoll ist für eine spätere Version vorgesehen.
+- **Port 8765 offen:** Der Dienst lauscht auf `0.0.0.0:8765`. Die Firewall-Regel erlaubt eingehenden TCP-Verkehr auf diesem Port – nur in Netzwerken einsetzen, denen Sie vertrauen.
+
+### Mitigations
+- **Authentifizierung:** Der Dienst validiert die übermittelten Windows-Anmeldedaten mit `LogonUserW` (interaktives Logon) **vor** der Ausführung. Ohne gültige Anmeldedaten wird kein Befehl ausgeführt.
+- **Befehls-Whitelist:** Es werden nur `shutdown`, `reboot` und `status` akzeptiert; unbekannte Kommandos werden abgelehnt.
+- **Request-Limit:** JSON-Anfragen sind auf 4 KB begrenzt.
+- **Status ohne Auth:** Das Kommando `status` erfordert keine Anmeldedaten (Erreichbarkeits-Probe) und liefert keinerlei Systemdaten.
+- **Bestätigung vor Ausführung:** Der Dienst antwortet erst, nachdem die Anmeldedaten geprüft wurden; die eigentliche Shutdown-Ausführung erfolgt anschließend.
+- **Service-Berechtigungen:** Der Dienst läuft als **LocalSystem**; die Firewall-Regel wird bei Installation/Deinstallation automatisch verwaltet.
+- **Client-seitig:** Die Anmeldedaten werden weiterhin **AES-256-GCM verschlüsselt** in `~/.wol_app/config.json` gespeichert und nur entschlüsselt, wenn ein Shutdown ausgelöst wird.
+
+### Empfehlung
+Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Manager-Instanzen in Ihrem lokalen Netzwerk remote heruntergefahren werden sollen. In Netzwerken mit unvertrauten Geräten empfiehlt es sich, die Firewall-Regel nur für die benötigten Quell-IPs zu öffnen.
 
 ---
 

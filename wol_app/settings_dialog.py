@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -18,8 +19,6 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QVBoxLayout,
 )
-
-from PyQt6.QtWidgets import QApplication
 
 from wol_app.theme import apply_display_mode
 from wol_app.translations import Translations
@@ -128,6 +127,27 @@ class SettingsDialog(QDialog):
         log_group.setLayout(log_layout)
         layout.addWidget(log_group)
 
+        # --- Shutdown Group ---
+        shutdown_group = QGroupBox(Translations.tr("settings.group.shutdown"))
+        shutdown_layout = QFormLayout()
+
+        self.default_method_combo = QComboBox()
+        self.default_method_combo.addItem(
+            Translations.tr("device_dialog.method.host_service"),
+            "host_service",
+        )
+        self.default_method_combo.addItem(
+            Translations.tr("device_dialog.method.smb"),
+            "smb",
+        )
+        shutdown_layout.addRow(
+            Translations.tr("settings.label.default_shutdown_method"),
+            self.default_method_combo,
+        )
+
+        shutdown_group.setLayout(shutdown_layout)
+        layout.addWidget(shutdown_group)
+
         # Info label
         info_label = QLabel(
             Translations.tr("settings.info.text")
@@ -179,6 +199,13 @@ class SettingsDialog(QDialog):
         # Load log settings
         self.max_logs_input.setValue(self.config.get_max_logs())
 
+        # Load default shutdown method
+        current_method = self.config.get_default_shutdown_method()
+        for idx in range(self.default_method_combo.count()):
+            if self.default_method_combo.itemData(idx) == current_method:
+                self.default_method_combo.setCurrentIndex(idx)
+                break
+
     def _save(self) -> None:
         ip: str = self.broadcast_ip_input.text().strip()
         port: int = self.broadcast_port_input.value()
@@ -228,6 +255,11 @@ class SettingsDialog(QDialog):
 
         # Save log settings
         self.config.set_max_logs(self.max_logs_input.value())
+
+        # Save default shutdown method
+        selected_method = self.default_method_combo.currentData()
+        if selected_method:
+            self.config.set_default_shutdown_method(selected_method)
 
         QMessageBox.information(self, Translations.tr("dialog.saved.title"), Translations.tr("dialog.saved.message"))
         self.accept()

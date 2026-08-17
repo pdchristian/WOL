@@ -30,17 +30,18 @@ from PyQt6.QtWidgets import (
 from wol_app import __version__
 from wol_app.config import ConfigManager
 from wol_app.device_dialog import DeviceManagerDialog
+from wol_app.host_service_client import send_host_command
 from wol_app.log_dialog import LogDialog
 from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.schedule_dialog import ScheduleDialog
 from wol_app.settings_dialog import SettingsDialog
+from wol_app.theme import apply_display_mode
 from wol_app.translations import Translations
 from wol_app.update_dialog import (
     UpdateAvailableDialog,
     UpdateErrorDialog,
     UpdateInfoDialog,
 )
-from wol_app.theme import apply_display_mode
 from wol_app.updater import UpdateChecker, check_for_updates_sync
 from wol_app.utils import get_ip_key, get_resource_path
 from wol_app.wol_engine import WOLEngine
@@ -690,6 +691,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, Translations.tr("dialog.no_ip.title"), Translations.tr("dialog.no_ip.message", name=device_name))
             return
 
+        # Determine the shutdown method for this device
+        method = self.config.get_device_shutdown_method(device)
+
         # Build confirmation dialog
         dialog = QDialog(self)
         dialog.setWindowTitle(Translations.tr("dialog.shutdown_confirm.title", name=device_name))
@@ -707,16 +711,22 @@ class MainWindow(QMainWindow):
         label3 = QLabel(Translations.tr("dialog.shutdown_confirm.label3"))
         layout.addWidget(label3)
 
-        registry_text = QTextEdit()
-        registry_text.setPlainText(
-            "- [HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Policies\\\\System]\n"
-            "  \"LocalAccountTokenFilterPolicy\"=dword:00000001\n"
-            "\n"
-            "- " + Translations.tr("dialog.shutdown_confirm.sharing_activated")
-        )
-        registry_text.setReadOnly(True)
-        registry_text.setMaximumHeight(80)
-        layout.addWidget(registry_text)
+        # Method-specific prerequisite hint
+        prereq_text = QTextEdit()
+        if method == "host_service":
+            prereq_text.setPlainText(
+                Translations.tr("dialog.shutdown_confirm.prereq_host_service")
+            )
+        else:
+            prereq_text.setPlainText(
+                "- [HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Policies\\\\System]\n"
+                "  \"LocalAccountTokenFilterPolicy\"=dword:00000001\n"
+                "\n"
+                "- " + Translations.tr("dialog.shutdown_confirm.sharing_activated")
+            )
+        prereq_text.setReadOnly(True)
+        prereq_text.setMaximumHeight(90)
+        layout.addWidget(prereq_text)
 
         # Buttons
         button_layout = QHBoxLayout()
@@ -731,6 +741,49 @@ class MainWindow(QMainWindow):
 
         dialog.exec()
 
+    def _execute_host_service_shutdown(
+        self, device_name: str, device_ip: str, username: str, password: str
+    ) -> None:
+        """Shut down a device via the WOL Host Service (TCP port 8765)."""
+        if not username or not password:
+            self.config.add_log(device_name, "SHUTDOWN", "ERROR", "Missing credentials for host service")
+            QMessageBox.warning(
+                self,
+                Translations.tr("dialog.host_service_missing_creds.title"),
+                Translations.tr("dialog.host_service_missing_creds.message", name=device_name),
+            )
+            return
+
+        self.statusBar().showMessage(Translations.tr("status.host_service_sending", name=device_name))
+        QApplication.processEvents()
+
+        success, message = send_host_command(device_ip, "shutdown", username, password)
+
+        if success:
+            self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", f"Host service: {message}")
+            QMessageBox.information(
+                self,
+                Translations.tr("dialog.shutdown_successful.title"),
+                Translations.tr("dialog.shutdown_successful.message", name=device_name, ip=device_ip),
+            )
+            self.statusBar().showMessage(Translations.tr("status.shutdown_success", name=device_name))
+        else:
+            self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Host service: {message}")
+            # Distinguish authentication failures from connectivity problems
+            if "Authentication failed" in message:
+                QMessageBox.critical(
+                    self,
+                    Translations.tr("dialog.host_service_auth_failed.title"),
+                    Translations.tr("dialog.host_service_auth_failed.message", name=device_name, ip=device_ip, error=message),
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    Translations.tr("dialog.host_service_error.title"),
+                    Translations.tr("dialog.host_service_error.message", name=device_name, ip=device_ip, error=message),
+                )
+            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
+
     def _execute_shutdown(self, device, dialog):
         """Execute the remote shutdown sequence for a device."""
         dialog.accept()  # Close the confirmation dialog
@@ -739,6 +792,12 @@ class MainWindow(QMainWindow):
         device_ip = device.get("ip", "")
         username = device.get("username", "")
         password = device.get("password", "")
+
+        # Dispatch on the device's shutdown method
+        method = self.config.get_device_shutdown_method(device)
+        if method == "host_service":
+            self._execute_host_service_shutdown(device_name, device_ip, username, password)
+            return
 
         self.statusBar().showMessage(Translations.tr("status.shutting_down", name=device_name))
         QApplication.processEvents()
@@ -870,6 +929,35 @@ class MainWindow(QMainWindow):
         else:
             self.engine.send_wake_packet(device_id)
 
+    def _scheduled_host_service_shutdown(self, device_name: str, ip: str, device: dict) -> None:
+        """Execute a scheduled shutdown via the WOL Host Service (no dialog)."""
+        username = device.get("username", "")
+        password = device.get("password", "")
+
+        if not username or not password:
+            msg = Translations.tr("status.scheduled_shutdown_fail", name=device_name, error=Translations.tr("status.scheduled_shutdown_missing_creds"))
+            self.statusBar().showMessage(msg, 5000)
+            self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
+            QApplication.processEvents()
+            return
+
+        try:
+            success, message = send_host_command(ip, "shutdown", username, password)
+            if success:
+                msg = Translations.tr("status.scheduled_shutdown_success", name=device_name)
+                self.statusBar().showMessage(msg, 5000)
+                self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", f"Host service: {message}")
+            else:
+                msg = Translations.tr("status.scheduled_shutdown_fail", name=device_name, error=message)
+                self.statusBar().showMessage(msg, 5000)
+                self.config.add_log(device_name, "SHUTDOWN", "FAILED", f"Host service: {message}")
+        except Exception as e:
+            msg = Translations.tr("status.scheduled_shutdown_error", name=device_name, error=str(e))
+            self.statusBar().showMessage(msg, 5000)
+            self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
+
+        QApplication.processEvents()
+
     def _scheduled_shutdown(self, device_id: str) -> None:
         """Execute remote shutdown for a scheduled entry (no confirmation dialog)."""
         device = self.config.get_device_by_id(device_id)
@@ -880,10 +968,15 @@ class MainWindow(QMainWindow):
 
         device_name = device.get("name", Translations.tr("device.unknown"))
         ip = device.get("ip", "")
-        
+
         self.statusBar().showMessage(Translations.tr("status.scheduled_shutdown_starting", name=device_name, ip=ip), 0)
         self.config.add_log(device_name, "SHUTDOWN", "IN_PROGRESS", Translations.tr("status.scheduled_shutdown_progress", name=device_name))
-        
+
+        # Dispatch on the device's shutdown method
+        if self.config.get_device_shutdown_method(device) == "host_service":
+            self._scheduled_host_service_shutdown(device_name, ip, device)
+            return
+
         try:
             # Step 1: Establish IPC$ connection
             username = device.get("username", "")

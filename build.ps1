@@ -1,29 +1,31 @@
 # ============================================================================
 # Wake-on-LAN Manager - Build Script
-# Version: 1.6.0 - Improvement Edition
-# Date: 2026-08-05
+# Version: 1.7.0 - Host Service Edition
+# Date: 2026-08-16
 # ============================================================================
-# This script builds the application, uninstaller, and final installer.
+# This script builds the application, host service, uninstaller, and final installer.
 # Run with: .\build.ps1
 # ============================================================================
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "=======================================" -ForegroundColor Cyan
-Write-Host "  Wake-on-LAN Manager v1.6.0 - Build Script" -ForegroundColor Cyan
-Write-Host "  Improvement Edition" -ForegroundColor Cyan
+Write-Host "  Wake-on-LAN Manager v1.7.0 - Build Script" -ForegroundColor Cyan
+Write-Host "  Host Service Edition" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # --- Configuration ---
 $APP_NAME = "Wake-on-LAN Manager"
 $APP_SPEC = "Wake-on-LAN Manager.spec"
+$SERVICE_NAME = "WOL Host Service"
+$SERVICE_SPEC = "wol_host_service.spec"
 $UNINSTALLER_SPEC = "uninstaller.spec"
 $INSTALLER_SPEC = "installer.spec"
 $DIST_DIR = "dist"
 
 # --- Step 0: Sync version across documentation ---
-Write-Host "[0/6] Syncing version in docs..." -ForegroundColor Yellow
+Write-Host "[0/7] Syncing version in docs..." -ForegroundColor Yellow
 $versionResult = python update_docs_version.py
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Version sync failed!" -ForegroundColor Red
@@ -33,7 +35,7 @@ Write-Host $versionResult
 Write-Host "  Docs synced." -ForegroundColor Green
 
 # --- Step 1: Clean previous builds ---
-Write-Host "[1/6] Cleaning previous builds..." -ForegroundColor Yellow
+Write-Host "[1/7] Cleaning previous builds..." -ForegroundColor Yellow
 if (Test-Path $DIST_DIR) {
     Remove-Item -Recurse -Force $DIST_DIR
 }
@@ -42,7 +44,7 @@ Write-Host "  Clean." -ForegroundColor Green
 
 # --- Step 2: Build the main application ---
 Write-Host ""
-Write-Host "[2/6] Building main application..." -ForegroundColor Yellow
+Write-Host "[2/7] Building main application..." -ForegroundColor Yellow
 $appResult = pyinstaller "$APP_SPEC" --distpath $DIST_DIR --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Application build failed!" -ForegroundColor Red
@@ -57,9 +59,26 @@ if (-not (Test-Path $appExe)) {
     exit 1
 }
 
-# --- Step 3: Build the uninstaller ---
+# --- Step 3: Build the host service ---
 Write-Host ""
-Write-Host "[3/6] Building uninstaller..." -ForegroundColor Yellow
+Write-Host "[3/7] Building host service..." -ForegroundColor Yellow
+$serviceResult = pyinstaller "$SERVICE_SPEC" --distpath $DIST_DIR --noconfirm
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Host service build failed!" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Host service built successfully." -ForegroundColor Green
+
+# Verify host service exists
+$serviceExe = Join-Path $DIST_DIR "$SERVICE_NAME.exe"
+if (-not (Test-Path $serviceExe)) {
+    Write-Host "ERROR: Host service executable not found at $serviceExe" -ForegroundColor Red
+    exit 1
+}
+
+# --- Step 4: Build the uninstaller ---
+Write-Host ""
+Write-Host "[4/7] Building uninstaller..." -ForegroundColor Yellow
 $uninstallResult = pyinstaller "$UNINSTALLER_SPEC" --distpath $DIST_DIR --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Uninstaller build failed!" -ForegroundColor Red
@@ -74,9 +93,9 @@ if (-not (Test-Path $uninstallExe)) {
     exit 1
 }
 
-# --- Step 4: Build the installer ---
+# --- Step 5: Build the installer ---
 Write-Host ""
-Write-Host "[4/6] Building installer..." -ForegroundColor Yellow
+Write-Host "[5/7] Building installer..." -ForegroundColor Yellow
 $installerResult = pyinstaller "$INSTALLER_SPEC" --distpath $DIST_DIR --noconfirm --clean
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Installer build failed!" -ForegroundColor Red
@@ -91,16 +110,18 @@ if (-not (Test-Path $installerExe)) {
     exit 1
 }
 
-# --- Step 5: Summary ---
+# --- Step 6: Summary ---
 Write-Host ""
-Write-Host "[5/6] Build Summary" -ForegroundColor Yellow
+Write-Host "[6/7] Build Summary" -ForegroundColor Yellow
 Write-Host "========================================" -ForegroundColor Cyan
 
 $appSize = [math]::Round((Get-Item $appExe).Length / 1MB, 2)
+$serviceSize = [math]::Round((Get-Item $serviceExe).Length / 1MB, 2)
 $uninstallSize = [math]::Round((Get-Item $uninstallExe).Length / 1MB, 2)
 $installerSize = [math]::Round((Get-Item $installerExe).Length / 1MB, 2)
 
 Write-Host "  Application:  $appExe ($appSize MB)" -ForegroundColor White
+Write-Host "  Host Service: $serviceExe ($serviceSize MB)" -ForegroundColor White
 Write-Host "  Uninstaller:  $uninstallExe ($uninstallSize MB)" -ForegroundColor White
 Write-Host "  Installer:    $installerExe ($installerSize MB)" -ForegroundColor White
 

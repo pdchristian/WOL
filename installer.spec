@@ -17,6 +17,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(SPEC_DIR, 'dist', 'Wake-on-LAN Manager.exe'), '.'),
+        (os.path.join(SPEC_DIR, 'dist', 'WOL Host Service'), 'WOL Host Service'),
         (os.path.join(SPEC_DIR, 'dist', 'uninstall.exe'), '.'),
         ('Bedienungsanleitung.md', '.'),
         ('Bedienungsanleitung.pdf', '.'),

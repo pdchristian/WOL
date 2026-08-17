@@ -116,14 +116,23 @@ def _sanitize_path(path: str) -> Path:
     return Path(path)
 
 
+# Valid shutdown methods
+SHUTDOWN_METHOD_HOST_SERVICE = "host_service"
+SHUTDOWN_METHOD_SMB = "smb"
+VALID_SHUTDOWN_METHODS = (SHUTDOWN_METHOD_HOST_SERVICE, SHUTDOWN_METHOD_SMB)
+
 # Default configuration
 DEFAULT_CONFIG = {
     "devices": [],
-    # Each device: {"id": uuid, "name": str, "mac": str, "ip": str, "username": str, "password": str, "enabled": bool}
+    # Each device: {"id": uuid, "name": str, "mac": str, "ip": str, "username": str, "password": str, "enabled": bool, "shutdown_method": str}
     "network": {
         "broadcast_ip": "255.255.255.255",
         "broadcast_port": 9,
     },
+    # Default shutdown method for newly added devices ("host_service" or "smb").
+    # Devices created by older versions have no "shutdown_method" key and are
+    # treated as "smb" (legacy behaviour).
+    "default_shutdown_method": SHUTDOWN_METHOD_HOST_SERVICE,
     "schedules": [],
     # Each schedule: {"id": uuid, "device_id": str, "cron_hour": int, "cron_minute": int, "days": list, "enabled": bool}
     "logs": [],
@@ -265,6 +274,7 @@ class ConfigManager:
             "enabled": True,
             "username": "",
             "password": "",
+            "shutdown_method": self.get_default_shutdown_method(),
         }
         self.config.setdefault("devices", []).append(device)
         self.save()
@@ -280,7 +290,10 @@ class ConfigManager:
         return False
 
     def update_device(self, device_id: str, **kwargs) -> bool:
-        """Update device fields with validation. Updates name, mac, ip, enabled, username, password."""
+        """Update device fields with validation.
+
+        Updates name, mac, ip, enabled, username, password, shutdown_method.
+        """
         for dev in self.config.get("devices", []):
             if dev["id"] == device_id:
                 if "name" in kwargs and validate_device_name(kwargs["name"]):
@@ -295,9 +308,35 @@ class ConfigManager:
                     dev["username"] = kwargs["username"][:64]
                 if "password" in kwargs and validate_password(kwargs["password"]):
                     dev["password"] = kwargs["password"]
+                if "shutdown_method" in kwargs and kwargs["shutdown_method"] in VALID_SHUTDOWN_METHODS:
+                    dev["shutdown_method"] = kwargs["shutdown_method"]
                 self.save()
                 return True
         return False
+
+    # --- Shutdown method ---
+
+    @staticmethod
+    def get_device_shutdown_method(device: dict) -> str:
+        """Return the shutdown method of a device.
+
+        Legacy devices (created before v1.7.0) have no "shutdown_method" key
+        and are treated as "smb" to preserve the previous behaviour.
+        """
+        method = device.get("shutdown_method", SHUTDOWN_METHOD_SMB)
+        return method if method in VALID_SHUTDOWN_METHODS else SHUTDOWN_METHOD_SMB
+
+    def get_default_shutdown_method(self) -> str:
+        """Return the default shutdown method for newly added devices."""
+        method = self.config.get("default_shutdown_method", SHUTDOWN_METHOD_HOST_SERVICE)
+        return method if method in VALID_SHUTDOWN_METHODS else SHUTDOWN_METHOD_HOST_SERVICE
+
+    def set_default_shutdown_method(self, method: str) -> None:
+        """Set the default shutdown method for newly added devices."""
+        if method not in VALID_SHUTDOWN_METHODS:
+            raise ValueError(f"Invalid shutdown method: {method}")
+        self.config["default_shutdown_method"] = method
+        self.save()
 
     def get_device_by_id(self, device_id: str) -> dict | None:
         for dev in self.config.get("devices", []):

@@ -10,11 +10,11 @@ Features:
 - User data cleanup on reinstall
 """
 
-import os
-import sys
-import shutil
 import ctypes
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import winreg
 from datetime import datetime
@@ -23,7 +23,6 @@ from pathlib import Path
 from wol_app import __version__
 from wol_app.utils import get_resource_path
 
-
 # --- Application Metadata ---
 APP_NAME = "Wake-on-LAN Manager"
 APP_VERSION = __version__
@@ -31,6 +30,8 @@ APP_PUBLISHER = "Wake-on-LAN"
 APP_INSTALL_DIR_NAME = "WakeOnLAN"
 APP_EXE_NAME = "Wake-on-LAN Manager.exe"
 UNINSTALLER_NAME = "uninstall.exe"
+SERVICE_EXE_NAME = "WOL Host Service.exe"
+SERVICE_DIR_NAME = "WOL Host Service"
 ICON_NAME = "icon.ico"
 REG_KEY_NAME = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN"
 
@@ -40,6 +41,64 @@ def is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
     except Exception:
+        return False
+
+
+# --- Host Service helpers ---
+
+def stop_and_remove_service():
+    """Stop and remove the WOL Host Service (used before removing the install dir)."""
+    # Try the service's own uninstall first (removes firewall rule too)
+    service_exe = os.path.join(
+        os.environ["ProgramFiles"], APP_INSTALL_DIR_NAME, SERVICE_DIR_NAME, SERVICE_EXE_NAME
+    )
+    if os.path.exists(service_exe):
+        try:
+            result = subprocess.run(
+                [service_exe, "--uninstall"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if result.returncode == 0:
+                print("  Host service removed.")
+                return True
+            print(f"  Warning: service --uninstall failed (rc={result.returncode}): {result.stderr.strip()}")
+        except Exception as e:
+            print(f"  Warning: could not run service --uninstall: {e}")
+    # Fallback: remove directly via sc.exe
+    try:
+        subprocess.run(["sc.exe", "stop", "WOLHostService"], capture_output=True, timeout=30)
+        subprocess.run(["sc.exe", "delete", "WOLHostService"], capture_output=True, timeout=30)
+        subprocess.run(
+            ["netsh", "advfirewall", "firewall", "delete", "rule", "name=WOL Host Service"],
+            capture_output=True, timeout=15,
+        )
+        print("  Host service removed (fallback).")
+        return True
+    except Exception as e:
+        print(f"  Warning: could not remove host service: {e}")
+        return False
+
+
+def install_host_service(install_dir):
+    """Install and start the WOL Host Service + firewall rule."""
+    service_exe = os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME)
+    if not os.path.exists(service_exe):
+        print(f"  Warning: {SERVICE_EXE_NAME} not found.")
+        return False
+    try:
+        result = subprocess.run(
+            [service_exe, "--install"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            print(f"  Warning: service install failed (rc={result.returncode}): {result.stderr.strip()}")
+            return False
+        # Start it right away
+        subprocess.run([service_exe, "--start"], capture_output=True, timeout=30)
+        print("  Host service installed and started.")
+        return True
+    except Exception as e:
+        print(f"  Warning: could not install host service: {e}")
         return False
 
 
@@ -414,13 +473,18 @@ def main():
         except Exception:
             pass
 
+        # Remove host service before the install directory is deleted
+        print("Removing host service (if installed)...")
+        stop_and_remove_service()
+
         # Remove old registry entry
         unregister_app_from_registry()
 
-        # Remove old shortcuts
+        # Remove old Start Menu shortcuts
         start_menu_folder = os.path.join(
-            os.environ["ProgramData"], "Microsoft", "Windows",
-            "Start Menu", "Programs", APP_NAME
+            os.environ.get("ProgramData", ""),
+            "Microsoft", "Windows",
+            "Start Menu", "Programs", APP_NAME,
         )
         try:
             if os.path.exists(start_menu_folder):
@@ -477,6 +541,30 @@ def main():
         rollback_installation(install_dir, created_items)
         input("\nPress Enter to exit...")
         sys.exit(1)
+
+    # Copy host service folder (onedir bundle: exe + _internal support files)
+    service_source = get_resource_path(SERVICE_DIR_NAME)
+    if os.path.isdir(service_source):
+        service_dest = os.path.join(install_dir, SERVICE_DIR_NAME)
+        try:
+            shutil.copytree(service_source, service_dest, dirs_exist_ok=True)
+            print(f"  Copied: {SERVICE_DIR_NAME}\\")
+        except Exception as e:
+            print(f"  Warning: Could not copy host service: {e}")
+    else:
+        # Fallback: single-file build (copy the bare exe)
+        service_exe_source = get_resource_path(SERVICE_EXE_NAME)
+        if os.path.exists(service_exe_source):
+            try:
+                shutil.copy2(
+                    service_exe_source,
+                    os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME),
+                )
+                print(f"  Copied: {SERVICE_EXE_NAME}")
+            except Exception as e:
+                print(f"  Warning: Could not copy host service: {e}")
+        else:
+            print(f"  Warning: {SERVICE_DIR_NAME} not found in bundle.")
 
     if os.path.exists(manual_source):
         try:
@@ -559,6 +647,20 @@ def main():
     print("Fixing user data permissions...")
     fix_wol_app_permissions()
 
+    # Ask whether to install the host service (default: yes)
+    print()
+    response = input(
+        "Install the WOL Host Service on this machine? "
+        "It allows other Wake-on-LAN Manager instances to shut down this PC "
+        "remotely (TCP port 8765).\n[y]: "
+    ).lower()
+    if response not in ('n', 'no'):
+        print("Installing host service...")
+        install_host_service(install_dir)
+    else:
+        print(f"  Host service skipped. You can install it later by running:\n"
+              f'    "{os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME)}" --install')
+
     # Summary
     print("\n" + "=" * 50)
     print("  Installation Complete!")
@@ -566,7 +668,7 @@ def main():
     print(f"\nInstall Location: {install_dir}")
     print(f"Start Menu: {APP_NAME}")
     print(f"Desktop Shortcut: {APP_NAME}")
-    print(f"Uninstall via: Start Menu or Add/Remove Programs")
+    print("Uninstall via: Start Menu or Add/Remove Programs")
     print()
 
     # Launch app?

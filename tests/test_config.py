@@ -75,5 +75,51 @@ class TestConfigNetwork(ConfigManagerTestBase):
         self.assertEqual(cm.get_network_settings()["broadcast_port"], 7)
 
 
+class TestConfigShutdownMethod(ConfigManagerTestBase):
+    def test_default_shutdown_method_is_host_service(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_default_shutdown_method(), "host_service")
+
+    def test_set_default_shutdown_method(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_default_shutdown_method("smb")
+        self.assertEqual(cm.get_default_shutdown_method(), "smb")
+
+    def test_set_default_rejects_invalid(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        with self.assertRaises(ValueError):
+            cm.set_default_shutdown_method("bogus")
+
+    def test_add_device_uses_default_method(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_default_shutdown_method("smb")
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        self.assertEqual(device["shutdown_method"], "smb")
+
+    def test_legacy_device_defaults_to_smb(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        # Simulate a device created before v1.7.0 (no shutdown_method key).
+        # Assign a fresh list to avoid mutating the shared DEFAULT_CONFIG.
+        cm.config["devices"] = [{
+            "id": "legacy", "name": "Old", "mac": "AA:BB:CC:DD:EE:FF",
+            "username": "", "password": "", "enabled": True,
+        }]
+        method = cm.get_device_shutdown_method(cm.config["devices"][0])
+        self.assertEqual(method, "smb")
+
+    def test_update_device_sets_shutdown_method(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.update_device(device["id"], shutdown_method="smb")
+        self.assertEqual(cm.get_device_shutdown_method(device), "smb")
+
+    def test_update_device_rejects_invalid_method(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.update_device(device["id"], shutdown_method="bogus")
+        # Invalid value is ignored; default stays
+        self.assertEqual(cm.get_device_shutdown_method(device), "host_service")
+
+
 if __name__ == "__main__":
     unittest.main()

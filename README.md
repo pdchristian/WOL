@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 1.6.2 - Improvement Edition**
+**Version 1.7.0 - Improvement Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
@@ -13,7 +13,8 @@ A modern Windows GUI application for sending Wake-on-LAN magic packets to device
 - **Status Monitoring** — Ping devices to check online/offline status (auto-refresh every 30 seconds, up to 16 concurrent)
 - **Scheduling** — Schedule automatic wake-ups and remote shutdowns by time and day of week
 - **Network Scanner** — Auto-discover devices across all local network interfaces with DNS name resolution
-- **Remote Shutdown** — Shut down devices via the TCP shutdown client (port 8765)
+- **Remote Shutdown** — Two methods: SMB (Windows shared folder) and **Host Service** (a small Windows service on the target machine, JSON over TCP port 8765)
+- **Host Service** — Optional Windows service (`WOL Host Service`) that accepts remote shutdown/reboot/status commands; installable via the installer
 - **Network Settings** — Configure broadcast IP and port
 - **Activity Log** — Full history of all wake attempts with timestamps and CSV export
 - **Multi-Language** — English, German, French, and Spanish
@@ -35,6 +36,8 @@ Download `Wake-on-LAN Manager Installer.exe` and double-click to run. The instal
 - Creates a **Start Menu** entry and a **Desktop shortcut**
 - Registers the app in Windows **Add/Remove Programs**
 - On reinstall, asks whether to **keep or remove** existing device entries and settings
+- Asks whether to install the **WOL Host Service** (default: yes) — enables other Wake-on-LAN Manager instances (Windows/Android) to shut down this PC remotely
+- The uninstaller asks whether to remove the host service (default: yes)
 
 ### From Source
 

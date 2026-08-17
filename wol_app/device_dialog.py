@@ -6,6 +6,7 @@ from typing import Any
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -46,6 +47,13 @@ class DeviceDialog(QDialog):
         self._setup_ui()
         if device:
             self._fill_form(device)
+        else:
+            # Pre-select the default shutdown method from settings
+            default_method = self.config.get_default_shutdown_method()
+            for idx in range(self.method_combo.count()):
+                if self.method_combo.itemData(idx) == default_method:
+                    self.method_combo.setCurrentIndex(idx)
+                    break
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -81,6 +89,19 @@ class DeviceDialog(QDialog):
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         password_layout.addRow(Translations.tr("device_dialog.label.password"), self.password_input)
 
+        # Shutdown method (host service or SMB)
+        method_layout = QFormLayout()
+        self.method_combo = QComboBox()
+        self.method_combo.addItem(
+            Translations.tr("device_dialog.method.host_service"),
+            "host_service",
+        )
+        self.method_combo.addItem(
+            Translations.tr("device_dialog.method.smb"),
+            "smb",
+        )
+        method_layout.addRow(Translations.tr("device_dialog.label.shutdown_method"), self.method_combo)
+
         # Enabled checkbox
         self.enabled_check = QCheckBox(Translations.tr("device_dialog.enabled"))
         self.enabled_check.setChecked(True)
@@ -100,6 +121,7 @@ class DeviceDialog(QDialog):
         layout.addLayout(ip_layout)
         layout.addLayout(username_layout)
         layout.addLayout(password_layout)
+        layout.addLayout(method_layout)
         layout.addWidget(self.enabled_check)
         layout.addLayout(btn_layout)
 
@@ -110,6 +132,12 @@ class DeviceDialog(QDialog):
         self.username_input.setText(device.get("username", ""))
         self.password_input.setText(device.get("password", ""))
         self.enabled_check.setChecked(device.get("enabled", True))
+        # Set shutdown method (legacy devices default to "smb")
+        method = self.config.get_device_shutdown_method(device)
+        for idx in range(self.method_combo.count()):
+            if self.method_combo.itemData(idx) == method:
+                self.method_combo.setCurrentIndex(idx)
+                break
 
     def _save(self) -> None:
         name: str = self.name_input.text().strip()
@@ -140,8 +168,15 @@ class DeviceDialog(QDialog):
             QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_password"))
             return
 
+        shutdown_method = self.method_combo.currentData()
+
         if self.editing_device:
-            updates = {"name": name, "mac": mac, "enabled": self.enabled_check.isChecked()}
+            updates = {
+                "name": name,
+                "mac": mac,
+                "enabled": self.enabled_check.isChecked(),
+                "shutdown_method": shutdown_method,
+            }
             if ip:
                 updates["ip"] = ip
             if username:
@@ -161,6 +196,10 @@ class DeviceDialog(QDialog):
                     self.config.update_device(device["id"], username=username)
                 if password:
                     self.config.update_device(device["id"], password=password)
+                # add_device already applied the default method; honour the
+                # user's explicit selection (may differ from the default)
+                if shutdown_method != device.get("shutdown_method"):
+                    self.config.update_device(device["id"], shutdown_method=shutdown_method)
                 self.device_saved.emit(self.config.get_device_by_id(device["id"]))
             else:
                 QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.save_failed"))
