@@ -202,6 +202,8 @@ Falls das Zielsystem eine Authentifizierung erfordert (z. B. bei Domänen-Konten
 
 Diese zweite Shutdown-Variante setzt einen kleinen Windows-Dienst (**WOL Host Service**) auf dem Zielsystem voraus. Der Dienst lauscht auf **TCP-Port 8765** und akzeptiert JSON-Befehle (`shutdown`, `reboot`, `status`). Die Authentifizierung erfolgt mit den **im Geräteeintrag hinterlegten Windows-Benutzerdaten** – es sind also keine offenen Freigaben oder Registry-Anpassungen am Zielsystem nötig.
 
+> **Windows- und Android-Clients:** Mit dem **WOL Host Service** können sowohl **Windows-Clients** (diese Anwendung) als auch **Android-Clients** ([WOL-Android](https://github.com/pdchristian/WOL-Android)) Windows-PCs über das Netzwerk herunterfahren. Die Android-App spricht denselben Host-Service auf Port 8765 an.
+
 ### Voraussetzungen am Zielsystem
 1. Der **WOL Host Service** muss installiert und gestartet sein (Auto-Start). Installation bequem über den Installer oder manuell:
    ```
@@ -224,7 +226,7 @@ Diese zweite Shutdown-Variante setzt einen kleinen Windows-Dienst (**WOL Host Se
 2. Klicken Sie auf **Herunterfahren** und bestätigen Sie den Dialog.
 3. Die Anwendung sendet den JSON-Befehl an den Host-Service des Zielsystems. Das Gerät wird sofort heruntergefahren.
 
-> **Hinweis:** Auch **geplante Shutdowns** (Zeitpläne) verwenden die pro Gerät gewählte Methode. Die **Android-App** nutzt ausschließlich den Host-Service.
+> **Hinweis:** Auch **geplante Shutdowns** (Zeitpläne) verwenden die pro Gerät gewählte Methode. Die **Android-App** ([WOL-Android](https://github.com/pdchristian/WOL-Android)) nutzt ausschließlich den Host-Service – so lassen sich auch von Android-Geräten aus Windows-PCs herunterfahren.
 
 ### Protokoll (Übersicht)
 - **Anfrage:** `{"command": "shutdown", "username": "...", "password": "..."}` (eine Zeile)

@@ -14,7 +14,7 @@ A modern Windows GUI application for sending Wake-on-LAN magic packets to device
 - **Scheduling** — Schedule automatic wake-ups and remote shutdowns by time and day of week
 - **Network Scanner** — Auto-discover devices across all local network interfaces with DNS name resolution
 - **Remote Shutdown** — Two methods: SMB (Windows shared folder) and **Host Service** (a small Windows service on the target machine, JSON over TCP port 8765)
-- **Host Service** — Optional Windows service (`WOL Host Service`) that accepts remote shutdown/reboot/status commands; installable via the installer
+- **Host Service** — Optional Windows service (`WOL Host Service`) that accepts remote shutdown/reboot/status commands over TCP port 8765. With it, both **Windows** and **Android** clients can shut down this PC remotely (Android: [pdchristian/WOL-Android](https://github.com/pdchristian/WOL-Android)); installable via the installer
 - **Network Settings** — Configure broadcast IP and port
 - **Activity Log** — Full history of all wake attempts with timestamps and CSV export
 - **Multi-Language** — English, German, French, and Spanish
