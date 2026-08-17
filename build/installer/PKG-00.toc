@@ -32,6 +32,9 @@
    'C:\\Users\\cp\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_inspect.py',
    'PYSOURCE'),
   ('installer', 'C:\\Python\\WOL\\installer.py', 'PYSOURCE'),
+  ('WOL Host Service OneFile\\WOL Host Service.exe',
+   'C:\\Python\\WOL\\dist_onefile\\WOL Host Service.exe',
+   'BINARY'),
   ('WOL Host Service\\WOL Host Service.exe',
    'C:\\Python\\WOL\\dist\\WOL Host Service\\WOL Host Service.exe',
    'BINARY'),
@@ -387,21 +390,21 @@
   ('_ctypes.pyd',
    'C:\\Users\\cp\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_ctypes.pyd',
    'EXTENSION'),
-  ('api-ms-win-crt-runtime-l1-1-0.dll',
+  ('api-ms-win-crt-convert-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-crt-runtime-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-crt-heap-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-crt-heap-l1-1-0.dll',
+   'Service\\_internal\\api-ms-win-crt-convert-l1-1-0.dll',
    'BINARY'),
   ('api-ms-win-crt-string-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
    'Service\\_internal\\api-ms-win-crt-string-l1-1-0.dll',
    'BINARY'),
-  ('api-ms-win-crt-convert-l1-1-0.dll',
+  ('api-ms-win-crt-heap-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-crt-convert-l1-1-0.dll',
+   'Service\\_internal\\api-ms-win-crt-heap-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-crt-runtime-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-crt-runtime-l1-1-0.dll',
    'BINARY'),
   ('api-ms-win-crt-stdio-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
@@ -427,10 +430,6 @@
   ('ucrtbase.dll',
    'C:\\Python\\WOL\\dist\\WOL Host Service\\_internal\\ucrtbase.dll',
    'BINARY'),
-  ('api-ms-win-crt-environment-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-crt-environment-l1-1-0.dll',
-   'BINARY'),
   ('api-ms-win-crt-time-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
    'Service\\_internal\\api-ms-win-crt-time-l1-1-0.dll',
@@ -438,6 +437,10 @@
   ('api-ms-win-crt-filesystem-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
    'Service\\_internal\\api-ms-win-crt-filesystem-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-crt-environment-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-crt-environment-l1-1-0.dll',
    'BINARY'),
   ('api-ms-win-crt-utility-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
@@ -451,52 +454,20 @@
    'C:\\Python\\WOL\\dist\\WOL Host '
    'Service\\_internal\\api-ms-win-crt-conio-l1-1-0.dll',
    'BINARY'),
-  ('VCRUNTIME140_1.dll',
-   'C:\\Users\\cp\\AppData\\Local\\Programs\\Python\\Python313\\VCRUNTIME140_1.dll',
-   'BINARY'),
   ('pywin32_system32\\pywintypes313.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
    'Service\\_internal\\pywin32_system32\\pywintypes313.dll',
    'BINARY'),
-  ('api-ms-win-core-heap-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-heap-l1-1-0.dll',
+  ('VCRUNTIME140_1.dll',
+   'C:\\Users\\cp\\AppData\\Local\\Programs\\Python\\Python313\\VCRUNTIME140_1.dll',
    'BINARY'),
-  ('api-ms-win-core-util-l1-1-0.dll',
+  ('api-ms-win-core-processenvironment-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-util-l1-1-0.dll',
+   'Service\\_internal\\api-ms-win-core-processenvironment-l1-1-0.dll',
    'BINARY'),
-  ('api-ms-win-core-handle-l1-1-0.dll',
+  ('api-ms-win-core-datetime-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-handle-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-processthreads-l1-1-1.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-processthreads-l1-1-1.dll',
-   'BINARY'),
-  ('api-ms-win-core-interlocked-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-interlocked-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-synch-l1-2-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-synch-l1-2-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-timezone-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-timezone-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-localization-l1-2-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-localization-l1-2-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-memory-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-memory-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-namedpipe-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-namedpipe-l1-1-0.dll',
+   'Service\\_internal\\api-ms-win-core-datetime-l1-1-0.dll',
    'BINARY'),
   ('api-ms-win-core-file-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
@@ -506,61 +477,93 @@
    'C:\\Python\\WOL\\dist\\WOL Host '
    'Service\\_internal\\api-ms-win-core-synch-l1-1-0.dll',
    'BINARY'),
-  ('api-ms-win-core-file-l2-1-0.dll',
+  ('api-ms-win-core-namedpipe-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-file-l2-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-fibers-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-fibers-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-errorhandling-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-errorhandling-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-debug-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-debug-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-console-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-console-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-processthreads-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-processthreads-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-processenvironment-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-processenvironment-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-file-l1-2-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-file-l1-2-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-profile-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-profile-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-rtlsupport-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-rtlsupport-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-datetime-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-datetime-l1-1-0.dll',
-   'BINARY'),
-  ('api-ms-win-core-sysinfo-l1-1-0.dll',
-   'C:\\Python\\WOL\\dist\\WOL Host '
-   'Service\\_internal\\api-ms-win-core-sysinfo-l1-1-0.dll',
+   'Service\\_internal\\api-ms-win-core-namedpipe-l1-1-0.dll',
    'BINARY'),
   ('api-ms-win-core-string-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
    'Service\\_internal\\api-ms-win-core-string-l1-1-0.dll',
    'BINARY'),
+  ('api-ms-win-core-processthreads-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-processthreads-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-timezone-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-timezone-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-util-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-util-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-synch-l1-2-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-synch-l1-2-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-debug-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-debug-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-file-l1-2-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-file-l1-2-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-processthreads-l1-1-1.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-processthreads-l1-1-1.dll',
+   'BINARY'),
+  ('api-ms-win-core-handle-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-handle-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-heap-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-heap-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-errorhandling-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-errorhandling-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-console-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-console-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-localization-l1-2-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-localization-l1-2-0.dll',
+   'BINARY'),
   ('api-ms-win-core-libraryloader-l1-1-0.dll',
    'C:\\Python\\WOL\\dist\\WOL Host '
    'Service\\_internal\\api-ms-win-core-libraryloader-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-fibers-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-fibers-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-interlocked-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-interlocked-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-memory-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-memory-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-rtlsupport-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-rtlsupport-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-file-l2-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-file-l2-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-profile-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-profile-l1-1-0.dll',
+   'BINARY'),
+  ('api-ms-win-core-sysinfo-l1-1-0.dll',
+   'C:\\Python\\WOL\\dist\\WOL Host '
+   'Service\\_internal\\api-ms-win-core-sysinfo-l1-1-0.dll',
    'BINARY'),
   ('Bedienungsanleitung.md', 'C:\\Python\\WOL\\Bedienungsanleitung.md', 'DATA'),
   ('Bedienungsanleitung.pdf',

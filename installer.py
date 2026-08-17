@@ -32,6 +32,8 @@ APP_EXE_NAME = "Wake-on-LAN Manager.exe"
 UNINSTALLER_NAME = "uninstall.exe"
 SERVICE_EXE_NAME = "WOL Host Service.exe"
 SERVICE_DIR_NAME = "WOL Host Service"
+# Bundle folder for the onefile variant (single .exe, no _internal)
+SERVICE_ONEFILE_BUNDLE_DIR = "WOL Host Service OneFile"
 ICON_NAME = "icon.ico"
 REG_KEY_NAME = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN"
 
@@ -46,13 +48,24 @@ def is_admin():
 
 # --- Host Service helpers ---
 
+def find_installed_service_exe():
+    """Locate the installed WOL Host Service exe (onedir or onefile layout)."""
+    base = os.path.join(os.environ["ProgramFiles"], APP_INSTALL_DIR_NAME)
+    candidates = [
+        os.path.join(base, SERVICE_DIR_NAME, SERVICE_EXE_NAME),   # onedir
+        os.path.join(base, SERVICE_EXE_NAME),                     # onefile
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
+
 def stop_and_remove_service():
     """Stop and remove the WOL Host Service (used before removing the install dir)."""
     # Try the service's own uninstall first (removes firewall rule too)
-    service_exe = os.path.join(
-        os.environ["ProgramFiles"], APP_INSTALL_DIR_NAME, SERVICE_DIR_NAME, SERVICE_EXE_NAME
-    )
-    if os.path.exists(service_exe):
+    service_exe = find_installed_service_exe()
+    if service_exe:
         try:
             result = subprocess.run(
                 [service_exe, "--uninstall"],
@@ -79,9 +92,16 @@ def stop_and_remove_service():
         return False
 
 
-def install_host_service(install_dir):
-    """Install and start the WOL Host Service + firewall rule."""
-    service_exe = os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME)
+def install_host_service(install_dir, variant="onedir"):
+    """Install and start the WOL Host Service + firewall rule.
+
+    variant: 'onedir' (exe in WOL Host Service\\ folder) or
+             'onefile' (single exe in the install dir root).
+    """
+    if variant == "onefile":
+        service_exe = os.path.join(install_dir, SERVICE_EXE_NAME)
+    else:
+        service_exe = os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME)
     if not os.path.exists(service_exe):
         print(f"  Warning: {SERVICE_EXE_NAME} not found.")
         return False
@@ -100,6 +120,98 @@ def install_host_service(install_dir):
     except Exception as e:
         print(f"  Warning: could not install host service: {e}")
         return False
+
+
+def _find_host_service_resource(relative_path):
+    """Resolve a bundled host service resource path.
+
+    Frozen mode: resources live under sys._MEIPASS.
+    Dev mode:    onedir lives in dist/, onefile in dist_onefile/.
+    """
+    import sys as _sys
+    if getattr(_sys, "frozen", False):
+        return os.path.join(_sys._MEIPASS, relative_path)
+    # installer.py lives in the project root
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    if relative_path.startswith(SERVICE_ONEFILE_BUNDLE_DIR):
+        candidates = [os.path.join(project_dir, "dist_onefile", SERVICE_EXE_NAME)]
+    else:
+        candidates = [os.path.join(project_dir, "dist", relative_path)]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
+
+
+def copy_host_service_files(install_dir, variant="onedir"):
+    r"""Copy the bundled host service into the install dir according to variant.
+
+    onedir:  <install_dir>\WOL Host Service\  (exe + _internal)
+    onefile: <install_dir>\WOL Host Service.exe (single exe)
+    """
+    if variant == "onefile":
+        source = _find_host_service_resource(
+            os.path.join(SERVICE_ONEFILE_BUNDLE_DIR, SERVICE_EXE_NAME)
+        )
+        dest = os.path.join(install_dir, SERVICE_EXE_NAME)
+        if os.path.exists(source):
+            try:
+                shutil.copy2(source, dest)
+                print(f"  Copied: {SERVICE_EXE_NAME} (onefile)")
+                return True
+            except Exception as e:
+                print(f"  Warning: Could not copy onefile host service: {e}")
+        else:
+            print(f"  Warning: {SERVICE_EXE_NAME} (onefile) not found in bundle.")
+        return False
+
+    # onedir (default)
+    service_source = get_resource_path(SERVICE_DIR_NAME)
+    if os.path.isdir(service_source):
+        service_dest = os.path.join(install_dir, SERVICE_DIR_NAME)
+        try:
+            shutil.copytree(service_source, service_dest, dirs_exist_ok=True)
+            print(f"  Copied: {SERVICE_DIR_NAME}\\")
+            return True
+        except Exception as e:
+            print(f"  Warning: Could not copy host service: {e}")
+    else:
+        # Fallback: single-file build (copy the bare exe)
+        service_exe_source = get_resource_path(SERVICE_EXE_NAME)
+        if os.path.exists(service_exe_source):
+            try:
+                shutil.copy2(
+                    service_exe_source,
+                    os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME),
+                )
+                print(f"  Copied: {SERVICE_EXE_NAME}")
+                return True
+            except Exception as e:
+                print(f"  Warning: Could not copy host service: {e}")
+    print(f"  Warning: {SERVICE_DIR_NAME} not found in bundle.")
+    return False
+
+
+def ask_service_variant():
+    """Ask the user which host service variant to install.
+
+    Returns 'onedir', 'onefile', or None (skip installation).
+    """
+    print()
+    print("The WOL Host Service lets other Wake-on-LAN Manager instances")
+    print("shut down this PC remotely (TCP port 8765).")
+    print()
+    print("  [1] Install as folder (recommended)")
+    print("      WOL Host Service\\WOL Host Service.exe + support files")
+    print("  [2] Install as single file")
+    print("      WOL Host Service.exe (no extra folder)")
+    print("  [3] Do not install")
+    response = input("Choose [1]: ").strip().lower()
+    if response in ("2", "onefile"):
+        return "onefile"
+    if response in ("3", "n", "no"):
+        return None
+    return "onedir"
 
 
 def remove_user_data():
@@ -453,6 +565,9 @@ def main():
     # Track created items for rollback
     created_items = []
 
+    # Ask which host service variant to install (before copying files)
+    service_variant = ask_service_variant()
+
     # Check if already installed - clean up old installation first
     exe_dest = os.path.join(install_dir, APP_EXE_NAME)
     if os.path.exists(exe_dest):
@@ -542,29 +657,11 @@ def main():
         input("\nPress Enter to exit...")
         sys.exit(1)
 
-    # Copy host service folder (onedir bundle: exe + _internal support files)
-    service_source = get_resource_path(SERVICE_DIR_NAME)
-    if os.path.isdir(service_source):
-        service_dest = os.path.join(install_dir, SERVICE_DIR_NAME)
-        try:
-            shutil.copytree(service_source, service_dest, dirs_exist_ok=True)
-            print(f"  Copied: {SERVICE_DIR_NAME}\\")
-        except Exception as e:
-            print(f"  Warning: Could not copy host service: {e}")
+    # Copy host service (only the chosen variant)
+    if service_variant:
+        copy_host_service_files(install_dir, service_variant)
     else:
-        # Fallback: single-file build (copy the bare exe)
-        service_exe_source = get_resource_path(SERVICE_EXE_NAME)
-        if os.path.exists(service_exe_source):
-            try:
-                shutil.copy2(
-                    service_exe_source,
-                    os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME),
-                )
-                print(f"  Copied: {SERVICE_EXE_NAME}")
-            except Exception as e:
-                print(f"  Warning: Could not copy host service: {e}")
-        else:
-            print(f"  Warning: {SERVICE_DIR_NAME} not found in bundle.")
+        print("  Skipping host service files (user declined).")
 
     if os.path.exists(manual_source):
         try:
@@ -647,18 +744,18 @@ def main():
     print("Fixing user data permissions...")
     fix_wol_app_permissions()
 
-    # Ask whether to install the host service (default: yes)
-    print()
-    response = input(
-        "Install the WOL Host Service on this machine? "
-        "It allows other Wake-on-LAN Manager instances to shut down this PC "
-        "remotely (TCP port 8765).\n[y]: "
-    ).lower()
-    if response not in ('n', 'no'):
-        print("Installing host service...")
-        install_host_service(install_dir)
+    # Register the host service (variant was chosen earlier)
+    if service_variant:
+        print()
+        print(f"Installing host service ({service_variant})...")
+        if not install_host_service(install_dir, service_variant):
+            print("  WARNING: Host service installation failed. You can retry later:")
+            exe_path = (os.path.join(install_dir, SERVICE_EXE_NAME)
+                        if service_variant == "onefile"
+                        else os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME))
+            print(f'    "{exe_path}" --install')
     else:
-        print(f"  Host service skipped. You can install it later by running:\n"
+        print("\n  Host service skipped. You can install it later by running:\n"
               f'    "{os.path.join(install_dir, SERVICE_DIR_NAME, SERVICE_EXE_NAME)}" --install')
 
     # Summary

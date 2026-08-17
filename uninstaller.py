@@ -97,10 +97,19 @@ def get_install_dir():
 
 
 def remove_host_service():
-    """Stop and remove the WOL Host Service + its firewall rule."""
+    """Stop and remove the WOL Host Service + its firewall rule.
+
+    Handles both install layouts:
+    - onedir:  <install_dir>\WOL Host Service\WOL Host Service.exe
+    - onefile: <install_dir>\WOL Host Service.exe
+    """
     install_dir = get_install_dir()
-    service_exe = os.path.join(install_dir, "WOL Host Service", "WOL Host Service.exe")
-    if os.path.exists(service_exe):
+    candidates = [
+        os.path.join(install_dir, "WOL Host Service", "WOL Host Service.exe"),
+        os.path.join(install_dir, "WOL Host Service.exe"),
+    ]
+    service_exe = next((p for p in candidates if os.path.exists(p)), None)
+    if service_exe:
         try:
             result = subprocess.run(
                 [service_exe, "--uninstall"],

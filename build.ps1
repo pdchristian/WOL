@@ -39,6 +39,9 @@ Write-Host "[1/7] Cleaning previous builds..." -ForegroundColor Yellow
 if (Test-Path $DIST_DIR) {
     Remove-Item -Recurse -Force $DIST_DIR
 }
+if (Test-Path "dist_onefile") {
+    Remove-Item -Recurse -Force "dist_onefile"
+}
 Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
 Write-Host "  Clean." -ForegroundColor Green
 
@@ -69,13 +72,40 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  Host service built successfully." -ForegroundColor Green
 
-# Verify host service exists
-$serviceExe = Join-Path $DIST_DIR "$SERVICE_NAME.exe"
+# Verify host service exists (onedir layout: exe + _internal in a folder)
+$serviceExe = Join-Path $DIST_DIR "$SERVICE_NAME\$SERVICE_NAME.exe"
 if (-not (Test-Path $serviceExe)) {
     Write-Host "ERROR: Host service executable not found at $serviceExe" -ForegroundColor Red
     exit 1
 }
+$serviceInternal = Join-Path $DIST_DIR "$SERVICE_NAME\_internal"
+if (-not (Test-Path $serviceInternal)) {
+    Write-Host "ERROR: Host service _internal folder not found at $serviceInternal" -ForegroundColor Red
+    exit 1
+}
+# Remove the stray bootloader exe PyInstaller leaves at the dist root
+# (the real onedir exe lives in the $SERVICE_NAME folder)
+$strayServiceExe = Join-Path $DIST_DIR "$SERVICE_NAME.exe"
+if (Test-Path $strayServiceExe) {
+    Remove-Item $strayServiceExe -Force
+    Write-Host "  Removed stray $SERVICE_NAME.exe from dist root." -ForegroundColor DarkGray
+}
+# --- Step 3b: Build the host service (onefile variant) ---
+Write-Host ""
+Write-Host "[3b/7] Building host service (onefile variant)..." -ForegroundColor Yellow
+$serviceOneFileResult = pyinstaller "wol_host_service_onefile.spec" --distpath "dist_onefile" --noconfirm
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Host service onefile build failed!" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Host service (onefile) built successfully." -ForegroundColor Green
 
+# Verify host service (onefile) exists
+$serviceOneFileExe = Join-Path "dist_onefile" "$SERVICE_NAME.exe"
+if (-not (Test-Path $serviceOneFileExe)) {
+    Write-Host "ERROR: Host service onefile executable not found at $serviceOneFileExe" -ForegroundColor Red
+    exit 1
+}
 # --- Step 4: Build the uninstaller ---
 Write-Host ""
 Write-Host "[4/7] Building uninstaller..." -ForegroundColor Yellow
@@ -117,11 +147,13 @@ Write-Host "========================================" -ForegroundColor Cyan
 
 $appSize = [math]::Round((Get-Item $appExe).Length / 1MB, 2)
 $serviceSize = [math]::Round((Get-Item $serviceExe).Length / 1MB, 2)
+$serviceOneFileSize = [math]::Round((Get-Item $serviceOneFileExe).Length / 1MB, 2)
 $uninstallSize = [math]::Round((Get-Item $uninstallExe).Length / 1MB, 2)
 $installerSize = [math]::Round((Get-Item $installerExe).Length / 1MB, 2)
 
 Write-Host "  Application:  $appExe ($appSize MB)" -ForegroundColor White
-Write-Host "  Host Service: $serviceExe ($serviceSize MB)" -ForegroundColor White
+Write-Host "  Host Service (onedir):  $serviceExe ($serviceSize MB)" -ForegroundColor White
+Write-Host "  Host Service (onefile): $serviceOneFileExe ($serviceOneFileSize MB)" -ForegroundColor White
 Write-Host "  Uninstaller:  $uninstallExe ($uninstallSize MB)" -ForegroundColor White
 Write-Host "  Installer:    $installerExe ($installerSize MB)" -ForegroundColor White
 
