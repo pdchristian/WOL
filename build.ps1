@@ -190,6 +190,15 @@ if (-not (Test-Path $setupExe)) {
 }
 Write-Host "  Inno Setup installer compiled successfully." -ForegroundColor Green
 
+# Patch the embedded manifest so the installer shows the admin shield
+# (like uninstall.exe). Inno always writes level="asInvoker"; the patch
+# replaces it with level="requireAdministrator" (same-length, in-place).
+& (Join-Path $PSScriptRoot "patch_setup_manifest.ps1") -SetupExe $setupExe
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Manifest patch failed!" -ForegroundColor Red
+    exit 1
+}
+
 # --- Step 7: Summary ---
 Write-Host ""
 Write-Host "[7/8] Build Summary" -ForegroundColor Yellow

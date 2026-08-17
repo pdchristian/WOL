@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 1.7.0 - Improvement Edition**
+**Version 1.8.0 - Improvement Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
