@@ -69,6 +69,7 @@ en.task_desktopicon=Create a &desktop icon
 en.task_group_icons=Additional icons:
 en.task_service_onedir=Install WOL Host Service as a &folder (recommended)
 en.task_service_onefile=Install WOL Host Service as a s&ingle file
+en.task_service_none=Do &not install WOL Host Service
 en.task_group_service=WOL Host Service (lets other PCs shut down this one remotely):
 en.msg_reinstall_found=An existing installation of Wake-on-LAN Manager was found.
 en.msg_keep_data=Keep existing device entries and settings?
@@ -78,7 +79,8 @@ en.run_launch=Launch Wake-on-LAN Manager
 de.task_desktopicon=&Desktop-Verknüpfung erstellen
 de.task_group_icons=Zusätzliche Symbole:
 de.task_service_onedir=WOL Host Service als &Ordner installieren (empfohlen)
-de.task_service_onefile=WOL Host Service als &einzige Datei installieren
+de.task_service_onefile=WOL Host Service als &einzelne Datei installieren
+de.task_service_none=WOL Host Service &nicht installieren
 de.task_group_service=WOL Host Service (ermöglicht anderen PCs, diesen PC remote herunterzufahren):
 de.msg_reinstall_found=Eine bestehende Installation von Wake-on-LAN Manager wurde gefunden.
 de.msg_keep_data=Vorhandene Geräte und Einstellungen behalten?
@@ -89,6 +91,7 @@ fr.task_desktopicon=Créer un raccourci sur le &bureau
 fr.task_group_icons=Icônes supplémentaires :
 fr.task_service_onedir=Installer WOL Host Service sous forme de &dossier (recommandé)
 fr.task_service_onefile=Installer WOL Host Service en &un seul fichier
+fr.task_service_none=Ne &pas installer le WOL Host Service
 fr.task_group_service=WOL Host Service (permet à d'autres PC d'éteindre celui-ci à distance) :
 fr.msg_reinstall_found=Une installation existante de Wake-on-LAN Manager a été trouvée.
 fr.msg_keep_data=Conserver les entrées d'appareils et les paramètres existants ?
@@ -99,6 +102,7 @@ es.task_desktopicon=Crear un acceso directo en el &escritorio
 es.task_group_icons=Iconos adicionales:
 es.task_service_onedir=Instalar WOL Host Service como &carpeta (recomendado)
 es.task_service_onefile=Instalar WOL Host Service como &un solo archivo
+es.task_service_none=&No instalar WOL Host Service
 es.task_group_service=WOL Host Service (permite a otros PC apagar este PC a distancia):
 es.msg_reinstall_found=Se encontró una instalación existente de Wake-on-LAN Manager.
 es.msg_keep_data=¿Conservar las entradas de dispositivos y la configuración existentes?
@@ -108,11 +112,13 @@ es.run_launch=Iniciar Wake-on-LAN Manager
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:task_desktopicon}"; GroupDescription: "{cm:task_group_icons}"; Flags: unchecked
-; The two host-service variants are mutually exclusive (either/or): both carry
-; the `exclusive` flag within the same group, so checking one auto-unchecks the
-; other (radio-button behaviour).
+; The three host-service options are mutually exclusive (radio-button
+; behaviour): all carry the `exclusive` flag within the same group, so
+; checking one auto-unchecks the others. The user may also uncheck all of
+; them to skip the host service entirely (the "none" option).
 Name: "service_onedir"; Description: "{cm:task_service_onedir}"; GroupDescription: "{cm:task_group_service}"; Flags: exclusive
 Name: "service_onefile"; Description: "{cm:task_service_onefile}"; GroupDescription: "{cm:task_group_service}"; Flags: unchecked exclusive
+Name: "service_none"; Description: "{cm:task_service_none}"; GroupDescription: "{cm:task_group_service}"; Flags: unchecked exclusive
 
 [Files]
 ; Main application
