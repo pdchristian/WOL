@@ -2,7 +2,7 @@
 
 ## 📋 Dokumentinformationen
 
-- **Version:** 1.8.0
+- **Version:** 1.9.0
 - **Datum:** 2026-08-16
 - **Status:** alle kritischen Sicherheitsrisiken behoben
 - **Verantwortlicher:** GitHub Copilot (automatisierte Sicherheitsanalyse)
