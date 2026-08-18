@@ -4,9 +4,13 @@ Central location for validation helpers, subprocess wrappers, and common
 utility functions used across multiple modules.
 """
 
+import base64
 import os
 import re
 import subprocess
+import tempfile
+import threading
+import time
 
 # ── Validation ──────────────────────────────────────────────────────────────
 
@@ -92,6 +96,126 @@ def run_subprocess_safe(command, timeout: int = 5, **kwargs):
     except Exception as e:
         raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}") from e
 
+# ── Remote Desktop ──────────────────────────────────────────────────────────
+
+def _build_rdp_content(
+    ip: str,
+    username: str,
+    password: str,
+    fullscreen: bool,
+    width: int,
+    height: int,
+) -> str:
+    """Build the content of a temporary ``.rdp`` file for *ip*.
+
+    mstsc cannot take credentials on the command line, so the username and
+    password are embedded in the file. ``password:54:`` is base64-encoded
+    UTF-16LE — the exact format mstsc expects.
+    """
+    lines = [
+        f"full address:s:{ip}",
+        # Use the embedded password instead of prompting when one is set.
+        f"prompt for password:i:{0 if password else 1}",
+    ]
+    if username:
+        lines.append(f"username:s:{username}")
+    if password:
+        encoded = base64.b64encode(password.encode("utf-16-le")).decode("ascii")
+        lines.append(f"password:54:{encoded}")
+    if fullscreen:
+        lines.append("fullscreen:i:1")
+    else:
+        lines.append("fullscreen:i:0")
+        lines.append(f"desktopwidth:i:{int(width)}")
+        lines.append(f"desktopheight:i:{int(height)}")
+        # Do not span the window over multiple monitors.
+        lines.append("use multimon:i:0")
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _cleanup_rdp_file(path: str, delay: float) -> None:
+    """Delete *path* after *delay* seconds (runs in a daemon thread)."""
+    time.sleep(delay)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def launch_remote_desktop(
+    ip: str,
+    username: str = "",
+    password: str = "",
+    fullscreen: bool = True,
+    width: int = 1920,
+    height: int = 1080,
+    cleanup_delay: float = 5.0,
+) -> None:
+    """Launch Windows Remote Desktop (``mstsc``) to *ip*.
+
+    A temporary ``.rdp`` file carrying the credentials is written and passed
+    to mstsc; it is deleted *cleanup_delay* seconds later so the password
+    does not linger on disk.
+
+    The session geometry is forced via **command-line arguments**, because
+    mstsc is known to ignore ``fullscreen:i:0`` inside an .rdp file (it then
+    falls back to full-screen). The .rdp file is still passed so that the
+    credentials (which mstsc cannot take on the command line) are supplied:
+
+    * ``fullscreen=True``  → ``mstsc /v:<ip> /f <file>``
+    * ``fullscreen=False`` → ``mstsc /v:<ip> /w:<width> /h:<height> <file>``
+
+    The ``/w:``/``/h:``/``/f`` arguments have the highest precedence and
+    reliably determine whether the session opens in a window or full-screen.
+
+    Args:
+        ip: Target host (IPv4 address or name).
+        username: Optional RDP user; empty leaves mstsc's default.
+        password: Optional RDP password; empty makes mstsc prompt.
+        fullscreen: Full-screen mode when True, windowed mode when False.
+        width: Window width in pixels (windowed mode only).
+        height: Window height in pixels (windowed mode only).
+        cleanup_delay: Seconds to wait before deleting the temp file.
+
+    Raises:
+        ValueError: if *ip* is empty.
+        OSError: if mstsc cannot be started (e.g. not found).
+    """
+    if not ip:
+        raise ValueError("IP address is empty")
+
+    content = _build_rdp_content(ip, username, password, fullscreen, width, height)
+    fd, rdp_path = tempfile.mkstemp(suffix=".rdp", prefix="wol_rdp_")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    # Force the geometry on the command line (reliable) and let the .rdp
+    # file supply the credentials. The .rdp path is always the last argument.
+    if fullscreen:
+        cmd = ["mstsc", f"/v:{ip}", "/f", rdp_path]
+    else:
+        cmd = [
+            "mstsc",
+            f"/v:{ip}",
+            f"/w:{int(width)}",
+            f"/h:{int(height)}",
+            rdp_path,
+        ]
+    try:
+        subprocess.Popen(cmd)
+    except Exception:
+        # mstsc could not start; do not leak the credential file.
+        try:
+            os.remove(rdp_path)
+        except OSError:
+            pass
+        raise
+
+    threading.Thread(
+        target=_cleanup_rdp_file,
+        args=(rdp_path, cleanup_delay),
+        daemon=True,
+    ).start()
 
 # ── Sorting helpers ────────────────────────────────────────────────────────
 

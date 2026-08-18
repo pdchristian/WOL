@@ -121,5 +121,37 @@ class TestConfigShutdownMethod(ConfigManagerTestBase):
         self.assertEqual(cm.get_device_shutdown_method(device), "host_service")
 
 
+class TestRemoteDesktopResolution(ConfigManagerTestBase):
+    def test_default_resolution(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_remote_desktop_resolution(), "1920x1080")
+
+    def test_legacy_config_gets_default(self):
+        # Config without the ui.remote_desktop_resolution key (older version)
+        self._write_raw({"devices": [], "ui": {"language": "de"}})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_remote_desktop_resolution(), "1920x1080")
+
+    def test_all_resolutions_persist(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        for resolution in ("1280x720", "1920x1080", "1920x1200",
+                           "2560x1440", "3440x1440", "3840x2160"):
+            cm.set_remote_desktop_resolution(resolution)
+            self.assertEqual(cm.get_remote_desktop_resolution(), resolution)
+            with open(self.config_path) as f:
+                saved = json.load(f)
+            self.assertEqual(saved["ui"]["remote_desktop_resolution"], resolution)
+
+    def test_set_rejects_invalid_resolution(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        with self.assertRaises(ValueError):
+            cm.set_remote_desktop_resolution("800x600")
+
+    def test_invalid_stored_value_falls_back_to_default(self):
+        self._write_raw({"ui": {"remote_desktop_resolution": "bogus"}})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_remote_desktop_resolution(), "1920x1080")
+
+
 if __name__ == "__main__":
     unittest.main()

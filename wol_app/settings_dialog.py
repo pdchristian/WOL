@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from wol_app.config import REMOTE_DESKTOP_RESOLUTIONS
 from wol_app.theme import apply_display_mode
 from wol_app.translations import Translations
 
@@ -127,6 +128,22 @@ class SettingsDialog(QDialog):
         log_group.setLayout(log_layout)
         layout.addWidget(log_group)
 
+        # --- Remote Desktop Group ---
+        rdp_group = QGroupBox(Translations.tr("settings.group.remote_desktop"))
+        rdp_layout = QFormLayout()
+
+        self.remote_desktop_resolution_combo = QComboBox()
+        for resolution in REMOTE_DESKTOP_RESOLUTIONS:
+            w, h = resolution.split("x")
+            self.remote_desktop_resolution_combo.addItem(f"{w} × {h}", resolution)
+        rdp_layout.addRow(
+            Translations.tr("settings.label.remote_desktop_resolution"),
+            self.remote_desktop_resolution_combo,
+        )
+
+        rdp_group.setLayout(rdp_layout)
+        layout.addWidget(rdp_group)
+
         # --- Shutdown Group ---
         shutdown_group = QGroupBox(Translations.tr("settings.group.shutdown"))
         shutdown_layout = QFormLayout()
@@ -206,6 +223,13 @@ class SettingsDialog(QDialog):
                 self.default_method_combo.setCurrentIndex(idx)
                 break
 
+        # Load remote desktop resolution
+        current_resolution = self.config.get_remote_desktop_resolution()
+        for idx in range(self.remote_desktop_resolution_combo.count()):
+            if self.remote_desktop_resolution_combo.itemData(idx) == current_resolution:
+                self.remote_desktop_resolution_combo.setCurrentIndex(idx)
+                break
+
     def _save(self) -> None:
         ip: str = self.broadcast_ip_input.text().strip()
         port: int = self.broadcast_port_input.value()
@@ -260,6 +284,11 @@ class SettingsDialog(QDialog):
         selected_method = self.default_method_combo.currentData()
         if selected_method:
             self.config.set_default_shutdown_method(selected_method)
+
+        # Save remote desktop resolution
+        selected_resolution = self.remote_desktop_resolution_combo.currentData()
+        if selected_resolution:
+            self.config.set_remote_desktop_resolution(selected_resolution)
 
         QMessageBox.information(self, Translations.tr("dialog.saved.title"), Translations.tr("dialog.saved.message"))
         self.accept()

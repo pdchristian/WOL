@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import threading
-from _thread import lock
 from datetime import datetime
 from pathlib import Path
 
@@ -121,6 +120,18 @@ SHUTDOWN_METHOD_HOST_SERVICE = "host_service"
 SHUTDOWN_METHOD_SMB = "smb"
 VALID_SHUTDOWN_METHODS = (SHUTDOWN_METHOD_HOST_SERVICE, SHUTDOWN_METHOD_SMB)
 
+# Remote desktop resolutions offered in the settings dialog (windowed mode).
+# Order matters: it defines the order in the resolution drop-down.
+REMOTE_DESKTOP_RESOLUTIONS = (
+    "1280x720",
+    "1920x1080",
+    "1920x1200",
+    "2560x1440",
+    "3440x1440",
+    "3840x2160",
+)
+DEFAULT_REMOTE_DESKTOP_RESOLUTION = "1920x1080"
+
 # Default configuration
 DEFAULT_CONFIG = {
     "devices": [],
@@ -141,7 +152,9 @@ DEFAULT_CONFIG = {
     "ui": {
         "device_sort_column": 0,  # 0: Name, 1: MAC, 2: IP, 3: Username, 4: Password
         "device_sort_order": "ascending",
-        "language": "en"
+        "language": "en",
+        # Windowed remote desktop resolution (see REMOTE_DESKTOP_RESOLUTIONS).
+        "remote_desktop_resolution": DEFAULT_REMOTE_DESKTOP_RESOLUTION,
     },
     "updates": {
         "auto_check_enabled": True,
@@ -156,7 +169,7 @@ class ConfigManager:
 
     def __init__(self, config_path: str | None = None) -> None:
         # Thread-safe access to logs
-        self._logs_lock: lock = threading.Lock()
+        self._logs_lock: threading.Lock = threading.Lock()
         
         if config_path is None:
             config_dir: Path = Path.home() / ".wol_app"
@@ -186,8 +199,11 @@ class ConfigManager:
             try:
                 with open(self.config_path) as f:
                     data = json.load(f)
-                # Deep merge with defaults to ensure all keys exist
-                merged = self._deep_merge(DEFAULT_CONFIG.copy(), data)
+                # Deep merge with defaults to ensure all keys exist.
+                # deepcopy so the loaded config never shares nested dict/list
+                # references with the module-level DEFAULT_CONFIG (mutating a
+                # setting must not pollute the defaults for other instances).
+                merged = self._deep_merge(copy.deepcopy(DEFAULT_CONFIG), data)
                 # Auto-decrypt passwords on load
                 self._decrypt_devices(merged)
                 # Detect legacy plaintext passwords and re-encrypt them (Phase 1.3)
@@ -196,8 +212,8 @@ class ConfigManager:
                 return merged
             except (OSError, json.JSONDecodeError) as e:
                 _logger.warning("Could not load config file: %s", e)
-                return DEFAULT_CONFIG.copy()
-        return DEFAULT_CONFIG.copy()
+                return copy.deepcopy(DEFAULT_CONFIG)
+        return copy.deepcopy(DEFAULT_CONFIG)
 
     def _reencrypt_plaintext_passwords(self, config: dict) -> None:
         """Detect legacy plaintext passwords and persist them encrypted.
@@ -579,6 +595,27 @@ class ConfigManager:
         """Set the maximum number of log entries to keep."""
         max_logs = max(10, min(int(max_logs), 10000))  # Clamp for safety
         self.config["max_logs"] = max_logs
+        self.save()
+
+    # --- Remote Desktop ---
+
+    def get_remote_desktop_resolution(self) -> str:
+        """Return the configured windowed remote desktop resolution.
+
+        Falls back to the default when the stored value is missing or
+        invalid (e.g. an old config without the key).
+        """
+        value = self.config.get("ui", {}).get(
+            "remote_desktop_resolution", DEFAULT_REMOTE_DESKTOP_RESOLUTION
+        )
+        return value if value in REMOTE_DESKTOP_RESOLUTIONS else DEFAULT_REMOTE_DESKTOP_RESOLUTION
+
+    def set_remote_desktop_resolution(self, resolution: str) -> None:
+        """Set the windowed remote desktop resolution."""
+        if resolution not in REMOTE_DESKTOP_RESOLUTIONS:
+            raise ValueError(f"Invalid remote desktop resolution: {resolution}")
+        ui = self.config.setdefault("ui", {})
+        ui["remote_desktop_resolution"] = resolution
         self.save()
 
     # --- Validation ---

@@ -43,7 +43,7 @@ from wol_app.update_dialog import (
     UpdateInfoDialog,
 )
 from wol_app.updater import UpdateChecker, check_for_updates_sync
-from wol_app.utils import get_ip_key, get_resource_path
+from wol_app.utils import get_ip_key, get_resource_path, launch_remote_desktop
 from wol_app.wol_engine import WOLEngine
 
 # Module-level registry to hold thread references until native threads truly finish
@@ -428,6 +428,15 @@ class MainWindow(QMainWindow):
 
         menu = QMenu(self)
         menu.addAction(
+            Translations.tr("button.remote_fullscreen"),
+            lambda: self._remote_desktop_selected(True),
+        )
+        menu.addAction(
+            Translations.tr("button.remote_window"),
+            lambda: self._remote_desktop_selected(False),
+        )
+        menu.addSeparator()
+        menu.addAction(
             Translations.tr("button.shutdown"),
             lambda: self._shutdown_selected(),
         )
@@ -671,6 +680,54 @@ class MainWindow(QMainWindow):
 
         status, msg = self.engine.check_device_status(device["id"])
         QMessageBox.information(self, Translations.tr("dialog.status_result.title", status=self._translated_status(status)), msg)
+
+    def _remote_desktop_selected(self, fullscreen: bool) -> None:
+        """Start a Remote Desktop session for the selected device.
+
+        Uses the device's IP address, username and password. *fullscreen*
+        selects full-screen mode (True) or a window of the
+        user-configured resolution (False).
+        """
+        current_row: int = self.device_table.currentRow()
+        if current_row < 0:
+            QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device.message"))
+            return
+
+        sorted_devices = self._get_sorted_devices()
+        if current_row >= len(sorted_devices):
+            return
+        device = sorted_devices[current_row]
+
+        device_name = device.get("name", "")
+        device_ip = device.get("ip", "")
+
+        if not device_ip:
+            QMessageBox.warning(self, Translations.tr("dialog.no_ip.title"), Translations.tr("dialog.no_ip.message", name=device_name))
+            return
+
+        username: str = device.get("username", "") or ""
+        password: str = device.get("password", "") or ""
+
+        width: int = 1920
+        height: int = 1080
+        if not fullscreen:
+            try:
+                w, h = self.config.get_remote_desktop_resolution().split("x")
+                width, height = int(w), int(h)
+            except (ValueError, AttributeError):
+                pass  # keep 1920x1080 fallback
+
+        try:
+            launch_remote_desktop(
+                ip=device_ip,
+                username=username,
+                password=password,
+                fullscreen=fullscreen,
+                width=width,
+                height=height,
+            )
+        except Exception:
+            QMessageBox.critical(self, Translations.tr("dialog.remote_desktop_error.title"), Translations.tr("dialog.remote_desktop_error.message"))
 
     def _shutdown_selected(self) -> None:
         """Show shutdown confirmation dialog for the selected device."""
