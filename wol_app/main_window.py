@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMenuBar,
@@ -369,6 +370,14 @@ class MainWindow(QMainWindow):
         # Right-click context menu on the device list
         self.device_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.device_table.customContextMenuRequested.connect(self._show_device_context_menu)
+
+        # Search field: live-filters the table by name, MAC, IP or user
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._refresh_device_table)
+        devices_layout.addWidget(self.search_input)
+
         devices_layout.addWidget(self.device_table)
 
         # Action buttons row
@@ -546,9 +555,27 @@ class MainWindow(QMainWindow):
             self.device_sort_order = "ascending"
         self._refresh_device_table()
 
+    def _get_filtered_devices(self):
+        """Get devices matching the current search query.
+
+        The query is matched as a case-insensitive substring against the
+        device's name, MAC address, IP address and username. An empty query
+        returns all devices.
+        """
+        query = self.search_input.text().strip().lower()
+        if not query:
+            return self.config.get_devices()
+
+        fields = ("name", "mac", "ip", "username")
+        return [
+            device
+            for device in self.config.get_devices()
+            if any(query in str(device.get(field, "")).lower() for field in fields)
+        ]
+
     def _get_sorted_devices(self):
-        """Get devices sorted according to current settings."""
-        devices = self.config.get_devices()
+        """Get devices (filtered by the search field) sorted according to current settings."""
+        devices = self._get_filtered_devices()
         reverse_sort = self.device_sort_order == "descending"
         
         return sorted(devices, key=lambda d: self._get_sort_key(d, self.device_sort_column), reverse=reverse_sort)
@@ -644,17 +671,30 @@ class MainWindow(QMainWindow):
             self.device_table.setItem(row, 3, status_item)
         self.statusBar().showMessage(Translations.tr("status.check_complete", time=datetime.now().strftime('%H:%M:%S')))
 
-    def _wake_selected(self) -> None:
-        """Wake the currently selected device."""
+    def _get_selected_device(self):
+        """Resolve the device of the currently selected table row.
+
+        The device id is read from the row's Name item (UserRole) so the
+        lookup stays correct while the search filter hides other rows.
+        Returns None if no row is selected.
+        """
         current_row: int = self.device_table.currentRow()
         if current_row < 0:
+            return None
+        item = self.device_table.item(current_row, 0)
+        if item is None:
+            return None
+        device_id = item.data(Qt.ItemDataRole.UserRole)
+        if not device_id:
+            return None
+        return self.config.get_device_by_id(device_id)
+
+    def _wake_selected(self) -> None:
+        """Wake the currently selected device."""
+        device = self._get_selected_device()
+        if device is None:
             QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device.message"))
             return
-
-        sorted_devices = self._get_sorted_devices()
-        if current_row >= len(sorted_devices):
-            return
-        device = sorted_devices[current_row]
 
         if not device.get("enabled", True):
             QMessageBox.warning(self, Translations.tr("dialog.device_disabled.title"), Translations.tr("dialog.device_disabled.message", name=device["name"]))
@@ -668,15 +708,10 @@ class MainWindow(QMainWindow):
 
     def _ping_selected(self) -> None:
         """Ping the currently selected device."""
-        current_row: int = self.device_table.currentRow()
-        if current_row < 0:
+        device = self._get_selected_device()
+        if device is None:
             QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device_ping.message"))
             return
-
-        sorted_devices = self._get_sorted_devices()
-        if current_row >= len(sorted_devices):
-            return
-        device = sorted_devices[current_row]
 
         status, msg = self.engine.check_device_status(device["id"])
         QMessageBox.information(self, Translations.tr("dialog.status_result.title", status=self._translated_status(status)), msg)
@@ -688,15 +723,10 @@ class MainWindow(QMainWindow):
         selects full-screen mode (True) or a window of the
         user-configured resolution (False).
         """
-        current_row: int = self.device_table.currentRow()
-        if current_row < 0:
+        device = self._get_selected_device()
+        if device is None:
             QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device.message"))
             return
-
-        sorted_devices = self._get_sorted_devices()
-        if current_row >= len(sorted_devices):
-            return
-        device = sorted_devices[current_row]
 
         device_name = device.get("name", "")
         device_ip = device.get("ip", "")
@@ -731,15 +761,10 @@ class MainWindow(QMainWindow):
 
     def _shutdown_selected(self) -> None:
         """Show shutdown confirmation dialog for the selected device."""
-        current_row: int = self.device_table.currentRow()
-        if current_row < 0:
+        device = self._get_selected_device()
+        if device is None:
             QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device_shutdown.message"))
             return
-
-        sorted_devices = self._get_sorted_devices()
-        if current_row >= len(sorted_devices):
-            return
-        device = sorted_devices[current_row]
 
         device_name = device.get("name", "")
         device_ip = device.get("ip", "")
@@ -1115,6 +1140,9 @@ class MainWindow(QMainWindow):
         # Refresh devices group box
         if self._devices_group is not None:
             self._devices_group.setTitle(Translations.tr("ui.devices_group"))
+
+        # Refresh search field placeholder
+        self.search_input.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
 
         # Refresh table headers
         self.device_table.setHorizontalHeaderLabels([

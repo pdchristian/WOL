@@ -292,6 +292,13 @@ class DeviceManagerDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
 
+        # Search field: live-filters the table by name, MAC, IP or user
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._refresh_table)
+
+        layout.addWidget(self.search_input)
         layout.addWidget(self.table)
         layout.addLayout(btn_layout)
 
@@ -317,8 +324,27 @@ class DeviceManagerDialog(QDialog):
         
         return value
 
+    def _get_filtered_devices(self):
+        """Get devices matching the current search query.
+
+        The query is matched as a case-insensitive substring against the
+        device's name, MAC address, IP address and username. An empty query
+        returns all devices.
+        """
+        query = self.search_input.text().strip().lower()
+        if not query:
+            return self.config.get_devices()
+
+        fields = ("name", "mac", "ip", "username")
+        return [
+            device
+            for device in self.config.get_devices()
+            if any(query in str(device.get(field, "")).lower() for field in fields)
+        ]
+
     def _get_sorted_devices(self):
-        devices = self.config.get_devices()
+        """Get devices (filtered by the search field) sorted according to current settings."""
+        devices = self._get_filtered_devices()
         
         return sorted(devices, key=lambda d: self._get_sort_key(d, self.sort_column), reverse=(self.sort_order == Qt.SortOrder.DescendingOrder))
 
@@ -352,7 +378,11 @@ class DeviceManagerDialog(QDialog):
             row: int = self.table.rowCount()
             self.table.insertRow(row)
 
-            self.table.setItem(row, 0, QTableWidgetItem(device.get("name", "")))
+            name_item = QTableWidgetItem(device.get("name", ""))
+            # Store the device id so row-based actions (Edit/Delete) stay
+            # correct while the search filter hides other rows
+            name_item.setData(Qt.ItemDataRole.UserRole, device["id"])
+            self.table.setItem(row, 0, name_item)
             self.table.setItem(row, 1, QTableWidgetItem(device.get("mac", "")))
             self.table.setItem(row, 2, QTableWidgetItem(device.get("ip", "")))
             self.table.setItem(row, 3, QTableWidgetItem(device.get("username", "")))
@@ -394,35 +424,43 @@ class DeviceManagerDialog(QDialog):
         dialog.device_saved.connect(lambda d: self._refresh_table())
         dialog.exec()
 
-    def _edit_device(self) -> None:
+    def _get_selected_device(self):
+        """Resolve the device of the currently selected table row.
+
+        The device id is read from the row's Name item (UserRole) so the
+        lookup stays correct while the search filter hides other rows.
+        Returns None if no row is selected.
+        """
         current_row: int = self.table.currentRow()
         if current_row < 0:
+            return None
+        item = self.table.item(current_row, 0)
+        if item is None:
+            return None
+        device_id = item.data(Qt.ItemDataRole.UserRole)
+        if not device_id:
+            return None
+        return self.config.get_device_by_id(device_id)
+
+    def _edit_device(self) -> None:
+        device = self._get_selected_device()
+        if device is None:
             QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device.message"))
             return
-
-        sorted_devices = self._get_sorted_devices()
-        if current_row >= len(sorted_devices):
-            return
-        device = sorted_devices[current_row]
 
         dialog = DeviceDialog(self.config, device=device, parent=self)
         dialog.device_saved.connect(lambda d: self._refresh_table())
         dialog.exec()
 
     def _delete_device(self) -> None:
-        current_row: int = self.table.currentRow()
-        if current_row < 0:
+        device = self._get_selected_device()
+        if device is None:
             QMessageBox.information(
                 self,
                 Translations.tr("dialog.select_device.title"),
                 Translations.tr("dialog.select_device.message"),
             )
             return
-
-        sorted_devices = self._get_sorted_devices()
-        if current_row >= len(sorted_devices):
-            return
-        device = sorted_devices[current_row]
 
         reply: QMessageBox.StandardButton = QMessageBox.question(
             self,

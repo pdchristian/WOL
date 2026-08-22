@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QProgressBar,
@@ -173,6 +174,14 @@ class NetworkScanDialog(QDialog):
         # Right-click context menu on the scan results table
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_scan_context_menu)
+
+        # Search field: live-filters the results by name, IPv4, IPv6 or MAC
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(Translations.tr("scan_dialog.search_placeholder"))
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._refresh_table)
+        layout.addWidget(self.search_input)
+
         layout.addWidget(self.table)
 
         # Buttons
@@ -258,10 +267,28 @@ class NetworkScanDialog(QDialog):
             self._sort_descending = False
         self._refresh_table()
 
+    def _get_filtered_results(self):
+        """Get scan results matching the current search query.
+
+        The query is matched as a case-insensitive substring against the
+        host's name, IPv4 address, IPv6 address and MAC address. An empty
+        query returns all results.
+        """
+        query = self.search_input.text().strip().lower()
+        if not query:
+            return self._results
+
+        fields = ("hostname", "ipv4", "ipv6", "mac")
+        return [
+            host
+            for host in self._results
+            if any(query in str(host.get(field, "")).lower() for field in fields)
+        ]
+
     def _refresh_table(self) -> None:
         """(Re)fill the table from the stored scan results, applying sorting."""
         self.table.setRowCount(0)
-        results = self._results
+        results = self._get_filtered_results()
 
         # Build sortable rows: (key, hostname, ipv4, ipv6, mac)
         rows: list[tuple] = []

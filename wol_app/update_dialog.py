@@ -7,7 +7,6 @@ buttons to download, dismiss, or skip the update.
 import os
 import tempfile
 import threading
-from _thread import lock
 from datetime import datetime
 from typing import Any
 
@@ -170,7 +169,7 @@ class UpdateAvailableDialog(QDialog):
             "downloaded": 0,
             "total": 0,
         }
-        self._download_lock: lock = threading.Lock()
+        self._download_lock: threading.Lock = threading.Lock()
 
         def download_worker(url, state, lock) -> None:
             """Download in background thread and update state dict."""

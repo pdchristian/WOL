@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 1.9.0 - Improvement Edition**
+**Version 1.10.0 - Search & Remote Desktop Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
@@ -88,6 +88,19 @@ A detailed user manual is available in German:
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
 ## 📝 Changelog
+
+### Version 1.10.0 - Search & Remote Desktop Edition (2026-08-22)
+
+#### 🖥️ Remote Desktop
+- **Remote Desktop sessions** from the device table context menu: right-click a device → **Remote Fullscreen** or **Remote Window**
+- Uses the device's IP, username and password (credentials embedded in a temporary `.rdp` file, auto-deleted after a few seconds)
+- **Windowed mode** uses the resolution configured in **Settings → Remote Desktop** (`1920x1080` default, 6 presets)
+- Session geometry is forced via `mstsc` command-line arguments (`/f`, `/w:`, `/h:`) for reliable full-screen/window behavior
+
+#### 🔍 Device Search
+- **Search field** above the device table in the main window and the device manager — live-filters by name, MAC, IP or user
+- **Search field** in the network scanner (filters by hostname/IPv4/IPv6/MAC)
+- **Search field** in the schedule manager (filters by device, time, action, days and enabled state)
 
 ### Version 1.6.0 - Improvement Edition (2026-08-05)
 

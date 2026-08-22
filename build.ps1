@@ -1,7 +1,7 @@
 # ============================================================================
 # Wake-on-LAN Manager - Build Script
-# Version: 1.7.0 - Host Service Edition
-# Date: 2026-08-17
+# Version: 1.10.0 - Search & Remote Desktop Edition
+# Date: 2026-08-22
 # ============================================================================
 # This script builds the application, host service, uninstaller, the installer
 # helper (custom-action EXE), and the final Inno Setup GUI installer.
@@ -11,7 +11,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "=======================================" -ForegroundColor Cyan
-Write-Host "  Wake-on-LAN Manager v1.7.0 - Build Script" -ForegroundColor Cyan
+Write-Host "  Wake-on-LAN Manager v1.10.0 - Build Script" -ForegroundColor Cyan
 Write-Host "  Host Service Edition" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""

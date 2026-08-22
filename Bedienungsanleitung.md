@@ -9,13 +9,14 @@
 6. [Status prüfen](#status-prüfen)
 7. [Remote Shutdown](#remote-shutdown)
 8. [Herunterfahren mit Host-Service](#herunterfahren-mit-host-service)
-9. [Zeitpläne erstellen](#zeitpläne-erstellen)
-10. [Netzwerkeinstellungen](#netzwerkeinstellungen)
-11. [Protokoll anzeigen](#protokoll-anzeigen)
-12. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
-13. [Tastenkürzel](#tastenkürzel)
-14. [Häufige Fragen](#häufige-fragen)
-15. [Systemanforderungen](#systemanforderungen)
+9. [Remote Desktop](#remote-desktop)
+10. [Zeitpläne erstellen](#zeitpläne-erstellen)
+11. [Netzwerkeinstellungen](#netzwerkeinstellungen)
+12. [Protokoll anzeigen](#protokoll-anzeigen)
+13. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
+14. [Tastenkürzel](#tastenkürzel)
+15. [Häufige Fragen](#häufige-fragen)
+16. [Systemanforderungen](#systemanforderungen)
 
 ---
 
@@ -73,6 +74,9 @@ Die Hauptansicht zeigt eine Tabelle mit allen konfigurierten Geräten und deren 
 
 ## Geräte verwalten
 
+### Geräte suchen
+Über dem Suchfeld der Gerätetabelle (im Hauptfenster und im Geräte-Manager) können Sie die Liste **live filtern**. Geben Sie einen Begriff ein – die Tabelle zeigt nur noch Geräte, deren **Name**, **MAC-Adresse**, **IP-Adresse** oder **Benutzername** den Suchbegriff enthält. Ein leeres Feld zeigt wieder alle Geräte.
+
 ### Gerät hinzufügen
 1. Menü: **Datei → Geräte verwalten...** (oder `Strg+D`)
 2. Klicken Sie auf **+ Gerät hinzufügen**.
@@ -110,6 +114,13 @@ Die Hauptansicht zeigt eine Tabelle mit allen konfigurierten Geräten und deren 
 3. Alle aktivierten Geräte erhalten ein Wake-on-LAN-Signal.
 
 > **Voraussetzung:** Wake-on-LAN muss im BIOS/UEFI und in den Netzwerkeinstellungen des Zielsystems aktiviert sein.
+
+### Kontextmenü (Rechtsklick)
+Ein Rechtsklick auf ein Gerät in der Tabelle öffnet ein Kontextmenü mit weiteren Aktionen:
+- **Remote Fullscreen** – startet eine Remote-Desktop-Sitzung im Vollbild
+- **Remote Window** – startet eine Remote-Desktop-Sitzung in einem Fenster (mit der in den Einstellungen gewählten Auflösung)
+- **Herunterfahren** – fährt das Gerät remote herunter
+- **Status aktualisieren** / **Ping** – prüft den Gerätestatus
 
 ---
 
@@ -283,6 +294,28 @@ Nach der Entfernung kann der Dienst mit `--install` und `--start` sauber neu reg
 
 ---
 
+## Remote Desktop
+
+Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten. Dazu werden die im Geräteeintrag gespeicherten **IP-Adresse**, **Benutzername** und **Passwort** verwendet.
+
+### Remote Desktop starten
+1. Klicken Sie mit der **rechten Maustaste** auf das Gerät in der Gerätetabelle.
+2. Wählen Sie im Kontextmenü:
+   - **Remote Fullscreen** – öffnet die Sitzung im Vollbild
+   - **Remote Window** – öffnet die Sitzung in einem Fenster mit der konfigurierten Auflösung
+3. Die Windows-Remotedesktopverbindung (`mstsc`) startet und verbindet sich mit dem Gerät.
+
+> **Voraussetzung:** Auf dem Zielsystem muss **Remotedesktop** aktiviert sein (Systemeigenschaften → Remotefunktionen → „Remotedesktopverbindungen zulassen“). Das Gerät muss eine **IP-Adresse** besitzen; Benutzername und Passwort sind optional – ohne Passwort fragt `mstsc` beim Verbinden danach.
+
+### Auflösung für das Fenster einstellen
+1. Menü: **Tools → Einstellungen...**
+2. In der Gruppe **Remote Desktop** wählen Sie im Drop-Down **Auflösung** die gewünschte Fensterauflösung (z. B. `1920 × 1080`).
+3. Klicken Sie auf **Speichern**.
+
+> **Hinweis:** Die Anmeldedaten werden in einer temporären `.rdp`-Datei abgelegt, die wenige Sekunden nach dem Start automatisch gelöscht wird, damit das Passwort nicht auf der Festplatte verbleibt.
+
+---
+
 ## Zeitpläne erstellen
 
 1. Menü: **Datei → Zeitpläne verwalten...** (oder `Strg+S`)
@@ -296,6 +329,8 @@ Nach der Entfernung kann der Dienst mit `--install` und `--start` sauber neu reg
 
 > Der Zeitplan-Checker läuft im Hintergrund und löst Wake-on-LAN-Signale automatisch aus.
 
+> **Tipp:** Über dem Suchfeld der Zeitplan-Tabelle können Sie die Liste **live filtern** – nach Gerätename, Zeit (HH:MM), Aktion, Wochentagen oder Aktiviert-Zustand.
+
 ---
 
 ## Netzwerkeinstellungen
@@ -307,6 +342,8 @@ Nach der Entfernung kann der Dienst mit `--install` und `--start` sauber neu reg
 3. Klicken Sie auf **Speichern**.
 
 > Ändern Sie die Broadcast-IP nur, wenn Sie ein spezifisches Subnetz ansprechen müssen (z. B. `192.168.2.255`).
+
+> **Netzwerkscanner:** Der Scanner entdeckt Geräte im lokalen Netzwerk. Über dem Suchfeld der Ergebnis-Tabelle können Sie die Liste **live filtern** – nach Hostname, IPv4, IPv6 oder MAC-Adresse.
 
 ---
 
@@ -432,4 +469,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 1.9.0 | Wake-on-LAN Manager*
+*Version 1.10.0 | Wake-on-LAN Manager*

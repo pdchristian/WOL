@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -72,6 +73,13 @@ class ScheduleDialog(QDialog):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_schedule_context_menu)
 
+        # Search field: live-filters the table by device, time, action,
+        # days or enabled state
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(Translations.tr("schedule_dialog.search_placeholder"))
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._refresh_table)
+
         # Buttons
         btn_layout = QHBoxLayout()
         add_btn = QPushButton(Translations.tr("schedule_dialog.button.add_schedule"))
@@ -90,6 +98,7 @@ class ScheduleDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
 
+        layout.addWidget(self.search_input)
         layout.addWidget(self.table)
         layout.addLayout(btn_layout)
 
@@ -114,9 +123,60 @@ class ScheduleDialog(QDialog):
             self._sort_descending = False
         self._refresh_table()
 
+    def _get_filtered_schedules(self):
+        """Get schedules matching the current search query.
+
+        The query is matched as a case-insensitive substring against the
+        device name, time (HH:MM), action, days and the enabled state
+        (localized "enabled"/"disabled" terms). An empty query returns all
+        schedules.
+        """
+        query = self.search_input.text().strip().lower()
+        if not query:
+            return self.config.get_schedules()
+
+        enabled_term = Translations.tr("schedule_dialog.col.enabled").lower()
+        disabled_term = Translations.tr("device.disabled").lower()
+
+        filtered = []
+        for schedule in self.config.get_schedules():
+            device = self.config.get_device_by_id(schedule.get("device_id", ""))
+            device_name = device["name"] if device else Translations.tr("schedule_dialog.unknown_device")
+            time_str = f"{schedule.get('hour', 0):02d}:{schedule.get('minute', 0):02d}"
+            action_str = Translations.tr("schedule_dialog.action.wake") if schedule.get("action", "wake") == "wake" else Translations.tr("schedule_dialog.action.shutdown")
+            days_str = self._days_to_string(schedule.get("days", []))
+            enabled = schedule.get("enabled", True)
+            state_str = enabled_term if enabled else disabled_term
+
+            values = [device_name, time_str, action_str, days_str, state_str]
+            if any(query in value.lower() for value in values):
+                filtered.append(schedule)
+        return filtered
+
+    def _get_selected_schedule(self):
+        """Resolve the schedule of the currently selected table row.
+
+        The schedule id is read from the row's device item (UserRole) so the
+        lookup stays correct while the search filter hides other rows.
+        Returns None if no row is selected.
+        """
+        current_row: int = self.table.currentRow()
+        if current_row < 0:
+            return None
+        item = self.table.item(current_row, 0)
+        if item is None:
+            return None
+        schedule_id = item.data(Qt.ItemDataRole.UserRole)
+        if not schedule_id:
+            return None
+        for schedule in self.config.get_schedules():
+            if schedule.get("id") == schedule_id:
+                return schedule
+        return None
+
     def _refresh_table(self) -> None:
         self.table.setRowCount(0)
-        schedules = self.config.get_schedules()
+        schedules = self._get_filtered_schedules()
 
         # Build sortable rows: (key, device_name, time_str, action_str, days_str, enabled)
         rows: list[tuple] = []
@@ -148,7 +208,11 @@ class ScheduleDialog(QDialog):
             row: int = self.table.rowCount()
             self.table.insertRow(row)
 
-            self.table.setItem(row, 0, QTableWidgetItem(device_name))
+            device_item = QTableWidgetItem(device_name)
+            # Store the schedule id so row-based actions (Edit/Delete) stay
+            # correct while the search filter hides other rows
+            device_item.setData(Qt.ItemDataRole.UserRole, s_id)
+            self.table.setItem(row, 0, device_item)
             self.table.setItem(row, 1, QTableWidgetItem(time_str))
             self.table.setItem(row, 2, QTableWidgetItem(action_str))
             self.table.setItem(row, 3, QTableWidgetItem(days_str))
@@ -206,15 +270,10 @@ class ScheduleDialog(QDialog):
             self._refresh_table()
 
     def _edit_schedule(self) -> None:
-        current_row: int = self.table.currentRow()
-        if current_row < 0:
+        schedule = self._get_selected_schedule()
+        if schedule is None:
             QMessageBox.information(self, Translations.tr("schedule_dialog.select_schedule"), Translations.tr("schedule_dialog.select_schedule_edit_msg"))
             return
-
-        schedules = self.config.get_schedules()
-        if current_row >= len(schedules):
-            return
-        schedule = schedules[current_row]
 
         devices = self.config.get_devices()
         dialog = ScheduleEditDialog(self.config, devices, schedule=schedule, parent=self)
@@ -222,15 +281,10 @@ class ScheduleDialog(QDialog):
             self._refresh_table()
 
     def _delete_schedule(self) -> None:
-        current_row: int = self.table.currentRow()
-        if current_row < 0:
+        schedule = self._get_selected_schedule()
+        if schedule is None:
             QMessageBox.information(self, Translations.tr("schedule_dialog.select_schedule"), Translations.tr("schedule_dialog.select_schedule_delete_msg"))
             return
-
-        schedules = self.config.get_schedules()
-        if not schedules or current_row >= len(schedules):
-            return
-        schedule = schedules[current_row]
 
         reply: QMessageBox.StandardButton = QMessageBox.question(
             self, Translations.tr("schedule_dialog.confirm_delete"),
