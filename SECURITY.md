@@ -13,7 +13,7 @@
 
 Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.6.0** implementiert wurden. 
 
-Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert. Seit **Version 1.7.0** kommt der optionale **WOL Host Service** hinzu (siehe unten). Seit **Version 1.10.0** kann die Anwendung **Remote Desktop**-Sitzungen starten; dabei werden die Geräte-Anmeldedaten in einer temporären `.rdp`-Datei abgelegt, die nach wenigen Sekunden automatisch gelöscht wird, damit Passwörter nicht auf der Festplatte verbleiben.
+Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert. Seit **Version 1.7.0** kommt der optionale **WOL Host Service** hinzu (siehe unten). Seit **Version 1.10.0** kann die Anwendung **Remote Desktop**-Sitzungen starten; dabei werden die Geräte-Anmeldedaten in einer temporären `.rdp`-Datei unter `~/.wol_app/rdp/` abgelegt (benannt nach dem Gerät), die nach wenigen Sekunden automatisch gelöscht wird, damit Passwörter nicht auf der Festplatte verbleiben.
 
 ---
 

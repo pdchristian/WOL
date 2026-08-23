@@ -2,7 +2,10 @@
 
 import base64
 import os
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from wol_app.utils import (
@@ -101,6 +104,12 @@ class TestBuildRdpContent(unittest.TestCase):
         self.assertIn("desktopwidth:i:2560", content)
         self.assertIn("desktopheight:i:1440", content)
         self.assertIn("use multimon:i:0", content)
+        # Window must be positioned at 10,10 (winposstr = left,top,right,bottom)
+        self.assertIn("winposstr:s:0,1,10,10,2570,1450", content)
+
+    def test_fullscreen_has_no_position_line(self):
+        content = _build_rdp_content("10.0.0.5", "", "", True, 2560, 1440)
+        self.assertNotIn("winposstr", content)
 
     def test_password_is_base64_utf16le(self):
         content = _build_rdp_content("10.0.0.5", "", "pw", True, 1920, 1080)
@@ -117,12 +126,20 @@ class TestBuildRdpContent(unittest.TestCase):
 
 
 class TestLaunchRemoteDesktop(unittest.TestCase):
+    def setUp(self):
+        # Isolate writes from the real ~/.wol_app/rdp directory.
+        patcher = patch("wol_app.utils._RDP_DIR", new=Path(tempfile.mkdtemp()))
+        self.mock_rdp_dir = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, self.mock_rdp_dir, ignore_errors=True)
+
     def test_launch_fullscreen_uses_f_flag(self):
         with patch("wol_app.utils.subprocess.Popen") as mock_popen:
             mock_popen.return_value = MagicMock()
             launch_remote_desktop(
                 "192.168.1.10", "user", "pw",
                 fullscreen=True, cleanup_delay=60.0,
+                device_name="Wohnzimmer PC",
             )
         cmd = mock_popen.call_args[0][0]
         # Geometry is forced on the command line; the .rdp file (last arg)
@@ -130,7 +147,9 @@ class TestLaunchRemoteDesktop(unittest.TestCase):
         self.assertEqual(cmd[0], "mstsc")
         self.assertEqual(cmd[1], "/v:192.168.1.10")
         self.assertIn("/f", cmd)
-        self.assertTrue(cmd[-1].endswith(".rdp"))
+        self.assertEqual(Path(cmd[-1]).suffix, ".rdp")
+        # File is named after the device and lives in ~/.wol_app/rdp/.
+        self.assertEqual(Path(cmd[-1]), self.mock_rdp_dir / "Wohnzimmer_PC.rdp")
         # File must still exist (cleanup is delayed) and carry credentials
         rdp_path = cmd[-1]
         self.assertTrue(os.path.exists(rdp_path))
@@ -141,12 +160,23 @@ class TestLaunchRemoteDesktop(unittest.TestCase):
         self.assertIn("username:s:user", content)
         os.remove(rdp_path)  # test cleanup
 
+    def test_launch_falls_back_to_ip_when_no_device_name(self):
+        with patch("wol_app.utils.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+            launch_remote_desktop(
+                "192.168.1.10", "user", "pw",
+                fullscreen=True, cleanup_delay=60.0,
+            )
+        cmd = mock_popen.call_args[0][0]
+        # Empty device_name -> filename derived from the IP address.
+        self.assertEqual(Path(cmd[-1]), self.mock_rdp_dir / "192.168.1.10.rdp")
+
     def test_launch_windowed_uses_w_h_flags(self):
         with patch("wol_app.utils.subprocess.Popen") as mock_popen:
             mock_popen.return_value = MagicMock()
             launch_remote_desktop(
                 "10.0.0.5", fullscreen=False, width=3440, height=1440,
-                cleanup_delay=60.0,
+                cleanup_delay=60.0, device_name="Office",
             )
         cmd = mock_popen.call_args[0][0]
         # Windowed mode is forced via /w: and /h: (mstsc ignores
@@ -156,13 +186,14 @@ class TestLaunchRemoteDesktop(unittest.TestCase):
         self.assertIn("/w:3440", cmd)
         self.assertIn("/h:1440", cmd)
         self.assertNotIn("/f", cmd)
-        rdp_path = cmd[-1]
-        self.assertTrue(rdp_path.endswith(".rdp"))
+        rdp_path = Path(cmd[-1])
+        self.assertEqual(rdp_path.suffix, ".rdp")
         with open(rdp_path, encoding="utf-8") as f:
             content = f.read()
         self.assertIn("fullscreen:i:0", content)
         self.assertIn("desktopwidth:i:3440", content)
         self.assertIn("desktopheight:i:1440", content)
+        self.assertIn("winposstr:s:0,1,10,10,3450,1450", content)
         os.remove(rdp_path)  # test cleanup
 
     def test_launch_empty_ip_raises(self):
@@ -173,7 +204,8 @@ class TestLaunchRemoteDesktop(unittest.TestCase):
         with patch("wol_app.utils.subprocess.Popen",
                    side_effect=OSError("mstsc not found")) as mock_popen:
             with self.assertRaises(OSError):
-                launch_remote_desktop("192.168.1.10", cleanup_delay=60.0)
+                launch_remote_desktop("192.168.1.10", cleanup_delay=60.0,
+                                       device_name="Server")
         rdp_path = mock_popen.call_args[0][0][-1]
         self.assertFalse(os.path.exists(rdp_path))
 

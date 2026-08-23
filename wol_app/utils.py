@@ -8,9 +8,9 @@ import base64
 import os
 import re
 import subprocess
-import tempfile
 import threading
 import time
+from pathlib import Path
 
 # ── Validation ──────────────────────────────────────────────────────────────
 
@@ -130,6 +130,10 @@ def _build_rdp_content(
         lines.append(f"desktopheight:i:{int(height)}")
         # Do not span the window over multiple monitors.
         lines.append("use multimon:i:0")
+        # Position the window at 10,10 (winposstr = left,top,right,bottom).
+        lines.append(
+            f"winposstr:s:0,1,10,10,{int(width) + 10},{int(height) + 10}"
+        )
     return "\r\n".join(lines) + "\r\n"
 
 
@@ -142,6 +146,19 @@ def _cleanup_rdp_file(path: str, delay: float) -> None:
         pass
 
 
+def _sanitize_filename_part(name: str) -> str:
+    """Make *name* safe to use as a single Windows filename segment."""
+    cleaned = re.sub(r'[\\/:*?"<>|]', "_", str(name)).strip()
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    return cleaned or "device"
+
+
+# Directory that holds the per-device temporary ``.rdp`` files. The files are
+# written here so they live alongside the rest of the app data; they are still
+# deleted after the connection starts (see launch_remote_desktop).
+_RDP_DIR = Path.home() / ".wol_app" / "rdp"
+
+
 def launch_remote_desktop(
     ip: str,
     username: str = "",
@@ -150,6 +167,7 @@ def launch_remote_desktop(
     width: int = 1920,
     height: int = 1080,
     cleanup_delay: float = 5.0,
+    device_name: str = "",
 ) -> None:
     """Launch Windows Remote Desktop (``mstsc``) to *ip*.
 
@@ -176,6 +194,8 @@ def launch_remote_desktop(
         width: Window width in pixels (windowed mode only).
         height: Window height in pixels (windowed mode only).
         cleanup_delay: Seconds to wait before deleting the temp file.
+        device_name: Device name used for the temp file's basename; falls
+            back to *ip* when empty or missing.
 
     Raises:
         ValueError: if *ip* is empty.
@@ -185,8 +205,14 @@ def launch_remote_desktop(
         raise ValueError("IP address is empty")
 
     content = _build_rdp_content(ip, username, password, fullscreen, width, height)
-    fd, rdp_path = tempfile.mkstemp(suffix=".rdp", prefix="wol_rdp_")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
+
+    # Write to a per-device file in ~/.wol_app/rdp/, named after the device
+    # (falling back to its IP). The file is still temporary: it is deleted
+    # *cleanup_delay* seconds later so the embedded password does not linger.
+    base_name = _sanitize_filename_part(device_name or ip)
+    _RDP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    rdp_path = _RDP_DIR / f"{base_name}.rdp"
+    with open(rdp_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     # Force the geometry on the command line (reliable) and let the .rdp

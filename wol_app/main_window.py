@@ -755,6 +755,7 @@ class MainWindow(QMainWindow):
                 fullscreen=fullscreen,
                 width=width,
                 height=height,
+                device_name=device_name,
             )
         except Exception:
             QMessageBox.critical(self, Translations.tr("dialog.remote_desktop_error.title"), Translations.tr("dialog.remote_desktop_error.message"))
