@@ -1,9 +1,212 @@
-"""Display mode (theme) handling for the Wake-on-LAN application."""
+"""Display mode (theme) handling and design system for the Wake-on-LAN application."""
 
+import os
 import sys
 
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QIcon, QPalette
 from PyQt6.QtWidgets import QApplication
+
+from wol_app.utils import get_resource_path
+
+
+# ---------------------------------------------------------------------------
+# Design tokens (shared across light & dark so widget code uses one source)
+# ---------------------------------------------------------------------------
+ACCENT = "#0f8ff8"          # primary action colour (Wake, primary buttons)
+ACCENT_DARK = "#0b74cc"
+SUCCESS = "#2e9e5b"         # online / success
+WARNING = "#e0a21c"         # unknown / pending
+DANGER = "#d64545"          # offline / error
+SIDEBAR_WIDTH = 200
+BORDER_RADIUS = 6
+
+
+def _tokens(dark: bool) -> dict[str, str]:
+    """Return colour tokens for the given colour scheme."""
+    if dark:
+        return {
+            "bg": "#1e1e24",
+            "surface": "#2a2a32",
+            "surface_alt": "#33333d",
+            "border": "#3d3d49",
+            "text": "#e6e6eb",
+            "text_muted": "#9a9aa8",
+            "sidebar": "#23232b",
+            "sidebar_active": "#2f3550",
+            "accent": ACCENT,
+        }
+    return {
+        "bg": "#f4f5f7",
+        "surface": "#ffffff",
+        "surface_alt": "#f0f1f4",
+        "border": "#dcdfe6",
+        "text": "#23262e",
+        "text_muted": "#6b7180",
+        "sidebar": "#eceef2",
+        "sidebar_active": "#e1e9f5",
+        "accent": "#0f6fd8",
+    }
+
+
+def _build_stylesheet(t: dict[str, str]) -> str:
+    """Build a modern Fusion stylesheet from colour tokens."""
+    return f"""
+QMainWindow, QDialog {{
+    background-color: {t['bg']};
+    color: {t['text']};
+}}
+QWidget {{
+    color: {t['text']};
+}}
+QLabel {{
+    background: transparent;
+}}
+
+/* --- Sidebar --- */
+QListWidget#sidebar {{
+    background-color: {t['sidebar']};
+    border: none;
+    outline: none;
+    padding: 8px 6px;
+}}
+QListWidget#sidebar::item {{
+    color: {t['text']};
+    border-radius: {BORDER_RADIUS}px;
+    padding: 9px 12px;
+    margin: 2px 2px;
+}}
+QListWidget#sidebar::item:selected {{
+    background-color: {t['accent']};
+    color: #ffffff;
+}}
+QListWidget#sidebar::item:hover:!selected {{
+    background-color: {t['surface_alt']};
+}}
+
+/* --- Cards / groups --- */
+QGroupBox {{
+    background-color: {t['surface']};
+    border: 1px solid {t['border']};
+    border-radius: {BORDER_RADIUS}px;
+    margin-top: 14px;
+    padding: 10px;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 4px;
+    color: {t['text_muted']};
+    font-weight: 600;
+}}
+
+/* --- Inputs --- */
+QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {{
+    background-color: {t['surface_alt']};
+    border: 1px solid {t['border']};
+    border-radius: {BORDER_RADIUS}px;
+    padding: 5px 8px;
+    color: {t['text']};
+    selection-background-color: {t['accent']};
+}}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
+    border: 1px solid {t['accent']};
+}}
+
+/* --- Table --- */
+QTableWidget, QTreeWidget, QTableView {{
+    background-color: {t['surface']};
+    alternate-background-color: {t['surface_alt']};
+    border: 1px solid {t['border']};
+    border-radius: {BORDER_RADIUS}px;
+    gridline-color: {t['border']};
+    selection-background-color: {t['accent']};
+    selection-color: #ffffff;
+}}
+QHeaderView::section {{
+    background-color: {t['surface_alt']};
+    color: {t['text_muted']};
+    border: none;
+    border-bottom: 1px solid {t['border']};
+    padding: 6px;
+    font-weight: 600;
+}}
+
+/* --- Buttons --- */
+QPushButton {{
+    background-color: {t['surface_alt']};
+    border: 1px solid {t['border']};
+    border-radius: {BORDER_RADIUS}px;
+    padding: 6px 14px;
+    color: {t['text']};
+}}
+QPushButton:hover {{
+    background-color: {t['border']};
+}}
+QPushButton:pressed {{
+    background-color: {t['surface_alt']};
+}}
+QPushButton:disabled {{
+    color: {t['text_muted']};
+}}
+QPushButton#primaryButton {{
+    background-color: {t['accent']};
+    border: none;
+    color: #ffffff;
+    font-weight: 600;
+}}
+QPushButton#primaryButton:hover {{
+    background-color: {ACCENT_DARK};
+}}
+QPushButton#dangerButton {{
+    background-color: transparent;
+    border: 1px solid {DANGER};
+    color: {DANGER};
+}}
+QPushButton#dangerButton:hover {{
+    background-color: {DANGER};
+    color: #ffffff;
+}}
+
+/* --- Scrollbars --- */
+QScrollBar:vertical {{
+    background: {t['surface']};
+    width: 10px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background: {t['border']};
+    border-radius: 5px;
+    min-height: 30px;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}
+
+QMenuBar {{
+    background-color: {t['sidebar']};
+    color: {t['text']};
+}}
+QMenuBar::item:selected {{
+    background-color: {t['surface_alt']};
+}}
+QMenu {{
+    background-color: {t['surface']};
+    color: {t['text']};
+    border: 1px solid {t['border']};
+}}
+QMenu::item:selected {{
+    background-color: {t['accent']};
+    color: #ffffff;
+}}
+QStatusBar {{
+    background-color: {t['sidebar']};
+    color: {t['text_muted']};
+}}
+"""
 
 
 def _system_uses_dark() -> bool:
@@ -82,52 +285,59 @@ def apply_display_mode(app: QApplication, mode: str) -> None:
     else:  # auto
         dark = _system_uses_dark()
 
+    tokens = _tokens(dark)
     if dark:
         app.setPalette(_dark_palette())
-        app.setStyleSheet(_DARK_STYLESHEET)
     else:
         app.setPalette(_light_palette())
-        app.setStyleSheet(_LIGHT_STYLESHEET)
+    app.setStyleSheet(_build_stylesheet(tokens))
 
 
 # Base stylesheet that overrides OS-default colors for the most common widgets.
 # Kept minimal so it does not interfere with widget-specific stylesheets.
-_DARK_STYLESHEET = """
-QMainWindow, QDialog, QGroupBox {
-    background-color: #353535;
-    color: #ffffff;
-}
-QTableWidget, QTextEdit, QLineEdit, QComboBox, QSpinBox {
-    background-color: #232323;
-    color: #ffffff;
-    alternate-background-color: #4b4b4b;
-}
-QHeaderView::section {
-    background-color: #353535;
-    color: #ffffff;
-}
-QPushButton {
-    background-color: #353535;
-    color: #ffffff;
-}
-"""
+_DARK_STYLESHEET = ""
+_LIGHT_STYLESHEET = ""
 
-_LIGHT_STYLESHEET = """
-QMainWindow, QDialog, QGroupBox {
-    background-color: #f0f0f0;
-    color: #000000;
-}
-QTableWidget, QTextEdit, QLineEdit, QComboBox, QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    alternate-background-color: #f8f8f8;
-}
-QHeaderView::section {
-    background-color: #f0f0f0;
-    color: #000000;
-}
-QPushButton {
-    background-color: #f0f0f0;
-    color: #000000;
-}
-"""
+
+def get_icon(name: str, dark: bool | None = None, size: int = 18) -> QIcon:
+    """Load an SVG icon from the bundled assets and tint it for the theme.
+
+    Icons are stored as SVG with the literal placeholder ``ICON_COLOR`` where
+    the stroke/fill colour should be theme-dependent. The current scheme
+    (or the caller-supplied ``dark`` flag) decides the final colour.
+
+    Returns an empty QIcon if the icon file is missing.
+    """
+    if dark is None:
+        app = QApplication.instance()
+        dark = False
+        if app is not None:
+            dark = app.palette().color(QPalette.ColorRole.Window).lightness() < 128
+    color = _tokens(dark)["text"]
+    if dark:
+        # muted icons look better on dark surfaces
+        color = "#c9c9d1"
+
+    path = get_resource_path(os.path.join("assets", "icons", f"{name}.svg"))
+    if not os.path.exists(path):
+        return QIcon()
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            svg = fh.read()
+    except OSError:
+        return QIcon()
+    svg = svg.replace("ICON_COLOR", color)
+    return QIcon(svg)
+
+
+def status_badge_colors(status: str) -> tuple[str, str]:
+    """Return (foreground, background) CSS colours for a status badge.
+
+    *status* is one of ``online``, ``offline``, ``unknown`` (or anything
+    else, which is treated as ``unknown``).
+    """
+    if status == "online":
+        return "#ffffff", SUCCESS
+    if status == "offline":
+        return "#ffffff", DANGER
+    return "#23262e", WARNING

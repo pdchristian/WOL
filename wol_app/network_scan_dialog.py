@@ -6,7 +6,6 @@ from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QDialog,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -19,6 +18,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from wol_app.network_scanner import (
@@ -71,13 +71,14 @@ class ScanWorker(QObject):
         self.finished.emit(all_results)
 
 
-class NetworkScanDialog(QDialog):
-    """Dialog to scan the network and display discovered devices."""
+class NetworkScanPage(QWidget):
+    """Page to scan the network and display discovered devices."""
+
+    device_added = pyqtSignal()  # Emitted after one or more devices are added
 
     def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
         self.config: Any = config_manager
-        self.setWindowTitle(Translations.tr("scan_dialog.title"))
         self.setMinimumSize(800, 500)
 
         # Keep references to prevent garbage collection while thread runs
@@ -191,11 +192,7 @@ class NetworkScanDialog(QDialog):
         self.add_btn.clicked.connect(self._add_selected_device)
         self.add_btn.setEnabled(False)
         btn_layout.addWidget(self.add_btn)
-
-        close_btn = QPushButton(Translations.tr("dialog.button.close"))
-        close_btn.clicked.connect(self.accept)
         btn_layout.addStretch()
-        btn_layout.addWidget(close_btn)
 
         layout.addLayout(btn_layout)
 
@@ -207,6 +204,10 @@ class NetworkScanDialog(QDialog):
             if cb.isChecked():
                 selected.append(iface)
         return selected
+
+    def start_scan(self) -> None:
+        """Start a network scan (public entry point for the page)."""
+        self._start_scan()
 
     def _start_scan(self) -> None:
         """Start network scan in background thread."""
@@ -412,6 +413,7 @@ class NetworkScanDialog(QDialog):
                 self, Translations.tr("scan_dialog.success"),
                 Translations.tr("scan_dialog.success_msg", hostname=hostname)
             )
+            self.device_added.emit()
         else:
             QMessageBox.critical(
                 self, Translations.tr("dialog.error"),

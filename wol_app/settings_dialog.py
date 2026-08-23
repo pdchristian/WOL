@@ -3,11 +3,11 @@
 import re
 from typing import Any
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QDialog,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from wol_app.config import REMOTE_DESKTOP_RESOLUTIONS
@@ -39,13 +40,14 @@ def _validate_port(port: int) -> bool:
     return 1 <= port <= 65535
 
 
-class SettingsDialog(QDialog):
-    """Dialog for configuring network and broadcast settings."""
+class SettingsPage(QWidget):
+    """Page for configuring network and broadcast settings."""
+
+    settings_saved = pyqtSignal()  # Emitted after a successful save
 
     def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
         self.config: Any = config_manager
-        self.setWindowTitle(Translations.tr("settings.title"))
         self.setMinimumWidth(400)
         self._setup_ui()
         self._load_settings()
@@ -175,12 +177,10 @@ class SettingsDialog(QDialog):
         # Buttons
         btn_layout = QHBoxLayout()
         self.save_btn = QPushButton(Translations.tr("dialog.button.save"))
+        self.save_btn.setObjectName("primaryButton")
         self.save_btn.clicked.connect(self._save)
-        self.cancel_btn = QPushButton(Translations.tr("dialog.button.cancel"))
-        self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addStretch()
         btn_layout.addWidget(self.save_btn)
-        btn_layout.addWidget(self.cancel_btn)
 
         layout.addStretch()
         layout.addLayout(btn_layout)
@@ -291,4 +291,4 @@ class SettingsDialog(QDialog):
             self.config.set_remote_desktop_resolution(selected_resolution)
 
         QMessageBox.information(self, Translations.tr("dialog.saved.title"), Translations.tr("dialog.saved.message"))
-        self.accept()
+        self.settings_saved.emit()

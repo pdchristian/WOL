@@ -19,10 +19,10 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
-from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.translations import Translations
 from wol_app.utils import (
     get_ip_key,
@@ -210,13 +210,14 @@ class DeviceDialog(QDialog):
         self.accept()
 
 
-class DeviceManagerDialog(QDialog):
-    """Full device management dialog - list all devices, add/edit/delete."""
+class DeviceManagerPage(QWidget):
+    """Full device management page - list all devices, add/edit/delete."""
+
+    request_scan = pyqtSignal()  # Emitted when the user triggers a network scan
 
     def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
         self.config: Any = config_manager
-        self.setWindowTitle(Translations.tr("device_manager.title"))
         self.setMinimumSize(700, 500)
         
         # Load sort settings from config
@@ -287,10 +288,6 @@ class DeviceManagerDialog(QDialog):
         btn_layout.addWidget(export_btn)
         btn_layout.addStretch()
         btn_layout.addWidget(refresh_btn)
-
-        close_btn = QPushButton(Translations.tr("device_manager.button.close"))
-        close_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(close_btn)
 
         # Search field: live-filters the table by name, MAC, IP or user
         self.search_input = QLineEdit()
@@ -473,10 +470,8 @@ class DeviceManagerDialog(QDialog):
             self._refresh_table()
 
     def _scan_network(self) -> None:
-        """Open network scan dialog to discover active devices."""
-        dialog: NetworkScanDialog[Any] = NetworkScanDialog(self.config, parent=self)
-        dialog.exec()
-        self._refresh_table()
+        """Ask the main window to switch to the network scan page."""
+        self.request_scan.emit()
 
     def _export_devices(self) -> None:
         """Export configured devices to a JSON file."""

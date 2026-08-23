@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from typing import Any, Literal, NoReturn
 
-from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QSize, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QFont, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
@@ -16,11 +16,14 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMenuBar,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -30,13 +33,13 @@ from PyQt6.QtWidgets import (
 
 from wol_app import __version__
 from wol_app.config import ConfigManager
-from wol_app.device_dialog import DeviceManagerDialog
+from wol_app.device_dialog import DeviceDialog, DeviceManagerPage
 from wol_app.host_service_client import send_host_command
-from wol_app.log_dialog import LogDialog
-from wol_app.network_scan_dialog import NetworkScanDialog
-from wol_app.schedule_dialog import ScheduleDialog
-from wol_app.settings_dialog import SettingsDialog
-from wol_app.theme import apply_display_mode
+from wol_app.log_dialog import LogPage
+from wol_app.network_scan_dialog import NetworkScanPage
+from wol_app.schedule_dialog import SchedulePage
+from wol_app.settings_dialog import SettingsPage
+from wol_app.theme import SIDEBAR_WIDTH, apply_display_mode, get_icon
 from wol_app.translations import Translations
 from wol_app.update_dialog import (
     UpdateAvailableDialog,
@@ -164,10 +167,6 @@ class MainWindow(QMainWindow):
         self._update_worker = None
         self._update_check_running = False
 
-        # References to refreshable UI widgets for language switching
-        self._title_label = None
-
-
         self._setup_menu()
         self._setup_ui()
         self._refresh_device_table()
@@ -270,12 +269,12 @@ class MainWindow(QMainWindow):
         file_menu: QMenu | None = menubar.addMenu(Translations.tr("menu.file.title"))
         devices_action = QAction(Translations.tr("menu.file.device"), self)
         devices_action.setShortcut("Ctrl+D")
-        devices_action.triggered.connect(self._open_device_manager)
+        devices_action.triggered.connect(lambda: self._switch_page(1))
         file_menu.addAction(devices_action)
 
         schedules_action = QAction(Translations.tr("menu.file.schedule"), self)
         schedules_action.setShortcut("Ctrl+S")
-        schedules_action.triggered.connect(self._open_schedule_manager)
+        schedules_action.triggered.connect(lambda: self._switch_page(2))
         file_menu.addAction(schedules_action)
 
         file_menu.addSeparator()
@@ -288,17 +287,17 @@ class MainWindow(QMainWindow):
         tools_menu: QMenu | None = menubar.addMenu(Translations.tr("menu.tools.title"))
         network_scan_action = QAction(Translations.tr("menu.file.scan"), self)
         network_scan_action.setShortcut("Ctrl+N")
-        network_scan_action.triggered.connect(self._open_network_scan)
+        network_scan_action.triggered.connect(lambda: self._switch_page(3))
         tools_menu.addAction(network_scan_action)
 
         settings_action = QAction(Translations.tr("menu.tools.settings"), self)
         settings_action.setShortcut("Ctrl+E")
-        settings_action.triggered.connect(self._open_settings)
+        settings_action.triggered.connect(lambda: self._switch_page(5))
         tools_menu.addAction(settings_action)
 
         logs_action = QAction(Translations.tr("menu.file.logs"), self)
         logs_action.setShortcut("Ctrl+L")
-        logs_action.triggered.connect(self._open_logs)
+        logs_action.triggered.connect(lambda: self._switch_page(4))
         tools_menu.addAction(logs_action)
 
         # Help menu
@@ -313,19 +312,19 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
-    def _setup_ui(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-        main_layout = QVBoxLayout(central)
+    def _build_device_page(self) -> QWidget:
+        """Build the primary devices page (table + quick actions)."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(16, 16, 16, 16)
 
         # Title
-        self._title_label = QLabel(Translations.tr("app.name"))
-        title_font = QFont()
-        title_font.setBold(True)
-        title_font.setPointSize(18)
-        self._title_label.setFont(title_font)
-        self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(self._title_label)
+        title = QLabel(Translations.tr("app.name"))
+        tf = QFont()
+        tf.setBold(True)
+        tf.setPointSize(16)
+        title.setFont(tf)
+        layout.addWidget(title)
 
         # Device list
         self._devices_group = QGroupBox(Translations.tr("ui.devices_group"))
@@ -370,6 +369,8 @@ class MainWindow(QMainWindow):
         # Right-click context menu on the device list
         self.device_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.device_table.customContextMenuRequested.connect(self._show_device_context_menu)
+        # Double-click opens the edit dialog
+        self.device_table.itemDoubleClicked.connect(lambda item: self._open_add_device())
 
         # Search field: live-filters the table by name, MAC, IP or user
         self.search_input = QLineEdit()
@@ -383,6 +384,22 @@ class MainWindow(QMainWindow):
         # Action buttons row
         device_btn_layout = QHBoxLayout()
 
+        self.wake_selected_btn = QPushButton(Translations.tr("button.wake_selected"))
+        self.wake_selected_btn.setObjectName("primaryButton")
+        self.wake_selected_btn.clicked.connect(self._wake_selected)
+        self.wake_selected_btn.setMinimumHeight(35)
+        device_btn_layout.addWidget(self.wake_selected_btn)
+
+        self.wake_all_btn = QPushButton(Translations.tr("button.wake_all"))
+        self.wake_all_btn.clicked.connect(self._wake_all)
+        self.wake_all_btn.setMinimumHeight(35)
+        device_btn_layout.addWidget(self.wake_all_btn)
+
+        self.ping_btn = QPushButton(Translations.tr("button.ping"))
+        self.ping_btn.clicked.connect(self._ping_selected)
+        self.ping_btn.setMinimumHeight(35)
+        device_btn_layout.addWidget(self.ping_btn)
+
         self.shutdown_btn = QPushButton(Translations.tr("button.shutdown"))
         self.shutdown_btn.clicked.connect(self._shutdown_selected)
         self.shutdown_btn.setMinimumHeight(35)
@@ -393,24 +410,95 @@ class MainWindow(QMainWindow):
         self.refresh_btn.setMinimumHeight(35)
         device_btn_layout.addWidget(self.refresh_btn)
 
-        self.ping_btn = QPushButton(Translations.tr("button.ping"))
-        self.ping_btn.clicked.connect(self._ping_selected)
-        self.ping_btn.setMinimumHeight(35)
-        device_btn_layout.addWidget(self.ping_btn)
-
-        self.wake_all_btn = QPushButton(Translations.tr("button.wake_all"))
-        self.wake_all_btn.setObjectName("primaryButton")
-        self.wake_all_btn.clicked.connect(self._wake_all)
-        self.wake_all_btn.setMinimumHeight(35)
-        device_btn_layout.addWidget(self.wake_all_btn)
-
-        self.wake_selected_btn = QPushButton(Translations.tr("button.wake_selected"))
-        self.wake_selected_btn.clicked.connect(self._wake_selected)
-        self.wake_selected_btn.setMinimumHeight(35)
-        device_btn_layout.addWidget(self.wake_selected_btn)
+        # A small "manage devices" link to the full management page
+        manage_btn = QPushButton(Translations.tr("toolbar.add_device"))
+        manage_btn.setIcon(get_icon("edit"))
+        manage_btn.clicked.connect(lambda: self._switch_page(1))
+        device_btn_layout.addStretch()
+        device_btn_layout.addWidget(manage_btn)
 
         devices_layout.addLayout(device_btn_layout)
-        main_layout.addWidget(self._devices_group, 1)  # Stretch factor 1
+        layout.addWidget(self._devices_group, 1)  # Stretch factor 1
+
+        return page
+
+    def _build_sidebar(self) -> QListWidget:
+        """Build the left navigation sidebar with page entries."""
+        sidebar = QListWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(SIDEBAR_WIDTH)
+        sidebar.setIconSize(QSize(20, 20))
+        entries = [
+            (Translations.tr("sidebar.devices"), "devices", 0),
+            (Translations.tr("sidebar.manage"), "edit", 1),
+            (Translations.tr("sidebar.schedules"), "schedule", 2),
+            (Translations.tr("sidebar.scan"), "scan", 3),
+            (Translations.tr("sidebar.logs"), "log", 4),
+            (Translations.tr("sidebar.settings"), "settings", 5),
+        ]
+        for text, icon, index in entries:
+            item = QListWidgetItem(get_icon(icon), text)
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            sidebar.addItem(item)
+        sidebar.currentRowChanged.connect(self._on_sidebar_changed)
+        return sidebar
+
+    def _on_sidebar_changed(self, row: int) -> None:
+        """Switch the stacked widget page when a sidebar entry is selected."""
+        item = self.sidebar.currentItem()
+        if item is None:
+            return
+        index = item.data(Qt.ItemDataRole.UserRole)
+        self.stacked.setCurrentIndex(index)
+
+    def _switch_page(self, index: int) -> None:
+        """Programmatically switch to the stacked page at *index*."""
+        self.stacked.setCurrentIndex(index)
+        # Keep sidebar selection in sync
+        for row in range(self.sidebar.count()):
+            item = self.sidebar.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) == index:
+                self.sidebar.setCurrentRow(row)
+                break
+
+    def _open_add_device(self) -> None:
+        """Open the add-device dialog (non-blocking flow)."""
+        dialog = DeviceDialog(self.config, parent=self)
+        dialog.device_saved.connect(lambda d: self._refresh_device_table())
+        dialog.exec()
+
+    def _setup_ui(self) -> None:
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QHBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Sidebar
+        self.sidebar = self._build_sidebar()
+
+        # Stacked pages
+        self.stacked = QStackedWidget()
+
+        self.device_page = self._build_device_page()
+        self.device_manager_page = DeviceManagerPage(self.config)
+        self.device_manager_page.request_scan.connect(lambda: self._switch_page(3))
+        self.schedule_page = SchedulePage(self.config)
+        self.network_scan_page = NetworkScanPage(self.config)
+        self.network_scan_page.device_added.connect(self._refresh_device_table)
+        self.log_page = LogPage(self.config)
+        self.settings_page = SettingsPage(self.config)
+        self.settings_page.settings_saved.connect(self._apply_language)
+
+        self.stacked.addWidget(self.device_page)          # 0
+        self.stacked.addWidget(self.device_manager_page)  # 1
+        self.stacked.addWidget(self.schedule_page)         # 2
+        self.stacked.addWidget(self.network_scan_page)     # 3
+        self.stacked.addWidget(self.log_page)              # 4
+        self.stacked.addWidget(self.settings_page)         # 5
+
+        main_layout.addWidget(self.sidebar)
+        main_layout.addWidget(self.stacked, 1)
 
         # Status bar
         self.statusBar().showMessage(Translations.tr("status.ready"))
@@ -1106,22 +1194,18 @@ class MainWindow(QMainWindow):
         
         QApplication.processEvents()
 
-    # --- Dialog openers ---
+    # --- Page switchers (kept as thin wrappers for menu shortcuts) ---
 
     def _open_network_scan(self) -> None:
-        dialog: NetworkScanDialog[ConfigManager] = NetworkScanDialog(self.config, parent=self)
-        dialog.exec()
-        self._refresh_device_table()
+        self._switch_page(3)
+        self.network_scan_page.start_scan()
 
     def _open_device_manager(self) -> None:
-        dialog: DeviceManagerDialog[ConfigManager] = DeviceManagerDialog(self.config, parent=self)
-        dialog.exec()
-        self._refresh_device_table()
+        self._switch_page(1)
+        self.device_manager_page._refresh_table()
 
     def _open_settings(self) -> None:
-        dialog: SettingsDialog[ConfigManager] = SettingsDialog(self.config, parent=self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self._apply_language()
+        self._switch_page(5)
 
     def _apply_language(self) -> None:
         """Refresh all UI text after language change."""
@@ -1133,9 +1217,24 @@ class MainWindow(QMainWindow):
             self.menuBar().removeAction(child)
         self._setup_menu()
 
-        # Refresh title label
-        if self._title_label is not None:
-            self._title_label.setText(Translations.tr("app.name"))
+        # Rebuild the sidebar (page labels change with language)
+        current_index = self.stacked.currentIndex()
+        self.sidebar.blockSignals(True)
+        self.sidebar.clear()
+        entries = [
+            (Translations.tr("sidebar.devices"), "devices", 0),
+            (Translations.tr("sidebar.manage"), "edit", 1),
+            (Translations.tr("sidebar.schedules"), "schedule", 2),
+            (Translations.tr("sidebar.scan"), "scan", 3),
+            (Translations.tr("sidebar.logs"), "log", 4),
+            (Translations.tr("sidebar.settings"), "settings", 5),
+        ]
+        for text, icon, index in entries:
+            item = QListWidgetItem(get_icon(icon), text)
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            self.sidebar.addItem(item)
+        self.sidebar.blockSignals(False)
+        self._switch_page(current_index)
 
         # Refresh devices group box
         if self._devices_group is not None:
@@ -1163,12 +1262,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(Translations.tr("status.ready"))
 
     def _open_schedule_manager(self) -> None:
-        dialog: ScheduleDialog[ConfigManager] = ScheduleDialog(self.config, parent=self)
-        dialog.exec()
+        self._switch_page(2)
+        self.schedule_page._refresh_table()
 
     def _open_logs(self) -> None:
-        dialog: LogDialog[ConfigManager] = LogDialog(self.config, parent=self)
-        dialog.exec()
+        self._switch_page(4)
+        self.log_page._refresh_table()
 
     def _show_about(self) -> None:
         QMessageBox.about(
