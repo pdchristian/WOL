@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 1.10.0 - Search & Remote Desktop Edition**
+**Version 2.0.0 - Search & Remote Desktop Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
@@ -88,6 +88,10 @@ A detailed user manual is available in German:
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
 ## 📝 Changelog
+
+### Version 2.0.0 - Modern UI Edition (2026-08-23)
+- Sidebar-Navigation mit 5 Seiten (Geräte/Pläne/Scan/Log/Einstellungen) statt Menüleiste + modale Dialoge
+- Design-System (Light/Dark) mit 18 SVG-Icons, Status-Badges, Primary-Button-Styles
 
 ### Version 1.10.0 - Search & Remote Desktop Edition (2026-08-22)
 

@@ -21,20 +21,19 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from .translations import Translations
 from .utils import sort_rows
 
 
-class ScheduleDialog(QDialog):
-    """Dialog for managing scheduled wake-ups."""
+class SchedulePage(QWidget):
+    """Page for managing scheduled wake-ups (embedded in the main window)."""
 
     def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
         self.config: Any = config_manager
-        self.setWindowTitle(Translations.tr("schedule_dialog.title"))
-        self.setMinimumSize(650, 450)
         # Column header sort state (None = no sort, else column index)
         self._sort_column: int | None = None
         self._sort_descending: bool = False
@@ -93,10 +92,6 @@ class ScheduleDialog(QDialog):
         btn_layout.addWidget(edit_btn)
         btn_layout.addWidget(delete_btn)
         btn_layout.addStretch()
-
-        close_btn = QPushButton(Translations.tr("schedule_dialog.button.close"))
-        close_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(close_btn)
 
         layout.addWidget(self.search_input)
         layout.addWidget(self.table)

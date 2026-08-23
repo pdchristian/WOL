@@ -6,7 +6,6 @@ from typing import Any
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QDialog,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -15,20 +14,19 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from wol_app.translations import Translations
 from wol_app.utils import sort_rows
 
 
-class LogDialog(QDialog):
-    """Dialog to view wake attempt logs/history."""
+class LogPage(QWidget):
+    """Page to view wake attempt logs/history (embedded in the main window)."""
 
     def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
         self.config: Any = config_manager
-        self.setWindowTitle(Translations.tr("log_dialog.title"))
-        self.setMinimumSize(700, 450)
         # Column header sort state (None = no sort, else column index)
         self._sort_column: int | None = None
         self._sort_descending: bool = False
@@ -81,10 +79,6 @@ class LogDialog(QDialog):
         btn_layout.addWidget(export_btn)
         btn_layout.addWidget(clear_btn)
         btn_layout.addStretch()
-
-        close_btn = QPushButton(Translations.tr("dialog.button.close"))
-        close_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(close_btn)
 
         layout.addWidget(self.table)
         layout.addLayout(btn_layout)

@@ -365,6 +365,8 @@ imported by:
  &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
  &#8226;   <a href="#wol_app.network_scan_dialog">wol_app.network_scan_dialog</a>
  &#8226;   <a href="#wol_app.schedule_dialog">wol_app.schedule_dialog</a>
+ &#8226;   <a href="#wol_app.settings_dialog">wol_app.settings_dialog</a>
+ &#8226;   <a href="#wol_app.theme">wol_app.theme</a>
  &#8226;   <a href="#wol_app.update_dialog">wol_app.update_dialog</a>
  &#8226;   <a href="#wol_app.updater">wol_app.updater</a>
  &#8226;   <a href="#wol_app.wol_engine">wol_app.wol_engine</a>
@@ -391,6 +393,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#PyQt6.QtWidgets">PyQt6.QtWidgets</a>
+ &#8226;   <a href="#wol_app.device_dialog">wol_app.device_dialog</a>
  &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
  &#8226;   <a href="#wol_app.network_scan_dialog">wol_app.network_scan_dialog</a>
  &#8226;   <a href="#wol_app.theme">wol_app.theme</a>
@@ -2004,7 +2007,7 @@ imported by:
     <a href="#concurrent.futures._base">concurrent.futures._base</a>
  &#8226;   <a href="#concurrent.futures.process">concurrent.futures.process</a>
  &#8226;   <a href="#concurrent.futures.thread">concurrent.futures.thread</a>
- &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
+ &#8226;   <a href="#wol_app.device_dialog">wol_app.device_dialog</a>
  &#8226;   <a href="#wol_app.wol_engine">wol_app.wol_engine</a>
 
   </div>
@@ -3108,8 +3111,8 @@ imported by:
  &#8226;   <a href="#email.utils">email.utils</a>
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#wol_app.config">wol_app.config</a>
+ &#8226;   <a href="#wol_app.device_dialog">wol_app.device_dialog</a>
  &#8226;   <a href="#wol_app.log_dialog">wol_app.log_dialog</a>
- &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
  &#8226;   <a href="#wol_app.update_dialog">wol_app.update_dialog</a>
  &#8226;   <a href="#wol_app.wol_engine">wol_app.wol_engine</a>
  &#8226;   <a href="#xmlrpc.client">xmlrpc.client</a>
@@ -8654,6 +8657,7 @@ imported by:
  &#8226;   <a href="#wol_app.config">wol_app.config</a>
  &#8226;   <a href="#wol_app.crypto">wol_app.crypto</a>
  &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
+ &#8226;   <a href="#wol_app.theme">wol_app.theme</a>
  &#8226;   <a href="#wol_app.update_dialog">wol_app.update_dialog</a>
  &#8226;   <a href="#wol_app.updater">wol_app.updater</a>
  &#8226;   <a href="#wol_app.utils">wol_app.utils</a>
@@ -9699,6 +9703,7 @@ imported by:
  &#8226;   <a href="#pyi_rth_multiprocessing.py">pyi_rth_multiprocessing.py</a>
  &#8226;   <a href="#uuid">uuid</a>
  &#8226;   <a href="#wol_app.config">wol_app.config</a>
+ &#8226;   <a href="#wol_app.device_dialog">wol_app.device_dialog</a>
  &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
  &#8226;   <a href="#wol_app.network_scanner">wol_app.network_scanner</a>
  &#8226;   <a href="#wol_app.utils">wol_app.utils</a>
@@ -10671,12 +10676,17 @@ imported by:
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
     <a href="#PyQt6.QtCore">PyQt6.QtCore</a>
+ &#8226;   <a href="#PyQt6.QtGui">PyQt6.QtGui</a>
  &#8226;   <a href="#PyQt6.QtWidgets">PyQt6.QtWidgets</a>
+ &#8226;   <a href="#concurrent.futures">concurrent.futures</a>
+ &#8226;   <a href="#datetime">datetime</a>
  &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#wol_app">wol_app</a>
  &#8226;   <a href="#wol_app.crypto">wol_app.crypto</a>
- &#8226;   <a href="#wol_app.network_scan_dialog">wol_app.network_scan_dialog</a>
+ &#8226;   <a href="#wol_app.host_service_client">wol_app.host_service_client</a>
+ &#8226;   <a href="#wol_app.theme">wol_app.theme</a>
  &#8226;   <a href="#wol_app.translations">wol_app.translations</a>
  &#8226;   <a href="#wol_app.utils">wol_app.utils</a>
 
@@ -10702,7 +10712,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#wol_app.main_window">wol_app.main_window</a>
+    <a href="#wol_app.device_dialog">wol_app.device_dialog</a>
+ &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
 
   </div>
 
@@ -10740,8 +10751,6 @@ imports:
     <a href="#PyQt6.QtCore">PyQt6.QtCore</a>
  &#8226;   <a href="#PyQt6.QtGui">PyQt6.QtGui</a>
  &#8226;   <a href="#PyQt6.QtWidgets">PyQt6.QtWidgets</a>
- &#8226;   <a href="#concurrent.futures">concurrent.futures</a>
- &#8226;   <a href="#datetime">datetime</a>
  &#8226;   <a href="#os">os</a>
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#sys">sys</a>
@@ -10788,7 +10797,6 @@ imports:
   <div class="import">
 imported by:
     <a href="#run.py">run.py</a>
- &#8226;   <a href="#wol_app.device_dialog">wol_app.device_dialog</a>
  &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
 
   </div>
@@ -10847,7 +10855,8 @@ imported by:
   <a target="code" href="///C:/Python/WOL/wol_app/settings_dialog.py" type="text/plain"><tt>wol_app.settings_dialog</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#PyQt6.QtWidgets">PyQt6.QtWidgets</a>
+    <a href="#PyQt6.QtCore">PyQt6.QtCore</a>
+ &#8226;   <a href="#PyQt6.QtWidgets">PyQt6.QtWidgets</a>
  &#8226;   <a href="#re">re</a>
  &#8226;   <a href="#typing">typing</a>
  &#8226;   <a href="#wol_app">wol_app</a>
@@ -10870,8 +10879,10 @@ imported by:
   <a target="code" href="///C:/Python/WOL/wol_app/theme.py" type="text/plain"><tt>wol_app.theme</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#PyQt6.QtGui">PyQt6.QtGui</a>
+    <a href="#PyQt6.QtCore">PyQt6.QtCore</a>
+ &#8226;   <a href="#PyQt6.QtGui">PyQt6.QtGui</a>
  &#8226;   <a href="#PyQt6.QtWidgets">PyQt6.QtWidgets</a>
+ &#8226;   <a href="#os">os</a>
  &#8226;   <a href="#sys">sys</a>
  &#8226;   <a href="#winreg">winreg</a>
  &#8226;   <a href="#wol_app">wol_app</a>
@@ -10879,7 +10890,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#wol_app.main_window">wol_app.main_window</a>
+    <a href="#wol_app.device_dialog">wol_app.device_dialog</a>
+ &#8226;   <a href="#wol_app.main_window">wol_app.main_window</a>
  &#8226;   <a href="#wol_app.settings_dialog">wol_app.settings_dialog</a>
 
   </div>

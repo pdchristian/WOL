@@ -1,13 +1,13 @@
-"""Settings Dialog for Wake-on-LAN Application."""
+"""Settings Page for Wake-on-LAN Application."""
 
 import re
 from typing import Any
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QDialog,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from wol_app.config import REMOTE_DESKTOP_RESOLUTIONS
@@ -39,22 +40,32 @@ def _validate_port(port: int) -> bool:
     return 1 <= port <= 65535
 
 
-class SettingsDialog(QDialog):
-    """Dialog for configuring network and broadcast settings."""
+class SettingsPage(QWidget):
+    """Page for configuring network and broadcast settings (embedded in the main window)."""
+
+    settings_saved = pyqtSignal()  # Emitted when settings are saved
 
     def __init__(self, config_manager, parent=None) -> None:
         super().__init__(parent)
         self.config: Any = config_manager
-        self.setWindowTitle(Translations.tr("settings.title"))
-        self.setMinimumWidth(400)
         self._setup_ui()
         self._load_settings()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
+        # Groups are laid out in a two-column grid so the page is more compact
+        # than a single tall column.
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(12)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        layout.addLayout(grid)
+
         # Network settings form
-        form = QFormLayout()
+        form_group = QGroupBox(Translations.tr("settings.group.network"))
+        form = QFormLayout(form_group)
 
         self.broadcast_ip_input = QLineEdit()
         self.broadcast_ip_input.setPlaceholderText("255.255.255.255")
@@ -65,7 +76,7 @@ class SettingsDialog(QDialog):
         self.broadcast_port_input.setValue(9)
         form.addRow(Translations.tr("settings.label.broadcast_port"), self.broadcast_port_input)
 
-        layout.addLayout(form)
+        grid.addWidget(form_group, 0, 0)
 
         # --- Language Group ---
         lang_group = QGroupBox(Translations.tr("settings.group.language"))
@@ -78,7 +89,7 @@ class SettingsDialog(QDialog):
         lang_layout.addWidget(self.language_combo)
 
         lang_group.setLayout(lang_layout)
-        layout.addWidget(lang_group)
+        grid.addWidget(lang_group, 0, 1)
 
         # --- Display Mode Group ---
         display_group = QGroupBox(Translations.tr("settings.group.display_mode"))
@@ -92,7 +103,7 @@ class SettingsDialog(QDialog):
         display_layout.addWidget(self.display_mode_combo)
 
         display_group.setLayout(display_layout)
-        layout.addWidget(display_group)
+        grid.addWidget(display_group, 1, 0)
 
         # --- Auto-Update Group ---
         update_group = QGroupBox(Translations.tr("settings.group.auto_update"))
@@ -101,19 +112,19 @@ class SettingsDialog(QDialog):
         self.auto_update_checkbox = QCheckBox(Translations.tr("settings.check.auto_update"))
         update_layout.addWidget(self.auto_update_checkbox)
 
-        grid = QGridLayout()
-        grid.setColumnStretch(1, 1)
+        interval_grid = QGridLayout()
+        interval_grid.setColumnStretch(1, 1)
         interval_label = QLabel(Translations.tr("settings.label.interval"))
-        grid.addWidget(interval_label, 0, 0)
+        interval_grid.addWidget(interval_label, 0, 0)
         self.update_interval_combo = QComboBox()
         self.update_interval_combo.addItem(Translations.tr("settings.interval.daily"), 24)
         self.update_interval_combo.addItem(Translations.tr("settings.interval.weekly"), 168)
         self.update_interval_combo.addItem(Translations.tr("settings.interval.monthly"), 720)
-        grid.addWidget(self.update_interval_combo, 0, 1)
-        update_layout.addLayout(grid)
+        interval_grid.addWidget(self.update_interval_combo, 0, 1)
+        update_layout.addLayout(interval_grid)
 
         update_group.setLayout(update_layout)
-        layout.addWidget(update_group)
+        grid.addWidget(update_group, 1, 1)
 
         # --- Log Settings Group ---
         log_group = QGroupBox(Translations.tr("settings.group.logs"))
@@ -126,7 +137,7 @@ class SettingsDialog(QDialog):
         log_layout.addRow(Translations.tr("settings.label.max_logs"), self.max_logs_input)
 
         log_group.setLayout(log_layout)
-        layout.addWidget(log_group)
+        grid.addWidget(log_group, 2, 0)
 
         # --- Remote Desktop Group ---
         rdp_group = QGroupBox(Translations.tr("settings.group.remote_desktop"))
@@ -142,7 +153,7 @@ class SettingsDialog(QDialog):
         )
 
         rdp_group.setLayout(rdp_layout)
-        layout.addWidget(rdp_group)
+        grid.addWidget(rdp_group, 2, 1)
 
         # --- Shutdown Group ---
         shutdown_group = QGroupBox(Translations.tr("settings.group.shutdown"))
@@ -163,24 +174,22 @@ class SettingsDialog(QDialog):
         )
 
         shutdown_group.setLayout(shutdown_layout)
-        layout.addWidget(shutdown_group)
+        grid.addWidget(shutdown_group, 3, 0)
 
-        # Info label
+        # Info label (spans both columns)
         info_label = QLabel(
             Translations.tr("settings.info.text")
         )
         info_label.setWordWrap(True)
-        layout.addWidget(info_label)
+        grid.addWidget(info_label, 4, 0, 1, 2)
 
         # Buttons
         btn_layout = QHBoxLayout()
         self.save_btn = QPushButton(Translations.tr("dialog.button.save"))
+        self.save_btn.setObjectName("primaryButton")
         self.save_btn.clicked.connect(self._save)
-        self.cancel_btn = QPushButton(Translations.tr("dialog.button.cancel"))
-        self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addStretch()
         btn_layout.addWidget(self.save_btn)
-        btn_layout.addWidget(self.cancel_btn)
 
         layout.addStretch()
         layout.addLayout(btn_layout)
@@ -291,4 +300,4 @@ class SettingsDialog(QDialog):
             self.config.set_remote_desktop_resolution(selected_resolution)
 
         QMessageBox.information(self, Translations.tr("dialog.saved.title"), Translations.tr("dialog.saved.message"))
-        self.accept()
+        self.settings_saved.emit()

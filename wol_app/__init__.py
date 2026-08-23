@@ -1,3 +1,3 @@
 """Wake-on-LAN Manager Application Package."""
 
-__version__ = "1.10.0"
+__version__ = "2.0.0"

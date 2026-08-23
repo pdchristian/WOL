@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 1.10.0 - Search & Remote Desktop Edition
+# Wake-on-LAN Manager Version 2.0.0 - Modern UI Edition
 # Generated on 2026-08-22
 
 a = Analysis(
     ['run.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.'), ('wol_app/locales/*.json', 'wol_app/locales')],
+    datas=[('icon.ico', '.'), ('wol_app/locales/*.json', 'wol_app/locales'), ('wol_app/assets/icons/*.svg', 'wol_app/assets/icons')],
     hiddenimports=[
         'wol_app',
         'wol_app.__init__',
