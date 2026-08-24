@@ -83,6 +83,31 @@ def get_local_interfaces() -> list[dict]:
     return interfaces
 
 
+def get_local_ips() -> set[str]:
+    """Return the set of this machine's local IPv4 addresses (no loopback).
+
+    Reuses :func:`get_local_interfaces` and caches the result, because
+    enumerating network interfaces is comparatively expensive and rarely
+    changes while the app is running. Returns an empty set on any error.
+    """
+    global _LOCAL_IPS_CACHE
+    if _LOCAL_IPS_CACHE is not None:
+        return _LOCAL_IPS_CACHE
+    ips: set[str] = set()
+    try:
+        for iface in get_local_interfaces():
+            ip = iface.get("ip", "")
+            if validate_ip(ip):
+                ips.add(ip)
+    except Exception:
+        pass
+    _LOCAL_IPS_CACHE = ips
+    return ips
+
+
+_LOCAL_IPS_CACHE: set[str] | None = None
+
+
 def netmask_to_cidr(netmask: str) -> int:
     """Convert netmask to CIDR prefix length."""
     try:

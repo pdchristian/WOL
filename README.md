@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 1.10.0 - Search & Remote Desktop Edition**
+**Version 1.10.2 - Search & Remote Desktop Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 

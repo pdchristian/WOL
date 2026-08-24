@@ -15,6 +15,7 @@
   "button.wake_selected": "Réveiller sélectionnés",
   "common.cancel": "Annuler",
   "device.disabled": "Désactivé",
+  "device.me": "(moi)",
   "device.unknown": "Inconnu",
   "device_dialog.button.cancel": "Annuler",
   "device_dialog.button.save": "Enregistrer",

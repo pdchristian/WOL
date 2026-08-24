@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.network_scan_dialog import NetworkScanDialog
+from wol_app.network_scanner import get_local_ips
 from wol_app.translations import Translations
 from wol_app.utils import (
     get_ip_key,
@@ -378,7 +379,10 @@ class DeviceManagerDialog(QDialog):
             row: int = self.table.rowCount()
             self.table.insertRow(row)
 
-            name_item = QTableWidgetItem(device.get("name", ""))
+            display_name = device.get("name", "")
+            if device.get("ip", "") in get_local_ips():
+                display_name += f" {Translations.tr('device.me')}"
+            name_item = QTableWidgetItem(display_name)
             # Store the device id so row-based actions (Edit/Delete) stay
             # correct while the search filter hides other rows
             name_item.setData(Qt.ItemDataRole.UserRole, device["id"])

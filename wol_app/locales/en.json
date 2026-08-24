@@ -15,6 +15,7 @@
   "button.wake_selected": "Wake Selected",
   "common.cancel": "Cancel",
   "device.disabled": "Disabled",
+  "device.me": "(me)",
   "device.unknown": "Unknown",
   "device_dialog.button.cancel": "Cancel",
   "device_dialog.button.save": "Save",

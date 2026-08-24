@@ -15,6 +15,7 @@
   "button.wake_selected": "Ausgewählte starten",
   "common.cancel": "Abbrechen",
   "device.disabled": "Deaktiviert",
+  "device.me": "(ich)",
   "device.unknown": "Unbekannt",
   "device_dialog.button.cancel": "Abbrechen",
   "device_dialog.button.save": "Speichern",

@@ -469,4 +469,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 1.10.0 | Wake-on-LAN Manager*
+*Version 1.10.2 | Wake-on-LAN Manager*

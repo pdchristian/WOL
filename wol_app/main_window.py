@@ -34,6 +34,7 @@ from wol_app.device_dialog import DeviceManagerDialog
 from wol_app.host_service_client import send_host_command
 from wol_app.log_dialog import LogDialog
 from wol_app.network_scan_dialog import NetworkScanDialog
+from wol_app.network_scanner import get_local_ips
 from wol_app.schedule_dialog import ScheduleDialog
 from wol_app.settings_dialog import SettingsDialog
 from wol_app.theme import apply_display_mode
@@ -597,11 +598,16 @@ class MainWindow(QMainWindow):
             row: int = self.device_table.rowCount()
             self.device_table.insertRow(row)
 
-            name_item = QTableWidgetItem(device.get("name", ""))
+            base_name = device.get("name", "")
+            display_name = base_name
+            if device.get("ip", "") in get_local_ips():
+                display_name += f" {Translations.tr('device.me')}"
+            if not device.get("enabled", True):
+                display_name += f" {Translations.tr('device.disabled')}"
+            name_item = QTableWidgetItem(display_name)
             name_item.setData(Qt.ItemDataRole.UserRole, device["id"])
             if not device.get("enabled", True):
                 name_item.setForeground(Qt.GlobalColor.gray)
-                name_item.setText(f"{device['name']} {Translations.tr('device.disabled')}")
             self.device_table.setItem(row, 0, name_item)
 
             self.device_table.setItem(row, 1, QTableWidgetItem(device.get("mac", "")))
@@ -1162,6 +1168,9 @@ class MainWindow(QMainWindow):
 
         # Refresh status bar
         self.statusBar().showMessage(Translations.tr("status.ready"))
+
+        # Refresh device table so the language-specific device name suffix (device.me) updates
+        self._refresh_device_table()
 
     def _open_schedule_manager(self) -> None:
         dialog: ScheduleDialog[ConfigManager] = ScheduleDialog(self.config, parent=self)
