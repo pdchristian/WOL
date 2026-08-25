@@ -171,6 +171,12 @@ def auto_rdp_resolution(
     to a clean 16:9 resolution at *fraction* of the primary display so it fits
     on screen without scrolling.
 
+    The size is derived primarily from the screen **height**: the window must
+    never be taller than the display, so on ultra-wide (21:9+) monitors the
+    height drives the 16:9 window and the width is computed from it. As a
+    safety net, if that width would still exceed the screen width, the size is
+    recomputed from the width instead so nothing falls off-screen.
+
     Args:
         screen_width: Physical width of the primary screen in pixels.
         screen_height: Physical height of the primary screen in pixels.
@@ -190,8 +196,15 @@ def auto_rdp_resolution(
         from wol_app.config import REMOTE_DESKTOP_AUTO_FRACTION
 
         fraction = REMOTE_DESKTOP_AUTO_FRACTION
-    target_width = int(round(screen_width * fraction))
-    target_height = int(round(target_width * 9 / 16))
+    # 1) Height-first: derive the 16:9 window from the screen height so it can
+    #    never be taller than the display (important for 21:9+ monitors).
+    target_height = int(round(screen_height * fraction))
+    target_width = int(round(target_height * 16 / 9))
+    # 2) Safety net: if the width would exceed the screen width, recompute from
+    #    the width instead so the window still fits fully on screen.
+    if target_width > screen_width:
+        target_width = screen_width
+        target_height = int(round(target_width * 9 / 16))
     min_w, min_h = minimum
     if target_width < min_w:
         target_width = min_w

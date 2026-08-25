@@ -92,11 +92,22 @@ class TestGetIPKey(unittest.TestCase):
 
 class TestAutoRdpResolution(unittest.TestCase):
     def test_2560x1440_default_fraction(self):
-        # Default fraction now comes from config: REMOTE_DESKTOP_AUTO_FRACTION = 0.8.
-        self.assertEqual(auto_rdp_resolution(2560, 1440), (2048, 1152))
+        # Height-first with REMOTE_DESKTOP_AUTO_FRACTION = 0.888.
+        # height = round(1440*0.888)=1279, width = round(1279*16/9)=2274.
+        self.assertEqual(auto_rdp_resolution(2560, 1440), (2274, 1279))
 
     def test_1920x1080_default_fraction(self):
-        self.assertEqual(auto_rdp_resolution(1920, 1080), (1536, 864))
+        # height = round(1080*0.888)=959, width = round(959*16/9)=1705.
+        self.assertEqual(auto_rdp_resolution(1920, 1080), (1705, 959))
+
+    def test_ultrawide_3440x1440_not_taller_than_screen(self):
+        # 21:9 monitor: height-driven size must not exceed the screen height.
+        self.assertEqual(auto_rdp_resolution(3440, 1440), (2274, 1279))
+
+    def test_ultrawide_clamped_to_screen_width(self):
+        # When the height-derived width would exceed the screen width, the
+        # size is recomputed from the width (1280x1024, 5:4 -> 1280x720).
+        self.assertEqual(auto_rdp_resolution(1280, 1024), (1280, 720))
 
     def test_explicit_fraction_0_9(self):
         # Legacy behavior preserved when fraction is passed explicitly.
