@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from wol_app.utils import (
     _build_rdp_content,
+    _register_rdp_credentials,
     auto_rdp_resolution,
     get_ip_key,
     launch_remote_desktop,
@@ -148,6 +149,34 @@ class TestBuildRdpContent(unittest.TestCase):
         self.assertIn("prompt for password:i:1", content)
 
 
+class TestRegisterRdpCredentials(unittest.TestCase):
+    def test_registers_cmdkey_entry(self):
+        with patch("wol_app.utils.subprocess.run") as mock_run:
+            _register_rdp_credentials("192.168.1.10", "user", "pw")
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(cmd[0], "cmdkey")
+        self.assertEqual(cmd[1], "/generic:192.168.1.10")
+        self.assertEqual(cmd[2], "/user:user")
+        self.assertEqual(cmd[3], "/pass:pw")
+        self.assertEqual(mock_run.call_args[1]["check"], False)
+
+    def test_skips_when_username_empty(self):
+        with patch("wol_app.utils.subprocess.run") as mock_run:
+            _register_rdp_credentials("192.168.1.10", "", "pw")
+        mock_run.assert_not_called()
+
+    def test_skips_when_password_empty(self):
+        with patch("wol_app.utils.subprocess.run") as mock_run:
+            _register_rdp_credentials("192.168.1.10", "user", "")
+        mock_run.assert_not_called()
+
+    def test_oserror_is_non_fatal(self):
+        with patch("wol_app.utils.subprocess.run",
+                   side_effect=OSError("cmdkey missing")) as mock_run:
+            _register_rdp_credentials("192.168.1.10", "user", "pw")
+        mock_run.assert_called_once()  # no exception propagated
+
+
 class TestLaunchRemoteDesktop(unittest.TestCase):
     def setUp(self):
         # Isolate writes from the real ~/.wol_app/rdp directory.
@@ -155,6 +184,10 @@ class TestLaunchRemoteDesktop(unittest.TestCase):
         self.mock_rdp_dir = patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(shutil.rmtree, self.mock_rdp_dir, ignore_errors=True)
+        # Never touch the real Windows Credential Manager in tests.
+        self.cmdkey_patcher = patch("wol_app.utils.subprocess.run")
+        self.mock_run = self.cmdkey_patcher.start()
+        self.addCleanup(self.cmdkey_patcher.stop)
 
     def test_launch_fullscreen_uses_f_flag(self):
         with patch("wol_app.utils.subprocess.Popen") as mock_popen:
@@ -171,6 +204,10 @@ class TestLaunchRemoteDesktop(unittest.TestCase):
         self.assertEqual(cmd[1], "/v:192.168.1.10")
         self.assertIn("/f", cmd)
         self.assertEqual(Path(cmd[-1]).suffix, ".rdp")
+        # Credentials must have been registered with cmdkey first.
+        self.assertTrue(self.mock_run.called)
+        cmdkey_cmd = self.mock_run.call_args[0][0]
+        self.assertEqual(cmdkey_cmd[0], "cmdkey")
         # File is named after the device and lives in ~/.wol_app/rdp/.
         self.assertEqual(Path(cmd[-1]), self.mock_rdp_dir / "Wohnzimmer_PC.rdp")
         # File must still exist (cleanup is delayed) and carry credentials

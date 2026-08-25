@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 1.10.2 - Search & Remote Desktop Edition**
+**Version 1.10.3 - Search & Remote Desktop Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
@@ -89,11 +89,17 @@ A detailed user manual is available in German:
 
 ## 📝 Changelog
 
+### Version 1.10.3 (2026-08-25)
+
+#### 🖥️ Remote Desktop
+- **Automatic RDP password fill-in:** Windows 10/11 `mstsc` ignores a password embedded in the `.rdp` file. The app now registers the device credentials with the **Windows Credential Manager** via `cmdkey` (`/generic:<host> /user:<user> /pass:<pass>`) before starting `mstsc`, so the password no longer has to be re-entered for each connection (falls back to the `mstsc` login prompt if registration fails)
+
 ### Version 1.10.0 - Search & Remote Desktop Edition (2026-08-22)
 
 #### 🖥️ Remote Desktop
 - **Remote Desktop sessions** from the device table context menu: right-click a device → **Remote Fullscreen** or **Remote Window**
 - Uses the device's IP, username and password (credentials embedded in a temporary `.rdp` file, auto-deleted after a few seconds)
+- Because Windows 10/11 `mstsc` ignores an embedded password, the app also registers the credentials with the **Windows Credential Manager** via `cmdkey` before connecting — so the password is filled in automatically (falls back to the mstsc prompt if registration fails)
 - **Windowed mode** uses the resolution configured in **Settings → Remote Desktop** (`1920x1080` default, 6 presets)
 - Session geometry is forced via `mstsc` command-line arguments (`/f`, `/w:`, `/h:`) for reliable full-screen/window behavior
 

@@ -201,6 +201,35 @@ def auto_rdp_resolution(
     return (target_width, target_height)
 
 
+def _register_rdp_credentials(host: str, username: str, password: str) -> None:
+    """Store Remote Desktop credentials in the Windows Credential Manager.
+
+    Windows 10/11 ``mstsc`` ignores the password embedded in an ``.rdp``
+    file for security reasons, so the credentials are registered with the
+    Windows Credential Manager via ``cmdkey`` instead. mstsc reads the
+    matching entry automatically when it connects to *host*, which lets the
+    session open without re-prompting for the password.
+
+    The entry is scoped to *username* on *host*. Nothing extra is written to
+    disk; the Credential Manager stores the secret itself. Failures are
+    non-fatal: if the registration fails, mstsc simply falls back to its own
+    login prompt.
+
+    Args:
+        host: Target host (IPv4 address or name) as used by mstsc.
+        username: RDP username; empty skips registration.
+        password: RDP password; empty skips registration.
+    """
+    if not username or not password:
+        return
+    cmd = ["cmdkey", f"/generic:{host}", f"/user:{username}", f"/pass:{password}"]
+    try:
+        subprocess.run(cmd, check=False)
+    except OSError:
+        # cmdkey is unavailable; mstsc will prompt for the password itself.
+        pass
+
+
 def launch_remote_desktop(
     ip: str,
     username: str = "",
@@ -220,7 +249,10 @@ def launch_remote_desktop(
     The session geometry is forced via **command-line arguments**, because
     mstsc is known to ignore ``fullscreen:i:0`` inside an .rdp file (it then
     falls back to full-screen). The .rdp file is still passed so that the
-    credentials (which mstsc cannot take on the command line) are supplied:
+    username (which mstsc cannot take on the command line) is supplied.
+    Because Windows 10/11 mstsc ignores an embedded password, the credentials
+    are additionally registered with the Windows Credential Manager via
+    ``cmdkey`` so the password does not have to be re-entered:
 
     * ``fullscreen=True``  → ``mstsc /v:<ip> /f <file>``
     * ``fullscreen=False`` → ``mstsc /v:<ip> /w:<width> /h:<height> <file>``
@@ -245,6 +277,10 @@ def launch_remote_desktop(
     """
     if not ip:
         raise ValueError("IP address is empty")
+
+    # Register the credentials with the Windows Credential Manager so mstsc
+    # can log in without re-prompting for the password. Non-fatal on failure.
+    _register_rdp_credentials(ip, username, password)
 
     content = _build_rdp_content(ip, username, password, fullscreen, width, height)
 

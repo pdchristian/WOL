@@ -79,7 +79,7 @@ hr {{
 <body>
 ''' + markdown.markdown(md, extensions=['tables', 'fenced_code']) + '''
 <footer style="text-align:center;font-size:10pt;color:#888;margin-top:30pt;">
-Version 1.10.2 | Wake-on-LAN Manager
+Version 1.10.3 | Wake-on-LAN Manager
 </footer>
 </body>
 </html>'''

@@ -307,6 +307,8 @@ Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten
 
 > **Voraussetzung:** Auf dem Zielsystem muss **Remotedesktop** aktiviert sein (Systemeigenschaften → Remotefunktionen → „Remotedesktopverbindungen zulassen“). Das Gerät muss eine **IP-Adresse** besitzen; Benutzername und Passwort sind optional – ohne Passwort fragt `mstsc` beim Verbinden danach.
 
+> **Passwort-Anmeldung:** Aktuelle Windows-Versionen (10/11) übernehmen das Passwort aus Sicherheitsgründen nicht mehr aus der `.rdp`-Datei. Die Anwendung legt die Anmeldedaten daher beim Start einer Remote-Desktop-Sitzung automatisch über `cmdkey` im **Windows-Anmeldeinformations-Manager** ab (`/generic:<IP> /user:<Benutzer> /pass:<Passwort>`). `mstsc` liest diesen Eintrag beim Verbinden aus – Sie müssen das Passwort dann nicht neu eingeben. Ist die Registrierung nicht möglich, fragt `mstsc` wie bisher nach dem Passwort.
+
 ### Auflösung für das Fenster einstellen
 1. Menü: **Tools → Einstellungen...**
 2. In der Gruppe **Remote Desktop** wählen Sie im Drop-Down **Auflösung** die gewünschte Fensterauflösung (z. B. `1920 × 1080`).
@@ -469,4 +471,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 1.10.2 | Wake-on-LAN Manager*
+*Version 1.10.3 | Wake-on-LAN Manager*
