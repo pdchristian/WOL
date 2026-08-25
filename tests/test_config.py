@@ -134,8 +134,9 @@ class TestRemoteDesktopResolution(ConfigManagerTestBase):
 
     def test_all_resolutions_persist(self):
         cm = ConfigManager(config_path=str(self.config_path))
-        for resolution in ("1280x720", "1920x1080", "1920x1200",
-                           "2560x1440", "3440x1440", "3840x2160"):
+        for resolution in ("1280x720", "1600x900", "1920x1080", "1920x1200",
+                           "2400x1350", "2560x1440", "3440x1440", "3840x2160",
+                           "auto"):
             cm.set_remote_desktop_resolution(resolution)
             self.assertEqual(cm.get_remote_desktop_resolution(), resolution)
             with open(self.config_path) as f:

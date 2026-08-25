@@ -20,7 +20,10 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from wol_app.config import REMOTE_DESKTOP_RESOLUTIONS
+from wol_app.config import (
+    REMOTE_DESKTOP_RESOLUTION_AUTO,
+    REMOTE_DESKTOP_RESOLUTIONS,
+)
 from wol_app.theme import apply_display_mode
 from wol_app.translations import Translations
 
@@ -133,6 +136,11 @@ class SettingsDialog(QDialog):
         rdp_layout = QFormLayout()
 
         self.remote_desktop_resolution_combo = QComboBox()
+        # "Optimized 16:9" first (sentinel "auto"), then the fixed resolutions.
+        self.remote_desktop_resolution_combo.addItem(
+            Translations.tr("settings.label.remote_desktop_resolution_auto"),
+            REMOTE_DESKTOP_RESOLUTION_AUTO,
+        )
         for resolution in REMOTE_DESKTOP_RESOLUTIONS:
             w, h = resolution.split("x")
             self.remote_desktop_resolution_combo.addItem(f"{w} × {h}", resolution)

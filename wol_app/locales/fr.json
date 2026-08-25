@@ -258,6 +258,7 @@
   "settings.label.interval": "Intervalle de vérification:",
   "settings.label.display_mode": "Mode d'affichage :",
   "settings.label.remote_desktop_resolution": "Résolution :",
+  "settings.label.remote_desktop_resolution_auto": "Optimisé 16:9",
   "settings.label.language": "Langue :",
   "settings.label.default_shutdown_method": "Méthode par défaut pour les nouveaux appareils :",
   "settings.label.max_logs": "Nombre maximal d'entrées de journal :",

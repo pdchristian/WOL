@@ -258,6 +258,7 @@
   "settings.label.display_mode": "Display Mode:",
   "settings.label.language": "Language:",
   "settings.label.remote_desktop_resolution": "Resolution:",
+  "settings.label.remote_desktop_resolution_auto": "Optimized 16:9",
   "settings.label.max_logs": "Maximum log entries:",
   "settings.label.default_shutdown_method": "Default method for new devices:",
   "settings.language.de": "German",

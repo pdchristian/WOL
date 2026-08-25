@@ -261,6 +261,7 @@
   "settings.label.default_shutdown_method": "Método predeterminado para nuevos dispositivos:",
   "settings.label.max_logs": "Entradas máximas de registro:",
   "settings.label.remote_desktop_resolution": "Resolución:",
+  "settings.label.remote_desktop_resolution_auto": "Optimizado 16:9",
   "settings.language.de": "Alemán",
   "settings.language.en": "Inglés",
   "settings.language.es": "Español",

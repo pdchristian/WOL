@@ -159,6 +159,48 @@ def _sanitize_filename_part(name: str) -> str:
 _RDP_DIR = Path.home() / ".wol_app" / "rdp"
 
 
+def auto_rdp_resolution(
+    screen_width: int,
+    screen_height: int,
+    fraction: float | None = None,
+    minimum: tuple[int, int] = (1280, 720),
+) -> tuple[int, int]:
+    """Return a 16:9 remote-desktop window size slightly smaller than *screen*.
+
+    Used by the "Optimized 16:9" remote desktop setting: the window is sized
+    to a clean 16:9 resolution at *fraction* of the primary display so it fits
+    on screen without scrolling.
+
+    Args:
+        screen_width: Physical width of the primary screen in pixels.
+        screen_height: Physical height of the primary screen in pixels.
+        fraction: Fraction of the screen size to use; defaults to
+            REMOTE_DESKTOP_AUTO_FRACTION from config.
+        minimum: Lower clamp (width, height); keeps the window usable.
+
+    Returns:
+        A (width, height) 16:9 pair that fits the given screen.
+    """
+    if screen_width <= 0 or screen_height <= 0:
+        return minimum
+    # Resolve the default from config so there is a single source of truth for
+    # the auto-resolution fraction (REMOTE_DESKTOP_AUTO_FRACTION). The import
+    # is lazy to avoid a circular import: config.py imports from this module.
+    if fraction is None:
+        from wol_app.config import REMOTE_DESKTOP_AUTO_FRACTION
+
+        fraction = REMOTE_DESKTOP_AUTO_FRACTION
+    target_width = int(round(screen_width * fraction))
+    target_height = int(round(target_width * 9 / 16))
+    min_w, min_h = minimum
+    if target_width < min_w:
+        target_width = min_w
+        target_height = int(round(min_w * 9 / 16))
+    if target_height < min_h:
+        target_height = min_h
+    return (target_width, target_height)
+
+
 def launch_remote_desktop(
     ip: str,
     username: str = "",

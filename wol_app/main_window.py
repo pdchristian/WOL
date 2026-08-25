@@ -29,7 +29,11 @@ from PyQt6.QtWidgets import (
 )
 
 from wol_app import __version__
-from wol_app.config import ConfigManager
+from wol_app.config import (
+    REMOTE_DESKTOP_AUTO_FRACTION,
+    REMOTE_DESKTOP_RESOLUTION_AUTO,
+    ConfigManager,
+)
 from wol_app.device_dialog import DeviceManagerDialog
 from wol_app.host_service_client import send_host_command
 from wol_app.log_dialog import LogDialog
@@ -45,7 +49,12 @@ from wol_app.update_dialog import (
     UpdateInfoDialog,
 )
 from wol_app.updater import UpdateChecker, check_for_updates_sync
-from wol_app.utils import get_ip_key, get_resource_path, launch_remote_desktop
+from wol_app.utils import (
+    auto_rdp_resolution,
+    get_ip_key,
+    get_resource_path,
+    launch_remote_desktop,
+)
 from wol_app.wol_engine import WOLEngine
 
 # Module-level registry to hold thread references until native threads truly finish
@@ -747,11 +756,28 @@ class MainWindow(QMainWindow):
         width: int = 1920
         height: int = 1080
         if not fullscreen:
-            try:
-                w, h = self.config.get_remote_desktop_resolution().split("x")
-                width, height = int(w), int(h)
-            except (ValueError, AttributeError):
-                pass  # keep 1920x1080 fallback
+            resolution = self.config.get_remote_desktop_resolution()
+            if resolution == REMOTE_DESKTOP_RESOLUTION_AUTO:
+                # "Optimized 16:9": size the window from the primary screen's
+                # current resolution (physical pixels) so it fits without scroll.
+                # QScreen.size() returns *logical* pixels, which are DPI-scaled
+                # (e.g. 2048x1152 at 125% on a 2560x1440 display). Multiply by
+                # devicePixelRatio() to recover the physical resolution.
+                screen = QApplication.primaryScreen()
+                if screen is not None:
+                    scale = screen.devicePixelRatio()
+                    size = screen.size()
+                    width, height = auto_rdp_resolution(
+                        round(size.width() * scale),
+                        round(size.height() * scale),
+                        fraction=REMOTE_DESKTOP_AUTO_FRACTION,
+                    )
+            else:
+                try:
+                    w, h = resolution.split("x")
+                    width, height = int(w), int(h)
+                except (ValueError, AttributeError):
+                    pass  # keep 1920x1080 fallback
 
         try:
             launch_remote_desktop(

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from wol_app.utils import (
     _build_rdp_content,
+    auto_rdp_resolution,
     get_ip_key,
     launch_remote_desktop,
     validate_device_name,
@@ -86,6 +87,28 @@ class TestGetIPKey(unittest.TestCase):
     def test_invalid_returns_zeros(self):
         self.assertEqual(get_ip_key(""), (0, 0, 0, 0))
         self.assertEqual(get_ip_key("invalid"), (0, 0, 0, 0))
+
+
+class TestAutoRdpResolution(unittest.TestCase):
+    def test_2560x1440_default_fraction(self):
+        # Default fraction now comes from config: REMOTE_DESKTOP_AUTO_FRACTION = 0.8.
+        self.assertEqual(auto_rdp_resolution(2560, 1440), (2048, 1152))
+
+    def test_1920x1080_default_fraction(self):
+        self.assertEqual(auto_rdp_resolution(1920, 1080), (1536, 864))
+
+    def test_explicit_fraction_0_9(self):
+        # Legacy behavior preserved when fraction is passed explicitly.
+        self.assertEqual(auto_rdp_resolution(2560, 1440, fraction=0.9), (2304, 1296))
+        self.assertEqual(auto_rdp_resolution(1920, 1080, fraction=0.9), (1728, 972))
+
+    def test_clamps_to_minimum(self):
+        # Very small screens must not go below the (1280, 720) floor.
+        self.assertEqual(auto_rdp_resolution(800, 600), (1280, 720))
+
+    def test_nonpositive_returns_minimum(self):
+        self.assertEqual(auto_rdp_resolution(0, 0), (1280, 720))
+        self.assertEqual(auto_rdp_resolution(-100, -100), (1280, 720))
 
 
 class TestBuildRdpContent(unittest.TestCase):

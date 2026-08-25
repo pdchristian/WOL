@@ -124,13 +124,25 @@ VALID_SHUTDOWN_METHODS = (SHUTDOWN_METHOD_HOST_SERVICE, SHUTDOWN_METHOD_SMB)
 # Order matters: it defines the order in the resolution drop-down.
 REMOTE_DESKTOP_RESOLUTIONS = (
     "1280x720",
+    "1600x900",      # smaller than 1920x1080 (16:9, no scroll)
     "1920x1080",
     "1920x1200",
+    "2400x1350",     # smaller than 2560x1440 (16:9, no scroll)
     "2560x1440",
     "3440x1440",
     "3840x2160",
 )
 DEFAULT_REMOTE_DESKTOP_RESOLUTION = "1920x1080"
+
+# Sentinel for "Optimized 16:9": instead of a fixed resolution, the windowed
+# remote desktop resolution is derived from the primary screen's current
+# resolution (a 16:9 value slightly smaller than the display) so the window
+# fits without scrolling.
+REMOTE_DESKTOP_RESOLUTION_AUTO = "auto"
+# Fraction of the screen size used by the auto resolution (window mode).
+REMOTE_DESKTOP_AUTO_FRACTION = 0.8
+# Minimum auto-resolution size (width, height) to keep the window usable.
+REMOTE_DESKTOP_AUTO_MIN = (1280, 720)
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -608,11 +620,13 @@ class ConfigManager:
         value = self.config.get("ui", {}).get(
             "remote_desktop_resolution", DEFAULT_REMOTE_DESKTOP_RESOLUTION
         )
-        return value if value in REMOTE_DESKTOP_RESOLUTIONS else DEFAULT_REMOTE_DESKTOP_RESOLUTION
+        if value == REMOTE_DESKTOP_RESOLUTION_AUTO or value in REMOTE_DESKTOP_RESOLUTIONS:
+            return value
+        return DEFAULT_REMOTE_DESKTOP_RESOLUTION
 
     def set_remote_desktop_resolution(self, resolution: str) -> None:
         """Set the windowed remote desktop resolution."""
-        if resolution not in REMOTE_DESKTOP_RESOLUTIONS:
+        if resolution != REMOTE_DESKTOP_RESOLUTION_AUTO and resolution not in REMOTE_DESKTOP_RESOLUTIONS:
             raise ValueError(f"Invalid remote desktop resolution: {resolution}")
         ui = self.config.setdefault("ui", {})
         ui["remote_desktop_resolution"] = resolution
