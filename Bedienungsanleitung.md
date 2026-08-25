@@ -471,4 +471,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 1.10.3 | Wake-on-LAN Manager*
+*Version 1.10.4 | Wake-on-LAN Manager*
