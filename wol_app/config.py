@@ -153,6 +153,8 @@ DEFAULT_CONFIG = {
         "device_sort_column": 0,  # 0: Name, 1: MAC, 2: IP, 3: Username, 4: Password
         "device_sort_order": "ascending",
         "language": "en",
+        # Default device view mode for the main screen ("cards" or "list").
+        "device_view_mode": "cards",
         # Windowed remote desktop resolution (see REMOTE_DESKTOP_RESOLUTIONS).
         "remote_desktop_resolution": DEFAULT_REMOTE_DESKTOP_RESOLUTION,
     },
@@ -378,7 +380,7 @@ class ConfigManager:
         if broadcast_port is not None:
             net["broadcast_port"] = broadcast_port
         self.save()
-    def update_ui_settings(self, language: str = None, device_sort_column: int = None, device_sort_order: str = None, display_mode: str = None) -> None:
+    def update_ui_settings(self, language: str = None, device_sort_column: int = None, device_sort_order: str = None, display_mode: str = None, device_view_mode: str = None) -> None:
         """Update UI-related settings."""
         ui = self.config.setdefault("ui", {})
         if language is not None:
@@ -389,7 +391,19 @@ class ConfigManager:
             ui["device_sort_order"] = device_sort_order
         if display_mode is not None:
             ui["display_mode"] = display_mode
+        if device_view_mode is not None:
+            ui["device_view_mode"] = device_view_mode
         self.save()
+
+    def get_device_view_mode(self) -> str:
+        """Return the preferred device view mode ("cards" or "list")."""
+        return self.config.get("ui", {}).get("device_view_mode", "cards")
+
+    def set_device_view_mode(self, mode: str) -> None:
+        """Persist the preferred device view mode ("cards" or "list")."""
+        if mode not in ("cards", "list"):
+            mode = "cards"
+        self.update_ui_settings(device_view_mode=mode)
     # --- Schedules ---
 
     def get_schedules(self) -> list:

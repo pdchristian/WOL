@@ -103,11 +103,7 @@ class ScheduleDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def _days_to_string(self, days: list) -> str:
-        day_names: dict[str, str] = {
-            "Mon": "Mon", "Tue": "Tue", "Wed": "Wed",
-            "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun"
-        }
-        return ", ".join(day_names.get(d, d) for d in days) if days else "Every day"
+        return ", ".join(Translations.day_short(d) for d in days) if days else "Every day"
 
     def _on_header_clicked(self, column: int) -> None:
         """Sort by the clicked column: 1st click A-Z, 2nd click Z-A.

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Wake-on-LAN – Dark Control Center (Prototyp)</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --surface: #1a1d24;
+    --surface-hover: #232733;
+    --border: #2c303a;
+    --text: #e6e8ee;
+    --text-dim: #9aa0ab;
+    --accent: #00b8a9;         /* Türkis */
+    --online: #22c55e;
+    --offline: #ef4444;
+    --unknown: #f59e0b;
+    --danger: #e0485a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", sans-serif; }
+  body { background: var(--bg); color: var(--text); padding: 24px; }
+
+  /* Menü-Leiste */
+  .menu {
+    display: flex; gap: 24px; color: var(--text-dim);
+    font-size: 13px; padding: 4px 8px; margin-bottom: 20px;
+    border-bottom: 1px solid var(--border); padding-bottom: 12px;
+  }
+  .menu span { cursor: pointer; }
+
+  /* Header */
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), #006b63);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 18px; color: #fff;
+  }
+  .brand h1 { font-size: 22px; font-weight: 600; letter-spacing: 0.3px; }
+  .brand small { display: block; color: var(--text-dim); font-size: 12px; }
+
+  .actions { display: flex; gap: 10px; }
+  .btn {
+    border: none; border-radius: 10px; padding: 10px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    transition: background .15s, transform .1s;
+  }
+  .btn:hover { background: var(--surface-hover); transform: translateY(-1px); }
+  .btn.primary { background: var(--accent); color: #032019; border: none; }
+  .btn.icon { padding: 10px 12px; }
+
+  .search {
+    flex: 1; max-width: 380px; margin: 0 24px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 16px; color: var(--text-dim); font-size: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .search input { background: none; border: none; color: var(--text); outline: none; flex: 1; font-size: 14px; }
+
+  /* Karten-Raster */
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; transition: background .15s, border .15s;
+  }
+  .card:hover { background: var(--surface-hover); border-color: var(--accent); }
+  .card .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .card h3 { font-size: 15px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot.online { background: var(--online); box-shadow: 0 0 8px var(--online); }
+  .dot.offline { background: var(--offline); }
+  .dot.unknown { background: var(--unknown); }
+  .card .meta { color: var(--text-dim); font-size: 12px; line-height: 1.7; margin-bottom: 16px; }
+  .card .row { display: flex; justify-content: space-between; align-items: center; }
+  .card .status { font-size: 12px; font-weight: 600; }
+  .card .status.online { color: var(--online); }
+  .card .status.offline { color: var(--offline); }
+  .card .status.unknown { color: var(--unknown); }
+  .card .wake {
+    background: transparent; border: 1px solid var(--accent); color: var(--accent);
+    border-radius: 8px; padding: 6px 12px; font-weight: 600; cursor: pointer; font-size: 12px;
+  }
+  .card .wake:hover { background: var(--accent); color: #032019; }
+
+  .footer {
+    margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border);
+    color: var(--text-dim); font-size: 12px; display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+  <!-- Menü -->
+  <nav class="menu">
+    <span>Datei</span><span>Extras</span><span>Hilfe</span>
+    <span style="margin-left:auto">Ctrl+U · Nach Updates suchen</span>
+  </nav>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="brand">
+      <div class="logo">W</div>
+      <div>
+        <h1>Wake-on-LAN</h1>
+        <small>6 Geräte · 4 online</small>
+      </div>
+    </div>
+    <div class="search">🔍 <input placeholder="Geräte suchen (Name, MAC, IP)"></div>
+    <div class="actions">
+      <button class="btn icon" title="Aktualisieren">⟳</button>
+      <button class="btn icon" title="Ping">📶</button>
+      <button class="btn icon" title="Herunterfahren">⏻</button>
+      <button class="btn primary">Alle aufwecken</button>
+    </div>
+  </header>
+
+  <!-- Geräte-Karten -->
+  <div class="grid">
+    <div class="card">
+      <div class="top"><h3>Workstation</h3><span class="dot online"></span></div>
+      <div class="meta">192.168.1.10<br>AA:BB:CC:00:11:22</div>
+      <div class="row"><span class="status online">Online</span><button class="wake">Aufwecken</button></div>
+    </div>
+    <div class="card">
+      <div class="top"><h3>Media-Server</h3><span class="dot online"></span></div>
+      <div class="meta">192.168.1.21<br>AA:BB:CC:33:44:55</div>
+      <div class="row"><span class="status online">Online</span><button class="wake">Aufwecken</button></div>
+    </div>
+    <div class="card">
+      <div class="top"><h3>Gaming-PC</h3><span class="dot offline"></span></div>
+      <div class="meta">192.168.1.15<br>AA:BB:CC:66:77:88</div>
+      <div class="row"><span class="status offline">Offline</span><button class="wake">Aufwecken</button></div>
+    </div>
+    <div class="card">
+      <div class="top"><h3>NAS · Synology</h3><span class="dot offline"></span></div>
+      <div class="meta">192.168.1.30<br>AA:BB:CC:99:00:11</div>
+      <div class="row"><span class="status offline">Offline</span><button class="wake">Aufwecken</button></div>
+    </div>
+    <div class="card">
+      <div class="top"><h3>Deaktiviert</h3><span class="dot unknown"></span></div>
+      <div class="meta">192.168.1.50<br>AA:BB:CC:AA:BB:CC</div>
+      <div class="row"><span class="status unknown">Unbekannt</span><button class="wake">Aufwecken</button></div>
+    </div>
+  </div>
+
+  <!-- Statusleiste -->
+  <footer class="footer">
+    <span>Bereit · Status läuft alle 30 s</span>
+    <span>v2.4.1</span>
+  </footer>
+
+</body>
+</html>

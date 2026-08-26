@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Wake-on-LAN – Verwalten (Import/Export-Modals)</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --surface: #1a1d24;
+    --surface-hover: #232733;
+    --border: #2c303a;
+    --text: #e6e8ee;
+    --text-dim: #9aa0ab;
+    --accent: #00b8a9;
+    --accent-dark: #006b63;
+    --online: #22c55e;
+    --offline: #ef4444;
+    --unknown: #f59e0b;
+    --danger: #e0485a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", sans-serif; }
+  body { background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+
+  /* ===== Sidebar (vereinfacht für Fokus auf Verwalten) ===== */
+  .sidebar {
+    width: 230px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 20px 12px; flex-shrink: 0;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; padding: 6px 10px; margin-bottom: 24px; }
+  .logo .mark {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; color: #fff;
+  }
+  .logo span { font-weight: 600; font-size: 15px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
+    color: var(--text-dim); font-size: 14px; margin-bottom: 4px; cursor: pointer;
+  }
+  .nav-item:hover { background: var(--surface-hover); color: var(--text); }
+  .nav-item.active { background: rgba(0,184,169,.14); color: var(--accent); font-weight: 600; }
+  .nav-item .emoji { font-size: 16px; width: 20px; }
+
+  /* ===== Main ===== */
+  .main { flex: 1; overflow: auto; padding: 28px 36px; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .page-header h1 { font-size: 22px; font-weight: 600; }
+  .page-header p { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+
+  .btn {
+    border: none; border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); transition: background .15s, transform .1s;
+  }
+  .btn:hover { background: var(--surface-hover); transform: translateY(-1px); }
+  .btn.primary { background: var(--accent); color: #032019; border: none; }
+  .btn.icon { padding: 10px 12px; }
+  .btn.danger { background: rgba(224,72,90,.12); color: var(--danger); border: 1px solid rgba(224,72,90,.4); }
+
+  .toolbar { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; }
+  .toolbar .spacer { flex: 1; }
+
+  .search {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
+    color: var(--text-dim); font-size: 14px; display: flex; align-items: center; gap: 8px; min-width: 240px;
+  }
+  .search input { background: none; border: none; color: var(--text); outline: none; flex: 1; font-size: 14px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left; padding: 14px 18px; font-size: 12px; font-weight: 600; color: var(--text-dim);
+    border-bottom: 1px solid var(--border); background: var(--surface-hover);
+  }
+  tbody td { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface-hover); }
+  .mono { color: var(--text-dim); font-family: Consolas, monospace; font-size: 13px; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.online { background: rgba(34,197,94,.15); color: var(--online); }
+  .badge.offline { background: rgba(239,68,68,.15); color: var(--offline); }
+
+  .footer { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 12px; display: flex; justify-content: space-between; }
+
+  /* ===== Modal ===== */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(7,9,12,.7); backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center; z-index: 100;
+  }
+  .overlay.open { display: flex; animation: fade .18s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    width: 460px; max-width: 92vw; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,.5); animation: rise .2s ease;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+  .modal-head { padding: 20px 24px 0; }
+  .modal-head h2 { font-size: 18px; font-weight: 600; }
+  .modal-head p { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+  .modal-body { padding: 18px 24px; }
+  .modal-foot { padding: 0 24px 20px; display: flex; justify-content: flex-end; gap: 10px; }
+
+  /* Formular */
+  .field label { display: block; color: var(--text-dim); font-size: 12px; margin-bottom: 6px; }
+  .field input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; color: var(--text); font-size: 14px; outline: none; font-family: Consolas, monospace;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .hint { color: var(--text-dim); font-size: 12px; margin-top: 6px; line-height: 1.5; }
+
+  /* Import-Ergebnis */
+  .result-stat { display: flex; gap: 12px; margin-bottom: 16px; }
+  .stat {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; text-align: center;
+  }
+  .stat .num { font-size: 24px; font-weight: 700; }
+  .stat .lbl { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+  .stat.ok .num { color: var(--online); }
+  .stat.warn .num { color: var(--unknown); }
+  .stat.err .num { color: var(--offline); }
+  .result-list { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; max-height: 180px; overflow: auto; }
+  .result-line { padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-dim); }
+  .result-line:last-child { border-bottom: none; }
+  .result-line.err { color: var(--offline); }
+</style>
+</head>
+<body>
+
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar">
+    <div class="logo"><div class="mark">W</div><span>Wake-on-LAN</span></div>
+    <div class="nav-item"><span class="emoji">💻</span> Geräte</div>
+    <div class="nav-item active"><span class="emoji">🔧</span> Verwalten</div>
+    <div class="nav-item"><span class="emoji">🕒</span> Zeitplan</div>
+    <div class="nav-item"><span class="emoji">📋</span> Protokolle</div>
+  </aside>
+
+  <!-- ===== Main: Verwalten ===== -->
+  <main class="main">
+    <header class="page-header">
+      <div><h1>Verwalten</h1><p>Geräte hinzufügen, bearbeiten, importieren & exportieren</p></div>
+    </header>
+
+    <div class="toolbar">
+      <button class="btn primary">+ Gerät hinzufügen</button>
+      <button class="btn">Importieren</button>
+      <button class="btn">Exportieren</button>
+      <div class="spacer"></div>
+      <div class="search"><input placeholder="Geräte suchen…"></div>
+    </div>
+
+    <div class="panel">
+      <table>
+        <thead><tr><th>Name</th><th>MAC-Adresse</th><th>IP-Adresse</th><th>Status</th><th style="text-align:right">Aktionen</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Workstation</td><td class="mono">AA:BB:CC:00:11:22</td><td class="mono">192.168.1.10</td>
+            <td><span class="badge online">Online</span></td>
+            <td style="text-align:right"><button class="btn icon" title="Bearbeiten">✏️</button> <button class="btn icon danger" title="Löschen">🗑️</button></td>
+          </tr>
+          <tr>
+            <td>Media-Server</td><td class="mono">AA:BB:CC:33:44:55</td><td class="mono">192.168.1.21</td>
+            <td><span class="badge online">Online</span></td>
+            <td style="text-align:right"><button class="btn icon" title="Bearbeiten">✏️</button> <button class="btn icon danger" title="Löschen">🗑️</button></td>
+          </tr>
+          <tr>
+            <td>Gaming-PC</td><td class="mono">AA:BB:CC:66:77:88</td><td class="mono">192.168.1.15</td>
+            <td><span class="badge offline">Offline</span></td>
+            <td style="text-align:right"><button class="btn icon" title="Bearbeiten">✏️</button> <button class="btn icon danger" title="Löschen">🗑️</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <footer class="footer"><span>Bereit · 3 Geräte konfiguriert</span><span>v2.4.1</span></footer>
+  </main>
+
+  <!-- ===== Export-Modal ===== -->
+  <div class="overlay" id="exportModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Geräte exportieren</h2>
+        <p>Exportiert alle Geräte als JSON-Datei. Passwörter werden verschlüsselt gespeichert.</p>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Dateiname</label>
+          <input value="geräte_backup.json">
+        </div>
+        <p class="hint">💡 Erlaubt nur die Felder Name, MAC, IP, Benutzername und Passwort (verschlüsselt). Interne Status-Felder werden ausgeschlossen.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close="export">Abbrechen</button>
+        <button class="btn primary" data-close="export">Exportieren</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Import-Modal (Datei wählen) ===== -->
+  <div class="overlay" id="importPick">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Geräte importieren</h2>
+        <p>Wähle eine JSON-Datei mit Gerätedaten. Geräte mit gleichem Namen werden überschrieben.</p>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Datei</label>
+          <input value="geräte_export_2026.json">
+        </div>
+        <p class="hint">💡 Erwartetes Format: JSON-Liste mit den Feldern <span class="mono">name</span>, <span class="mono">mac</span>, <span class="mono">ip</span>, <span class="mono">username</span>, <span class="mono">password</span>, <span class="mono">enabled</span>.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close="importPick">Abbrechen</button>
+        <button class="btn primary" data-next="importResult">Importieren</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Import-Ergebnis-Modal ===== -->
+  <div class="overlay" id="importResult">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Import abgeschlossen</h2>
+        <p>Ergebnis der Import-Datei <span class="mono" style="color:var(--text-dim)">geräte_export_2026.json</span></p>
+      </div>
+      <div class="modal-body">
+        <div class="result-stat">
+          <div class="stat ok"><div class="num">3</div><div class="lbl">Hinzugefügt</div></div>
+          <div class="stat warn"><div class="num">1</div><div class="lbl">Aktualisiert</div></div>
+          <div class="stat err"><div class="num">2</div><div class="lbl">Fehler</div></div>
+        </div>
+        <div class="result-list">
+          <div class="result-line">Zeile 1: Workstation ✓ importiert</div>
+          <div class="result-line">Zeile 2: Media-Server ✓ importiert</div>
+          <div class="result-line">Zeile 3: Gaming-PC ✓ importiert</div>
+          <div class="result-line">Zeile 4: NAS · aktualisiert (Name existierte bereits)</div>
+          <div class="result-line err">Zeile 5: fehlendes Feld „mac"</div>
+          <div class="result-line err">Zeile 6: ungültige MAC-Adresse</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" data-close="importResult">Fertig</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Modals öffnen via Toolbar-Buttons
+    document.querySelectorAll('.toolbar .btn').forEach(btn => {
+      if (btn.textContent.includes('Importieren')) {
+        btn.addEventListener('click', () => open('importPick'));
+      }
+      if (btn.textContent.includes('Exportieren')) {
+        btn.addEventListener('click', () => open('exportModal'));
+      }
+    });
+
+    function open(id) { document.getElementById(id).classList.add('open'); }
+    function close(id) { document.getElementById(id).classList.remove('open'); }
+
+    // Schließen über data-close / data-next Attribute
+    document.querySelectorAll('[data-close]').forEach(el => {
+      el.addEventListener('click', () => close(el.dataset.close));
+    });
+    document.querySelectorAll('[data-next]').forEach(el => {
+      el.addEventListener('click', () => {
+        close(el.dataset.next === 'importResult' ? 'importPick' : '');
+        if (el.dataset.next === 'importResult') open('importResult');
+      });
+    });
+    // Klick auf Overlay-Hintergrund schließt
+    document.querySelectorAll('.overlay').forEach(ov => {
+      ov.addEventListener('click', e => { if (e.target === ov) ov.classList.remove('open'); });
+    });
+  </script>
+
+</body>
+</html>

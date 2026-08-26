@@ -140,3 +140,16 @@ class Translations:
     def available_languages() -> dict:
         """Return ``{code: native_name}`` for all supported languages."""
         return Translations._languages.copy()
+
+    # Internal weekday keys (Mon..Sun) are stored in config. These keys map
+    # them to localized short labels.
+    _DAY_KEYS: dict[str, str] = {
+        "Mon": "day.mon", "Tue": "day.tue", "Wed": "day.wed",
+        "Thu": "day.thu", "Fri": "day.fri", "Sat": "day.sat", "Sun": "day.sun",
+    }
+
+    @staticmethod
+    def day_short(day_code: str) -> str:
+        """Return the localized short label for an internal weekday code."""
+        key = Translations._DAY_KEYS.get(day_code)
+        return Translations.tr(key) if key else day_code
