@@ -71,6 +71,9 @@ en.task_service_onedir=Install WOL Host Service as a &folder (recommended)
 en.task_service_onefile=Install WOL Host Service as a s&ingle file
 en.task_service_none=Do &not install WOL Host Service
 en.task_group_service=WOL Host Service (lets other PCs shut down this one remotely):
+en.task_ui_modern=&Modern app (dark control-center layout with sidebar)
+en.task_ui_classic=&Classic app (traditional window layout)
+en.task_group_ui=Application design (both have identical features):
 en.msg_reinstall_found=An existing installation of Wake-on-LAN Manager was found.
 en.msg_keep_data=Keep existing device entries and settings?
 en.msg_remove_service=Remove the WOL Host Service (WOLHostService) and its firewall rule?
@@ -82,6 +85,9 @@ de.task_service_onedir=WOL Host Service als &Ordner installieren (empfohlen)
 de.task_service_onefile=WOL Host Service als &einzelne Datei installieren
 de.task_service_none=WOL Host Service &nicht installieren
 de.task_group_service=WOL Host Service (ermöglicht anderen PCs, diesen PC remote herunterzufahren):
+de.task_ui_modern=&Moderne App (dunkles Control-Center-Layout mit Seitenleiste)
+de.task_ui_classic=&Klassische App (traditionelles Fenster-Layout)
+de.task_group_ui=App-Design (beide Varianten haben identische Funktionen):
 de.msg_reinstall_found=Eine bestehende Installation von Wake-on-LAN Manager wurde gefunden.
 de.msg_keep_data=Vorhandene Geräte und Einstellungen behalten?
 de.msg_remove_service=WOL Host Service (WOLHostService) und seine Firewall-Regel entfernen?
@@ -93,6 +99,9 @@ fr.task_service_onedir=Installer WOL Host Service sous forme de &dossier (recomm
 fr.task_service_onefile=Installer WOL Host Service en &un seul fichier
 fr.task_service_none=Ne &pas installer le WOL Host Service
 fr.task_group_service=WOL Host Service (permet à d'autres PC d'éteindre celui-ci à distance) :
+fr.task_ui_modern=Application &moderne (centre de contrôle sombre avec barre latérale)
+fr.task_ui_classic=Application &classique (disposition fenêtre traditionnelle)
+fr.task_group_ui=Design de l'application (fonctionnalités identiques) :
 fr.msg_reinstall_found=Une installation existante de Wake-on-LAN Manager a été trouvée.
 fr.msg_keep_data=Conserver les entrées d'appareils et les paramètres existants ?
 fr.msg_remove_service=Supprimer le WOL Host Service (WOLHostService) et sa règle de pare-feu ?
@@ -104,6 +113,9 @@ es.task_service_onedir=Instalar WOL Host Service como &carpeta (recomendado)
 es.task_service_onefile=Instalar WOL Host Service como &un solo archivo
 es.task_service_none=&No instalar WOL Host Service
 es.task_group_service=WOL Host Service (permite a otros PC apagar este PC a distancia):
+es.task_ui_modern=Aplicación &moderna (centro de control oscuro con barra lateral)
+es.task_ui_classic=Aplicación &clásica (diseño de ventana tradicional)
+es.task_group_ui=Diseño de la aplicación (ambas con funciones idénticas):
 es.msg_reinstall_found=Se encontró una instalación existente de Wake-on-LAN Manager.
 es.msg_keep_data=¿Conservar las entradas de dispositivos y la configuración existentes?
 es.msg_remove_service=¿Eliminar el WOL Host Service (WOLHostService) y su regla de firewall?
@@ -119,6 +131,11 @@ Name: "desktopicon"; Description: "{cm:task_desktopicon}"; GroupDescription: "{c
 Name: "service_onedir"; Description: "{cm:task_service_onedir}"; GroupDescription: "{cm:task_group_service}"; Flags: exclusive
 Name: "service_onefile"; Description: "{cm:task_service_onefile}"; GroupDescription: "{cm:task_group_service}"; Flags: unchecked exclusive
 Name: "service_none"; Description: "{cm:task_service_none}"; GroupDescription: "{cm:task_group_service}"; Flags: unchecked exclusive
+; UI layout choice (radio group). Recorded in the registry
+; (HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode) and read by the app on first
+; start. The user can still switch the layout later in the settings dialog.
+Name: "ui_modern"; Description: "{cm:task_ui_modern}"; GroupDescription: "{cm:task_group_ui}"; Flags: exclusive
+Name: "ui_classic"; Description: "{cm:task_ui_classic}"; GroupDescription: "{cm:task_group_ui}"; Flags: unchecked exclusive
 
 [Files]
 ; Main application
@@ -194,6 +211,13 @@ begin
       Exec(ExpandConstant('{tmp}\installer.exe'),
            '--install-service onefile --install-dir "' + ExpandConstant('{app}') + '"',
            '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    // Record the chosen UI layout so the app can pick the right main window
+    // on first start (an explicit user choice in the settings overrides it).
+    if WizardIsTaskSelected('ui_classic') then
+      RegWriteStringValue(HKEY_LOCAL_MACHINE, 'SOFTWARE\Wake-on-LAN Manager', 'UiMode', 'classic')
+    else
+      RegWriteStringValue(HKEY_LOCAL_MACHINE, 'SOFTWARE\Wake-on-LAN Manager', 'UiMode', 'modern');
   end;
 end;
 

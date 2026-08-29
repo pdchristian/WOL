@@ -49,14 +49,30 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.config: Any = config_manager
         self.setWindowTitle(Translations.tr("settings.title"))
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(640)
+        # True when a setting (e.g. the layout mode) only takes effect after an app restart.
+        self.restart_required: bool = False
         self._setup_ui()
         self._load_settings()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        # Network settings form
+        # Two-column arrangement: too many groups for a single column.
+        columns = QHBoxLayout()
+        columns.setSpacing(16)
+        left_col = QVBoxLayout()
+        left_col.setSpacing(12)
+        right_col = QVBoxLayout()
+        right_col.setSpacing(12)
+        columns.addLayout(left_col, 1)
+        columns.addLayout(right_col, 1)
+        layout.addLayout(columns)
+
+        # ── Left column ──────────────────────────────────────────────────
+
+        # --- Network Group ---
+        network_group = QGroupBox(Translations.tr("settings.group.network"))
         form = QFormLayout()
 
         self.broadcast_ip_input = QLineEdit()
@@ -68,7 +84,8 @@ class SettingsDialog(QDialog):
         self.broadcast_port_input.setValue(9)
         form.addRow(Translations.tr("settings.label.broadcast_port"), self.broadcast_port_input)
 
-        layout.addLayout(form)
+        network_group.setLayout(form)
+        left_col.addWidget(network_group)
 
         # --- Language Group ---
         lang_group = QGroupBox(Translations.tr("settings.group.language"))
@@ -81,7 +98,7 @@ class SettingsDialog(QDialog):
         lang_layout.addWidget(self.language_combo)
 
         lang_group.setLayout(lang_layout)
-        layout.addWidget(lang_group)
+        left_col.addWidget(lang_group)
 
         # --- Display Mode Group ---
         display_group = QGroupBox(Translations.tr("settings.group.display_mode"))
@@ -95,7 +112,25 @@ class SettingsDialog(QDialog):
         display_layout.addWidget(self.display_mode_combo)
 
         display_group.setLayout(display_layout)
-        layout.addWidget(display_group)
+        left_col.addWidget(display_group)
+
+        # --- Layout Mode Group (classic / modern) ---
+        layout_group = QGroupBox(Translations.tr("settings.group.layout"))
+        layout_mode_layout = QVBoxLayout()
+
+        self.layout_mode_combo = QComboBox()
+        self.layout_mode_combo.addItem(Translations.tr("settings.layout.classic"), "classic")
+        self.layout_mode_combo.addItem(Translations.tr("settings.layout.modern"), "modern")
+        layout_mode_layout.addWidget(self.layout_mode_combo)
+
+        layout_hint = QLabel(Translations.tr("settings.layout.restart_hint"))
+        layout_hint.setWordWrap(True)
+        layout_mode_layout.addWidget(layout_hint)
+
+        layout_group.setLayout(layout_mode_layout)
+        left_col.addWidget(layout_group)
+
+        # ── Right column ─────────────────────────────────────────────────
 
         # --- Auto-Update Group ---
         update_group = QGroupBox(Translations.tr("settings.group.auto_update"))
@@ -116,7 +151,7 @@ class SettingsDialog(QDialog):
         update_layout.addLayout(grid)
 
         update_group.setLayout(update_layout)
-        layout.addWidget(update_group)
+        right_col.addWidget(update_group)
 
         # --- Log Settings Group ---
         log_group = QGroupBox(Translations.tr("settings.group.logs"))
@@ -129,7 +164,7 @@ class SettingsDialog(QDialog):
         log_layout.addRow(Translations.tr("settings.label.max_logs"), self.max_logs_input)
 
         log_group.setLayout(log_layout)
-        layout.addWidget(log_group)
+        right_col.addWidget(log_group)
 
         # --- Remote Desktop Group ---
         rdp_group = QGroupBox(Translations.tr("settings.group.remote_desktop"))
@@ -150,7 +185,7 @@ class SettingsDialog(QDialog):
         )
 
         rdp_group.setLayout(rdp_layout)
-        layout.addWidget(rdp_group)
+        right_col.addWidget(rdp_group)
 
         # --- Shutdown Group ---
         shutdown_group = QGroupBox(Translations.tr("settings.group.shutdown"))
@@ -171,7 +206,7 @@ class SettingsDialog(QDialog):
         )
 
         shutdown_group.setLayout(shutdown_layout)
-        layout.addWidget(shutdown_group)
+        right_col.addWidget(shutdown_group)
 
         # Info label
         info_label = QLabel(
@@ -210,6 +245,13 @@ class SettingsDialog(QDialog):
         for idx in range(self.display_mode_combo.count()):
             if self.display_mode_combo.itemData(idx) == current_mode:
                 self.display_mode_combo.setCurrentIndex(idx)
+                break
+
+        # Load layout mode setting (classic / modern)
+        current_layout = self.config.get_layout_mode()
+        for idx in range(self.layout_mode_combo.count()):
+            if self.layout_mode_combo.itemData(idx) == current_layout:
+                self.layout_mode_combo.setCurrentIndex(idx)
                 break
 
         # Load update settings
@@ -276,6 +318,12 @@ class SettingsDialog(QDialog):
             app = QApplication.instance()
             if app is not None:
                 apply_display_mode(app, selected_mode)
+
+        # Save layout mode setting (takes effect after an app restart)
+        selected_layout = self.layout_mode_combo.currentData()
+        if selected_layout and selected_layout != self.config.get_layout_mode():
+            self.config.set_layout_mode(selected_layout)
+            self.restart_required = True
 
         # Save update settings
         auto_check: bool = self.auto_update_checkbox.isChecked()

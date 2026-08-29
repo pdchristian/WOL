@@ -1,6 +1,5 @@
 """Device Management Dialog for Wake-on-LAN Application."""
 
-import json
 from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -8,7 +7,6 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -21,7 +19,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
+from wol_app.device_io import export_devices, import_devices
 from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.network_scanner import get_local_ips
 from wol_app.translations import Translations
@@ -39,7 +37,8 @@ class DeviceDialog(QDialog):
 
     device_saved = pyqtSignal(dict)  # Emits device dict on save
 
-    def __init__(self, config_manager, device: dict = None, parent=None) -> None:
+    def __init__(self, config_manager, device: dict = None, parent=None,
+                 preset: dict = None) -> None:
         super().__init__(parent)
         self.config = config_manager
         self.editing_device = device
@@ -49,6 +48,11 @@ class DeviceDialog(QDialog):
         if device:
             self._fill_form(device)
         else:
+            if preset:
+                # Pre-fill from a scan result (name/mac/ip) without editing mode
+                self.name_input.setText(preset.get("name", ""))
+                self.mac_input.setText(preset.get("mac", ""))
+                self.ip_input.setText(preset.get("ip", ""))
             # Pre-select the default shutdown method from settings
             default_method = self.config.get_default_shutdown_method()
             for idx in range(self.method_combo.count()):
@@ -484,137 +488,9 @@ class DeviceManagerDialog(QDialog):
 
     def _export_devices(self) -> None:
         """Export configured devices to a JSON file."""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, Translations.tr("dialog.export.title"), "", "JSON Files (*.json)"
-        )
-        if not file_path:
-            return
-
-        devices = self.config.get_devices()
-        # Export only relevant fields (exclude internal/status fields)
-        # Passwords are encrypted in the export file for security
-        export_data = []
-        for dev in devices:
-            export_data.append({
-                "name": dev.get("name", ""),
-                "mac": dev.get("mac", ""),
-                "ip": dev.get("ip", ""),
-                "username": dev.get("username", ""),
-                "password": encrypt_password(dev.get("password", "")),
-                "enabled": dev.get("enabled", True),
-            })
-
-        try:
-            with open(file_path, "w") as f:
-                json.dump(export_data, f, indent=2)
-            QMessageBox.information(
-                self,
-                Translations.tr("dialog.export.success.title"),
-                Translations.tr("dialog.export.success.message", count=len(export_data), path=file_path),
-            )
-        except OSError as e:
-            QMessageBox.critical(
-                self,
-                Translations.tr("dialog.export.error.title"),
-                Translations.tr("dialog.export.error.message", error=str(e)),
-            )
+        export_devices(self.config, parent=self)
 
     def _import_devices(self) -> None:
         """Import devices from a JSON file. Existing devices with the same name are overwritten."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, Translations.tr("dialog.import.title"), "", "JSON Files (*.json)"
-        )
-        if not file_path:
-            return
-
-        try:
-            with open(file_path) as f:
-                import_data = json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
-            QMessageBox.critical(
-                self,
-                Translations.tr("dialog.import.error.title"),
-                Translations.tr("dialog.import.read_error", error=str(e)),
-            )
-            return
-
-        if not isinstance(import_data, list):
-            QMessageBox.critical(
-                self,
-                Translations.tr("dialog.import.error.title"),
-                Translations.tr("dialog.import.invalid_format"),
-            )
-            return
-
-        imported = 0
-        updated = 0
-        errors = []
-
-        for idx, dev_data in enumerate(import_data):
-            name = dev_data.get("name", "").strip()
-            mac = dev_data.get("mac", "").strip()
-
-            if not name or not mac:
-                errors.append(
-                    Translations.tr("dialog.import.missing_field", line=idx + 1)
-                )
-                continue
-
-            if not validate_mac(mac):
-                errors.append(
-                    Translations.tr("dialog.import.invalid_mac", line=idx + 1, name=name)
-                )
-                continue
-
-            existing = self.config.get_device_by_name(name)
-            if existing:
-                # Update existing device
-                pw = dev_data.get("password", "")
-                if is_encrypted(pw):
-                    pw: str = decrypt_password(pw)
-                self.config.update_device(
-                    existing["id"],
-                    mac=mac,
-                    ip=dev_data.get("ip", ""),
-                    username=dev_data.get("username", ""),
-                    password=pw,
-                    enabled=dev_data.get("enabled", True),
-                )
-                updated += 1
-            else:
-                # Add new device
-                device = self.config.add_device(name, mac)
-                if device:
-                    pw = dev_data.get("password", "")
-                    if is_encrypted(pw):
-                        pw: str = decrypt_password(pw)
-                    self.config.update_device(
-                        device["id"],
-                        ip=dev_data.get("ip", ""),
-                        username=dev_data.get("username", ""),
-                        password=pw,
-                        enabled=dev_data.get("enabled", True),
-                    )
-                    imported += 1
-
-        # Build summary message
-        summary_lines: list[str] = [
-            Translations.tr("dialog.import.summary.imported", count=imported),
-            Translations.tr("dialog.import.summary.updated", count=updated),
-        ]
-        if errors:
-            summary_lines.append(
-                Translations.tr("dialog.import.summary.errors", count=len(errors))
-            )
-            summary_lines.extend(errors[:5])  # Show max 5 errors
-            if len(errors) > 5:
-                summary_lines.append(
-                    Translations.tr("dialog.import.summary.more_errors", count=len(errors) - 5)
-                )
-
-        QMessageBox.information(
-            self,
-            Translations.tr("dialog.import.result.title"),
-            "\n".join(summary_lines),
-        )
-        self._refresh_table()
+        if import_devices(self.config, parent=self):
+            self._refresh_table()

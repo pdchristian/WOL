@@ -144,6 +144,45 @@ REMOTE_DESKTOP_AUTO_FRACTION = 0.88
 # Minimum auto-resolution size (width, height) to keep the window usable.
 REMOTE_DESKTOP_AUTO_MIN = (1280, 720)
 
+# Registry location where the Inno Setup installer records the UI layout
+# chosen at install time ("modern" or "classic"). Read on first start only;
+# an explicit user choice in the settings dialog takes precedence.
+REGISTRY_KEY_UI_MODE = r"SOFTWARE\Wake-on-LAN Manager"
+REGISTRY_VALUE_UI_MODE = "UiMode"
+VALID_LAYOUT_MODES = ("classic", "modern")
+
+
+def read_ui_mode_from_registry() -> str | None:
+    """Read the installer-selected UI mode from the Windows registry.
+
+    Returns "modern", "classic" or None (not set / not on Windows /
+    registry not readable, e.g. 32-bit view mismatch).
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+
+        # Check both registry views (the installer may write to 64-bit HKLM
+        # while a 32-bit Python would look at WOW6432Node by default).
+        for flag in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE,
+                    REGISTRY_KEY_UI_MODE,
+                    0,
+                    winreg.KEY_READ | flag,
+                ) as key:
+                    value, _ = winreg.QueryValueEx(key, REGISTRY_VALUE_UI_MODE)
+                    if isinstance(value, str) and value in VALID_LAYOUT_MODES:
+                        return value
+            except OSError:
+                continue
+    except Exception as e:  # pragma: no cover - defensive
+        _logger.debug("Could not read UI mode from registry: %s", e)
+    return None
+
+
 # Default configuration
 DEFAULT_CONFIG = {
     "devices": [],
@@ -167,6 +206,13 @@ DEFAULT_CONFIG = {
         "language": "en",
         # Windowed remote desktop resolution (see REMOTE_DESKTOP_RESOLUTIONS).
         "remote_desktop_resolution": DEFAULT_REMOTE_DESKTOP_RESOLUTION,
+        # UI layout: "classic" (single-view window) or "modern" (sidebar control center).
+        # On first start the installer-written registry value is used (see
+        # get_layout_mode); "classic" is the fallback when nothing is set.
+        "layout_mode": "classic",
+        # True once the user chose a layout explicitly (settings dialog).
+        # Then the installer registry hint is no longer consulted.
+        "layout_mode_user_set": False,
     },
     "updates": {
         "auto_check_enabled": True,
@@ -204,6 +250,27 @@ class ConfigManager:
             self._config_dir = self.config_path.parent
 
         self.config = self._load()
+        self._apply_installer_ui_mode()
+
+    def _apply_installer_ui_mode(self) -> None:
+        """On first start, adopt the UI layout chosen during installation.
+
+        The installer writes HKLM\\SOFTWARE\\Wake-on-LAN Manager\\UiMode.
+        As long as the user has not changed the layout in the settings
+        dialog (``ui.layout_mode_user_set``), that value wins over the
+        config default. The resolved mode is persisted so the registry is
+        consulted only once.
+        """
+        ui = self.config.setdefault("ui", {})
+        if ui.get("layout_mode_user_set"):
+            return
+        installer_mode = read_ui_mode_from_registry()
+        if installer_mode and installer_mode != ui.get("layout_mode"):
+            ui["layout_mode"] = installer_mode
+            try:
+                self.save()
+            except Exception as e:  # pragma: no cover - non-fatal
+                _logger.warning("Could not persist installer UI mode: %s", e)
 
     def _load(self) -> dict:
         """Load configuration from file, auto-decrypt passwords and migrate old format."""
@@ -401,6 +468,20 @@ class ConfigManager:
             ui["device_sort_order"] = device_sort_order
         if display_mode is not None:
             ui["display_mode"] = display_mode
+        self.save()
+
+    def get_layout_mode(self) -> str:
+        """Return the active UI layout: "classic" or "modern"."""
+        mode = self.config.get("ui", {}).get("layout_mode", "classic")
+        return mode if mode in VALID_LAYOUT_MODES else "classic"
+
+    def set_layout_mode(self, mode: str) -> None:
+        """Persist the user's explicit layout choice (takes precedence over the installer hint)."""
+        if mode not in VALID_LAYOUT_MODES:
+            raise ValueError(f"Invalid layout mode: {mode}")
+        ui = self.config.setdefault("ui", {})
+        ui["layout_mode"] = mode
+        ui["layout_mode_user_set"] = True
         self.save()
     # --- Schedules ---
 

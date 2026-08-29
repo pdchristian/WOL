@@ -41,7 +41,7 @@ from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.network_scanner import get_local_ips
 from wol_app.schedule_dialog import ScheduleDialog
 from wol_app.settings_dialog import SettingsDialog
-from wol_app.theme import apply_display_mode
+from wol_app.theme import _system_uses_dark, apply_display_mode
 from wol_app.translations import Translations
 from wol_app.update_dialog import (
     UpdateAvailableDialog,
@@ -1270,6 +1270,17 @@ def main() -> NoReturn:
     icon_path: str = get_resource_path("icon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
+
+    # Choose the window layout: modern control center or classic single view.
+    # The mode is selected at install time (registry) and can be changed in
+    # the settings dialog (ui.layout_mode).
+    if config.get_layout_mode() == "modern":
+        from wol_app.modern_main_window import run_modern_window
+
+        dark = display_mode == "dark" or (
+            display_mode == "auto" and _system_uses_dark()
+        )
+        run_modern_window(config, dark_mode=dark)
 
     window = MainWindow()
     window.show()

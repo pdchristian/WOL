@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -24,51 +24,10 @@ from PyQt6.QtWidgets import (
 from wol_app.network_scanner import (
     get_dns_servers_for_interface,
     get_local_interfaces,
-    scan_subnet,
 )
+from wol_app.scan_worker import ScanWorker
 from wol_app.translations import Translations
 from wol_app.utils import get_ip_key, sort_rows
-
-
-class ScanWorker(QObject):
-    """Background worker for network scanning."""
-    progress = pyqtSignal(str, int, int)  # message, current, total
-    finished = pyqtSignal(list)
-
-    def __init__(self, interfaces: list, timeout: int = 1) -> None:
-        super().__init__()
-        self.interfaces = interfaces
-        self.timeout: int = timeout
-
-    def run(self) -> None:
-        all_results = []
-        seen_ips = set()
-
-        for iface in self.interfaces:
-            iface_msg: str = Translations.tr("scan.scanning_subnet", ip=iface["ip"])
-            self.progress.emit(iface_msg, 0, 0)
-
-            try:
-                def on_progress(current, total, msg) -> None:
-                    self.progress.emit(msg, current, total)
-
-                hosts = scan_subnet(
-                    iface["ip"], iface["netmask"],
-                    self.timeout, progress_callback=on_progress
-                )
-                for host in hosts:
-                    if host["ipv4"] not in seen_ips:
-                        seen_ips.add(host["ipv4"])
-                        all_results.append(host)
-            except Exception as e:
-                self.progress.emit(
-                    Translations.tr("scan.error_interface", ip=iface["ip"], error=str(e)), 0, 0
-                )
-
-        self.progress.emit(
-            Translations.tr("scan.total_found", count=len(all_results)), 0, 0
-        )
-        self.finished.emit(all_results)
 
 
 class NetworkScanDialog(QDialog):
