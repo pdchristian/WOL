@@ -134,7 +134,7 @@ QPushButton#iconBtn:hover {{ background: {t['surface_hover']}; }}
 
 /* ── Status tiles (badges) ───────────────────────────────────────────── */
 #badgeOnline, #badgeOffline, #badgeUnknown {{
-    border-radius: 12px; padding: 4px 12px;
+    border-radius: 10px; padding: 0 10px;
     font-size: 12px; font-weight: 600;
 }}
 #badgeOnline {{ background: rgba(34, 197, 94, 0.15); color: {t['online']}; }}
@@ -145,8 +145,7 @@ QPushButton#iconBtn:hover {{ background: {t['surface_hover']}; }}
 QPushButton#tileButton, QPushButton#tileDanger {{
     background: {t['surface_hover']}; color: {t['text_dim']};
     border: 1px solid {t['border']}; border-radius: 10px;
-    min-width: 34px; max-width: 34px; min-height: 34px; max-height: 34px;
-    font-size: 14px;
+    padding: 0px; font-size: 14px;
 }}
 QPushButton#tileButton:hover {{
     background: {t['accent']}; color: {t['accent_text']};

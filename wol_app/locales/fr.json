@@ -362,7 +362,7 @@
   "modern.placeholder.schedule": "Allumage et extinction planifiés des appareils",
   "modern.placeholder.logs": "Tous les événements de l'application",
   "modern.manage.title": "Gérer",
-  "modern.manage.subtitle": "Analyse réseau et gestion des appareils",
+  "modern.manage.subtitle": "Gestion des appareils et analyse réseau",
   "modern.manage.section.scan": "Analyse réseau",
   "modern.manage.section.devices": "Gestion des appareils",
   "modern.manage.button.scan": "Lancer l'analyse",

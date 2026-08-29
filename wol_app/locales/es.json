@@ -362,7 +362,7 @@
   "modern.placeholder.schedule": "Encendido y apagado programado de dispositivos",
   "modern.placeholder.logs": "Todos los eventos de la aplicación",
   "modern.manage.title": "Administrar",
-  "modern.manage.subtitle": "Escaneo de red y gestión de dispositivos",
+  "modern.manage.subtitle": "Gestión de dispositivos y escaneo de red",
   "modern.manage.section.scan": "Escaneo de red",
   "modern.manage.section.devices": "Gestión de dispositivos",
   "modern.manage.button.scan": "Iniciar escaneo",

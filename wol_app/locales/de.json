@@ -362,7 +362,7 @@
   "modern.placeholder.schedule": "Zeitgesteuertes Ein- und Ausschalten von Geräten",
   "modern.placeholder.logs": "Alle Ereignisse der Applikation",
   "modern.manage.title": "Verwalten",
-  "modern.manage.subtitle": "Netzwerk-Scan & Geräte-Verwaltung",
+  "modern.manage.subtitle": "Geräte-Verwaltung & Netzwerk-Scan",
   "modern.manage.section.scan": "Netzwerk-Scan",
   "modern.manage.section.devices": "Geräte-Verwaltung",
   "modern.manage.button.scan": "Scan starten",

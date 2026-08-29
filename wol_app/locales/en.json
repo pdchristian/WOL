@@ -362,7 +362,7 @@
   "modern.placeholder.schedule": "Scheduled wake-up and shutdown of devices",
   "modern.placeholder.logs": "All application events",
   "modern.manage.title": "Manage",
-  "modern.manage.subtitle": "Network scan & device management",
+  "modern.manage.subtitle": "Device management & network scan",
   "modern.manage.section.scan": "Network scan",
   "modern.manage.section.devices": "Device management",
   "modern.manage.button.scan": "Start scan",

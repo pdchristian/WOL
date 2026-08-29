@@ -123,23 +123,30 @@ class DeviceRow(QWidget):
 
         layout.addStretch()
 
-        # Status tile (Online/Offline/Unbekannt)
+        # Status tile (Online/Offline/Unbekannt) — pill approx. 20 px high, vertically centered
         self.badge = QLabel()
-        layout.addWidget(self.badge)
+        self.badge.setFixedHeight(20)
+        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
         self.set_status(status)
 
-        # Action tiles
-        self.edit_btn = QPushButton("✏")
+        # Action tiles — exactly 36 px, icon vertically centered.
+        # setFixedSize() is required in addition to the QSS min/max rules:
+        # the emoji glyph + inherited button padding would otherwise inflate
+        # the button beyond the QSS max-height.
+        self.edit_btn = QPushButton("✏️")
         self.edit_btn.setObjectName("tileButton")
+        self.edit_btn.setFixedSize(36, 36)
         self.edit_btn.setToolTip(Translations.tr("device_manager.button.edit"))
         self.edit_btn.clicked.connect(lambda: self.edit_requested.emit(self.device_id))
-        layout.addWidget(self.edit_btn)
+        layout.addWidget(self.edit_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self.delete_btn = QPushButton("🗑")
+        self.delete_btn = QPushButton("🗑️")
         self.delete_btn.setObjectName("tileDanger")
+        self.delete_btn.setFixedSize(36, 36)
         self.delete_btn.setToolTip(Translations.tr("device_manager.button.delete"))
         self.delete_btn.clicked.connect(lambda: self.delete_requested.emit(self.device_id))
-        layout.addWidget(self.delete_btn)
+        layout.addWidget(self.delete_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
     def set_status(self, status: str) -> None:
         """Update the status tile text and color (objectName selects the style)."""
@@ -250,13 +257,15 @@ class ManageView(QWidget):
         self.scan_heading.setObjectName("sectionHeading")
         layout.addWidget(self.scan_heading)
 
-        # Interface checkboxes stacked vertically; scan button top-right
-        scan_row = QHBoxLayout()
-        scan_row.setSpacing(16)
+        # Interface checkboxes stacked vertically (dummy APIPA/virtual ranges hidden)
         iface_col = QVBoxLayout()
         iface_col.setSpacing(6)
         self.iface_checkboxes: list[QCheckBox] = []
-        for idx, iface in enumerate(get_local_interfaces()):
+        self._ifaces: list[dict] = [
+            iface for iface in get_local_interfaces()
+            if not (iface["ip"].startswith("169.") or iface["ip"].startswith("172."))
+        ]
+        for idx, iface in enumerate(self._ifaces):
             dns_servers = get_dns_servers_for_interface(iface["ip"])
             label_text = f"{iface['ip']} / {iface['netmask']}"
             if dns_servers:
@@ -265,14 +274,30 @@ class ManageView(QWidget):
             cb.setChecked(idx == 0)  # First interface selected by default
             self.iface_checkboxes.append(cb)
             iface_col.addWidget(cb)
-        scan_row.addLayout(iface_col)
-        scan_row.addStretch()
 
+        scan_col = QVBoxLayout()
+        scan_col.setSpacing(10)
+        scan_col.addLayout(iface_col)
+
+        # "Scan starten" bottom-left, search field right of it (like device mgmt)
+        scan_actions = QHBoxLayout()
+        scan_actions.setSpacing(10)
         self.scan_btn = QPushButton(Translations.tr("modern.manage.button.scan"))
         self.scan_btn.setObjectName("primaryButton")
         self.scan_btn.clicked.connect(self._start_scan)
-        scan_row.addWidget(self.scan_btn, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addLayout(scan_row)
+        scan_actions.addWidget(self.scan_btn)
+        scan_actions.addStretch()
+
+        self.result_search = QLineEdit()
+        self.result_search.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
+        self.result_search.setClearButtonEnabled(True)
+        self.result_search.textChanged.connect(self._render_results)
+        self.result_search.setFixedWidth(260)
+        self.result_search.hide()  # Appears together with the results
+        scan_actions.addWidget(self.result_search)
+        scan_col.addLayout(scan_actions)
+
+        layout.addLayout(scan_col)
 
         self.scan_info = QLabel(Translations.tr("scan_dialog.info.initial"))
         self.scan_info.setObjectName("pageSubtitle")
@@ -305,6 +330,7 @@ class ManageView(QWidget):
         self.import_btn.setText(Translations.tr("device_manager.button.import"))
         self.export_btn.setText(Translations.tr("device_manager.button.export"))
         self.search_input.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
+        self.result_search.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
         for i in range(self.results_layout.count()):
             w = self.results_layout.itemAt(i).widget()
             if isinstance(w, ScanResultRow):
@@ -315,9 +341,8 @@ class ManageView(QWidget):
     # ── Netzwerk-Scan ────────────────────────────────────────────────────
 
     def _selected_interfaces(self) -> list[dict]:
-        ifaces = get_local_interfaces()
         return [
-            iface for cb, iface in zip(self.iface_checkboxes, ifaces, strict=False)
+            iface for cb, iface in zip(self.iface_checkboxes, self._ifaces, strict=False)
             if cb.isChecked()
         ]
 
@@ -340,6 +365,8 @@ class ManageView(QWidget):
 
         self._clear_results()
         self.results_panel.setVisible(True)
+        self.result_search.clear()
+        self.result_search.hide()
         self.progress_bar.show()
         self.progress_bar.setValue(0)
         self.scan_btn.setEnabled(False)
@@ -374,6 +401,22 @@ class ManageView(QWidget):
             Translations.tr("scan_dialog.complete", count=len(results))
         )
         self._scan_results = results
+        self.result_search.show()
+        self._render_results()
+
+    def _filtered_results(self) -> list[dict]:
+        query = self.result_search.text().strip().lower()
+        if not query:
+            return self._scan_results
+        fields = ("hostname", "ipv4", "ipv6", "mac")
+        return [
+            h for h in self._scan_results
+            if any(query in str(h.get(f, "")).lower() for f in fields)
+        ]
+
+    def _render_results(self) -> None:
+        """Rebuild the result rows, honouring the search filter."""
+        results = self._filtered_results()
         self._clear_results()
         for idx, host in enumerate(results):
             row = ScanResultRow(host)
@@ -384,7 +427,7 @@ class ManageView(QWidget):
                 sep.setObjectName("rowSeparator")
                 sep.setFixedHeight(1)
                 self.results_layout.addWidget(sep)
-        self.results_panel.setVisible(True)
+        self.results_panel.setVisible(bool(results) or bool(self._scan_results))
 
     def _clear_results(self) -> None:
         while self.results_layout.count():
