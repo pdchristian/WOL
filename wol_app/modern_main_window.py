@@ -183,7 +183,7 @@ class ModernMainWindow(QMainWindow):
         # The native update/about screen is opened via "Über"; the update
         # check itself is the primary button on that screen.
         self.about_btn = self._nav_action(
-            "ℹ", "menu.help.about",
+            "\u2139\ufe0f", "menu.help.about",
             lambda: self._select_nav(UPDATE_NAV_INDEX, self.about_btn))
         self.about_btn.setCheckable(True)
         self.quit_btn = self._nav_action("⏻", "menu.file.exit", self.close)
@@ -261,7 +261,7 @@ class ModernMainWindow(QMainWindow):
         for btn, (icon, key) in zip(self.nav_buttons, nav_defs, strict=True):
             btn.setText(nav_text(icon, key))
         self.settings_btn.setText(nav_text("⚙", "menu.tools.settings"))
-        self.about_btn.setText(nav_text("ℹ", "menu.help.about"))
+        self.about_btn.setText(nav_text("\u2139\ufe0f", "menu.help.about"))
         self.quit_btn.setText(nav_text("⏻", "menu.file.exit"))
 
         self.devices_view.retranslate()

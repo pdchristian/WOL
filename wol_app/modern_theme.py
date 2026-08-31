@@ -10,7 +10,41 @@ so they only affect widgets of the modern window and never leak into the
 classic UI or the shared dialogs.
 """
 
+import os
+import tempfile
+
 from PyQt6.QtWidgets import QApplication
+
+_ARROW_DIR = os.path.join(tempfile.gettempdir(), "wol_modern_arrows")
+
+
+def _arrow_url(direction: str, color: str) -> str:
+    """Return a file URL of a chevron SVG for spinbox/combobox arrows.
+
+    Qt6 does not render the CSS border-triangle trick for
+    ``QSpinBox::up-arrow`` / ``QComboBox::down-arrow`` (it shows a
+    filled rectangle instead), so the arrows are drawn as small SVG
+    chevrons that the QSS references via ``image: url(...)``.
+    The PyQt6 venv ships qsvg.dll, so SVG images work in QSS.
+    """
+    os.makedirs(_ARROW_DIR, exist_ok=True)
+    path = os.path.join(_ARROW_DIR, f"{direction}_{color.lstrip('#')}.svg")
+    if not os.path.exists(path):
+        if direction == "up":
+            d = "M2 6.5 L5 3.5 L8 6.5"
+        else:
+            d = "M2 3.5 L5 6.5 L8 3.5"
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+            f'<path d="{d}" fill="none" stroke="{color}" stroke-width="1.6" '
+            'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        )
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(svg)
+    # Forward slashes: backslashes are escape characters inside QSS url()
+    # strings, while Qt on Windows accepts '/' in file paths.
+    return path.replace("\\", "/")
+
 
 # ── Dark tokens (prototype) ──────────────────────────────────────────────
 DARK = {
@@ -206,9 +240,24 @@ QLineEdit, QComboBox, QSpinBox {{
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border-color: {t['accent']}; }}
 QLineEdit{{ placeholder-text-color: {t['text_dim']}; }}
-QComboBox::drop-down {{ border: none; width: 24px; }}
+/* ComboBox: no visible border around the drop-down zone, chevron on the
+   right (Qt6 needs an image for ::down-arrow — border-triangles render as
+   rectangles). */
+QComboBox::drop-down {{
+    subcontrol-origin: padding; subcontrol-position: top right;
+    border: none; width: 24px;
+}}
+QComboBox::down-arrow {{
+    width: 10px; height: 10px;
+    image: url("{_arrow_url('down', t['text_dim'])}");
+}}
+QComboBox:focus {{
+    border-color: {t['accent']};
+}}
 
-/* SpinBox up/down buttons (custom QSS hides the native arrows otherwise) */
+/* SpinBox up/down buttons (custom QSS hides the native arrows otherwise).
+   Arrows are chevron SVGs referenced via image — the border-triangle trick
+   renders as a rectangle under Qt6. */
 QSpinBox::up-button {{
     subcontrol-origin: border; subcontrol-position: top right;
     width: 20px; border-left: 1px solid {t['border']};
@@ -223,17 +272,12 @@ QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
     background: {t['surface_hover']};
 }}
 QSpinBox::up-arrow {{
-    width: 0; height: 0;
-    border-left: 5px solid transparent; border-right: 5px solid transparent;
-    border-bottom: 6px solid {t['text_dim']};
+    width: 10px; height: 10px;
+    image: url("{_arrow_url('up', t['text_dim'])}");
 }}
 QSpinBox::down-arrow {{
-    width: 0; height: 0;
-    border-left: 5px solid transparent; border-right: 5px solid transparent;
-    border-top: 6px solid {t['text_dim']};
-}}
-QSpinBox::up-arrow:hover, QSpinBox::down-arrow:hover {{
-    border-bottom-color: {t['accent']}; border-top-color: {t['accent']};
+    width: 10px; height: 10px;
+    image: url("{_arrow_url('down', t['text_dim'])}");
 }}
 QComboBox QAbstractItemView {{
     background: {t['surface']}; border: 1px solid {t['border']};

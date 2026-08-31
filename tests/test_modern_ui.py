@@ -71,16 +71,17 @@ class TestModernMainWindow:
         assert len(rows) == 1
         assert rows[0].title.text() == "Workstation"
 
-    def test_device_row_status_tile(self, qapp, config):
+    def test_device_row_status_dot(self, qapp, config):
         from wol_app.views.manage_view import ManageView
 
         view = ManageView(config)
         row = view._device_rows()[0]
         row.set_status("online")
-        assert row.badge.objectName() == "badgeOnline"
-        assert row.badge.text() == Translations.tr("status.online")
+        assert row.dot.objectName() == "dotOnline"
         row.set_status("offline")
-        assert row.badge.objectName() == "badgeOffline"
+        assert row.dot.objectName() == "dotOffline"
+        row.set_status("unknown")
+        assert row.dot.objectName() == "dotUnknown"
 
     def test_retranslate_does_not_raise(self, qapp, config):
         from wol_app.modern_main_window import ModernMainWindow

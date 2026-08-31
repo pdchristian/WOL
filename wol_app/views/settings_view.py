@@ -50,7 +50,7 @@ from wol_app.config import (
 )
 from wol_app.settings_dialog import _validate_broadcast_ip, _validate_port
 from wol_app.translations import Translations
-from wol_app.widgets.toggle_switch import ToggleSwitch
+from wol_app.widgets.toggle_switch import ToggleWithLabel
 
 
 def _label(key: str) -> str:

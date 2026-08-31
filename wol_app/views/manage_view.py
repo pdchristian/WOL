@@ -20,7 +20,6 @@ from typing import Any
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -42,6 +41,7 @@ from wol_app.network_scanner import (
 )
 from wol_app.scan_worker import ScanWorker
 from wol_app.translations import Translations
+from wol_app.widgets.toggle_switch import ToggleWithLabel
 from wol_app.wol_engine import WOLEngine
 
 # Fixed height of one device / scan result row (px)
@@ -258,10 +258,10 @@ class ManageView(QWidget):
         self.scan_heading.setObjectName("sectionHeading")
         layout.addWidget(self.scan_heading)
 
-        # Interface checkboxes stacked vertically (dummy APIPA/virtual ranges hidden)
+        # Interface toggles stacked vertically (dummy APIPA/virtual ranges hidden)
         iface_col = QVBoxLayout()
         iface_col.setSpacing(6)
-        self.iface_checkboxes: list[QCheckBox] = []
+        self.iface_checkboxes: list[ToggleWithLabel] = []
         self._ifaces: list[dict] = [
             iface for iface in get_local_interfaces()
             if is_real_interface(iface["ip"])
@@ -271,8 +271,7 @@ class ManageView(QWidget):
             label_text = f"{iface['ip']} / {iface['netmask']}"
             if dns_servers:
                 label_text += f"  |  {Translations.tr('scan_dialog.dns_server', dns=dns_servers[0])}"
-            cb = QCheckBox(label_text)
-            cb.setChecked(idx == 0)  # First interface selected by default
+            cb = ToggleWithLabel(label_text, checked=idx == 0)
             self.iface_checkboxes.append(cb)
             iface_col.addWidget(cb)
 
