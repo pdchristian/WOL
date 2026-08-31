@@ -27,6 +27,7 @@ DARK = {
     "offline": "#ef4444",
     "unknown": "#f59e0b",
     "danger": "#e0485a",
+    "blue": "#60a5fa",
 }
 
 # ── Light variant (same structure, light surfaces) ───────────────────────
@@ -44,6 +45,7 @@ LIGHT = {
     "offline": "#dc2626",
     "unknown": "#d97706",
     "danger": "#dc2637",
+    "blue": "#2563eb",
 }
 
 
@@ -112,6 +114,14 @@ QPushButton#wakeButton {{
     padding: 5px 12px; font-size: 12px;
 }}
 QPushButton#wakeButton:hover {{ background: {t['accent']}; color: {t['accent_text']}; }}
+/* Card action button while the device is online (prototype .btn.danger) */
+QPushButton#shutdownButton {{
+    background: transparent; color: {t['danger']};
+    border: 1px solid {t['danger']}; border-radius: 8px;
+    padding: 5px 12px; font-size: 12px;
+}}
+QPushButton#shutdownButton:hover {{ background: {t['danger']}; color: #ffffff; }}
+QPushButton#shutdownButton:disabled {{ color: {t['text_dim']}; border-color: {t['border']}; }}
 QPushButton#iconBtn {{
     background: transparent; border: none; padding: 4px 8px;
     font-size: 14px; border-radius: 8px;
@@ -123,8 +133,17 @@ QPushButton#iconBtn:hover {{ background: {t['surface_hover']}; }}
     background: {t['surface']};
     border: 1px solid {t['border']}; border-radius: 14px;
 }}
-#scanRow, #deviceRow {{ background: transparent; }}
-#scanRow:hover, #deviceRow:hover {{ background: {t['surface_hover']}; }}
+#deviceGrid {{ background: transparent; }}
+/* Device status cards (prototype .card): surface tile, accent hover border */
+#deviceCard {{
+    background: {t['surface']};
+    border: 1px solid {t['border']}; border-radius: 14px;
+}}
+#deviceCard:hover {{
+    background: {t['surface_hover']}; border-color: {t['accent']};
+}}
+#scanRow, #deviceRow, #scheduleRow, #logRow {{ background: transparent; }}
+#scanRow:hover, #deviceRow:hover, #scheduleRow:hover, #logRow:hover {{ background: {t['surface_hover']}; }}
 #rowSeparator {{ background: {t['border']}; max-height: 1px; border: none; }}
 #rowTitle {{ color: {t['text']}; font-size: 14px; font-weight: 600; }}
 #rowTitleDisabled {{ color: {t['text_dim']}; font-size: 14px; font-weight: 600; }}
@@ -140,6 +159,20 @@ QPushButton#iconBtn:hover {{ background: {t['surface_hover']}; }}
 #badgeOnline {{ background: rgba(34, 197, 94, 0.15); color: {t['online']}; }}
 #badgeOffline {{ background: rgba(239, 68, 68, 0.15); color: {t['offline']}; }}
 #badgeUnknown {{ background: rgba(245, 158, 11, 0.15); color: {t['unknown']}; }}
+
+/* ── Log level badges (prototype .level) ─────────────────────────────── */
+#badgeInfo, #badgeWarn, #badgeError {{
+    border-radius: 6px; padding: 0 8px;
+    font-size: 11px; font-weight: 700;
+}}
+#badgeInfo {{ background: rgba(59, 130, 246, 0.15); color: {t['blue']}; }}
+#badgeWarn {{ background: rgba(245, 158, 11, 0.15); color: {t['unknown']}; }}
+#badgeError {{ background: rgba(239, 68, 68, 0.15); color: {t['offline']}; }}
+#logTime {{
+    color: {t['text_dim']}; font-family: Consolas, monospace; font-size: 12px;
+}}
+#logDevice {{ color: {t['text_dim']}; font-size: 13px; }}
+#logMsg {{ color: {t['text']}; font-size: 13px; }}
 
 /* ── Action tiles (edit / delete) ────────────────────────────────────── */
 QPushButton#tileButton, QPushButton#tileDanger {{
@@ -162,6 +195,10 @@ QPushButton#tileDanger:hover {{
 #dotUnknown {{ background: {t['unknown']}; border-radius: 5px; max-width: 10px; max-height: 10px; }}
 
 /* ── Inputs ──────────────────────────────────────────────────────────── */
+#fieldLabel {{
+    color: {t['text_dim']}; font-size: 12px;
+}}
+#fieldHint {{ color: {t['text_dim']}; font-size: 12px; }}
 QLineEdit, QComboBox, QSpinBox {{
     background: {t['surface']}; color: {t['text']};
     border: 1px solid {t['border']}; border-radius: 10px;
@@ -252,9 +289,33 @@ QMenu::item:selected {{ background: {t['surface_hover']}; color: {t['accent']}; 
 /* ── Placeholder screens ─────────────────────────────────────────────── */
 #placeholderIcon {{ font-size: 42px; }}
 #placeholderText {{ color: {t['text_dim']}; font-size: 14px; }}
+
+/* ── About / update screen (prototype .about) ────────────────────────── */
+#aboutLogo {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {t['accent']}, stop:1 {t['accent_dark']});
+    color: #ffffff; font-weight: 700; font-size: 38px;
+    border-radius: 20px;
+}}
+#aboutTitle {{ color: {t['text']}; font-size: 24px; font-weight: 600; }}
+#aboutVersion {{ color: {t['text_dim']}; font-size: 14px; }}
+#aboutText {{ color: {t['text_dim']}; font-size: 13px; }}
+#updateStatus {{ color: {t['text_dim']}; font-size: 13px; }}
 """
 
 
 def apply_modern_theme(app: QApplication, dark: bool) -> None:
     """Apply the modern control-center stylesheet to the application."""
-    app.setStyleSheet(modern_stylesheet(DARK if dark else LIGHT))
+    global _current_tokens
+    _current_tokens = DARK if dark else LIGHT
+    app.setStyleSheet(modern_stylesheet(_current_tokens))
+
+
+# Token set of the most recently applied modern theme; custom-painted
+# widgets (e.g. ToggleSwitch) read their colors from here.
+_current_tokens: dict = DARK
+
+
+def current_tokens() -> dict:
+    """Return the color tokens of the currently applied modern theme."""
+    return _current_tokens

@@ -3,8 +3,8 @@
 Layout (top to bottom):
 
 1. Section "Geräte-Verwaltung": toolbar (add / import / export / search)
-   and a panel of fixed-height device rows: name, mono "IP · MAC", a
-   status tile (Online/Offline/Unbekannt) and edit/delete tile buttons.
+   and a panel of fixed-height device rows: colored status dot, name,
+   mono "IP · MAC" and edit/delete tile buttons.
    Scrolling happens via the page scrollbar, like the scan results.
 2. Section "Netzwerk-Scan": interface checkboxes stacked vertically +
    primary scan button, progress bar and a results panel whose rows show
@@ -38,6 +38,7 @@ from wol_app.main_window import HEADLESS_MODE, StatusWorker
 from wol_app.network_scanner import (
     get_dns_servers_for_interface,
     get_local_interfaces,
+    is_real_interface,
 )
 from wol_app.scan_worker import ScanWorker
 from wol_app.translations import Translations
@@ -91,7 +92,7 @@ class ScanResultRow(QWidget):
 
 
 class DeviceRow(QWidget):
-    """One configured device: name / mono IP · MAC · status tile · action tiles."""
+    """One configured device: dot · name / mono IP · MAC · action tiles."""
 
     edit_requested = pyqtSignal(str)
     delete_requested = pyqtSignal(str)
@@ -105,6 +106,11 @@ class DeviceRow(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(18, 10, 18, 10)
         layout.setSpacing(14)
+
+        # Colored status dot (same look as the scan result rows)
+        self.dot = QLabel()
+        self.dot.setFixedSize(10, 10)
+        layout.addWidget(self.dot, 0, Qt.AlignmentFlag.AlignVCenter)
 
         info = QVBoxLayout()
         info.setSpacing(2)
@@ -123,11 +129,6 @@ class DeviceRow(QWidget):
 
         layout.addStretch()
 
-        # Status tile (Online/Offline/Unbekannt) — pill approx. 20 px high, vertically centered
-        self.badge = QLabel()
-        self.badge.setFixedHeight(20)
-        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
         self.set_status(status)
 
         # Action tiles — exactly 36 px, icon vertically centered.
@@ -149,15 +150,15 @@ class DeviceRow(QWidget):
         layout.addWidget(self.delete_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
     def set_status(self, status: str) -> None:
-        """Update the status tile text and color (objectName selects the style)."""
-        self.badge.setText(Translations.tr(f"status.{status}"))
-        new_name = {"online": "badgeOnline", "offline": "badgeOffline"}.get(status, "badgeUnknown")
-        if self.badge.objectName() != new_name:
-            self.badge.setObjectName(new_name)
+        """Update the color of the status dot (objectName selects the style)."""
+        self.dot.setToolTip(Translations.tr(f"status.{status}"))
+        new_name = {"online": "dotOnline", "offline": "dotOffline"}.get(status, "dotUnknown")
+        if self.dot.objectName() != new_name:
+            self.dot.setObjectName(new_name)
             # Re-polish so the stylesheet rule for the new object name applies
-            style = self.badge.style()
-            style.unpolish(self.badge)
-            style.polish(self.badge)
+            style = self.dot.style()
+            style.unpolish(self.dot)
+            style.polish(self.dot)
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         self.edit_requested.emit(self.device_id)
@@ -263,7 +264,7 @@ class ManageView(QWidget):
         self.iface_checkboxes: list[QCheckBox] = []
         self._ifaces: list[dict] = [
             iface for iface in get_local_interfaces()
-            if not (iface["ip"].startswith("169.") or iface["ip"].startswith("172."))
+            if is_real_interface(iface["ip"])
         ]
         for idx, iface in enumerate(self._ifaces):
             dns_servers = get_dns_servers_for_interface(iface["ip"])

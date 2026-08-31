@@ -2,9 +2,10 @@
 
 Sidebar-based layout mirroring Design_Prototpye/dark_control_center_full.html:
 Geräte / Verwalten / Zeitplan / Protokolle + application footer (settings,
-update check, about, quit). Feature-identical to the classic ``MainWindow``;
-in this iteration only "Verwalten" is a native screen — the other areas
-reuse the existing dialogs (schedule manager, logs) or show placeholders.
+about, quit). Feature-identical to the classic ``MainWindow``; in this
+iteration "Verwalten", "Zeitplan", "Protokolle", "Einstellungen" and
+"Über" (incl. the update check) are native screens — the remaining areas
+reuse the existing dialogs or show placeholders.
 
 The window is selected at startup via ``ui.layout_mode`` (installer choice /
 settings dialog); see :func:`wol_app.main_window.main`.
@@ -16,7 +17,6 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication,
-    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -28,21 +28,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wol_app import __version__
 from wol_app.config import ConfigManager
-from wol_app.log_dialog import LogDialog
+from wol_app.main_window import HEADLESS_MODE
 from wol_app.modern_theme import DARK, LIGHT, apply_modern_theme
-from wol_app.schedule_dialog import ScheduleDialog
-from wol_app.settings_dialog import SettingsDialog
+from wol_app.schedule_runner import dispatch_schedule_action
 from wol_app.translations import Translations
-from wol_app.update_dialog import (
-    UpdateAvailableDialog,
-    UpdateErrorDialog,
-    UpdateInfoDialog,
-)
-from wol_app.updater import check_for_updates_sync
 from wol_app.utils import get_resource_path
+from wol_app.views.devices_view import DevicesView
+from wol_app.views.logs_view import LogsView
 from wol_app.views.manage_view import ManageView
+from wol_app.views.schedule_view import ScheduleView
+from wol_app.views.settings_view import SettingsView
+from wol_app.views.update_view import UpdateView
+from wol_app.wol_engine import WOLEngine
 
 
 def nav_text(icon: str, key: str) -> str:
@@ -50,41 +48,14 @@ def nav_text(icon: str, key: str) -> str:
     return f"{icon}  {Translations.tr(key).replace('&', '')}"
 
 
-class PlaceholderPage(QWidget):
-    """Simple centered placeholder screen for not-yet-modernized areas."""
+# Stack index of the native settings screen (after devices/manage/schedule/logs).
+SETTINGS_NAV_INDEX = 4
 
-    def __init__(self, icon: str, title_key: str, desc_key: str, parent=None) -> None:
-        super().__init__(parent)
-        self.icon = icon
-        self.title_key = title_key
-        self.desc_key = desc_key
+# Stack index of the native "Über" screen (about + update check).
+UPDATE_NAV_INDEX = 5
 
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(10)
 
-        self.icon_label = QLabel(icon)
-        self.icon_label.setObjectName("placeholderIcon")
-        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_label = QLabel()
-        self.title_label.setObjectName("pageTitle")
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.desc_label = QLabel()
-        self.desc_label.setObjectName("placeholderText")
-        self.desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.desc_label.setWordWrap(True)
-        self.hint_label = QLabel(Translations.tr("modern.placeholder.hint"))
-        self.hint_label.setObjectName("placeholderText")
-        self.hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        for w in (self.icon_label, self.title_label, self.desc_label, self.hint_label):
-            layout.addWidget(w)
-        self.retranslate()
-
-    def retranslate(self) -> None:
-        self.title_label.setText(Translations.tr(self.title_key))
-        self.desc_label.setText(Translations.tr(self.desc_key))
-        self.hint_label.setText(Translations.tr("modern.placeholder.hint"))
 
 
 class ModernMainWindow(QMainWindow):
@@ -95,13 +66,20 @@ class ModernMainWindow(QMainWindow):
         self.config: Any = config_manager
         self.dark_mode = dark_mode
         self._tokens = DARK if dark_mode else LIGHT
-        self._update_check_running = False
 
         self.setWindowTitle(Translations.tr("app.name"))
         self.resize(1180, 740)
 
+        # Scheduler engine (wake/shutdown for fired schedule entries)
+        self.engine: WOLEngine = WOLEngine(self.config)
+
         self._setup_ui()
         self._select_nav(0)
+
+        # Start the schedule engine (skip in headless mode)
+        if not HEADLESS_MODE:
+            self.engine.schedule_fired.connect(self._on_schedule_fired)
+            self.engine.start_scheduler()
 
     # ── UI construction ──────────────────────────────────────────────────
 
@@ -119,18 +97,29 @@ class ModernMainWindow(QMainWindow):
         self.stack = QStackedWidget()
         root.addWidget(self.stack, 1)
 
+        self.devices_view = DevicesView(self.config)
         self.manage_view = ManageView(self.config)
-        self.devices_page = PlaceholderPage(
-            "💻", "modern.nav.devices", "modern.placeholder.devices")
-        self.schedule_page = PlaceholderPage(
-            "🕒", "modern.nav.schedule", "modern.placeholder.schedule")
-        self.logs_page = PlaceholderPage(
-            "📋", "modern.nav.logs", "modern.placeholder.logs")
-        self.placeholder_pages = [self.devices_page, self.schedule_page, self.logs_page]
-        self.stack.addWidget(self.devices_page)   # index 0
+        self.schedule_view = ScheduleView(self.config)
+        self.logs_view = LogsView(self.config)
+        self.settings_view = SettingsView(self.config)
+        self.settings_view.settings_saved.connect(self._on_settings_saved)
+        self.update_view = UpdateView(self.config)
+        self.stack.addWidget(self.devices_view)   # index 0
         self.stack.addWidget(self.manage_view)    # index 1
-        self.stack.addWidget(self.schedule_page)  # index 2
-        self.stack.addWidget(self.logs_page)      # index 3
+        self.stack.addWidget(self.schedule_view)  # index 2
+        self.stack.addWidget(self.logs_view)      # index 3
+        self.stack.addWidget(self.settings_view)  # index 4
+        self.stack.addWidget(self.update_view)    # index 5
+
+        # Keep the device lists of both areas in sync
+        self.manage_view.devices_changed.connect(self._on_devices_changed)
+        self.devices_view.devices_changed.connect(self._on_devices_changed)
+
+    def _on_devices_changed(self) -> None:
+        """A device was added/edited/removed in either area — refresh both."""
+        self.devices_view.refresh_devices()
+        self.devices_view.refresh_statuses()
+        self.manage_view._refresh_device_list()
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -187,12 +176,18 @@ class ModernMainWindow(QMainWindow):
         lbl_app.setObjectName("sectionLabel")
         layout.addWidget(lbl_app)
 
-        self.settings_btn = self._nav_action("⚙", "menu.tools.settings", self._open_settings)
-        self.update_btn = self._nav_action("🔄", "menu.tools.update", self._manual_update_check)
-        self.about_btn = self._nav_action("ℹ", "menu.help.about", self._show_about)
+        self.settings_btn = self._nav_action(
+            "⚙", "menu.tools.settings",
+            lambda: self._select_nav(SETTINGS_NAV_INDEX, self.settings_btn))
+        self.settings_btn.setCheckable(True)
+        # The native update/about screen is opened via "Über"; the update
+        # check itself is the primary button on that screen.
+        self.about_btn = self._nav_action(
+            "ℹ", "menu.help.about",
+            lambda: self._select_nav(UPDATE_NAV_INDEX, self.about_btn))
+        self.about_btn.setCheckable(True)
         self.quit_btn = self._nav_action("⏻", "menu.file.exit", self.close)
         layout.addWidget(self.settings_btn)
-        layout.addWidget(self.update_btn)
         layout.addWidget(self.about_btn)
         layout.addWidget(self.quit_btn)
         return sidebar
@@ -206,74 +201,49 @@ class ModernMainWindow(QMainWindow):
 
     # ── Navigation ───────────────────────────────────────────────────────
 
-    def _select_nav(self, index: int) -> None:
-        # Zeitplan/Protokolle sind in dieser Iteration Dialoge (Platzhalter-Seiten bleiben wählbar)
+    def _select_nav(self, index: int, trigger: QPushButton | None = None) -> None:
         self.stack.setCurrentIndex(index)
         for i, btn in enumerate(self.nav_buttons):
             btn.setChecked(i == index)
-        if index == 2:
-            self._open_schedule_manager()
-        elif index == 3:
-            self._open_logs()
+        # The footer entries (settings / about) participate in the same
+        # exclusive checked state as the area buttons.
+        self.settings_btn.setChecked(trigger is self.settings_btn)
+        self.about_btn.setChecked(trigger is self.about_btn)
 
     # ── Application actions (reuse classic dialogs) ──────────────────────
 
-    def _open_settings(self) -> None:
-        dialog: SettingsDialog[ConfigManager] = SettingsDialog(self.config, parent=self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            # The settings dialog applies the classic stylesheet; restore the
-            # modern theme (respecting a possibly changed display mode).
-            from wol_app.theme import _system_uses_dark
+    def _on_settings_saved(self) -> None:
+        """React to a save/reset on the native settings screen.
 
-            display_mode = self.config.config.get("ui", {}).get("display_mode", "auto")
-            self.dark_mode = display_mode == "dark" or (
-                display_mode == "auto" and _system_uses_dark()
+        Re-apply the modern theme (the display mode may have changed) and
+        refresh every screen (the language may have changed).
+        """
+        from wol_app.theme import _system_uses_dark
+
+        display_mode = self.config.config.get("ui", {}).get("display_mode", "auto")
+        self.dark_mode = display_mode == "dark" or (
+            display_mode == "auto" and _system_uses_dark()
+        )
+        self._tokens = DARK if self.dark_mode else LIGHT
+        app = QApplication.instance()
+        if app is not None:
+            apply_modern_theme(app, self.dark_mode)
+        if self.settings_view.restart_required:
+            QMessageBox.information(
+                self,
+                Translations.tr("app.name"),
+                Translations.tr("settings.restart_required"),
             )
-            self._tokens = DARK if self.dark_mode else LIGHT
-            app = QApplication.instance()
-            if app is not None:
-                apply_modern_theme(app, self.dark_mode)
-            if dialog.restart_required:
-                QMessageBox.information(
-                    self,
-                    Translations.tr("app.name"),
-                    Translations.tr("settings.restart_required"),
-                )
-            self._retranslate()
+        self._retranslate()
 
-    def _open_schedule_manager(self) -> None:
-        dialog: ScheduleDialog[ConfigManager] = ScheduleDialog(self.config, parent=self)
-        dialog.exec()
+    def _on_schedule_fired(self, device_id: str, action: str) -> None:
+        """Dispatch a fired schedule entry (wake / shutdown).
 
-    def _open_logs(self) -> None:
-        dialog: LogDialog[ConfigManager] = LogDialog(self.config, parent=self)
-        dialog.exec()
-
-    def _manual_update_check(self) -> None:
-        if self._update_check_running:
-            return
-        self._update_check_running = True
-        try:
-            result = check_for_updates_sync(current_version=__version__)
-        finally:
-            self._update_check_running = False
-
-        if result is None:
-            UpdateErrorDialog(self).exec()
-            return
-        release_info, has_update = result
-        if has_update and release_info:
-            UpdateAvailableDialog(release_info, __version__, self).exec()
-        else:
-            UpdateInfoDialog(self).exec()
-
-    def _show_about(self) -> None:
-        QMessageBox.about(
-            self, Translations.tr("dialog.about.title"),
-            "<h3>Wake-on-LAN Manager</h3>"
-            f"<p>{Translations.tr('dialog.about.version')} {__version__}</p>"
-            f"<p>{Translations.tr('dialog.about.description')}</p>"
-            f"<p>{Translations.tr('dialog.about.supports')}</p>",
+        Shares the logic with the classic layout via schedule_runner.
+        """
+        dispatch_schedule_action(
+            self.config, self.engine, device_id, action,
+            lambda msg, _ms: None,  # no status bar in the modern layout
         )
 
     # ── Language / theme ─────────────────────────────────────────────────
@@ -291,18 +261,23 @@ class ModernMainWindow(QMainWindow):
         for btn, (icon, key) in zip(self.nav_buttons, nav_defs, strict=True):
             btn.setText(nav_text(icon, key))
         self.settings_btn.setText(nav_text("⚙", "menu.tools.settings"))
-        self.update_btn.setText(nav_text("🔄", "menu.tools.update"))
         self.about_btn.setText(nav_text("ℹ", "menu.help.about"))
         self.quit_btn.setText(nav_text("⏻", "menu.file.exit"))
 
+        self.devices_view.retranslate()
         self.manage_view.retranslate()
-        for page in self.placeholder_pages:
-            page.retranslate()
+        self.schedule_view.retranslate()
+        self.logs_view.retranslate()
+        self.settings_view.retranslate()
+        self.update_view.retranslate()
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        self.devices_view.cancel_workers()
         self.manage_view.cancel_workers()
+        self.update_view.cancel_checks()
+        self.engine.stop_scheduler()
         event.accept()
 
 

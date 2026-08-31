@@ -1,7 +1,6 @@
 """Main Window for Wake-on-LAN Application."""
 
 import os
-import subprocess
 import sys
 from datetime import datetime
 from typing import Any, Literal, NoReturn
@@ -23,24 +22,21 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from wol_app import __version__
-from wol_app.config import (
-    REMOTE_DESKTOP_AUTO_FRACTION,
-    REMOTE_DESKTOP_RESOLUTION_AUTO,
-    ConfigManager,
-)
+from wol_app.config import ConfigManager
 from wol_app.device_dialog import DeviceManagerDialog
-from wol_app.host_service_client import send_host_command
 from wol_app.log_dialog import LogDialog
 from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.network_scanner import get_local_ips
+from wol_app.remote_desktop import start_remote_desktop
 from wol_app.schedule_dialog import ScheduleDialog
+from wol_app.schedule_runner import dispatch_schedule_action
 from wol_app.settings_dialog import SettingsDialog
+from wol_app.shutdown_flow import confirm_shutdown
 from wol_app.theme import _system_uses_dark, apply_display_mode
 from wol_app.translations import Translations
 from wol_app.update_dialog import (
@@ -49,12 +45,7 @@ from wol_app.update_dialog import (
     UpdateInfoDialog,
 )
 from wol_app.updater import UpdateChecker, check_for_updates_sync
-from wol_app.utils import (
-    auto_rdp_resolution,
-    get_ip_key,
-    get_resource_path,
-    launch_remote_desktop,
-)
+from wol_app.utils import get_ip_key, get_resource_path
 from wol_app.wol_engine import WOLEngine
 
 # Module-level registry to hold thread references until native threads truly finish
@@ -734,282 +725,31 @@ class MainWindow(QMainWindow):
     def _remote_desktop_selected(self, fullscreen: bool) -> None:
         """Start a Remote Desktop session for the selected device.
 
-        Uses the device's IP address, username and password. *fullscreen*
-        selects full-screen mode (True) or a window of the
-        user-configured resolution (False).
+        The shared flow lives in :mod:`wol_app.remote_desktop` and is also
+        used by the modern layout.
         """
         device = self._get_selected_device()
         if device is None:
             QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device.message"))
             return
 
-        device_name = device.get("name", "")
-        device_ip = device.get("ip", "")
-
-        if not device_ip:
-            QMessageBox.warning(self, Translations.tr("dialog.no_ip.title"), Translations.tr("dialog.no_ip.message", name=device_name))
-            return
-
-        username: str = device.get("username", "") or ""
-        password: str = device.get("password", "") or ""
-
-        width: int = 1920
-        height: int = 1080
-        if not fullscreen:
-            resolution = self.config.get_remote_desktop_resolution()
-            if resolution == REMOTE_DESKTOP_RESOLUTION_AUTO:
-                # "Optimized 16:9": size the window from the primary screen's
-                # current resolution (physical pixels) so it fits without scroll.
-                # QScreen.size() returns *logical* pixels, which are DPI-scaled
-                # (e.g. 2048x1152 at 125% on a 2560x1440 display). Multiply by
-                # devicePixelRatio() to recover the physical resolution.
-                screen = QApplication.primaryScreen()
-                if screen is not None:
-                    scale = screen.devicePixelRatio()
-                    size = screen.size()
-                    width, height = auto_rdp_resolution(
-                        round(size.width() * scale),
-                        round(size.height() * scale),
-                        fraction=REMOTE_DESKTOP_AUTO_FRACTION,
-                    )
-            else:
-                try:
-                    w, h = resolution.split("x")
-                    width, height = int(w), int(h)
-                except (ValueError, AttributeError):
-                    pass  # keep 1920x1080 fallback
-
-        try:
-            launch_remote_desktop(
-                ip=device_ip,
-                username=username,
-                password=password,
-                fullscreen=fullscreen,
-                width=width,
-                height=height,
-                device_name=device_name,
-            )
-        except Exception:
-            QMessageBox.critical(self, Translations.tr("dialog.remote_desktop_error.title"), Translations.tr("dialog.remote_desktop_error.message"))
+        start_remote_desktop(self, self.config, device, fullscreen)
 
     def _shutdown_selected(self) -> None:
-        """Show shutdown confirmation dialog for the selected device."""
+        """Show shutdown confirmation dialog for the selected device.
+
+        The shared confirmation + execution flow lives in
+        :mod:`wol_app.shutdown_flow` and is also used by the modern layout.
+        """
         device = self._get_selected_device()
         if device is None:
             QMessageBox.information(self, Translations.tr("dialog.select_device.title"), Translations.tr("dialog.select_device_shutdown.message"))
             return
 
-        device_name = device.get("name", "")
-        device_ip = device.get("ip", "")
-
-        if not device_ip:
-            QMessageBox.warning(self, Translations.tr("dialog.no_ip.title"), Translations.tr("dialog.no_ip.message", name=device_name))
-            return
-
-        # Determine the shutdown method for this device
-        method = self.config.get_device_shutdown_method(device)
-
-        # Build confirmation dialog
-        dialog = QDialog(self)
-        dialog.setWindowTitle(Translations.tr("dialog.shutdown_confirm.title", name=device_name))
-        dialog.setMinimumWidth(450)
-        layout = QVBoxLayout(dialog)
-
-        label1 = QLabel(Translations.tr("dialog.shutdown_confirm.label1", name=device_name))
-        layout.addWidget(label1)
-
-        label2 = QLabel(
-            Translations.tr("dialog.shutdown_confirm.label2")
+        confirm_shutdown(
+            self, self.config, device,
+            status_fn=lambda msg, _ms=0: self.statusBar().showMessage(msg),
         )
-        layout.addWidget(label2)
-
-        label3 = QLabel(Translations.tr("dialog.shutdown_confirm.label3"))
-        layout.addWidget(label3)
-
-        # Method-specific prerequisite hint
-        prereq_text = QTextEdit()
-        if method == "host_service":
-            prereq_text.setPlainText(
-                Translations.tr("dialog.shutdown_confirm.prereq_host_service")
-            )
-        else:
-            prereq_text.setPlainText(
-                "- [HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Policies\\\\System]\n"
-                "  \"LocalAccountTokenFilterPolicy\"=dword:00000001\n"
-                "\n"
-                "- " + Translations.tr("dialog.shutdown_confirm.sharing_activated")
-            )
-        prereq_text.setReadOnly(True)
-        prereq_text.setMaximumHeight(90)
-        layout.addWidget(prereq_text)
-
-        # Buttons
-        button_layout = QHBoxLayout()
-        cancel_btn = QPushButton(Translations.tr("button.cancel"))
-        cancel_btn.clicked.connect(dialog.reject)
-        shutdown_confirm_btn = QPushButton(Translations.tr("button.shutdown_confirm"))
-        shutdown_confirm_btn.setObjectName("primaryButton")
-        shutdown_confirm_btn.clicked.connect(lambda: self._execute_shutdown(device, dialog))
-        button_layout.addWidget(cancel_btn)
-        button_layout.addWidget(shutdown_confirm_btn)
-        layout.addLayout(button_layout)
-
-        dialog.exec()
-
-    def _execute_host_service_shutdown(
-        self, device_name: str, device_ip: str, username: str, password: str
-    ) -> None:
-        """Shut down a device via the WOL Host Service (TCP port 8765)."""
-        if not username or not password:
-            self.config.add_log(device_name, "SHUTDOWN", "ERROR", "Missing credentials for host service")
-            QMessageBox.warning(
-                self,
-                Translations.tr("dialog.host_service_missing_creds.title"),
-                Translations.tr("dialog.host_service_missing_creds.message", name=device_name),
-            )
-            return
-
-        self.statusBar().showMessage(Translations.tr("status.host_service_sending", name=device_name))
-        QApplication.processEvents()
-
-        success, message = send_host_command(device_ip, "shutdown", username, password)
-
-        if success:
-            self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", f"Host service: {message}")
-            QMessageBox.information(
-                self,
-                Translations.tr("dialog.shutdown_successful.title"),
-                Translations.tr("dialog.shutdown_successful.message", name=device_name, ip=device_ip),
-            )
-            self.statusBar().showMessage(Translations.tr("status.shutdown_success", name=device_name))
-        else:
-            self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Host service: {message}")
-            # Distinguish authentication failures from connectivity problems
-            if "Authentication failed" in message:
-                QMessageBox.critical(
-                    self,
-                    Translations.tr("dialog.host_service_auth_failed.title"),
-                    Translations.tr("dialog.host_service_auth_failed.message", name=device_name, ip=device_ip, error=message),
-                )
-            else:
-                QMessageBox.critical(
-                    self,
-                    Translations.tr("dialog.host_service_error.title"),
-                    Translations.tr("dialog.host_service_error.message", name=device_name, ip=device_ip, error=message),
-                )
-            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
-
-    def _execute_shutdown(self, device, dialog):
-        """Execute the remote shutdown sequence for a device."""
-        dialog.accept()  # Close the confirmation dialog
-
-        device_name = device.get("name", "")
-        device_ip = device.get("ip", "")
-        username = device.get("username", "")
-        password = device.get("password", "")
-
-        # Dispatch on the device's shutdown method
-        method = self.config.get_device_shutdown_method(device)
-        if method == "host_service":
-            self._execute_host_service_shutdown(device_name, device_ip, username, password)
-            return
-
-        self.statusBar().showMessage(Translations.tr("status.shutting_down", name=device_name))
-        QApplication.processEvents()
-
-        # Step 1: Connect to remote IPC$
-        if username:
-            # Delete any existing connection first
-            delete_cmd: str = f'net use \\\\{device_ip} /delete /y'
-            self.statusBar().showMessage(Translations.tr("status.deleting_connection", name=device_name))
-            QApplication.processEvents()
-            try:
-                subprocess.run(
-                    delete_cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=15
-                )
-            except Exception:
-                pass  # Ignore errors from delete — connection may not exist yet
-
-            # Connect with username and password
-            cmd: str = f'net use \\\\{device_ip}\\IPC$ /user:{username} {password}'
-            self.statusBar().showMessage(Translations.tr("status.connecting", name=device_name, ip=device_ip))
-            QApplication.processEvents()
-        else:
-            # Connect without credentials
-            cmd: str = f'net use \\\\{device_ip}\\IPC$'
-            self.statusBar().showMessage(Translations.tr("status.connecting", name=device_name, ip=device_ip))
-            QApplication.processEvents()
-
-        try:
-            result: subprocess.CompletedProcess[str] = subprocess.run(
-                cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=30
-            )
-            if result.returncode != 0:
-                error_msg: str = result.stderr.strip() or result.stdout.strip()
-                self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Connection failed: {error_msg}")
-                QMessageBox.critical(
-                    self, Translations.tr("dialog.connection_failed.title"),
-                    Translations.tr("dialog.connection_failed.message", name=device_name, ip=device_ip, error=error_msg)
-                )
-                self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
-                return
-        except subprocess.TimeoutExpired:
-            self.config.add_log(device_name, "SHUTDOWN", "ERROR", "Connection timed out")
-            QMessageBox.critical(
-                self, Translations.tr("dialog.connection_timeout.title"),
-                Translations.tr("dialog.connection_timeout.message", name=device_name, ip=device_ip)
-            )
-            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
-            return
-        except Exception as e:
-            self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Connection error: {str(e)}")
-            QMessageBox.critical(
-                self, Translations.tr("dialog.connection_error.title"),
-                Translations.tr("dialog.connection_error.message", name=device_name, ip=device_ip, error=str(e))
-            )
-            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
-            return
-
-        # Step 2: Shutdown the remote PC
-        shutdown_cmd: str = f'shutdown /m \\\\{device_ip} /s /t 0 /f'
-        self.statusBar().showMessage(Translations.tr("status.shutting_down_remote", name=device_name))
-        QApplication.processEvents()
-        try:
-            result: subprocess.CompletedProcess[str] = subprocess.run(
-                shutdown_cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=30
-            )
-            if result.returncode != 0:
-                error_msg: str = result.stderr.strip() or result.stdout.strip()
-                self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Shutdown failed: {error_msg}")
-                QMessageBox.critical(
-                    self, Translations.tr("dialog.shutdown_failed.title"),
-                    Translations.tr("dialog.shutdown_failed.message", name=device_name, ip=device_ip, error=error_msg)
-                )
-                self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
-                return
-        except subprocess.TimeoutExpired:
-            self.config.add_log(device_name, "SHUTDOWN", "ERROR", "Shutdown command timed out")
-            QMessageBox.critical(
-                self, Translations.tr("dialog.shutdown_timeout.title"),
-                Translations.tr("dialog.shutdown_timeout.message", name=device_name, ip=device_ip)
-            )
-            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
-            return
-        except Exception as e:
-            self.config.add_log(device_name, "SHUTDOWN", "ERROR", f"Shutdown error: {str(e)}")
-            QMessageBox.critical(
-                self, Translations.tr("dialog.shutdown_error.title"),
-                Translations.tr("dialog.shutdown_error.message", name=device_name, ip=device_ip, error=str(e))
-            )
-            self.statusBar().showMessage(Translations.tr("status.shutdown_failed", name=device_name))
-            return
-
-        self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", "Shutdown initiated successfully")
-        QMessageBox.information(
-            self, Translations.tr("dialog.shutdown_successful.title"),
-            Translations.tr("dialog.shutdown_successful.message", name=device_name, ip=device_ip)
-        )
-        self.statusBar().showMessage(Translations.tr("status.shutdown_success", name=device_name))
 
     def _wake_all(self) -> None:
         """Wake all enabled devices."""
@@ -1038,106 +778,15 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(str, str)
     def _on_schedule_fired(self, device_id: str, action: str) -> None:
-        """Handle scheduled action trigger - dispatch to wake or shutdown."""
-        if action == "shutdown":
-            self._scheduled_shutdown(device_id)
-        else:
-            self.engine.send_wake_packet(device_id)
+        """Handle scheduled action trigger - dispatch to wake or shutdown.
 
-    def _scheduled_host_service_shutdown(self, device_name: str, ip: str, device: dict) -> None:
-        """Execute a scheduled shutdown via the WOL Host Service (no dialog)."""
-        username = device.get("username", "")
-        password = device.get("password", "")
-
-        if not username or not password:
-            msg = Translations.tr("status.scheduled_shutdown_fail", name=device_name, error=Translations.tr("status.scheduled_shutdown_missing_creds"))
-            self.statusBar().showMessage(msg, 5000)
-            self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
-            QApplication.processEvents()
-            return
-
-        try:
-            success, message = send_host_command(ip, "shutdown", username, password)
-            if success:
-                msg = Translations.tr("status.scheduled_shutdown_success", name=device_name)
-                self.statusBar().showMessage(msg, 5000)
-                self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", f"Host service: {message}")
-            else:
-                msg = Translations.tr("status.scheduled_shutdown_fail", name=device_name, error=message)
-                self.statusBar().showMessage(msg, 5000)
-                self.config.add_log(device_name, "SHUTDOWN", "FAILED", f"Host service: {message}")
-        except Exception as e:
-            msg = Translations.tr("status.scheduled_shutdown_error", name=device_name, error=str(e))
-            self.statusBar().showMessage(msg, 5000)
-            self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
-
-        QApplication.processEvents()
-
-    def _scheduled_shutdown(self, device_id: str) -> None:
-        """Execute remote shutdown for a scheduled entry (no confirmation dialog)."""
-        device = self.config.get_device_by_id(device_id)
-        if not device:
-            msg: str = Translations.tr("status.device_not_found", device_id=device_id)
-            self.statusBar().showMessage(msg, 5000)
-            return
-
-        device_name = device.get("name", Translations.tr("device.unknown"))
-        ip = device.get("ip", "")
-
-        self.statusBar().showMessage(Translations.tr("status.scheduled_shutdown_starting", name=device_name, ip=ip), 0)
-        self.config.add_log(device_name, "SHUTDOWN", "IN_PROGRESS", Translations.tr("status.scheduled_shutdown_progress", name=device_name))
-
-        # Dispatch on the device's shutdown method
-        if self.config.get_device_shutdown_method(device) == "host_service":
-            self._scheduled_host_service_shutdown(device_name, ip, device)
-            return
-
-        try:
-            # Step 1: Establish IPC$ connection
-            username = device.get("username", "")
-            password = device.get("password", "")
-            
-            if username:
-                cmd: str = rf'net use \\{ip}\IPC$ "{password}" /user:"{username}"'
-            else:
-                cmd: str = rf'net use \\{ip}\IPC$'
-            
-            result: subprocess.CompletedProcess[str] = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=15
-            )
-            
-            if result.returncode != 0:
-                msg: str = Translations.tr("status.scheduled_shutdown_conn_fail", name=device_name, error=result.stderr.strip())
-                self.statusBar().showMessage(msg, 5000)
-                self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
-                QApplication.processEvents()
-                return
-            
-            # Step 2: Execute remote shutdown
-            cmd: str = rf'shutdown /m \\{ip} /s /t 0 /f'
-            result: subprocess.CompletedProcess[str] = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30
-            )
-            
-            if result.returncode == 0:
-                msg: str = Translations.tr("status.scheduled_shutdown_success", name=device_name)
-                self.statusBar().showMessage(msg, 5000)
-                self.config.add_log(device_name, "SHUTDOWN", "SUCCESS", msg)
-            else:
-                msg: str = Translations.tr("status.scheduled_shutdown_fail", name=device_name, error=result.stderr.strip())
-                self.statusBar().showMessage(msg, 5000)
-                self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
-                
-        except subprocess.TimeoutExpired:
-            msg: str = Translations.tr("status.scheduled_shutdown_timeout", name=device_name)
-            self.statusBar().showMessage(msg, 5000)
-            self.config.add_log(device_name, "SHUTDOWN", "TIMEOUT", msg)
-        except Exception as e:
-            msg: str = Translations.tr("status.scheduled_shutdown_error", name=device_name, error=str(e))
-            self.statusBar().showMessage(msg, 5000)
-            self.config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
-        
-        QApplication.processEvents()
+        The actual dispatch logic is shared with the modern layout and
+        lives in :mod:`wol_app.schedule_runner`.
+        """
+        dispatch_schedule_action(
+            self.config, self.engine, device_id, action,
+            self.statusBar().showMessage,
+        )
 
     # --- Dialog openers ---
 

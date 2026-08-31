@@ -83,6 +83,18 @@ def get_local_interfaces() -> list[dict]:
     return interfaces
 
 
+def is_real_interface(ip: str) -> bool:
+    """Return True for "real" (usable) interface addresses only.
+
+    Hides dummy / auto-assigned ranges from the UI:
+    - 169.*   APIPA / link-local (no DHCP lease, e.g. 169.254.x.x)
+    - 172.*   virtualization / dummy adapter ranges (VMware, Hyper-V, Docker, VPN)
+    """
+    if not ip:
+        return False
+    return not (ip.startswith("169.") or ip.startswith("172."))
+
+
 def get_local_ips() -> set[str]:
     """Return the set of this machine's local IPv4 addresses (no loopback).
 

@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 from wol_app.network_scanner import (
     get_dns_servers_for_interface,
     get_local_interfaces,
+    is_real_interface,
 )
 from wol_app.scan_worker import ScanWorker
 from wol_app.translations import Translations
@@ -51,8 +52,15 @@ class NetworkScanDialog(QDialog):
         self._setup_ui()
 
     def _get_interfaces(self):
-        """Return list of local network interfaces."""
-        return get_local_interfaces()
+        """Return list of local network interfaces.
+
+        Dummy ranges (169.* APIPA / 172.* virtual adapters) are hidden so
+        only real IP ranges are offered for scanning. Filtering here keeps
+        the checkbox-to-interface mapping in _get_selected_interfaces()
+        consistent.
+        """
+        return [iface for iface in get_local_interfaces()
+                if is_real_interface(iface["ip"])]
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
