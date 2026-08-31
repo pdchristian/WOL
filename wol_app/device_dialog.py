@@ -4,7 +4,6 @@ from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -23,6 +22,7 @@ from wol_app.device_io import export_devices, import_devices
 from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.network_scanner import get_local_ips
 from wol_app.translations import Translations
+from wol_app.widgets.toggle_switch import ToggleWithLabel
 from wol_app.utils import (
     get_ip_key,
     validate_device_name,
@@ -107,9 +107,10 @@ class DeviceDialog(QDialog):
         )
         method_layout.addRow(Translations.tr("device_dialog.label.shutdown_method"), self.method_combo)
 
-        # Enabled checkbox
-        self.enabled_check = QCheckBox(Translations.tr("device_dialog.enabled"))
-        self.enabled_check.setChecked(True)
+        # Enabled toggle (same switch widget as in the modern network scan)
+        self.enabled_check = ToggleWithLabel(
+            Translations.tr("device_dialog.enabled"), checked=True
+        )
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -193,7 +194,9 @@ class DeviceDialog(QDialog):
             updated = self.config.get_device_by_id(self.editing_device["id"])
             self.device_saved.emit(updated)
         else:
-            device = self.config.add_device(name, mac)
+            device = self.config.add_device(
+                name, mac, enabled=self.enabled_check.isChecked()
+            )
             if device:
                 if ip:
                     self.config.update_device(device["id"], ip=ip)

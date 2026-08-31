@@ -8,7 +8,7 @@ a = Analysis(
     ['run.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.'), ('wol_app/locales/*.json', 'wol_app/locales')],
+    datas=[('icon.ico', '.'), ('icon_modern.ico', '.'), ('wol_app/locales/*.json', 'wol_app/locales')],
     hiddenimports=[
         'wol_app',
         'wol_app.__init__',

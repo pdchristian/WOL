@@ -96,6 +96,18 @@ class TestConfigShutdownMethod(ConfigManagerTestBase):
         device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
         self.assertEqual(device["shutdown_method"], "smb")
 
+    def test_add_device_enabled_flag(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        # Default stays enabled
+        device = cm.add_device("PC1", "AA:BB:CC:DD:EE:FF")
+        self.assertTrue(device["enabled"])
+        # Explicit disabled flag is persisted
+        disabled = cm.add_device("PC2", "AA:BB:CC:DD:EE:02", enabled=False)
+        self.assertFalse(disabled["enabled"])
+        self.assertFalse(
+            cm.get_device_by_id(disabled["id"])["enabled"]
+        )
+
     def test_legacy_device_defaults_to_smb(self):
         cm = ConfigManager(config_path=str(self.config_path))
         # Simulate a device created before v1.7.0 (no shutdown_method key).

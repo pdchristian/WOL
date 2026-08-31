@@ -354,7 +354,7 @@ class ConfigManager:
     def get_devices(self) -> list:
         return self.config.get("devices", [])
 
-    def add_device(self, name: str, mac: str) -> dict | None:
+    def add_device(self, name: str, mac: str, enabled: bool = True) -> dict | None:
         """Add a new device. Returns the device dict or None if inputs invalid."""
         import uuid
         if not validate_mac(mac):
@@ -366,7 +366,7 @@ class ConfigManager:
             "id": str(uuid.uuid4()),
             "name": name[:64],  # Ensure name is within limits
             "mac": mac.upper(),
-            "enabled": True,
+            "enabled": enabled,
             "username": "",
             "password": "",
             "shutdown_method": self.get_default_shutdown_method(),

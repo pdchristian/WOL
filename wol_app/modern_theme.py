@@ -18,6 +18,20 @@ from PyQt6.QtWidgets import QApplication
 _ARROW_DIR = os.path.join(tempfile.gettempdir(), "wol_modern_arrows")
 
 
+def _svg_url(name: str, svg: str) -> str:
+    """Write an SVG once to the shared temp dir and return its file URL.
+
+    Forward slashes: backslashes are escape characters inside QSS url()
+    strings, while Qt on Windows accepts '/' in file paths.
+    """
+    os.makedirs(_ARROW_DIR, exist_ok=True)
+    path = os.path.join(_ARROW_DIR, name)
+    if not os.path.exists(path):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(svg)
+    return path.replace("\\", "/")
+
+
 def _arrow_url(direction: str, color: str) -> str:
     """Return a file URL of a chevron SVG for spinbox/combobox arrows.
 
@@ -27,23 +41,28 @@ def _arrow_url(direction: str, color: str) -> str:
     chevrons that the QSS references via ``image: url(...)``.
     The PyQt6 venv ships qsvg.dll, so SVG images work in QSS.
     """
-    os.makedirs(_ARROW_DIR, exist_ok=True)
-    path = os.path.join(_ARROW_DIR, f"{direction}_{color.lstrip('#')}.svg")
-    if not os.path.exists(path):
-        if direction == "up":
-            d = "M2 6.5 L5 3.5 L8 6.5"
-        else:
-            d = "M2 3.5 L5 6.5 L8 3.5"
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
-            f'<path d="{d}" fill="none" stroke="{color}" stroke-width="1.6" '
-            'stroke-linecap="round" stroke-linejoin="round"/></svg>'
-        )
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(svg)
-    # Forward slashes: backslashes are escape characters inside QSS url()
-    # strings, while Qt on Windows accepts '/' in file paths.
-    return path.replace("\\", "/")
+    if direction == "up":
+        d = "M2 6.5 L5 3.5 L8 6.5"
+    else:
+        d = "M2 3.5 L5 6.5 L8 3.5"
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+        f'<path d="{d}" fill="none" stroke="{color}" stroke-width="1.6" '
+        'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    )
+    return _svg_url(f"chevron_{direction}_{color.lstrip('#')}.svg", svg)
+
+
+def _checkmark_url(color: str) -> str:
+    """Return a file URL of a checkmark SVG for checked checkbox indicators."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" '
+        'viewBox="0 0 12 12">'
+        f'<path d="M2.5 6.5 L5 9 L9.5 3.5" fill="none" stroke="{color}" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+        "</svg>"
+    )
+    return _svg_url(f"checkmark_{color.lstrip('#')}.svg", svg)
 
 
 # ── Dark tokens (prototype) ──────────────────────────────────────────────
@@ -288,7 +307,10 @@ QCheckBox::indicator {{
     width: 16px; height: 16px; border-radius: 4px;
     border: 1px solid {t['border']}; background: {t['surface']};
 }}
-QCheckBox::indicator:checked {{ background: {t['accent']}; border-color: {t['accent']}; }}
+QCheckBox::indicator:checked {{
+    background: {t['accent']}; border-color: {t['accent']};
+    image: url("{_checkmark_url(t['accent_text'])}");
+}}
 
 /* ── Progress bar ────────────────────────────────────────────────────── */
 QProgressBar {{

@@ -392,4 +392,9 @@ def get_resource_path(filename: str) -> str:
         )
         if os.path.exists(os.path.join(dist_path, filename)):
             base_path = dist_path
+        # Also check project root (icons etc. live next to run.py)
+        root_path = os.path.dirname(base_path)
+        if not os.path.exists(os.path.join(base_path, filename)) \
+                and os.path.exists(os.path.join(root_path, filename)):
+            base_path = root_path
     return os.path.join(base_path, filename)

@@ -11,6 +11,7 @@ The window is selected at startup via ``ui.layout_mode`` (installer choice /
 settings dialog); see :func:`wol_app.main_window.main`.
 """
 
+import os
 from typing import Any, NoReturn
 
 from PyQt6.QtCore import Qt
@@ -288,8 +289,10 @@ def run_modern_window(config: ConfigManager, dark_mode: bool) -> NoReturn:
     from PyQt6.QtWidgets import QApplication
 
     apply_modern_theme(QApplication.instance(), dark_mode)
-    icon_path: str = get_resource_path("icon.ico")
-    if icon_path:
+    icon_path: str = get_resource_path("icon_modern.ico")
+    if not os.path.exists(icon_path):
+        icon_path = get_resource_path("icon.ico")
+    if os.path.exists(icon_path):
         QApplication.instance().setWindowIcon(QIcon(icon_path))
     window = ModernMainWindow(config, dark_mode=dark_mode)
     window.show()
