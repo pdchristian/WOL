@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 
 from wol_app.config import ConfigManager
 from wol_app.main_window import HEADLESS_MODE
-from wol_app.modern_theme import DARK, LIGHT, apply_modern_theme
+from wol_app.modern_theme import DARK, LIGHT, app_icon_pixmap, apply_modern_theme
 from wol_app.schedule_runner import dispatch_schedule_action
 from wol_app.translations import Translations
 from wol_app.utils import get_resource_path
@@ -133,10 +133,13 @@ class ModernMainWindow(QMainWindow):
         # Logo
         logo_row = QHBoxLayout()
         logo_row.setSpacing(12)
-        mark = QLabel("W")
+        mark = QLabel()
         mark.setObjectName("logoMark")
         mark.setFixedSize(40, 40)
         mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _pix = app_icon_pixmap(40)
+        if _pix is not None:
+            mark.setPixmap(_pix)
         logo_text = QLabel(Translations.tr("app.name.short"))
         logo_text.setObjectName("logoText")
         logo_row.addWidget(mark)

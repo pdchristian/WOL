@@ -109,7 +109,8 @@ class ModernScheduleEditDialog(QDialog):
         days_grid.setSpacing(8)
         self.day_checks: dict[str, QCheckBox] = {}
         for i, day in enumerate(DAYS):
-            cb = QCheckBox(day)
+            # DAY keys stay English (config data); the label is translated
+            cb = QCheckBox(Translations.tr(f"day.{day}"))
             cb.setChecked(True)
             self.day_checks[day] = cb
             days_grid.addWidget(cb, 0, i)

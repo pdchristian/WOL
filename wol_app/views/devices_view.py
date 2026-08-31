@@ -33,12 +33,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wol_app.device_dialog import DeviceDialog
 from wol_app.main_window import HEADLESS_MODE, StatusWorker
 from wol_app.network_scanner import get_local_ips
 from wol_app.remote_desktop import start_remote_desktop
 from wol_app.shutdown_flow import confirm_shutdown
 from wol_app.translations import Translations
+from wol_app.views.device_edit_dialog import ModernDeviceDialog
 from wol_app.wol_engine import WOLEngine
 
 # Minimum card width incl. gap (prototype .grid: minmax(230px, 1fr) + 16px gap)
@@ -443,7 +443,7 @@ class DevicesView(QWidget):
         device = self._device_by_id(device_id)
         if device is None:
             return
-        dialog = DeviceDialog(self.config, device=device, parent=self)
+        dialog = ModernDeviceDialog(self.config, device=device, parent=self)
         dialog.device_saved.connect(lambda _d: self._on_devices_changed())
         dialog.exec()
 

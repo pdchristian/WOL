@@ -4,7 +4,7 @@ Layout mirrors the prototype's about screen
 (Design_Prototpye/dark_control_center_full.html) — a single centered
 block (max-width 420 px, vertically centered, no page header):
 
-1. Gradient logo tile ("W").
+1. App logo tile (icon_modern.ico).
 2. App name (h2) and dim version line.
 3. One dim description paragraph.
 4. A centered toolbar with "Nach Updates suchen" (primary) and
@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
 
 from wol_app import __version__
 from wol_app.main_window import HEADLESS_MODE
+from wol_app.modern_theme import app_icon_pixmap
 from wol_app.translations import Translations
 from wol_app.update_dialog import UpdateAvailableDialog
 from wol_app.updater import check_for_updates_sync
@@ -97,10 +98,13 @@ class UpdateView(QWidget):
         about.setSpacing(0)
         layout.addWidget(block, 0, Qt.AlignmentFlag.AlignHCenter)
 
-        logo = QLabel("W")
+        logo = QLabel()
         logo.setObjectName("aboutLogo")
         logo.setFixedSize(84, 84)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        _pix = app_icon_pixmap(84)
+        if _pix is not None:
+            logo.setPixmap(_pix)
         about.addWidget(logo, 0, Qt.AlignmentFlag.AlignHCenter)
         self.logo = logo
 

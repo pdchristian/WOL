@@ -11,9 +11,10 @@ Layout (top to bottom):
    a status dot, the hostname and a mono line "IPv4 · MAC" with an
    "Hinzufügen" button.
 
-All persistence goes through the shared ``ConfigManager``; dialogs and
-workers are reused from the classic UI (``DeviceDialog``, ``ScanWorker``,
-``StatusWorker``, ``device_io``).
+All persistence goes through the shared ``ConfigManager``; the modern
+``ModernDeviceDialog`` is used for add/edit, while workers and helpers
+are reused from the classic UI (``ScanWorker``, ``StatusWorker``,
+``device_io``).
 """
 
 from typing import Any
@@ -31,7 +32,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wol_app.device_dialog import DeviceDialog
 from wol_app.device_io import export_devices, import_devices
 from wol_app.main_window import HEADLESS_MODE, StatusWorker
 from wol_app.network_scanner import (
@@ -41,6 +41,7 @@ from wol_app.network_scanner import (
 )
 from wol_app.scan_worker import ScanWorker
 from wol_app.translations import Translations
+from wol_app.views.device_edit_dialog import ModernDeviceDialog
 from wol_app.widgets.toggle_switch import ToggleWithLabel
 from wol_app.wol_engine import WOLEngine
 
@@ -465,7 +466,7 @@ class ManageView(QWidget):
                 )
                 return
 
-        dialog = DeviceDialog(
+        dialog = ModernDeviceDialog(
             self.config,
             parent=self,
             preset={"name": "" if hostname == "Unknown" else hostname,
@@ -516,7 +517,7 @@ class ManageView(QWidget):
         ]
 
     def _add_device(self) -> None:
-        dialog = DeviceDialog(self.config, parent=self)
+        dialog = ModernDeviceDialog(self.config, parent=self)
         dialog.device_saved.connect(lambda _d: self._on_devices_changed())
         dialog.exec()
 
@@ -524,7 +525,7 @@ class ManageView(QWidget):
         device = self.config.get_device_by_id(device_id)
         if device is None:
             return
-        dialog = DeviceDialog(self.config, device=device, parent=self)
+        dialog = ModernDeviceDialog(self.config, device=device, parent=self)
         dialog.device_saved.connect(lambda _d: self._on_devices_changed())
         dialog.exec()
 

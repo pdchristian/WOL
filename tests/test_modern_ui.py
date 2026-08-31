@@ -9,7 +9,7 @@ import pytest  # noqa: E402
 
 pytest.importorskip("PyQt6")
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QDialog  # noqa: E402
 
 from wol_app.config import ConfigManager  # noqa: E402
 from wol_app.translations import Translations  # noqa: E402
@@ -398,3 +398,131 @@ class TestScheduleRunner:
         )
         assert msgs
         assert Translations.tr("status.device_not_found", device_id="missing-id") == msgs[0]
+
+
+class TestModernDeviceDialog:
+    def test_add_device_persists_and_emits(self, qapp, config):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        dialog = ModernDeviceDialog(config)
+        saved: list[dict] = []
+        dialog.device_saved.connect(saved.append)
+        dialog.name_input.setText("Gaming-PC")
+        dialog.mac_input.setText("AA:BB:CC:66:77:88")
+        dialog.ip_input.setText("192.168.1.15")
+        dialog._save()
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        assert len(saved) == 1
+        assert saved[0]["name"] == "Gaming-PC"
+        assert saved[0]["ip"] == "192.168.1.15"
+        assert len(config.get_devices()) == 3
+
+    def test_edit_device_updates_config(self, qapp, config):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        device = config.get_devices()[0]
+        dialog = ModernDeviceDialog(config, device=device)
+        assert dialog.name_input.text() == "Workstation"
+        assert dialog.enabled_toggle.isChecked() is True
+        dialog.name_input.setText("Workstation 2")
+        dialog.enabled_toggle.setChecked(False)
+        dialog._save()
+        updated = config.get_device_by_id(device["id"])
+        assert updated["name"] == "Workstation 2"
+        assert updated["enabled"] is False
+
+    def test_missing_name_rejected(self, qapp, config, monkeypatch):
+        from PyQt6.QtWidgets import QMessageBox
+
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+        dialog = ModernDeviceDialog(config)
+        dialog.mac_input.setText("AA:BB:CC:DD:EE:FF")
+        dialog._save()
+        assert dialog.result() != QDialog.DialogCode.Accepted
+        assert len(config.get_devices()) == 2
+
+    def test_invalid_mac_rejected(self, qapp, config, monkeypatch):
+        from PyQt6.QtWidgets import QMessageBox
+
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+        dialog = ModernDeviceDialog(config)
+        dialog.name_input.setText("Rig")
+        dialog.mac_input.setText("not-a-mac")
+        dialog._save()
+        assert dialog.result() != QDialog.DialogCode.Accepted
+        assert len(config.get_devices()) == 2
+
+    def test_preset_prefills_fields(self, qapp, config):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        dialog = ModernDeviceDialog(
+            config, preset={"name": "NAS", "mac": "11:22:33:44:55:66",
+                            "ip": "192.168.1.30"},
+        )
+        assert dialog.name_input.text() == "NAS"
+        assert dialog.mac_input.text() == "11:22:33:44:55:66"
+        assert dialog.ip_input.text() == "192.168.1.30"
+
+    def test_uses_modern_dialog_in_views(self, qapp, config):
+        """The modern manage/devices views open the modern dialog."""
+        from wol_app.views import devices_view, manage_view
+
+        assert manage_view.ModernDeviceDialog is devices_view.ModernDeviceDialog
+        assert not hasattr(manage_view, "DeviceDialog")
+
+
+class TestModernScheduleEditDialog:
+    def test_day_labels_are_translated(self, qapp, config):
+        from wol_app.views.schedule_edit_dialog import ModernScheduleEditDialog
+
+        Translations.set_language("de")
+        try:
+            dialog = ModernScheduleEditDialog(config, config.get_devices())
+            labels = [cb.text() for cb in dialog.day_checks.values()]
+            assert labels == ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+        finally:
+            Translations.set_language("en")
+
+    def test_day_data_keys_stay_english(self, qapp, config):
+        from wol_app.views.schedule_edit_dialog import DAYS, ModernScheduleEditDialog
+
+        dialog = ModernScheduleEditDialog(config, config.get_devices())
+        assert list(dialog.day_checks.keys()) == DAYS
+        assert DAYS == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    def test_save_creates_schedule(self, qapp, config):
+        from wol_app.views.schedule_edit_dialog import ModernScheduleEditDialog
+
+        dev = config.get_devices()[0]
+        dialog = ModernScheduleEditDialog(config, config.get_devices())
+        dialog.device_combo.setCurrentIndex(
+            dialog.device_combo.findData(dev["id"])
+        )
+        dialog.hour_spin.setValue(7)
+        dialog.minute_spin.setValue(15)
+        for day, cb in dialog.day_checks.items():
+            cb.setChecked(day in ("Mon", "Wed"))
+        dialog._save()
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        sched = config.get_schedules()[0]
+        assert sched["device_id"] == dev["id"]
+        assert (sched["hour"], sched["minute"]) == (7, 15)
+        assert sched["days"] == ["Mon", "Wed"]
+        assert sched["enabled"] is True
+
+    def test_no_days_shows_warning(self, qapp, config, monkeypatch):
+        from PyQt6.QtWidgets import QMessageBox
+
+        from wol_app.views.schedule_edit_dialog import ModernScheduleEditDialog
+
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+        dialog = ModernScheduleEditDialog(config, config.get_devices())
+        for cb in dialog.day_checks.values():
+            cb.setChecked(False)
+        dialog._save()
+        assert dialog.result() != QDialog.DialogCode.Accepted
+        assert len(config.get_schedules()) == 0

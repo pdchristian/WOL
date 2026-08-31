@@ -13,9 +13,33 @@ classic UI or the shared dialogs.
 import os
 import tempfile
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QApplication
 
+from wol_app.utils import get_resource_path
+
 _ARROW_DIR = os.path.join(tempfile.gettempdir(), "wol_modern_arrows")
+
+
+def app_icon_pixmap(size: int) -> QPixmap | None:
+    """Load the app logo scaled to ``size``×``size`` (or None).
+
+    Used for the in-app logo tiles (sidebar + about screen). Prefers the
+    high-resolution ``icon_modern.png`` and falls back to the ``.ico``
+    variants when the PNG is not bundled.
+    """
+    for name in ("icon_modern.png", "icon_modern.ico", "icon.ico"):
+        path = get_resource_path(name)
+        if os.path.exists(path):
+            pix = QPixmap(path)
+            if not pix.isNull():
+                return pix.scaled(
+                    size, size,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+    return None
 
 
 def _svg_url(name: str, svg: str) -> str:
@@ -114,10 +138,7 @@ QWidget {{ color: {t['text']}; font-family: "Segoe UI", sans-serif; font-size: 1
     border-right: 1px solid {t['border']};
 }}
 #logoMark {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {t['accent']}, stop:1 {t['accent_dark']});
-    color: #ffffff; font-weight: 700; font-size: 16px;
-    border-radius: 12px;
+    background: transparent;
 }}
 #logoText {{ color: {t['text']}; font-weight: 600; font-size: 15px; }}
 #sectionLabel {{
@@ -180,6 +201,15 @@ QPushButton#iconBtn {{
     font-size: 14px; border-radius: 8px;
 }}
 QPushButton#iconBtn:hover {{ background: {t['surface_hover']}; }}
+
+/* ── Dialogs (QDialog / QMessageBox) ─────────────────────────────────── */
+/* Without these rules every QDialog falls back to the native gray system
+   palette, which clashes with the control-center look. Dialogs use the
+   window background (bg) so they read as a continuation of the main
+   window; inputs (surface) stand out against it. */
+QDialog {{ background: {t['bg']}; }}
+QMessageBox {{ background: {t['bg']}; }}
+QMessageBox QLabel {{ color: {t['text']}; background: transparent; }}
 
 /* ── Panels / cards ──────────────────────────────────────────────────── */
 #panel {{
@@ -358,10 +388,7 @@ QMenu::item:selected {{ background: {t['surface_hover']}; color: {t['accent']}; 
 
 /* ── About / update screen (prototype .about) ────────────────────────── */
 #aboutLogo {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 {t['accent']}, stop:1 {t['accent_dark']});
-    color: #ffffff; font-weight: 700; font-size: 38px;
-    border-radius: 20px;
+    background: transparent;
 }}
 #aboutTitle {{ color: {t['text']}; font-size: 24px; font-weight: 600; }}
 #aboutVersion {{ color: {t['text_dim']}; font-size: 14px; }}

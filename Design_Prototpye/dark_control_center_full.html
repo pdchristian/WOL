@@ -173,6 +173,45 @@
   .about p { color: var(--text-dim); font-size: 13px; line-height: 1.7; margin-bottom: 28px; }
 
   .footer { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 12px; display: flex; justify-content: space-between; }
+
+  /* ===== Modals (Dialoge: Gerät / Zeitplan bearbeiten) ===== */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    display: none; align-items: center; justify-content: center; z-index: 50;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: var(--bg);                      /* wie Hauptfenster, nicht surface */
+    border: 1px solid var(--border); border-radius: 16px;
+    width: 460px; max-width: calc(100vw - 40px); padding: 22px 24px;
+    animation: fade .18s ease;
+    box-shadow: 0 24px 60px rgba(0,0,0,.5);
+  }
+  .modal .modal-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+  .modal h2 { font-size: 21px; font-weight: 600; }
+  .modal-close {
+    background: none; border: none; color: var(--text-dim); font-size: 16px;
+    cursor: pointer; border-radius: 8px; padding: 4px 8px;
+  }
+  .modal-close:hover { background: var(--surface-hover); color: var(--text); }
+  .modal .panel { padding: 16px 18px; margin-bottom: 16px; }
+  .modal .field { margin-bottom: 14px; }
+  .modal .field:last-child { margin-bottom: 0; }
+  .modal .field.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .modal .field.two label { display: block; }
+  .modal .sub { color: var(--text-dim); font-size: 13px; font-weight: 600; margin: 16px 0 8px; }
+  /* Wochentage als Accent-Checkboxen */
+  .days { display: flex; gap: 8px; flex-wrap: wrap; }
+  .day { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; user-select: none; }
+  .day input { appearance: none; width: 16px; height: 16px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--surface); cursor: pointer; margin: 0; }
+  .day input:checked { background: var(--accent); border-color: var(--accent);
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.5 L5 9 L9.5 3.5" fill="none" stroke="%23032019" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    background-size: 12px 12px; background-position: center; background-repeat: no-repeat; }
+  /* Toggle-Zeile im Dialog: Label links, Schalter rechts */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 16px; }
+  .toggle-row strong { font-size: 14px; font-weight: 600; }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 10px; }
 </style>
 </head>
 <body>
@@ -275,7 +314,7 @@
 
       <h2 style="font-size:16px;margin-bottom:14px;color:var(--text-dim)">Geräte-Verwaltung</h2>
       <div class="toolbar">
-        <button class="btn primary">+ Gerät hinzufügen</button>
+        <button class="btn primary" data-open-modal="deviceModal">+ Gerät hinzufügen</button>
         <button class="btn">Importieren</button>
         <button class="btn">Exportieren</button>
         <div class="spacer"></div>
@@ -288,7 +327,7 @@
             <tr>
               <td>Workstation</td><td class="mono">AA:BB:CC:00:11:22</td><td class="mono">192.168.1.10</td>
               <td><span class="badge online">Online</span></td>
-              <td style="text-align:right"><button class="btn icon" title="Bearbeiten">✏️</button> <button class="btn icon danger" title="Löschen">🗑️</button></td>
+              <td style="text-align:right"><button class="btn icon" title="Bearbeiten" data-open-modal="deviceModal">✏️</button> <button class="btn icon danger" title="Löschen">🗑️</button></td>
             </tr>
             <tr>
               <td>Media-Server</td><td class="mono">AA:BB:CC:33:44:55</td><td class="mono">192.168.1.21</td>
@@ -311,7 +350,7 @@
         <div><h1>Zeitplan</h1><p>Geräte zeitgesteuert ein- oder ausschalten</p></div>
       </header>
       <div class="toolbar">
-        <button class="btn primary">+ Zeitplan erstellen</button>
+        <button class="btn primary" data-open-modal="scheduleModal">+ Zeitplan erstellen</button>
         <div class="spacer"></div>
         <div class="search"><input placeholder="Zeitpläne suchen…"></div>
       </div>
@@ -322,7 +361,7 @@
             <strong>Gaming-PC einschalten</strong>
             <small>Wochentags · 20:00 · Aufwecken</small>
           </div>
-          <button class="btn icon" title="Bearbeiten">✏️</button>
+          <button class="btn icon" title="Bearbeiten" data-open-modal="scheduleModal">✏️</button>
           <button class="btn icon danger" title="Löschen">🗑️</button>
         </div>
         <div class="schedule-card">
@@ -331,7 +370,7 @@
             <strong>Workstation herunterfahren</strong>
             <small>Wochentags · 18:00 · Herunterfahren</small>
           </div>
-          <button class="btn icon" title="Bearbeiten">✏️</button>
+          <button class="btn icon" title="Bearbeiten" data-open-modal="scheduleModal">✏️</button>
           <button class="btn icon danger" title="Löschen">🗑️</button>
         </div>
         <div class="schedule-card">
@@ -340,7 +379,7 @@
             <strong>NAS aufwecken (Wochenende)</strong>
             <small>Sa · So · 09:00 · Aufwecken</small>
           </div>
-          <button class="btn icon" title="Bearbeiten">✏️</button>
+          <button class="btn icon" title="Bearbeiten" data-open-modal="scheduleModal">✏️</button>
           <button class="btn icon danger" title="Löschen">🗑️</button>
         </div>
       </div>
@@ -435,6 +474,82 @@
 
   </main>
 
+  <!-- ============ Modal: Gerät bearbeiten ============ -->
+  <div class="overlay" id="deviceModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deviceModalTitle">
+      <div class="modal-head">
+        <h2 id="deviceModalTitle">Gerät bearbeiten</h2>
+        <button class="modal-close" data-close title="Schließen">✕</button>
+      </div>
+      <div class="field">
+        <label>Gerätename</label>
+        <input value="Workstation">
+      </div>
+      <div class="field two">
+        <div><label>MAC-Adresse</label><input value="AA:BB:CC:00:11:22"></div>
+        <div><label>IP-Adresse (optional)</label><input value="192.168.1.10"></div>
+      </div>
+      <div class="field two">
+        <div><label>Benutzer (optional)</label><input value="admin"></div>
+        <div><label>Passwort (optional)</label><input type="password" value="secret"></div>
+      </div>
+      <div class="field">
+        <label>Herunterfahren-Methode</label>
+        <select><option>Host-Service</option><option>SMB</option></select>
+      </div>
+      <div class="toggle-row" style="margin-top:18px">
+        <strong>Gerät ist aktiviert</strong>
+        <div class="toggle on"><div class="knob"></div></div>
+      </div>
+      <div class="actions">
+        <button class="btn" data-close>Abbrechen</button>
+        <button class="btn primary" data-close>Aktualisieren</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Modal: Zeitplan bearbeiten ============ -->
+  <div class="overlay" id="scheduleModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="scheduleModalTitle">
+      <div class="modal-head">
+        <h2 id="scheduleModalTitle">Zeitplan bearbeiten</h2>
+        <button class="modal-close" data-close title="Schließen">✕</button>
+      </div>
+      <div class="panel">
+        <div class="field">
+          <label>Gerät</label>
+          <select><option>Gaming-PC</option><option>Workstation</option><option>NAS · Synology</option></select>
+        </div>
+        <div class="field">
+          <label>Aktion</label>
+          <select><option>Aufwecken</option><option>Herunterfahren</option></select>
+        </div>
+        <div class="field two">
+          <div><label>Stunde</label><input type="number" value="16"></div>
+          <div><label>Minute</label><input type="number" value="0"></div>
+        </div>
+        <div class="sub">Wochentage</div>
+        <div class="days">
+          <label class="day"><input type="checkbox" checked>Mo</label>
+          <label class="day"><input type="checkbox">Di</label>
+          <label class="day"><input type="checkbox" checked>Mi</label>
+          <label class="day"><input type="checkbox" checked>Do</label>
+          <label class="day"><input type="checkbox">Fr</label>
+          <label class="day"><input type="checkbox" checked>Sa</label>
+          <label class="day"><input type="checkbox" checked>So</label>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <strong>Zeitplan ist aktiviert</strong>
+        <div class="toggle on"><div class="knob"></div></div>
+      </div>
+      <div class="actions">
+        <button class="btn" data-close>Abbrechen</button>
+        <button class="btn primary" data-close>Aktualisieren</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     document.querySelectorAll('.nav-item').forEach(item => {
       const target = item.dataset.screen;
@@ -446,6 +561,23 @@
         document.getElementById(target).classList.add('active');
       });
     });
+
+    // ===== Modals: öffnen/schließen =====
+    const openModal = (id) => document.getElementById(id).classList.add('open');
+    const closeModal = (ov) => ov.classList.remove('open');
+    document.querySelectorAll('.overlay').forEach(ov => {
+      ov.addEventListener('click', e => { if (e.target === ov) closeModal(ov); });
+      ov.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(ov)));
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('.overlay.open').forEach(closeModal);
+    });
+    // Trigger im UI
+    document.querySelectorAll('[data-open-modal]').forEach(b =>
+      b.addEventListener('click', () => openModal(b.dataset.openModal)));
+    // Toggles im Dialog schaltbar machen
+    document.querySelectorAll('.modal .toggle').forEach(t =>
+      t.addEventListener('click', () => t.classList.toggle('on')));
   </script>
 
 </body>
