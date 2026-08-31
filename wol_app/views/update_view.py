@@ -104,7 +104,9 @@ class UpdateView(QWidget):
         about.addWidget(logo, 0, Qt.AlignmentFlag.AlignHCenter)
         self.logo = logo
 
-        about.addSpacing(20)
+        # Extra clearance below the logo so the (vertically centered) title
+        # never overlaps the logo tile on high-DPI / larger-font systems.
+        about.addSpacing(32)
 
         self.app_name = QLabel(Translations.tr("app.name"))
         self.app_name.setObjectName("aboutTitle")
