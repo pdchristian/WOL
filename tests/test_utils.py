@@ -12,6 +12,7 @@ from wol_app.utils import (
     _build_rdp_content,
     _register_rdp_credentials,
     auto_rdp_resolution,
+    ensure_user_data_dir,
     get_ip_key,
     launch_remote_desktop,
     validate_device_name,
@@ -199,6 +200,11 @@ class TestLaunchRemoteDesktop(unittest.TestCase):
         self.cmdkey_patcher = patch("wol_app.utils.subprocess.run")
         self.mock_run = self.cmdkey_patcher.start()
         self.addCleanup(self.cmdkey_patcher.stop)
+        # The rdp dir is created via ensure_user_data_dir; keep it a no-op so
+        # the mocked subprocess.run stays reserved for cmdkey assertions.
+        dir_patcher = patch("wol_app.utils.ensure_user_data_dir")
+        self.mock_ensure_dir = dir_patcher.start()
+        self.addCleanup(dir_patcher.stop)
 
     def test_launch_fullscreen_uses_f_flag(self):
         with patch("wol_app.utils.subprocess.Popen") as mock_popen:
@@ -279,6 +285,123 @@ class TestLaunchRemoteDesktop(unittest.TestCase):
                                        device_name="Server")
         rdp_path = mock_popen.call_args[0][0][-1]
         self.assertFalse(os.path.exists(rdp_path))
+
+    def test_launch_repairs_inaccessible_rdp_dir(self):
+        """A leftover read-only .rdp file triggers one ACL repair + retry."""
+        rdp_path = self.mock_rdp_dir / "Office.rdp"
+        rdp_path.write_text("stale", encoding="utf-8")
+        os.chmod(rdp_path, 0o444)  # read-only -> open(..., "w") raises
+
+        def fake_repair(path):
+            # Simulate a successful takeown/icacls: drop the stale file.
+            os.chmod(rdp_path, 0o666)
+            rdp_path.unlink(missing_ok=True)
+            return True
+
+        with patch("wol_app.utils._repair_dir_permissions",
+                   side_effect=fake_repair) as mock_repair, \
+             patch("wol_app.utils.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+            launch_remote_desktop("10.0.0.9", cleanup_delay=60.0,
+                                  device_name="Office")
+        mock_repair.assert_called_once_with(self.mock_rdp_dir)
+        self.assertEqual(Path(mock_popen.call_args[0][0][-1]), rdp_path)
+        self.assertTrue(rdp_path.exists())
+        os.remove(rdp_path)
+
+    def test_launch_raises_clear_error_when_repair_fails(self):
+        rdp_path = self.mock_rdp_dir / "Office.rdp"
+        rdp_path.write_text("stale", encoding="utf-8")
+        os.chmod(rdp_path, 0o444)
+        with patch("wol_app.utils._repair_dir_permissions", return_value=False), \
+             patch("wol_app.utils.subprocess.Popen") as mock_popen:
+            with self.assertRaises(RuntimeError) as ctx:
+                launch_remote_desktop("10.0.0.9", cleanup_delay=60.0,
+                                      device_name="Office")
+        mock_popen.assert_not_called()
+        self.assertIn("takeown", str(ctx.exception))
+        os.chmod(rdp_path, 0o666)
+        os.remove(rdp_path)
+
+
+class TestEnsureUserDataDir(unittest.TestCase):
+    """ensure_user_data_dir must create the dir and (when elevated) grant
+    the interactive user full control, so a later non-elevated start works."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_creates_missing_directory(self):
+        target = self.tmp / "sub" / "data"
+        self.assertFalse(target.exists())
+        with patch("wol_app.utils._is_elevated", return_value=False):
+            self.assertTrue(ensure_user_data_dir(target))
+        self.assertTrue(target.is_dir())
+
+    def test_existing_directory_is_kept(self):
+        with patch("wol_app.utils._is_elevated", return_value=False):
+            self.assertTrue(ensure_user_data_dir(self.tmp))
+        self.assertTrue(self.tmp.is_dir())
+
+    def test_grants_full_control_when_elevated(self):
+        target = self.tmp / "rdp"
+        env = {"USERNAME": "testuser", "USERDOMAIN": "TESTDOMAIN"}
+        with patch("wol_app.utils._is_elevated", return_value=True), \
+             patch.dict(os.environ, env), \
+             patch("wol_app.utils.subprocess.run") as mock_run:
+            ensure_user_data_dir(target)
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(cmd[0], "icacls")
+        self.assertEqual(Path(cmd[1]), target)
+        # The grant must target the interactive user with inheritable full
+        # control (OI/CI), so subdirectories such as rdp/ are covered too.
+        grant = cmd[cmd.index("/grant") + 1]
+        self.assertTrue(grant.endswith(":(OI)(CI)F"))
+        self.assertEqual(grant, "TESTDOMAIN\\testuser:(OI)(CI)F")
+
+    def test_no_icacls_when_not_elevated(self):
+        target = self.tmp / "rdp"
+        with patch("wol_app.utils._is_elevated", return_value=False), \
+             patch("wol_app.utils.subprocess.run") as mock_run:
+            ensure_user_data_dir(target)
+        mock_run.assert_not_called()
+        self.assertTrue(target.is_dir())
+
+    def test_icacls_failure_is_not_fatal(self):
+        target = self.tmp / "rdp"
+        with patch("wol_app.utils._is_elevated", return_value=True), \
+             patch("wol_app.utils.subprocess.run",
+                   side_effect=OSError("icacls missing")):
+            self.assertTrue(ensure_user_data_dir(target))
+        self.assertTrue(target.is_dir())
+
+
+class TestIsElevated(unittest.TestCase):
+    def test_returns_bool_from_winapi(self):
+        from wol_app.utils import _is_elevated
+
+        with patch("wol_app.utils.os.name", "nt"), \
+             patch("ctypes.windll") as mock_windll:
+            mock_windll.shell32.IsUserAnAdmin.return_value = 1
+            self.assertTrue(_is_elevated())
+            mock_windll.shell32.IsUserAnAdmin.return_value = 0
+            self.assertFalse(_is_elevated())
+
+    def test_swallows_api_errors(self):
+        from wol_app.utils import _is_elevated
+
+        with patch("wol_app.utils.os.name", "nt"), \
+             patch("ctypes.windll") as mock_windll:
+            mock_windll.shell32.IsUserAnAdmin.side_effect = OSError("no api")
+            self.assertFalse(_is_elevated())
+
+    def test_false_on_non_windows(self):
+        from wol_app.utils import _is_elevated
+
+        with patch("wol_app.utils.os.name", "posix"):
+            self.assertFalse(_is_elevated())
 
 
 if __name__ == "__main__":

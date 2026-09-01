@@ -13,6 +13,7 @@ Features:
 import argparse
 import ctypes
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -250,8 +251,57 @@ def remove_user_data():
         return False
 
 
-def user_has_full_control(directory):
-    """Check if the current user already has full control on a directory.
+def get_active_user_account():
+    """Return the ``DOMAIN\\User`` of the interactive desktop session.
+
+    The installer helper runs elevated, possibly under a *different* admin
+    account ("Run as different administrator"). Granting the data directory
+    to ``USERNAME`` would then fix permissions for the wrong account. The
+    owner of the running ``explorer.exe`` is the user actually sitting at
+    the console, so prefer that; fall back to ``USERNAME``/``USERDOMAIN``
+    and finally to the owner of ``%USERPROFILE%``.
+    """
+    try:
+        result = subprocess.run(
+            ["wmic", "process", "where", "name='explorer.exe'",
+             "get", "Owner,Name", "/value"],
+            capture_output=True, text=True, timeout=10
+        )
+        # Output lines look like:  Name=explorer.exe / Owner=DOMAIN\user
+        owner = ""
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("Owner="):
+                owner = line[len("Owner="):].strip()
+                if owner and "\\" in owner:
+                    return owner
+    except Exception:
+        pass
+
+    username = os.environ.get("USERNAME", "")
+    userdomain = os.environ.get("USERDOMAIN", ".")
+    if username:
+        return f"{userdomain}\\{username}"
+
+    # Last resort: read the ACL owner of the user profile directory.
+    try:
+        profile = os.environ.get("USERPROFILE", "")
+        if profile:
+            result = subprocess.run(
+                ["icacls", profile],
+                capture_output=True, text=True, timeout=10
+            )
+            # First line:  C:\Users\x NT AUTHORITY\SYSTEM (I)(OI)(CI)(F)
+            m = re.search(r"(\S+\\\S+)", result.stdout)
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return ""
+
+
+def user_has_full_control(directory, user_account=None):
+    """Check if the target user already has full control on a directory.
     Uses icacls query to check effective permissions - much faster than
     trying to fix permissions that are already correct."""
     try:
@@ -262,10 +312,13 @@ def user_has_full_control(directory):
         if result.returncode != 0:
             return False  # Can't read permissions, assume we need to fix
 
-        username = os.environ.get("USERNAME", "")
+        if user_account is None:
+            username = os.environ.get("USERNAME", "")
+            userdomain = os.environ.get("USERDOMAIN", ".")
+            user_account = f"{userdomain}\\{username}" if username else ""
         output = result.stdout.lower()
-        # Check if current user has (F)ull or (M)odify access
-        user_lower = username.lower()
+        # Check if the target user has (F)ull or (M)odify access
+        user_lower = user_account.lower()
         return user_lower in output and ("(f)" in output or "(m)" in output)
     except Exception:
         return False  # On any error, assume fix is needed
@@ -286,16 +339,15 @@ def fix_wol_app_permissions():
         if not wol_dir.exists():
             return True
 
-        username = os.environ.get("USERNAME", "")
-        userdomain = os.environ.get("USERDOMAIN", ".")
-        if not username:
+        # The elevated helper may run as a different admin account — always
+        # grant access to the interactive desktop user instead.
+        user_account = get_active_user_account()
+        if not user_account:
             return False
-
-        user_account = f"{userdomain}\\{username}"
 
         # Fast path: skip if user already has full control
         # This is common when migrating data from a previous installation
-        if user_has_full_control(wol_dir):
+        if user_has_full_control(wol_dir, user_account):
             print(f"  Permissions OK for: {wol_dir}")
             return True
 

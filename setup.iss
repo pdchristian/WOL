@@ -163,7 +163,11 @@ Name: "{autodesktop}\Wake-on-LAN Manager"; Filename: "{app}\Wake-on-LAN Manager.
 
 [Run]
 ; Launch the app after install, as the ORIGINAL (non-elevated) user, so it
-; does not create admin-owned files in .wol_app.
+; does not create admin-owned files in .wol_app. Belt-and-braces: even if the
+; app ever runs elevated (e.g. "Run as administrator"), every creation of
+; ~/.wol_app grants the interactive user full control (see
+; wol_app.utils.ensure_user_data_dir), and ssPostInstall below repairs an
+; existing data directory for the interactive desktop user.
 Filename: "{app}\Wake-on-LAN Manager.exe"; WorkingDir: "{app}"; Description: "{cm:run_launch}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]

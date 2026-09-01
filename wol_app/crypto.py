@@ -105,7 +105,11 @@ def _get_dpapi_protected_key() -> bytes:
         raise RuntimeError("Failed to protect master key with DPAPI")
 
     protected_blob = _blob_to_bytes(data_out)
-    key_path.parent.mkdir(parents=True, exist_ok=True)
+    # Create the data directory with explicit full control for the
+    # interactive user (see wol_app.utils.ensure_user_data_dir).
+    from wol_app.utils import ensure_user_data_dir
+
+    ensure_user_data_dir(key_path.parent)
     key_path.write_bytes(protected_blob)
     return plaintext_key
 

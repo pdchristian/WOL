@@ -10,6 +10,7 @@ from pathlib import Path
 
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.utils import (
+    ensure_user_data_dir,
     validate_device_name,
     validate_mac,
     validate_password,
@@ -24,7 +25,7 @@ if not _logger.handlers:
     _logger.setLevel(logging.INFO)
     try:
         _log_dir = Path.home() / ".wol_app"
-        _log_dir.mkdir(exist_ok=True, mode=0o700)
+        ensure_user_data_dir(_log_dir)
         _handler = logging.FileHandler(_log_dir / "app.log", encoding="utf-8")
         _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         _logger.addHandler(_handler)
@@ -237,7 +238,9 @@ class ConfigManager:
                 config_dir: Path = config_dir.resolve()
                 if not str(config_dir).startswith(str(home_path)):
                     raise ValueError(f"Invalid config directory path: {config_dir}")
-                config_dir.mkdir(exist_ok=True, mode=0o700)  # Restrictive permissions
+                # Create with explicit full control for the interactive user
+                # (mkdir mode= has no ACL effect on Windows, see helper docs).
+                ensure_user_data_dir(config_dir)
                 self.config_path: Path = config_dir / "config.json"
                 self._config_dir = config_dir
                 # Fix ownership only once per profile (lazy, see marker)

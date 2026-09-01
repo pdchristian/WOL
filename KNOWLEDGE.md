@@ -442,9 +442,24 @@ EstimatedSize   = <calculated bytes>
 **Permission Fix Sequence:**
 ```powershell
 takeown /f "%USERPROFILE%\.wol_app" /r /d y        # Take ownership
-icacls "%USERPROFILE%\.wol_app" /grant %USERNAME%:(CI)(OI)F /t  # Full control
+icacls "%USERPROFILE%\.wol_app" /reset /t /c /q
+# grant the INTERACTIVE desktop user, not the elevated helper's account
+icacls "%USERPROFILE%\.wol_app" /grant <DOMAIN\User>:(CI)(OI)F /t
 ```
-Fast-path check `user_has_full_control()` tests current access before running expensive commands.
+Fast-path check `user_has_full_control()` tests current access before running
+expensive commands. The target account is resolved by `get_active_user_account()`
+(owner of the running `explorer.exe`), because the elevated helper may run under
+a *different* admin account ("Run as different administrator").
+
+**App-side ACL hardening (`wol_app.utils.ensure_user_data_dir`):**
+`mkdir(mode=0o700)` has no ACL effect on Windows — a new directory only inherits
+its parent's DACL. Every creation point of `~/.wol_app` (config dir, log dir,
+`master_key.dat` parent, `~/.wol_app/rdp`) therefore goes through
+`ensure_user_data_dir()`, which grants the interactive user `(OI)(CI)F` via
+`icacls` whenever the process is elevated. If a write still fails with
+`PermissionError` (folder left behind by an older elevated start),
+`launch_remote_desktop()` calls `_repair_dir_permissions()` — takeown + icacls,
+elevated through a single UAC prompt when needed — and retries once.
 
 ### 6.2 uninstaller.py
 

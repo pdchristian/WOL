@@ -153,6 +153,160 @@ def _sanitize_filename_part(name: str) -> str:
     return cleaned or "device"
 
 
+# ── User data directory helpers ─────────────────────────────────────────────
+
+def _is_elevated() -> bool:
+    """Return True when the current process runs elevated (as administrator)."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def ensure_user_data_dir(path: Path) -> None:
+    """Create *path* (with parents) and guarantee the interactive user owns it.
+
+    ``mkdir(mode=0o700)`` has **no effect as an ACL on Windows**: the new
+    directory simply inherits the parent's access rights. When the app happens
+    to run elevated (e.g. launched via "Run as administrator", or from an
+    elevated context), the created ``~/.wol_app`` tree can end up with an
+    owner/DACL that blocks the normal (non-elevated) user later — Windows then
+    shows the "You need permission to access this folder" (Fortsetzen)
+    dialog on the next start.
+
+    To prevent this, every creation point of the user data directory goes
+    through this helper: after ``mkdir`` it explicitly grants ``Full`` control
+    to the current interactive user (``USERDOMAIN\\USERNAME``) via ``icacls``.
+    The grant runs only when the process is elevated (a non-elevated process
+    creates the folder with its own token anyway and could not change the
+    ACLs regardless). Best-effort: failures are reported via the returned
+    boolean rather than raising, so folder creation itself never breaks.
+
+    Args:
+        path: Directory to create and protect (e.g. ``~/.wol_app``).
+
+    Returns:
+        True if the directory exists afterwards; False otherwise.
+    """
+    import logging
+
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        # Folder may already exist but be inaccessible — try the ACL repair
+        # below anyway before giving up.
+        pass
+    except OSError:
+        return False
+
+    if os.name == "nt" and _is_elevated():
+        username = os.environ.get("USERNAME", "")
+        userdomain = os.environ.get("USERDOMAIN", ".")
+        if username:
+            user_account = f"{userdomain}\\{username}"
+            # Only the directory itself is granted here; recursion happens at
+            # the app-level repair (config._fix_directory_permissions) when a
+            # full-tree fix is needed.
+            try:
+                subprocess.run(
+                    ["icacls", str(path), "/grant", f"{user_account}:(OI)(CI)F", "/Q"],
+                    capture_output=True,
+                    timeout=10,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception as exc:  # noqa: BLE001 - best effort by design
+                logging.getLogger("wol_app.utils").warning(
+                    "icacls grant failed for %s: %s", path, exc
+                )
+
+    return path.is_dir()
+
+
+def _repair_dir_permissions(path: Path) -> bool:
+    """Best-effort ACL repair so *path* becomes writable by the current user.
+
+    Used as a self-healing fallback when writing into the user data directory
+    fails with ``PermissionError`` (e.g. the folder was created by a previous
+    elevated app start and is owned by the administrator account).
+
+    * Elevated process: run ``takeown`` + ``icacls`` directly.
+    * Non-elevated process: run them through a single elevated
+      ``cmd /c ...`` (triggers one UAC prompt) and wait up to 30 s.
+
+    Returns True if the commands reported success; never raises.
+    """
+    if os.name != "nt" or not path.exists():
+        return False
+    username = os.environ.get("USERNAME", "")
+    userdomain = os.environ.get("USERDOMAIN", ".")
+    if not username:
+        return False
+    user_account = f"{userdomain}\\{username}"
+    commands = (
+        f'takeown /f "{path}" /r /d y '
+        f'& icacls "{path}" /reset /t /c /q '
+        f'& icacls "{path}" /grant "{user_account}":(OI)(CI)F /t /c /q'
+    )
+    try:
+        if _is_elevated():
+            result = subprocess.run(
+                ["cmd", "/c", commands],
+                capture_output=True,
+                timeout=60,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            return result.returncode == 0
+
+        # Not elevated: ask Windows for a single elevation for the repair.
+        import ctypes
+        from ctypes import wintypes
+
+        class SHELLEXECUTEINFOW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("fMask", ctypes.c_ulong),
+                ("hwnd", wintypes.HWND),
+                ("lpVerb", wintypes.LPCWSTR),
+                ("lpFile", wintypes.LPCWSTR),
+                ("lpParameters", wintypes.LPCWSTR),
+                ("lpDirectory", wintypes.LPCWSTR),
+                ("nShow", ctypes.c_int),
+                ("hInstApp", wintypes.HINSTANCE),
+                ("lpIDList", ctypes.c_void_p),
+                ("lpClass", wintypes.LPCWSTR),
+                ("hkeyClass", wintypes.HKEY),
+                ("dwHotKey", wintypes.DWORD),
+                ("hIconOrMonitor", ctypes.c_void_p),
+                ("hProcess", wintypes.HANDLE),
+            ]
+
+        SEE_MASK_NOCLOSEPROCESS = 0x00000040
+        info = SHELLEXECUTEINFOW()
+        info.cbSize = ctypes.sizeof(SHELLEXECUTEINFOW)
+        info.fMask = SEE_MASK_NOCLOSEPROCESS
+        info.lpVerb = "runas"
+        info.lpFile = "cmd.exe"
+        info.lpParameters = f"/c {commands}"
+        info.nShow = 0  # SW_HIDE
+        if not ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(info)):
+            return False
+        if info.hProcess:
+            # INFINITE would risk blocking the UI; 30 s is plenty for takeown.
+            try:
+                kernel32 = ctypes.windll.kernel32
+                kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+                kernel32.WaitForSingleObject(info.hProcess, 30000)
+            finally:
+                ctypes.windll.kernel32.CloseHandle(info.hProcess)
+        return True
+    except Exception:  # noqa: BLE001 - best effort by design
+        return False
+
+
 # Directory that holds the per-device temporary ``.rdp`` files. The files are
 # written here so they live alongside the rest of the app data; they are still
 # deleted after the connection starts (see launch_remote_desktop).
@@ -301,10 +455,28 @@ def launch_remote_desktop(
     # (falling back to its IP). The file is still temporary: it is deleted
     # *cleanup_delay* seconds later so the embedded password does not linger.
     base_name = _sanitize_filename_part(device_name or ip)
-    _RDP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    ensure_user_data_dir(_RDP_DIR)
     rdp_path = _RDP_DIR / f"{base_name}.rdp"
-    with open(rdp_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    try:
+        with open(rdp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except PermissionError:
+        # The directory (or an old file in it) is not accessible for the
+        # current user — typically because a previous elevated app start
+        # created it with admin-only permissions. Try to repair the ACLs
+        # (takeown + icacls, may trigger a UAC prompt) and retry once.
+        _repair_dir_permissions(_RDP_DIR)
+        try:
+            with open(rdp_path, "w", encoding="utf-8") as f:
+                f.write(content)
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"Cannot write remote desktop file to {_RDP_DIR}. "
+                "The folder is not accessible for the current user. "
+                "Repair it once from an elevated terminal with: "
+                f'takeown /f "{_RDP_DIR}" /r /d y  and  '
+                f'icacls "{_RDP_DIR}" /reset /t /c /q'
+            ) from exc
 
     # Force the geometry on the command line (reliable) and let the .rdp
     # file supply the credentials. The .rdp path is always the last argument.
