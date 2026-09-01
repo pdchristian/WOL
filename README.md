@@ -1,13 +1,16 @@
 # Wake-on-LAN Manager
 
-**Version 1.10.4 - Search & Remote Desktop Edition**
+**Version 2.0.0 - Modern UI Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
+
+> **New in 2.0.0:** a redesigned **Modern UI** ("Dark Control Center") with a sidebar and four native areas — *Geräte* (device status cards), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens. It is feature-identical to the classic window and can be selected at install time or switched in **Settings → Design** at any time.
 
 🔒 **Security Note:** Passwords are encrypted with AES-256-GCM (DPAPI-protected master key), legacy plaintext passwords are auto-re-encrypted on load, and all subprocess calls use `shell=False` with input validation. See [SECURITY.md](SECURITY.md) for details.
 
 ## Features
 
+- **Modern UI (new in 2.0.0)** — A redesigned "Dark Control Center" layout with a sidebar and native *Geräte* / *Verwalten* / *Zeitplan* / *Protokolle* / *Einstellungen* / *Über* screens (dark or light display mode). Feature-identical to the classic window; choose it at install time or switch it in **Settings → Design**
 - **Device Management** — Add, edit, and remove devices with friendly names, MAC addresses, and optional IP addresses (no device limit)
 - **Wake-on-LAN** — Send magic packets to individual devices or wake all at once (parallel, up to 8 concurrent)
 - **Status Monitoring** — Ping devices to check online/offline status (auto-refresh every 30 seconds, up to 16 concurrent)
@@ -88,6 +91,16 @@ A detailed user manual is available in German:
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
 ## 📝 Changelog
+
+### Version 2.0.0 - Modern UI Edition (2026-09-01)
+
+#### 🎨 Modern UI ("Dark Control Center")
+- **New application design:** a sidebar-based control center with four native areas — *Geräte* (device status cards), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens
+- **Device cards:** each device is shown as a card with a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window) and a primary action button that switches between *Aufwecken* (wake, while offline) and *Herunterfahren* (shutdown, while online); auto-refresh every 30 s
+- **Native settings & update screens:** *Einstellungen* (network, language, display mode, design, updates, log limit, shutdown method, RDP resolution) and *Über* (about + "Nach Updates suchen" / changelog) are full screens instead of dialogs
+- **Design choice at install time:** the installer asks for **Modern app** or **Classic app** (recorded in the registry); the layout can be changed later in **Settings → Design** (requires an app restart)
+- **Display mode:** dark / light / auto is respected by both layouts
+- **Feature parity:** both layouts share the same engine, config, dialogs and workers — only the presentation differs
 
 ### Version 1.10.3 (2026-08-25)
 

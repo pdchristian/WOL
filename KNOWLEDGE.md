@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 1.10.3                                                                |
+| **version**         | 2.0.0                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -12,7 +12,7 @@
 | **runtime**         | Python 3.10+                                                          |
 | **author**          | pdchristian                                                           |
 | **repository**      | https://github.com/pdchristian/WOL                                     |
-| **description**     | A powerful desktop application for managing network devices via Wake-on-LAN magic packets, ICMP ping status monitoring, remote shutdown (SMB and Host Service), and automated scheduling. Built with PyQt6 and hardened against CWE-2025 top security risks. |
+| **description**     | A powerful desktop application for managing network devices via Wake-on-LAN magic packets, ICMP ping status monitoring, remote shutdown (SMB and Host Service), and automated scheduling. Ships two interchangeable UIs — a classic window and a modern "Dark Control Center" sidebar layout (new in 2.0.0) — built with PyQt6 and hardened against CWE-2025 top security risks. |
 
 ---
 
@@ -30,6 +30,7 @@ Wake-on-LAN Manager is a Windows desktop GUI application that enables users to d
 - Multi-language support (English, German, French, Spanish)
 - Auto-update checking and downloading from GitHub Releases
 - Professional installer/uninstaller with Windows registry integration
+- **Two interchangeable UIs (new in 2.0.0):** a classic window (`MainWindow`) and a modern **"Dark Control Center"** sidebar layout (`ModernMainWindow`) with native *Devices / Manage / Schedule / Logs / Settings / About* screens — feature-identical, selectable at install time or in Settings
 
 ### Default Configuration Path
 ```
@@ -68,9 +69,24 @@ run.py
       ├── wol_app/log_dialog.py    (activity log viewer)
       ├── wol_app/network_scan_dialog.py (ScanWorker, NetworkScanDialog)
       ├── wol_app/updater.py       (UpdateChecker, DownloadWorker)
-      └── wol_app/update_dialog.py (UpdateAvailableDialog, _launch_installer_safe)
+      ├── wol_app/update_dialog.py (UpdateAvailableDialog, _launch_installer_safe)
+      │
+      │  Modern UI (new in 2.0.0) — selected when ui.layout_mode == "modern"
+      ├── wol_app/modern_main_window.py  (ModernMainWindow, run_modern_window)
+      │    ├── wol_app/modern_theme.py    (DARK/LIGHT tokens, apply_modern_theme)
+      │    ├── wol_app/views/devices_view.py   (DevicesView — status cards)
+      │    ├── wol_app/views/manage_view.py    (ManageView — devices + network scan)
+      │    ├── wol_app/views/schedule_view.py  (ScheduleView — schedule rows)
+      │    ├── wol_app/views/logs_view.py      (LogsView — event log)
+      │    ├── wol_app/views/settings_view.py  (SettingsView — native settings screen)
+      │    └── wol_app/views/update_view.py    (UpdateView — about + update check)
+      │
+      │  Shared modern dialogs/widgets
+      ├── wol_app/views/device_edit_dialog.py  (ModernDeviceDialog)
+      ├── wol_app/views/schedule_edit_dialog.py (ModernScheduleEditDialog)
+      └── wol_app/widgets/toggle_switch.py     (ToggleSwitch / ToggleWithLabel)
 
-installer.py                    (standalone installer, registry integration)
+installer.py                    (standalone installer, registry integration, UI-mode choice)
 uninstaller.py                  (standalone uninstaller, data wiping)
 build.ps1                       (PowerShell build orchestration script)
 ```
@@ -246,7 +262,11 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
   "ui": {
     "device_sort_column": 0,
     "device_sort_order": "ascending",
-    "language": "en"
+    "language": "en",
+    "remote_desktop_resolution": "1920x1080",
+    "layout_mode": "classic",
+    "layout_mode_user_set": false,
+    "display_mode": "auto"
   },
   "updates": {
     "auto_check_enabled": true,
@@ -255,6 +275,10 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
   }
 }
 ```
+
+> **UI layout & display mode (new in 2.0.0):**
+> - `ui.layout_mode` — `"classic"` (single-view `MainWindow`) or `"modern"` (sidebar `ModernMainWindow`). On first start the installer-written registry value `HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode` wins (see `ConfigManager._apply_installer_ui_mode`); `layout_mode_user_set` is set to `true` once the user picks a layout in Settings, after which the registry hint is ignored.
+> - `ui.display_mode` — `"auto"` / `"light"` / `"dark"`; respected by both layouts (defaults to `"auto"` when absent).
 
 ### 4.3 Device Schema
 
@@ -521,7 +545,37 @@ Help
 **Device Table Columns:**
 `[Name] [MAC] [IP Address] [Status] [Enabled]`
 
-### 7.2 Dialog Components
+### 7.2 Modern UI (`modern_main_window.py`, new in 2.0.0)
+
+A second, feature-identical main window: a **sidebar-based "Dark Control Center"** layout. It is selected at startup by `main()` when `ConfigManager.get_layout_mode() == "modern"` (otherwise the classic `MainWindow` runs). The layout mode is:
+
+- Chosen **at install time** — the Inno Setup installer writes `HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode` (`modern`/`classic`), read once on first start by `ConfigManager._apply_installer_ui_mode()`.
+- Switchable **at runtime** via `ConfigManager.set_layout_mode()` from the Settings dialog / SettingsView (requires an app restart).
+
+**`ModernMainWindow` structure:**
+- Left **sidebar** (fixed 230 px) with two sections:
+  - *Areas*: `Devices` / `Manage` / `Schedule` / `Logs` (exclusive-checked nav buttons)
+  - *Application*: `Settings` / `About` / `Quit`
+- Right **`QStackedWidget`** with six native screens:
+
+| Index | Screen            | Module (`views/`)   | Replaces (classic)              |
+|-------|-------------------|---------------------|--------------------------------|
+| 0     | Devices           | `devices_view.py`   | device table + status column    |
+| 1     | Manage            | `manage_view.py`    | Device Manager + Network Scan   |
+| 2     | Schedule          | `schedule_view.py`  | Schedule Manager dialog         |
+| 3     | Logs              | `logs_view.py`      | Log Viewer dialog               |
+| 4     | Settings          | `settings_view.py`  | Settings dialog                 |
+| 5     | About / Update    | `update_view.py`    | About dialog + manual update    |
+
+**Key behaviors:**
+- **Device cards** (`DevicesView`): responsive grid; each card shows a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window) and a primary action button that swaps between *Wake* (offline/unknown) and *Shutdown* (online). Auto-refresh every 30 s (`QTimer`), paused when hidden.
+- **Cross-sync:** `ModernMainWindow._on_devices_changed` keeps the device lists of `DevicesView` and `ManageView` in sync when a device is added/edited/removed in either area.
+- **Shared flows:** both layouts reuse `wol_app/remote_desktop.py` (`start_remote_desktop`) and `wol_app/shutdown_flow.py` (`confirm_shutdown`/`execute_shutdown`), the same `ConfigManager` API, the same `WOLEngine`, and the classic `UpdateAvailableDialog` for downloads.
+- **Theming:** `modern_theme.py` provides `DARK`/`LIGHT` token sets and `apply_modern_theme()`; objectName-based QSS so it never leaks into the classic UI. Respects `ui.display_mode` (auto/light/dark).
+- **Native dialogs:** `ModernDeviceDialog` (`views/device_edit_dialog.py`) and `ModernScheduleEditDialog` (`views/schedule_edit_dialog.py`); `widgets/toggle_switch.py` provides `ToggleSwitch`/`ToggleWithLabel`.
+- **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution) — devices/schedules/logs and the layout mode are preserved.
+
+### 7.3 Dialog Components
 
 | Dialog               | Module                    | Purpose                         |
 |----------------------|---------------------------|---------------------------------|
@@ -618,6 +672,7 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
+| 2.0.0   | 2026-09-01 | Modern UI Edition          | Modern "Dark Control Center" sidebar layout (Devices/Manage/Schedule/Logs/Settings/About screens), installer UI-mode choice, display mode (dark/light/auto) |
 | 1.10.0  | 2026-08-22 | Search & Remote Desktop Edition | Remote Desktop sessions (fullscreen/window), device search in main window/device manager/scanner/schedules |
 | 1.6.0   | 2026-08-05 | Improvement Edition        | Lazy permissions fix, logging module, thread tracking, parallel wake/ping |
 | 1.5.1   | 2026-07-21 | Scheduler Fix Edition      | Scheduler reliability improvements              |

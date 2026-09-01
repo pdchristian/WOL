@@ -4,19 +4,20 @@
 1. [Installation](#installation)
 2. [Deinstallation](#deinstallation)
 3. [Start der Anwendung](#start-der-anwendung)
-4. [Geräte verwalten](#geräte-verwalten)
-5. [Wake-on-LAN senden](#wake-on-lan-senden)
-6. [Status prüfen](#status-prüfen)
-7. [Remote Shutdown](#remote-shutdown)
-8. [Herunterfahren mit Host-Service](#herunterfahren-mit-host-service)
-9. [Remote Desktop](#remote-desktop)
-10. [Zeitpläne erstellen](#zeitpläne-erstellen)
-11. [Netzwerkeinstellungen](#netzwerkeinstellungen)
-12. [Protokoll anzeigen](#protokoll-anzeigen)
-13. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
-14. [Tastenkürzel](#tastenkürzel)
-15. [Häufige Fragen](#häufige-fragen)
-16. [Systemanforderungen](#systemanforderungen)
+4. [Die moderne Benutzeroberfläche](#die-moderne-benutzeroberfläche)
+5. [Geräte verwalten](#geräte-verwalten)
+6. [Wake-on-LAN senden](#wake-on-lan-senden)
+7. [Status prüfen](#status-prüfen)
+8. [Remote Shutdown](#remote-shutdown)
+9. [Herunterfahren mit Host-Service](#herunterfahren-mit-host-service)
+10. [Remote Desktop](#remote-desktop)
+11. [Zeitpläne erstellen](#zeitpläne-erstellen)
+12. [Netzwerkeinstellungen](#netzwerkeinstellungen)
+13. [Protokoll anzeigen](#protokoll-anzeigen)
+14. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
+15. [Tastenkürzel](#tastenkürzel)
+16. [Häufige Fragen](#häufige-fragen)
+17. [Systemanforderungen](#systemanforderungen)
 
 ---
 
@@ -62,9 +63,9 @@ Starten Sie die Anwendung über:
 - Die **Desktop-Verknüpfung** (Doppelklick)
 - Das **Windows-Startmenü** → *Wake-on-LAN Manager*
 
-Die Hauptansicht zeigt eine Tabelle mit allen konfigurierten Geräten und deren Status.
+> **Ab Version 2.0.0** gibt es zwei Oberflächen – die **moderne** (Standard) und die **klassische** Ansicht. Welche beim Start geladen wird, haben Sie beim Installieren gewählt oder können Sie in den **Einstellungen → Design** ändern (Details im [nächsten Kapitel](#die-moderne-benutzeroberfläche)). Beide bieten identische Funktionen.
 
-**Hauptbestandteile:**
+**Klassische Ansicht – Hauptbestandteile:**
 - **Menüleiste** oben (Datei, Tools, Hilfe)
 - **Aktionen-Schaltflächen** (Alle Geräte wecken, Status aktualisieren)
 - **Gerätetabelle** mit Name, MAC-Adresse, IP und Status
@@ -72,7 +73,66 @@ Die Hauptansicht zeigt eine Tabelle mit allen konfigurierten Geräten und deren 
 
 ---
 
+## Die moderne Benutzeroberfläche
+
+Mit **Version 2.0.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen. Es ist die größte Änderung dieser Version: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein.
+
+> **Wichtig:** Die moderne und die klassische Oberfläche bieten **exakt dieselben Funktionen** – sie unterscheiden sich nur im Layout. Alle Einstellungen, Geräte, Zeitpläne, Protokolle und Sicherheitsfunktionen sind identisch. Sie können jederzeit zwischen beiden wechseln.
+
+### Das App-Design wählen
+
+- **Beim Installieren:** Der Installer fragt nach dem gewünschten Design – **Moderne App** (dunkles Control-Center-Layout mit Seitenleiste) oder **Klassische App** (traditionelles Fenster-Layout).
+- **Jederzeit in der App:** Unter **Einstellungen → Design** (klassisch: **Tools → Einstellungen...**, modern: Bildschirm **Einstellungen**) können Sie zwischen **Klassische App** und **Moderne App** wechseln.
+  > **Hinweis:** Eine Änderung des Designs erfordert einen **Neustart der App**.
+
+### Anzeige-Modus (dunkel / hell / automatisch)
+Im selben Bereich **Design/Anzeige** wählen Sie den **Anzeige-Modus**:
+- **Automatisch** – folgt dem Windows-Systemthema
+- **Hell** – helles Design
+- **Dunkel** – dunkles Design
+
+Der gewählte Modus wird von **beiden** Layouts (modern und klassisch) respektiert.
+
+### Aufbau der modernen Oberfläche
+
+Die moderne Oberfläche besteht aus zwei Teilen:
+
+**1. Seitenleiste (links)** mit zwei Abschnitten:
+
+| Abschnitt | Einträge |
+|-----------|----------|
+| **Bereiche** | 💻 **Geräte** · 🔧 **Verwalten** · 🕒 **Zeitplan** · 📋 **Protokolle** |
+| **Applikation** | ⚙ **Einstellungen** · ℹ **Über** · ⏻ (App beenden) |
+
+**2. Arbeitsbereich (rechts)** – je nach gewähltem Eintrag wird der passende Bildschirm angezeigt:
+
+| Bildschirm | Inhalt |
+|------------|--------|
+| **💻 Geräte** | Alle Geräte als **Status-Karten** mit Live-Status, IP/MAC und Aktions-Buttons (Aufwecken / Herunterfahren / Remote Desktop) |
+| **🔧 Verwalten** | **Geräte-Verwaltung** (Hinzufügen, Bearbeiten, Löschen, Import/Export, Suchen) und **Netzwerk-Scan** |
+| **🕒 Zeitplan** | Zeitpläne für automatisches Aufwecken/Herunterfahren (mit Live-Suche) |
+| **📋 Protokolle** | Alle Ereignisse der App (mit Suchfeld, Level-Filter und CSV-Export) |
+| **⚙ Einstellungen** | Alle App- und Netzwerkeinstellungen (natives Bildschirm statt Dialog) |
+| **ℹ Über** | Versionsinfo, **Nach Updates suchen** und **Changelog** |
+
+### Die Geräte-Karten (Bereiche → Geräte)
+Jedes Gerät wird als **Karte** dargestellt:
+- **Name** mit **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
+- **IP- und MAC-Adresse**
+- **Remote-Desktop-Kacheln** (🖥️ Vollbild / 🪟 Fenster)
+- **Aktions-Button:**
+  - Gerät **offline/unbekannt** → **Aufwecken** (sendet das Wake-on-LAN-Signal)
+  - Gerät **online** → **Herunterfahren** (Remote-Shutdown)
+
+Die Status-Punkte werden **alle 30 Sekunden automatisch** aktualisiert. Über das Suchfeld können Sie die Karten **live filtern**.
+
+> **Tipp:** Die Bereiche *Verwalten*, *Zeitplan*, *Protokolle*, *Einstellungen* und *Über* sind in der modernen Oberfläche **eigene Bildschirme** (keine Dialoge mehr). Die klassischen Menüs (Datei, Tools, Hilfe) existieren in der modernen Oberfläche nicht – alle Funktionen sind über die Seitenleiste erreichbar.
+
+---
+
 ## Geräte verwalten
+
+> **Moderne Oberfläche:** In der modernen Ansicht finden Sie die Geräte-Verwaltung unter **Bereiche → Verwalten** (statt über das Menü *Datei → Geräte verwalten...*). Dort können Sie Geräte hinzufügen, bearbeiten, löschen, importieren/exportieren und mit Suchfeld filtern – zusätzlich ist der **Netzwerk-Scan** direkt auf demselben Bildschirm integriert.
 
 ### Geräte suchen
 Über dem Suchfeld der Gerätetabelle (im Hauptfenster und im Geräte-Manager) können Sie die Liste **live filtern**. Geben Sie einen Begriff ein – die Tabelle zeigt nur noch Geräte, deren **Name**, **MAC-Adresse**, **IP-Adresse** oder **Benutzername** den Suchbegriff enthält. Ein leeres Feld zeigt wieder alle Geräte.
@@ -471,4 +531,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 1.10.4 | Wake-on-LAN Manager*
+*Version 2.0.0 | Wake-on-LAN Manager*
