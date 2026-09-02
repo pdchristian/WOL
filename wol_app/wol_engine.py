@@ -14,6 +14,26 @@ from wol_app.utils import run_subprocess_safe, validate_ip, validate_mac
 # Max concurrent magic packets when waking all devices (network-friendly)
 MAX_CONCURRENT_WAKE = 8
 
+# Weekday abbreviations (English) used as the canonical stored format in
+# schedule configs (see views/schedule_edit_dialog.DAYS). Index matches
+# datetime.weekday() (Monday=0 .. Sunday=6).
+_DAYS_EN = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def day_in_schedule(days: list, now: datetime) -> bool:
+    """Return True if ``now``'s weekday is one of ``days``.
+
+    ``days`` holds English weekday abbreviations ("Mon".."Sun") as stored by
+    the schedule dialogs. An empty list matches no day (the dialogs reject
+    empty selections, so this only guards against malformed configs).
+
+    Locale-independent: derives the weekday from the date itself instead of
+    ``strftime("%a")``, which returns the OS-locale abbreviated weekday and
+    would never match the stored English keys on e.g. German Windows.
+    """
+    return _DAYS_EN[now.weekday()] in days
+
+
 class WOLEngine(QObject):
     """Handles Wake-on-LAN magic packets, device status checks, and scheduling."""
 
@@ -230,7 +250,6 @@ class WOLEngine(QObject):
             self._scheduler_timer.cancel()
 
         now = datetime.now()
-        current_day = now.strftime("%a")  # e.g. "Mon"
         current_hour = now.hour
         current_minute = now.minute
 
@@ -243,7 +262,7 @@ class WOLEngine(QObject):
             days = schedule.get("days", [])
 
             if current_hour == sched_hour and current_minute == sched_minute:
-                if current_day in days:
+                if day_in_schedule(days, now):
                     device_id = schedule["device_id"]
                     action = schedule.get("action", "wake")
                     # Verify device still exists

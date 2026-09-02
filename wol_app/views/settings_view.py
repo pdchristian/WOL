@@ -1,7 +1,7 @@
 """Modern UI: "Einstellungen" screen (application & network configuration).
 
 Layout mirrors the prototype's settings screen
-(Design_Prototpye/dark_control_center_full.html):
+(design_prototype/dark_control_center_full.html):
 
 1. Page header (title + subtitle).
 2. A two-column form grid: dim field label above each input

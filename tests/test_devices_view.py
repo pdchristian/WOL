@@ -1,14 +1,24 @@
 """Tests for the modern devices screen (DevicesView / DeviceCard)."""
 
+import json
+import os
+from pathlib import Path
+
 import pytest
 
 from wol_app.config import ConfigManager
+from wol_app.translations import Translations
 
 pytest.importorskip("PyQt6")
 
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from wol_app.views.devices_view import DeviceCard, DevicesView  # noqa: E402
+
+# Translation keys asserted below — must exist in every locale so the
+# locale-synchronous assertions never fall back to the raw key string.
+_ACTION_KEYS = ("modern.devices.button.wake", "button.shutdown")
+_NAME_KEYS = ("device.me", "device.disabled")
 
 
 @pytest.fixture(scope="module")
@@ -43,13 +53,13 @@ def config_with_devices(tmp_config):
 class TestDeviceCard:
     def test_offline_card_shows_wake_button(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
-        assert card.action_btn.text() == "Aufwecken"
+        assert card.action_btn.text() == Translations.tr("modern.devices.button.wake")
         assert card.action_btn.objectName() == "wakeButton"
         assert card.dot.objectName() == "dotOffline"
 
     def test_online_card_shows_shutdown_button(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
-        assert card.action_btn.text() == "Herunterfahren"
+        assert card.action_btn.text() == Translations.tr("button.shutdown")
         assert card.action_btn.objectName() == "shutdownButton"
         assert card.dot.objectName() == "dotOnline"
 
@@ -74,14 +84,14 @@ class TestDeviceCard:
     def test_local_device_marked_with_me(self, qapp, config_with_devices):
         card = DeviceCard(
             config_with_devices.config["devices"][0], "unknown", {"192.168.1.10"})
-        assert "(ich)" in card.title.text()
+        assert Translations.tr("device.me") in card.title.text()
 
     def test_disabled_device_buttons_disabled(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][2], "unknown", set())
         assert not card.action_btn.isEnabled()
         assert not card.remote_fs_btn.isEnabled()
         assert not card.remote_win_btn.isEnabled()
-        assert "Deaktiviert" in card.title.text()
+        assert Translations.tr("device.disabled") in card.title.text()
 
     def test_remote_buttons_emit_signal(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "unknown", set())
@@ -126,4 +136,31 @@ class TestDevicesView:
         view = DevicesView(config_with_devices)
         view._on_statuses_finished([("d1", "Desktop", "online", "")])
         view.retranslate()
-        assert view._cards["d1"].action_btn.text() == "Herunterfahren"
+        assert view._cards["d1"].action_btn.text() == Translations.tr("button.shutdown")
+
+
+class TestLocaleKeyConsistency:
+    """Guard against one-sided locale maintenance (C5).
+
+    ``test_devices_view`` (de) and ``test_modern_ui`` (en) drive the same
+    ``DevicesView``/``DeviceCard`` widgets. The keys they exercise must exist
+    in BOTH English and German; otherwise a missing key silently falls back
+    to the raw key string and the UI shows untranslated keys.
+    """
+
+    def _locale_keys(self, lang: str) -> set:
+        path = Path(__file__).resolve().parent.parent / "wol_app" / "locales" / f"{lang}.json"
+        with open(path, encoding="utf-8") as fh:
+            return set(json.load(fh).keys())
+
+    @pytest.mark.parametrize("lang", ["en", "de"])
+    def test_action_keys_present_in_both_locales(self, lang):
+        keys = self._locale_keys(lang)
+        missing = [k for k in _ACTION_KEYS if k not in keys]
+        assert not missing, f"Keys missing from {lang}.json: {missing}"
+
+    @pytest.mark.parametrize("lang", ["en", "de"])
+    def test_name_marker_keys_present_in_both_locales(self, lang):
+        keys = self._locale_keys(lang)
+        missing = [k for k in _NAME_KEYS if k not in keys]
+        assert not missing, f"Keys missing from {lang}.json: {missing}"

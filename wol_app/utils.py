@@ -570,3 +570,101 @@ def get_resource_path(filename: str) -> str:
                 and os.path.exists(os.path.join(root_path, filename)):
             base_path = root_path
     return os.path.join(base_path, filename)
+
+
+def app_icon_for_mode(mode: str) -> str:
+    """Icon file name for a UI layout mode (modern -> green, classic -> blue)."""
+    return "icon_modern.ico" if mode == "modern" else "icon.ico"
+
+
+def set_app_user_model_id(app_id: str) -> bool:
+    """Set the Windows AppUserModelID of the current process.
+
+    Windows groups a taskbar button with a pinned/installed shortcut when
+    the IDs match and then shows the SHORTCUT's icon instead of the
+    window's own. Using a layout-specific ID keeps the button separate, so
+    the window icon wins and the taskbar follows the active UI layout.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+        return True
+    except Exception:
+        return False
+
+
+def _app_icon_dir() -> str:
+    """Directory holding icon.ico / icon_modern.ico (install dir or project root)."""
+    import sys
+
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def update_shortcut_icons(mode: str) -> int:
+    """Point Desktop/Start-Menu shortcuts of this app at the icon of ``mode``.
+
+    Mirrors the taskbar rule (modern -> green icon_modern.ico, classic ->
+    blue icon.ico) for the shortcut icons themselves, so the Desktop and
+    Start Menu entries match the layout the user selected in the settings.
+    Only shortcuts whose target is this app's executable are touched; a
+    shortcut is rewritten only when its icon actually differs. Returns the
+    number of updated shortcuts (0 on non-Windows, in headless/test runs,
+    or when no shortcut exists).
+    """
+    if os.name != "nt" or os.environ.get("WOL_HEADLESS", "").lower() in ("1", "true", "yes"):
+        return 0
+    # Only meaningful for an installed (frozen) build: in dev mode the app
+    # lives in the source tree, where no Start Menu/Desktop shortcuts exist
+    # and rewriting them would point at a non-installed icon path.
+    import sys as _sys
+
+    if not getattr(_sys, "frozen", False):
+        return 0
+    icon_name = app_icon_for_mode(mode)
+    icon_path = os.path.join(_app_icon_dir(), icon_name)
+    if not os.path.exists(icon_path):
+        return 0
+    exe_name = "Wake-on-LAN Manager.exe"
+    start_menu_sub = r"Microsoft\Windows\Start Menu\Programs"
+    search_roots = [
+        os.path.join(os.environ.get("PROGRAMDATA", r"C:\ProgramData"), start_menu_sub),
+        os.path.join(os.environ.get("APPDATA", ""), start_menu_sub),
+        os.path.join(os.environ.get("USERPROFILE", ""), "Desktop"),
+        os.path.join(os.environ.get("PUBLIC", r"C:\Users\Public"), "Desktop"),
+    ]
+    try:
+        import pythoncom  # noqa: F401  (initialises COM for the current thread)
+        from win32com.client import Dispatch
+    except Exception:
+        return 0
+    updated = 0
+    for root in search_roots:
+        if not root or not os.path.isdir(root):
+            continue
+        try:
+            lnks = [os.path.join(dirpath, f)
+                    for dirpath, _, files in os.walk(root)
+                    for f in files if f.lower().endswith(".lnk")]
+        except OSError:
+            continue
+        for lnk_path in lnks:
+            try:
+                shell = Dispatch("WScript.Shell")
+                shortcut = shell.CreateShortcut(lnk_path)
+                target = (shortcut.TargetPath or "").lower()
+                if os.path.basename(target) != exe_name.lower():
+                    continue
+                if os.path.normcase(shortcut.IconLocation or "") == \
+                        os.path.normcase(f"{icon_path},0"):
+                    continue
+                shortcut.IconLocation = f"{icon_path},0"
+                shortcut.Save()
+                updated += 1
+            except Exception:
+                continue
+    return updated

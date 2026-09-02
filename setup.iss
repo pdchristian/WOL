@@ -19,7 +19,7 @@
 ; ============================================================================
 
 #ifndef AppVersion
-  #define AppVersion "1.10.3"
+  #define AppVersion "2.0.0"
 #endif
 
 [Setup]
@@ -145,6 +145,7 @@ Source: "Bedienungsanleitung.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Bedienungsanleitung.pdf"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Wake-on-LAN.reg"; DestDir: "{app}"; Flags: ignoreversion
 Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "icon_modern.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; Uninstaller helper (kept in the install dir so the uninstall custom
 ; actions can invoke it).
 Source: "dist\uninstall.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -157,9 +158,14 @@ Source: "dist\WOL Host Service\*"; DestDir: "{app}\WOL Host Service"; Flags: ign
 Source: "dist_onefile\WOL Host Service.exe"; DestDir: "{app}"; Flags: ignoreversion; Tasks: service_onefile
 
 [Icons]
-Name: "{group}\Wake-on-LAN Manager"; Filename: "{app}\Wake-on-LAN Manager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+; The app shortcut carries the icon of the chosen UI variant: the Windows
+; taskbar groups the running window with its shortcut and shows the
+; shortcut's icon, so a modern install must pin the green icon_modern.ico.
+Name: "{group}\Wake-on-LAN Manager"; Filename: "{app}\Wake-on-LAN Manager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon_modern.ico"; Tasks: ui_modern
+Name: "{group}\Wake-on-LAN Manager"; Filename: "{app}\Wake-on-LAN Manager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: not ui_modern
 Name: "{group}\Uninstall Wake-on-LAN Manager"; Filename: "{app}\uninstall.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
-Name: "{autodesktop}\Wake-on-LAN Manager"; Filename: "{app}\Wake-on-LAN Manager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
+Name: "{autodesktop}\Wake-on-LAN Manager"; Filename: "{app}\Wake-on-LAN Manager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon_modern.ico"; Tasks: desktopicon and ui_modern
+Name: "{autodesktop}\Wake-on-LAN Manager"; Filename: "{app}\Wake-on-LAN Manager.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon and not ui_modern
 
 [Run]
 ; Launch the app after install, as the ORIGINAL (non-elevated) user, so it

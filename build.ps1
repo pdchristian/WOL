@@ -1,6 +1,6 @@
 # ============================================================================
 # Wake-on-LAN Manager - Build Script
-# Version: 1.10.3 - Search & Remote Desktop Edition
+# Version: 2.0.0 - Search & Remote Desktop Edition
 # Date: 2026-08-22
 # ============================================================================
 # This script builds the application, host service, uninstaller, the installer
@@ -11,7 +11,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "=======================================" -ForegroundColor Cyan
-Write-Host "  Wake-on-LAN Manager v1.10.3 - Build Script" -ForegroundColor Cyan
+Write-Host "  Wake-on-LAN Manager v2.0.0 - Build Script" -ForegroundColor Cyan
 Write-Host "  Host Service Edition" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""

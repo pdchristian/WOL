@@ -1,6 +1,6 @@
 """Modern "Dark Control Center" main window for the Wake-on-LAN application.
 
-Sidebar-based layout mirroring Design_Prototpye/dark_control_center_full.html:
+Sidebar-based layout mirroring design_prototype/dark_control_center_full.html:
 Geräte / Verwalten / Zeitplan / Protokolle + application footer (settings,
 about, quit). Feature-identical to the classic ``MainWindow``; in this
 iteration "Verwalten", "Zeitplan", "Protokolle", "Einstellungen" and
@@ -69,6 +69,13 @@ class ModernMainWindow(QMainWindow):
         self._tokens = DARK if dark_mode else LIGHT
 
         self.setWindowTitle(Translations.tr("app.name"))
+        # Use the modern logo in the taskbar (WM_SETICON uses the window icon,
+        # not the app icon, so this must be set on the window itself).
+        icon_path = get_resource_path("icon_modern.ico")
+        if not os.path.exists(icon_path):
+            icon_path = get_resource_path("icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.resize(1180, 740)
 
         # Scheduler engine (wake/shutdown for fired schedule entries)

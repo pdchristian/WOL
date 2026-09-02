@@ -34,6 +34,18 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "SECURITY.md": [
         (r"- \*\*Version:\*\* (\d+\.\d+\.\d+)", r"- **Version:** {version}"),
     ],
+    # Build/packaging files: keep their hardcoded version in step with the
+    # app version so manual `iscc`/`build.ps1` runs never ship a stale tag.
+    "setup.iss": [
+        (r'(#define AppVersion ")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
+    ],
+    "build.ps1": [
+        (r"(Version: )\d+\.\d+\.\d+", r"\g<1>{version}"),
+        (r"(Manager v)\d+\.\d+\.\d+", r"\g<1>{version}"),
+    ],
+    "Wake-on-LAN Manager.spec": [
+        (r"(Version )\d+\.\d+\.\d+", r"\g<1>{version}"),
+    ],
 }
 
 

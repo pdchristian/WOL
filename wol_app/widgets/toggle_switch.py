@@ -1,7 +1,7 @@
 """Pill-style toggle switch matching the design prototype.
 
 Mirrors the ``.toggle`` / ``.toggle.on`` CSS of
-Design_Prototpye/dark_control_center_full.html: a 40x22 px pill with a
+design_prototype/dark_control_center_full.html: a 40x22 px pill with a
 16 px white knob that slides when toggled. Colors follow the currently
 applied modern theme (see :func:`wol_app.modern_theme.current_tokens`).
 """

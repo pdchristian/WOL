@@ -1,7 +1,7 @@
 """Modern UI: "Über" screen (about + update check).
 
 Layout mirrors the prototype's about screen
-(Design_Prototpye/dark_control_center_full.html) — a single centered
+(design_prototype/dark_control_center_full.html) — a single centered
 block (max-width 420 px, vertically centered, no page header):
 
 1. App logo tile (icon_modern.ico).

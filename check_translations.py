@@ -4,7 +4,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 
 # 1. Gather all Translations.tr("...") keys from Python source files
 all_keys = set()
-for pyfile in glob.glob("wol_app/*.py"):
+for pyfile in glob.glob("wol_app/**/*.py", recursive=True):
     content = open(pyfile, encoding="utf-8").read()
     found = re.findall(r'Translations\.tr\(["\']([a-zA-Z0-9_.]+)["\']', content)
     all_keys.update(found)

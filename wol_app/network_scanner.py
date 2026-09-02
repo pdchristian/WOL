@@ -6,6 +6,7 @@ import struct
 import subprocess
 import threading
 
+from wol_app.translations import Translations
 from wol_app.utils import run_subprocess_safe, validate_ip, validate_mac
 
 # Safety constants
@@ -523,7 +524,9 @@ def scan_network(timeout: int = 1, progress_callback=None) -> list[dict]:
 
     for iface in interfaces:
         if progress_callback:
-            progress_callback(None, None, f"Scanne Subnetz {iface['ip']}...")
+            progress_callback(
+                None, None, Translations.tr("scan.scanning_subnet", ip=iface["ip"])
+            )
         hosts = scan_subnet(iface["ip"], iface["netmask"], timeout,
                            progress_callback)
         for host in hosts:

@@ -1,7 +1,7 @@
 """Modern UI: "Protokolle" screen (application event log).
 
 Layout mirrors the prototype's logs screen
-(Design_Prototpye/dark_control_center_full.html):
+(design_prototype/dark_control_center_full.html):
 
 1. Page header (title + subtitle).
 2. Toolbar: search field, level filter combo and a CSV export button.

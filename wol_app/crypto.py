@@ -10,18 +10,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 _master_key: bytes | None = None
 
 
-def _secure_clear_memory(data: str) -> None:
-    """Securely overwrite string in memory with zeros (best effort)."""
-    if not data:
-        return
-    # Create mutable byte array
-    byte_data = bytearray(data.encode('utf-8'))
-    for i in range(len(byte_data)):
-        byte_data[i] = 0
-    # Force garbage collection
-    del byte_data
-
-
 def _get_dpapi_protected_key() -> bytes:
     """
     Derive a persistent 256-bit master key protected by Windows DPAPI.
@@ -144,8 +132,6 @@ def encrypt_password(plaintext: str) -> str:
     ciphertext = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
     # Prepend nonce to ciphertext so we can decrypt later
     encrypted_data = nonce + ciphertext
-    # Securely clear plaintext from memory
-    _secure_clear_memory(plaintext)
     return base64.b64encode(encrypted_data).decode("ascii")
 
 

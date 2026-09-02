@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 1.10.3 - Search & Remote Desktop Edition
+# Wake-on-LAN Manager Version 2.0.0 - Search & Remote Desktop Edition
 # Generated on 2026-08-22
 
 a = Analysis(
@@ -26,6 +26,27 @@ a = Analysis(
         'wol_app.updater',
         'wol_app.utils',
         'wol_app.wol_engine',
+        'wol_app.device_io',
+        'wol_app.host_service_client',
+        'wol_app.remote_desktop',
+        'wol_app.scan_worker',
+        'wol_app.schedule_runner',
+        'wol_app.shutdown_flow',
+        'wol_app.modern_main_window',
+        'wol_app.modern_theme',
+        'wol_app.theme',
+        'wol_app.views',
+        'wol_app.views.devices_view',
+        'wol_app.views.device_edit_dialog',
+        'wol_app.views.logs_view',
+        'wol_app.views.manage_view',
+        'wol_app.views.schedule_edit_dialog',
+        'wol_app.views.schedule_view',
+        'wol_app.views.settings_view',
+        'wol_app.views.shutdown_confirm_dialog',
+        'wol_app.views.update_view',
+        'wol_app.widgets',
+        'wol_app.widgets.toggle_switch',
     ],
     hookspath=[],
     hooksconfig={},

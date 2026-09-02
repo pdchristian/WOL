@@ -45,7 +45,12 @@ from wol_app.update_dialog import (
     UpdateInfoDialog,
 )
 from wol_app.updater import UpdateChecker, check_for_updates_sync
-from wol_app.utils import get_ip_key, get_resource_path
+from wol_app.utils import (
+    app_icon_for_mode,
+    get_ip_key,
+    get_resource_path,
+    set_app_user_model_id,
+)
 from wol_app.wol_engine import WOLEngine
 
 # Module-level registry to hold thread references until native threads truly finish
@@ -150,6 +155,12 @@ class MainWindow(QMainWindow):
         self.device_sort_order = sort_settings["sort_order"]
 
         self.setWindowTitle(Translations.tr("app.name"))
+        # Taskbar icon follows the UI layout: classic -> blue icon.ico.
+        icon_path = get_resource_path(app_icon_for_mode(self.config.get_layout_mode()))
+        if not os.path.exists(icon_path):
+            icon_path = get_resource_path("icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.setMinimumSize(800, 600)
 
         # Keep references to prevent garbage collection while threads run
@@ -916,14 +927,24 @@ def main() -> NoReturn:
     display_mode = config.config.get("ui", {}).get("display_mode", "auto")
     apply_display_mode(app, display_mode)
 
-    icon_path: str = get_resource_path("icon.ico")
+    # Layout-specific AppUserModelID: without it Windows groups the window
+    # with the installed Start Menu shortcut and shows the shortcut's icon,
+    # which cannot change when the user switches the UI layout later.
+    layout_mode = config.get_layout_mode()
+    set_app_user_model_id(
+        "WakeOnLAN.Manager." + ("Modern" if layout_mode == "modern" else "Classic")
+    )
+
+    icon_path: str = get_resource_path(app_icon_for_mode(layout_mode))
+    if not os.path.exists(icon_path):
+        icon_path = get_resource_path("icon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
     # Choose the window layout: modern control center or classic single view.
     # The mode is selected at install time (registry) and can be changed in
     # the settings dialog (ui.layout_mode).
-    if config.get_layout_mode() == "modern":
+    if layout_mode == "modern":
         from wol_app.modern_main_window import run_modern_window
 
         dark = display_mode == "dark" or (

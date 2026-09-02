@@ -1,7 +1,7 @@
 """Stylesheet for the modern "Dark Control Center" UI.
 
 Color tokens mirror the design prototype
-(Design_Prototpye/dark_control_center_full.html). A light variant is
+(design_prototype/dark_control_center_full.html). A light variant is
 provided for ``ui.display_mode == "light"`` so the modern layout respects
 the existing display-mode setting.
 

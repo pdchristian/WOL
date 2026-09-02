@@ -1,7 +1,7 @@
 """Modern UI: "Zeitplan" screen (scheduled wake-up / shutdown entries).
 
 Layout mirrors the prototype's schedule screen
-(Design_Prototpye/dark_control_center_full.html):
+(design_prototype/dark_control_center_full.html):
 
 1. Page header (title + subtitle).
 2. Toolbar: primary "Zeitplan erstellen" button and a live search field.

@@ -11,6 +11,7 @@ from pathlib import Path
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.utils import (
     ensure_user_data_dir,
+    update_shortcut_icons,
     validate_device_name,
     validate_mac,
     validate_password,
@@ -486,6 +487,13 @@ class ConfigManager:
         ui["layout_mode"] = mode
         ui["layout_mode_user_set"] = True
         self.save()
+        # Keep the Desktop/Start-Menu shortcut icon in sync with the chosen
+        # layout (modern -> green, classic -> blue). No-op outside an
+        # installed Windows build; safe to call from either settings UI.
+        try:
+            update_shortcut_icons(mode)
+        except Exception as e:  # pragma: no cover - non-fatal
+            _logger.warning("Could not update shortcut icons: %s", e)
     # --- Schedules ---
 
     def get_schedules(self) -> list:
@@ -638,8 +646,6 @@ class ConfigManager:
                 except Exception:
                     dev["password"] = ""
 
-    # --- Validation ---
-
     # --- Update Settings ---
 
     def get_update_settings(self) -> dict:
@@ -716,5 +722,4 @@ class ConfigManager:
         ui["remote_desktop_resolution"] = resolution
         self.save()
 
-    # --- Validation ---
 

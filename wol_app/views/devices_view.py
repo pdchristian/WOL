@@ -1,7 +1,7 @@
 """Modern UI: "Geräte" screen (device status cards).
 
 Layout mirrors the prototype's devices screen
-(Design_Prototpye/dark_control_center_full.html, ``#devices``):
+(design_prototype/dark_control_center_full.html, ``#devices``):
 
 1. Page header (title + live summary "N Geräte · M online") and a search field.
 2. Toolbar: refresh icon button and the primary "Alle aufwecken" button.
@@ -36,9 +36,10 @@ from PyQt6.QtWidgets import (
 from wol_app.main_window import HEADLESS_MODE, StatusWorker
 from wol_app.network_scanner import get_local_ips
 from wol_app.remote_desktop import start_remote_desktop
-from wol_app.shutdown_flow import confirm_shutdown
+from wol_app.shutdown_flow import execute_shutdown
 from wol_app.translations import Translations
 from wol_app.views.device_edit_dialog import ModernDeviceDialog
+from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
 from wol_app.wol_engine import WOLEngine
 
 # Minimum card width incl. gap (prototype .grid: minmax(230px, 1fr) + 16px gap)
@@ -411,7 +412,9 @@ class DevicesView(QWidget):
         device = self._device_by_id(device_id)
         if device is None:
             return
-        confirm_shutdown(self, self.config, device)
+        dialog = ModernShutdownConfirmDialog(device.get("name", ""), self)
+        if dialog.exec():
+            execute_shutdown(self, self.config, device, None)
         # Status will update on the next refresh cycle
 
     def _remote_device(self, device_id: str, fullscreen: bool) -> None:
