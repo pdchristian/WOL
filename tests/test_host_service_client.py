@@ -5,7 +5,7 @@ import socket
 import unittest
 from unittest import mock
 
-from wol_app.host_service_client import send_host_command
+from wol_app.host_service_client import get_metrics, run_batch, send_host_command
 
 
 def _fake_socket_responding(response_payload: dict):
@@ -112,6 +112,78 @@ class TestSendHostCommand(unittest.TestCase):
             ok, msg = send_host_command("1.2.3.4", "shutdown", "u", "p")
         self.assertFalse(ok)
         self.assertIn("No response", msg)
+
+
+class TestGetMetrics(unittest.TestCase):
+    def test_success(self):
+        payload = {
+            "status": "ok", "protocol": 2, "hostname": "PC-01",
+            "cpu": 42.0, "cpu_count": 8, "ram_used": 8, "ram_total": 16,
+            "gpu": 30.0, "vram_used": 1, "vram_total": 12,
+            "gpu_name": "RTX", "uptime": 100,
+        }
+        with mock.patch(
+            "wol_app.host_service_client.socket.create_connection",
+            return_value=_fake_socket_responding(payload),
+        ):
+            ok, result = get_metrics("1.2.3.4", "u", "p")
+        self.assertTrue(ok)
+        self.assertEqual(result["cpu"], 42.0)
+        self.assertEqual(result["hostname"], "PC-01")
+
+    def test_auth_failure(self):
+        with mock.patch(
+            "wol_app.host_service_client.socket.create_connection",
+            return_value=_fake_socket_responding(
+                {"status": "error", "message": "Authentication failed"}),
+        ):
+            ok, msg = get_metrics("1.2.3.4", "u", "p")
+        self.assertFalse(ok)
+        self.assertEqual(msg, "Authentication failed")
+
+    def test_old_protocol_rejected(self):
+        with mock.patch(
+            "wol_app.host_service_client.socket.create_connection",
+            return_value=_fake_socket_responding({"status": "ok", "protocol": 1}),
+        ):
+            ok, msg = get_metrics("1.2.3.4", "u", "p")
+        self.assertFalse(ok)
+        self.assertIn("too old", msg)
+
+    def test_timeout(self):
+        with mock.patch(
+            "wol_app.host_service_client.socket.create_connection",
+            side_effect=socket.timeout,
+        ):
+            ok, msg = get_metrics("1.2.3.4", "u", "p")
+        self.assertFalse(ok)
+        self.assertIn("timed out", msg)
+
+
+class TestRunBatch(unittest.TestCase):
+    def test_success(self):
+        payload = {
+            "status": "ok", "exit_code": 0, "stdout": "hi\n",
+            "stderr": "", "duration_ms": 12, "truncated": False,
+        }
+        with mock.patch(
+            "wol_app.host_service_client.socket.create_connection",
+            return_value=_fake_socket_responding(payload),
+        ):
+            ok, result = run_batch("1.2.3.4", "echo hi", "u", "p")
+        self.assertTrue(ok)
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["stdout"], "hi\n")
+
+    def test_batch_disabled_on_host(self):
+        with mock.patch(
+            "wol_app.host_service_client.socket.create_connection",
+            return_value=_fake_socket_responding(
+                {"status": "error", "message": "Batch execution disabled on host"}),
+        ):
+            ok, msg = run_batch("1.2.3.4", "echo hi", "u", "p")
+        self.assertFalse(ok)
+        self.assertIn("disabled", msg)
 
 
 if __name__ == "__main__":

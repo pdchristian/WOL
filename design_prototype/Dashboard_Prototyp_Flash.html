@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>WOL – Geräte-Dashboard Prototyp</title>
+<style>
+  :root {
+    --bg: #0f1115; --surface: #1a1d24; --surface-hover: #232733; --border: #2c303a;
+    --text: #e6e8ee; --text-dim: #9aa0ab; --accent: #00b8a9; --accent-dark: #006b63;
+    --online: #22c55e; --offline: #ef4444; --unknown: #f59e0b; --danger: #e0485a;
+    --cpu: #00b8a9; --ram: #60a5fa; --gpu: #a78bfa; --vram: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", sans-serif; }
+  body { background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+
+  /* Sidebar (identisch zum Haupt-Prototyp) */
+  .sidebar { width: 230px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 20px 12px; flex-shrink: 0; }
+  .logo { display: flex; align-items: center; gap: 12px; padding: 6px 10px; margin-bottom: 24px; }
+  .logo .mark { width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; color: #fff; }
+  .logo span { font-weight: 600; font-size: 15px; }
+  .section-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 8px 12px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
+    color: var(--text-dim); font-size: 14px; margin-bottom: 4px; cursor: pointer; border: none; background: none; text-align: left; width: 100%; }
+  .nav-item:hover { background: var(--surface-hover); color: var(--text); }
+  .nav-item.active { background: rgba(0,184,169,.14); color: var(--accent); font-weight: 600; }
+  .nav-spacer { flex: 1; }
+  .nav-footer { border-top: 1px solid var(--border); padding-top: 12px; }
+
+  .main { flex: 1; overflow: auto; padding: 26px 34px; }
+
+  /* Header */
+  .page-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+  .page-header h1 { font-size: 22px; font-weight: 600; }
+  .page-header .sub { color: var(--text-dim); font-size: 13px; margin-top: 2px; font-family: Consolas, monospace; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.online { background: rgba(34,197,94,.15); color: var(--online); }
+  .badge.offline { background: rgba(239,68,68,.15); color: var(--offline); }
+  .spacer { flex: 1; }
+  .btn { border: 1px solid var(--border); border-radius: 10px; padding: 9px 15px; font-size: 13px;
+    font-weight: 600; cursor: pointer; background: var(--surface); color: var(--text); transition: .15s; }
+  .btn:hover { background: var(--surface-hover); }
+  .btn.primary { background: var(--accent); color: #032019; border: none; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.danger { background: rgba(224,72,90,.12); color: var(--danger); border: 1px solid rgba(224,72,90,.4); }
+  select { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); padding: 8px 10px; font-size: 13px; outline: none; }
+
+  /* Metrik-Karten */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .card .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card .title { font-size: 12px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--text-dim); }
+  .card .dotc { width: 8px; height: 8px; border-radius: 50%; }
+  .gauge-row { display: flex; align-items: center; gap: 16px; }
+  .gauge { position: relative; width: 86px; height: 86px; flex-shrink: 0; }
+  .gauge svg { transform: rotate(-90deg); }
+  .gauge .val { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 19px; font-weight: 700; }
+  .gauge .val small { font-size: 11px; color: var(--text-dim); font-weight: 400; }
+  .ginfo { font-size: 12px; color: var(--text-dim); line-height: 1.8; }
+  .ginfo b { color: var(--text); font-weight: 600; }
+  canvas.spark { width: 100%; height: 34px; margin-top: 10px; display: block; }
+
+  /* Batch-Bereich */
+  .batch-wrap { display: grid; grid-template-columns: 250px 1fr; gap: 16px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .panel .phead { display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-hover); }
+  .panel .phead h2 { font-size: 13px; font-weight: 600; }
+  .batch-item { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .batch-item:last-child { border-bottom: none; }
+  .batch-item:hover { background: var(--surface-hover); }
+  .batch-item.active { background: rgba(0,184,169,.10); border-left: 3px solid var(--accent); }
+  .batch-item strong { display: block; font-size: 13px; margin-bottom: 3px; }
+  .batch-item small { color: var(--text-dim); font-size: 11px; font-family: Consolas, monospace; }
+  .editor { width: 100%; min-height: 150px; background: #12141a; color: #d7e0ea; border: none;
+    outline: none; font-family: Consolas, monospace; font-size: 13px; padding: 14px 16px; resize: vertical; }
+  .toolbar2 { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); }
+  .toolbar2 label { font-size: 12px; color: var(--text-dim); }
+  .toolbar2 input[type=number] { width: 64px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); padding: 6px 8px; font-size: 13px; }
+  .console { background: #0b0d11; font-family: Consolas, monospace; font-size: 12.5px; color: #c8d3df;
+    padding: 12px 16px; min-height: 160px; max-height: 220px; overflow-y: auto; white-space: pre-wrap; }
+  .console .t { color: #5b6675; }
+  .console .ok { color: var(--online); } .console .err { color: var(--offline); }
+  .statusline { padding: 8px 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-dim); display: flex; gap: 16px; }
+  .note { margin-top: 14px; font-size: 12px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="logo"><div class="mark">W</div><span>WOL Manager</span></div>
+    <div class="section-label">Bereiche</div>
+    <button class="nav-item">💻 Geräte</button>
+    <button class="nav-item active">📊 Dashboard</button>
+    <button class="nav-item">🔧 Verwalten</button>
+    <button class="nav-item">🕒 Zeitplan</button>
+    <button class="nav-item">📋 Protokolle</button>
+    <div class="nav-spacer"></div>
+    <div class="nav-footer">
+      <button class="nav-item">⚙ Einstellungen</button>
+      <button class="nav-item">ℹ️ Über</button>
+      <button class="nav-item">⏻ Beenden</button>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <h1>🖥️ WORKSTATION-07 <span class="badge online" id="devBadge">● Online</span></h1>
+        <div class="sub">192.168.1.42 · Windows 11 Pro · Uptime 3 d 4 h · Host Service v1.x</div>
+      </div>
+      <div class="spacer"></div>
+      <label style="font-size:12px;color:var(--text-dim)">Intervall</label>
+      <select id="interval"><option>2 s</option><option selected>3 s</option><option>5 s</option></select>
+      <button class="btn" onclick="location.href='dark_control_center_full.html'">← Zurück</button>
+    </div>
+
+    <!-- Metrik-Karten -->
+    <div class="cards" id="cards"></div>
+
+    <!-- Batches -->
+    <div class="batch-wrap">
+      <div class="panel">
+        <div class="phead"><h2>Batches</h2><button class="btn" style="padding:4px 10px;font-size:12px">＋ Neu</button></div>
+        <div id="batchList"></div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="phead"><h2 id="editorTitle">Bereinigung</h2><span style="font-size:11px;color:var(--text-dim)">.bat / cmd · läuft als SYSTEM</span></div>
+          <textarea class="editor" id="editor" spellcheck="false"></textarea>
+          <div class="toolbar2">
+            <label>Timeout (s)</label><input type="number" id="timeout" value="120" min="5" max="3600">
+            <div class="spacer"></div>
+            <button class="btn" id="saveBtn">💓 Speichern</button>
+            <button class="btn primary" id="runBtn">▶ Ausführen</button>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:14px">
+          <div class="phead"><h2>Ausgabe</h2><button class="btn" style="padding:4px 10px;font-size:12px" onclick="clearConsole()">Leeren</button></div>
+          <div class="console" id="console"><span class="t">Bereit — Batch auswählen und „Ausführen" klicken.</span>\n</div>
+          <div class="statusline"><span id="exitInfo">Exit-Code: —</span><span id="durInfo">Dauer: —</span></div>
+        </div>
+        <div class="note">⚠️ real: Ausführung nur bei Opt-in-Gerät („Batches erlaubt") und authentifizierten Admin-Credentials</div>
+      </div>
+    </div>
+  </main>
+
+<script>
+const METRICS = [
+  { key:'cpu',  label:'CPU',       color:'var(--cpu)',  detail:v=>`<b>${v.cores}</b> Kerne · ${v.ghz} GHz` },
+  { key:'ram',  label:'RAM',       color:'var(--ram)',  detail:v=>`<b>${v.used}</b> / ${v.total} GB` },
+  { key:'gpu',  label:'GPU',       color:'var(--gpu)',  detail:v=>`${v.name}` },
+  { key:'vram', label:'VRAM',      color:'var(--vram)', detail:v=>`<b>${v.used}</b> / ${v.total} GB` },
+];
+const state = {};
+const cardsEl = document.getElementById('cards');
+METRICS.forEach(m => {
+  state[m.key] = { pct: 20 + Math.random()*40, hist: Array(60).fill(0) };
+  cardsEl.insertAdjacentHTML('beforeend', `
+    <div class="card">
+      <div class="head"><span class="title">${m.label}</span><span class="dotc" style="background:${m.color}"></span></div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <svg width="86" height="86"><circle cx="43" cy="43" r="36" stroke="var(--border)" stroke-width="8" fill="none"/>
+            <circle id="arc_${m.key}" cx="43" cy="43" r="36" stroke="${m.color}" stroke-width="8" fill="none"
+              stroke-linecap="round" stroke-dasharray="226.2" stroke-dashoffset="226.2"/></svg>
+          <div class="val"><span id="val_${m.key}">0</span><small>%</small></div>
+        </div>
+        <div class="ginfo" id="info_${m.key}"></div>
+      </div>
+      <canvas class="spark" id="spark_${m.key}" width="220" height="34"></canvas>
+    </div>`);
+});
+
+const details = {
+  cpu:  { cores: 8, ghz: '3.70' },
+  ram:  { used: 0, total: 32 },
+  gpu:  { name: 'NVIDIA RTX 4070' },
+  vram: { used: 0, total: 12 },
+};
+
+function tick() {
+  METRICS.forEach(m => {
+    const s = state[m.key];
+    s.pct = Math.min(99, Math.max(2, s.pct + (Math.random()-0.5) * 14));
+    s.hist.push(s.pct); s.hist.shift();
+    const C = 226.2;
+    document.getElementById('arc_'+m.key).style.strokeDashoffset = C * (1 - s.pct/100);
+    document.getElementById('val_'+m.key).textContent = Math.round(s.pct);
+    if (m.key==='ram')  { details.ram.used = (32*s.pct/100).toFixed(1); }
+    if (m.key==='vram') { details.vram.used = (12*s.pct/100).toFixed(1); }
+    document.getElementById('info_'+m.key).innerHTML = m.detail(details[m.key]);
+    drawSpark(m);
+  });
+}
+function drawSpark(m) {
+  const cv = document.getElementById('spark_'+m.key), ctx = cv.getContext('2d');
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.beginPath();
+  state[m.key].hist.forEach((v,i) => { const x=i*cv.width/59, y=cv.height-(v/100)*(cv.height-4)-2;
+    i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--'+m.key).trim();
+  ctx.lineWidth = 1.5; ctx.stroke();
+}
+tick(); setInterval(tick, 2000);
+
+// ── Batches ──
+const batches = [
+  { name:'Bereinigung', timeout:120, script:'@echo off\necho Leere Temp-Ordner ...\nrmdir /s /q %TEMP%\\*\necho Fertig.' },
+  { name:'Windows-Update', timeout:1800, script:'@echo off\necho Suche nach Updates ...\nwuauclt /detectnow /reportnow' },
+  { name:'Neustart Drucker-Spooler', timeout:60, script:'@echo off\nnet stop spooler\nnet start spooler\necho Spooler neu gestartet.' },
+];
+let active = 0;
+const listEl = document.getElementById('batchList'), editor = document.getElementById('editor');
+function renderList() {
+  listEl.innerHTML = '';
+  batches.forEach((b,i) => {
+    const d = document.createElement('div');
+    d.className = 'batch-item' + (i===active?' active':'');
+    d.innerHTML = `<strong>${b.name}</strong><small>Timeout ${b.timeout}s</small>`;
+    d.onclick = () => { active=i; renderList(); editor.value=b.script;
+      document.getElementById('editorTitle').textContent=b.name;
+      document.getElementById('timeout').value=b.timeout; };
+    listEl.appendChild(d);
+  });
+  editor.value = batches[active].script;
+}
+renderList();
+document.getElementById('saveBtn').onclick = () => { batches[active].script = editor.value;
+  batches[active].timeout = +document.getElementById('timeout').value; logLine(`Batch „${batches[active].name}" gespeichert.`, 'ok'); };
+
+const con = document.getElementById('console');
+function logLine(t, cls='') { con.innerHTML += `<span class="${cls}">${t}</span>\n`; con.scrollTop = con.scrollHeight; }
+function clearConsole() { con.innerHTML = ''; }
+document.getElementById('runBtn').onclick = () => {
+  const b = batches[active], t0 = Date.now();
+  document.getElementById('exitInfo').textContent = 'Exit-Code: läuft…';
+  logLine(`[${new Date().toLocaleTimeString()}] Start: ${b.name} @ 192.168.1.42`, 't');
+  const lines = b.script.split('\n').filter(l => l.trim() && !l.trim().startsWith('@echo'));
+  let i = 0;
+  const iv = setInterval(() => {
+    if (i < lines.length) { logLine('> ' + lines[i].replace(/^echo\s*/i,'')); i++; }
+    else {
+      clearInterval(iv);
+      logLine(`Fertig. Exit-Code 0`, 'ok');
+      document.getElementById('exitInfo').textContent = 'Exit-Code: 0';
+      document.getElementById('durInfo').textContent = `Dauer: ${((Date.now()-t0)/1000).toFixed(1)} s`;
+    }
+  }, 500);
+};
+</script>
+</body>
+</html>

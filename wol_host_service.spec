@@ -45,6 +45,9 @@ a = Analysis(
         'win32timezone',
         'win32wnet',
         'win32net',
+        # psutil is imported lazily inside collect_metrics() (dashboard
+        # metrics) and is therefore invisible to static analysis.
+        'psutil',
     ],
     hookspath=[],
     hooksconfig={},

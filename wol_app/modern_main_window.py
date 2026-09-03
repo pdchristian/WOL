@@ -35,6 +35,7 @@ from wol_app.modern_theme import DARK, LIGHT, app_icon_pixmap, apply_modern_them
 from wol_app.schedule_runner import dispatch_schedule_action
 from wol_app.translations import Translations
 from wol_app.utils import get_resource_path
+from wol_app.views.dashboard_view import DeviceDashboardView
 from wol_app.views.devices_view import DevicesView
 from wol_app.views.logs_view import LogsView
 from wol_app.views.manage_view import ManageView
@@ -54,6 +55,10 @@ SETTINGS_NAV_INDEX = 4
 
 # Stack index of the native "Über" screen (about + update check).
 UPDATE_NAV_INDEX = 5
+
+# Stack index of the per-device dashboard (opened via the 📊 tile on the
+# devices screen — intentionally NOT a sidebar entry).
+DASHBOARD_NAV_INDEX = 6
 
 
 
@@ -112,22 +117,43 @@ class ModernMainWindow(QMainWindow):
         self.settings_view = SettingsView(self.config)
         self.settings_view.settings_saved.connect(self._on_settings_saved)
         self.update_view = UpdateView(self.config)
+        self.dashboard_view = DeviceDashboardView(self.config)
         self.stack.addWidget(self.devices_view)   # index 0
         self.stack.addWidget(self.manage_view)    # index 1
         self.stack.addWidget(self.schedule_view)  # index 2
         self.stack.addWidget(self.logs_view)      # index 3
         self.stack.addWidget(self.settings_view)  # index 4
         self.stack.addWidget(self.update_view)    # index 5
+        self.stack.addWidget(self.dashboard_view)  # index 6 (no sidebar entry)
 
         # Keep the device lists of both areas in sync
         self.manage_view.devices_changed.connect(self._on_devices_changed)
         self.devices_view.devices_changed.connect(self._on_devices_changed)
+
+        # Dashboard: opened from the 📊 tile, returns to the devices screen
+        self.devices_view.dashboard_requested.connect(self.open_device_dashboard)
+        self.dashboard_view.back_requested.connect(lambda: self._select_nav(0))
 
     def _on_devices_changed(self) -> None:
         """A device was added/edited/removed in either area — refresh both."""
         self.devices_view.refresh_devices()
         self.devices_view.refresh_statuses()
         self.manage_view._refresh_device_list()
+        # Keep an open dashboard's header in sync with edits
+        self.dashboard_view.refresh_device_header()
+
+    def open_device_dashboard(self, device_id: str) -> None:
+        """Show the per-device dashboard (stack switch, no sidebar entry)."""
+        self.dashboard_view.set_device(device_id)
+        self.stack.setCurrentIndex(DASHBOARD_NAV_INDEX)
+        self._clear_nav_check()
+
+    def _clear_nav_check(self) -> None:
+        """Uncheck every nav button (dashboard screen has no nav entry)."""
+        for btn in self.nav_buttons:
+            btn.setChecked(False)
+        self.settings_btn.setChecked(False)
+        self.about_btn.setChecked(False)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -281,12 +307,14 @@ class ModernMainWindow(QMainWindow):
         self.logs_view.retranslate()
         self.settings_view.retranslate()
         self.update_view.retranslate()
+        self.dashboard_view.retranslate()
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         self.devices_view.cancel_workers()
         self.manage_view.cancel_workers()
+        self.dashboard_view.cancel_workers()
         self.update_view.cancel_checks()
         self.engine.stop_scheduler()
         event.accept()

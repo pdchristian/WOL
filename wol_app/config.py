@@ -163,6 +163,17 @@ VALID_DEVICES_VIEW_MODES = (DEVICES_VIEW_GRID, DEVICES_VIEW_LIST)
 # field). Persisted under ui.devices_sort_key.
 DEVICES_SORT_KEYS = ("name", "ip", "mac", "status")
 
+# Dashboard (device metrics view): metrics poll interval and the per-device
+# batch library limits. The interval is persisted under ui.dashboard_interval_ms.
+DEFAULT_DASHBOARD_INTERVAL_MS = 3000
+DASHBOARD_INTERVAL_MIN_MS = 2000
+DASHBOARD_INTERVAL_MAX_MS = 60_000
+MAX_BATCHES_PER_DEVICE = 50
+MAX_BATCH_SCRIPT_CHARS = 32_000  # must match the host service limit
+DEFAULT_BATCH_TIMEOUT_S = 120
+BATCH_TIMEOUT_MIN_S = 5
+BATCH_TIMEOUT_MAX_S = 3600
+
 
 def read_ui_mode_from_registry() -> str | None:
     """Read the installer-selected UI mode from the Windows registry.
@@ -198,7 +209,10 @@ def read_ui_mode_from_registry() -> str | None:
 # Default configuration
 DEFAULT_CONFIG = {
     "devices": [],
-    # Each device: {"id": uuid, "name": str, "mac": str, "ip": str, "username": str, "password": str, "enabled": bool, "shutdown_method": str}
+    # Each device: {"id": uuid, "name": str, "mac": str, "ip": str, "username": str,
+    #               "password": str, "enabled": bool, "shutdown_method": str,
+    #               "allow_batch": bool, "batches": [{"id","name","script","timeout"}]}
+    # ("allow_batch"/"batches" are optional, see get_device_batches)
     "network": {
         "broadcast_ip": "255.255.255.255",
         "broadcast_port": 9,
@@ -229,6 +243,9 @@ DEFAULT_CONFIG = {
         "devices_view_mode": DEVICES_VIEW_GRID,
         # Modern devices screen sort: "name" | "ip" | "mac" | "status".
         "devices_sort_key": "name",
+        # Device dashboard: metrics poll interval in milliseconds
+        # (clamped to DASHBOARD_INTERVAL_MIN_MS..DASHBOARD_INTERVAL_MAX_MS).
+        "dashboard_interval_ms": DEFAULT_DASHBOARD_INTERVAL_MS,
     },
     "updates": {
         "auto_check_enabled": True,
@@ -516,6 +533,91 @@ class ConfigManager:
             raise ValueError(f"Invalid devices sort key: {key}")
         self.config.setdefault("ui", {})["devices_sort_key"] = key
         self.save()
+
+    # --- Device dashboard (metrics + batches) ---
+
+    def get_dashboard_interval_ms(self) -> int:
+        """Return the dashboard metrics poll interval (ms, clamped)."""
+        try:
+            value = int(self.config.get("ui", {}).get(
+                "dashboard_interval_ms", DEFAULT_DASHBOARD_INTERVAL_MS))
+        except (TypeError, ValueError):
+            return DEFAULT_DASHBOARD_INTERVAL_MS
+        return min(max(value, DASHBOARD_INTERVAL_MIN_MS), DASHBOARD_INTERVAL_MAX_MS)
+
+    def set_dashboard_interval_ms(self, interval_ms: int) -> None:
+        """Persist the dashboard metrics poll interval (clamped to the range)."""
+        value = int(interval_ms)
+        value = min(max(value, DASHBOARD_INTERVAL_MIN_MS), DASHBOARD_INTERVAL_MAX_MS)
+        self.config.setdefault("ui", {})["dashboard_interval_ms"] = value
+        self.save()
+
+    @staticmethod
+    def get_device_batches(device: dict) -> list:
+        """Return the (validated) batch list stored on *device*.
+
+        Each batch: {"id": str, "name": str, "script": str, "timeout": int}.
+        Malformed entries are skipped so a hand-edited config never crashes
+        the dashboard.
+        """
+        batches = []
+        raw = device.get("batches", [])
+        if not isinstance(raw, list):
+            return batches
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            script = entry.get("script")
+            if not isinstance(script, str) or len(script) > MAX_BATCH_SCRIPT_CHARS:
+                continue
+            try:
+                timeout = int(entry.get("timeout", DEFAULT_BATCH_TIMEOUT_S))
+            except (TypeError, ValueError):
+                timeout = DEFAULT_BATCH_TIMEOUT_S
+            batches.append({
+                "id": str(entry.get("id", "")),
+                "name": str(entry.get("name", ""))[:64],
+                "script": script,
+                "timeout": min(max(timeout, BATCH_TIMEOUT_MIN_S), BATCH_TIMEOUT_MAX_S),
+            })
+        return batches
+
+    def set_device_batches(self, device_id: str, batches: list) -> bool:
+        """Persist the batch list of a device (see MAX_BATCHES_PER_DEVICE)."""
+        if not isinstance(batches, list) or len(batches) > MAX_BATCHES_PER_DEVICE:
+            raise ValueError("Invalid batch list")
+        cleaned = []
+        for entry in batches:
+            if not isinstance(entry, dict):
+                raise ValueError("Invalid batch entry")
+            script = entry.get("script", "")
+            if not isinstance(script, str) or len(script) > MAX_BATCH_SCRIPT_CHARS:
+                raise ValueError("Batch script too long")
+            try:
+                timeout = int(entry.get("timeout", DEFAULT_BATCH_TIMEOUT_S))
+            except (TypeError, ValueError):
+                raise ValueError("Invalid batch timeout")
+            cleaned.append({
+                "id": str(entry.get("id", "")),
+                "name": str(entry.get("name", ""))[:64],
+                "script": script,
+                "timeout": min(max(timeout, BATCH_TIMEOUT_MIN_S), BATCH_TIMEOUT_MAX_S),
+            })
+        for dev in self.config.get("devices", []):
+            if dev["id"] == device_id:
+                dev["batches"] = cleaned
+                self.save()
+                return True
+        return False
+
+    def set_device_allow_batch(self, device_id: str, allowed: bool) -> bool:
+        """Persist the per-device batch opt-in (see also the host-side gate)."""
+        for dev in self.config.get("devices", []):
+            if dev["id"] == device_id:
+                dev["allow_batch"] = bool(allowed)
+                self.save()
+                return True
+        return False
 
     def set_layout_mode(self, mode: str) -> None:
         """Persist the user's explicit layout choice (takes precedence over the installer hint)."""

@@ -174,6 +174,13 @@ DARK = {
     "unknown": "#f59e0b",
     "danger": "#e0485a",
     "blue": "#60a5fa",
+    # Dashboard gauges (prototype --cpu/--ram/--gpu/--vram): cpu reuses the
+    # accent, ram the blue token; only the violet GPU color is dashboard-only.
+    "gauge_cpu": "#00b8a9",
+    "gauge_ram": "#60a5fa",
+    "gauge_gpu": "#a78bfa",
+    "gauge_vram": "#f59e0b",
+    "console_bg": "#12141a",
 }
 
 # ── Light variant (same structure, light surfaces) ───────────────────────
@@ -192,6 +199,11 @@ LIGHT = {
     "unknown": "#d97706",
     "danger": "#dc2637",
     "blue": "#2563eb",
+    "gauge_cpu": "#009688",
+    "gauge_ram": "#2563eb",
+    "gauge_gpu": "#7c3aed",
+    "gauge_vram": "#d97706",
+    "console_bg": "#f7f8fa",
 }
 
 
@@ -333,6 +345,58 @@ QMessageBox QLabel {{ color: {t['text']}; background: transparent; }}
 #rowTitleDisabled {{ color: {t['text_dim']}; font-size: 14px; font-weight: 600; }}
 #rowMono {{
     color: {t['text_dim']}; font-family: Consolas, monospace; font-size: 12px;
+}}
+
+/* ── Device dashboard (metrics + batches) ────────────────────────────── */
+#metricCard {{
+    background: {t['surface']};
+    border: 1px solid {t['border']}; border-radius: 14px;
+}}
+#gaugeValue {{
+    color: {t['text']}; font-size: 19px; font-weight: 700;
+    background: transparent;
+}}
+#gaugeUnit {{
+    color: {t['text_dim']}; font-size: 11px; font-weight: 400;
+    background: transparent;
+}}
+#metricTitle {{
+    color: {t['text_dim']}; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.6px;
+}}
+#metricDot {{ border-radius: 4px; max-width: 8px; max-height: 8px; }}
+#backButton {{
+    background: {t['surface']}; color: {t['text_dim']};
+    border: 1px solid {t['border']}; border-radius: 9px;
+    padding: 8px 12px; font-size: 13px; font-weight: 600;
+}}
+#backButton:hover {{ background: {t['surface_hover']}; color: {t['text']}; }}
+#codeEdit, #consoleEdit {{
+    background: {t['console_bg']}; color: {t['text']};
+    border: 1px solid {t['border']}; border-radius: 10px;
+    font-family: Consolas, monospace; font-size: 13px;
+    selection-background-color: {t['accent']};
+}}
+#codeEdit:focus {{ border-color: {t['accent']}; }}
+#consoleEdit {{ color: {t['text']}; }}
+#statusLine {{ color: {t['text_dim']}; font-size: 12px; }}
+#batchItem {{ background: transparent; border: none; text-align: left; padding: 10px 14px; border-radius: 10px; }}
+#batchItem:hover {{ background: {t['surface_hover']}; }}
+#batchItem:checked {{
+    background: rgba(0, 184, 169, 0.14);
+}}
+#batchItemTitle {{ color: {t['text']}; font-size: 13px; font-weight: 600; }}
+#batchItemMeta {{ color: {t['text_dim']}; font-size: 11px; font-family: Consolas, monospace; }}
+QListWidget#batchList {{
+    background: transparent; border: none; outline: none;
+}}
+QListWidget#batchList::item {{
+    background: transparent; border: none; border-radius: 10px;
+    padding: 6px 8px; margin: 1px 4px;
+}}
+QListWidget#batchList::item:hover {{ background: {t['surface_hover']}; }}
+QListWidget#batchList::item:selected {{
+    background: rgba(0, 184, 169, 0.14); color: {t['accent']};
 }}
 
 /* ── Status tiles (badges) ───────────────────────────────────────────── */

@@ -80,6 +80,7 @@ class DeviceListRow(QWidget):
 
     remote_requested = pyqtSignal(str, bool)  # device id, fullscreen
     edit_requested = pyqtSignal(str)
+    dashboard_requested = pyqtSignal(str)
 
     def __init__(self, device: dict, status: str, local_ips: set[str], parent=None) -> None:
         super().__init__(parent)
@@ -132,6 +133,14 @@ class DeviceListRow(QWidget):
             lambda: self.remote_requested.emit(self.device_id, False))
         layout.addWidget(self.remote_win_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        self.dashboard_btn = QPushButton("📊")
+        self.dashboard_btn.setObjectName("tileButton")
+        self.dashboard_btn.setFixedSize(36, 36)
+        self.dashboard_btn.setToolTip(Translations.tr("button.dashboard"))
+        self.dashboard_btn.clicked.connect(
+            lambda: self.dashboard_requested.emit(self.device_id))
+        layout.addWidget(self.dashboard_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self.edit_btn = QPushButton("✏️")
         self.edit_btn.setObjectName("tileButton")
         self.edit_btn.setFixedSize(36, 36)
@@ -145,6 +154,7 @@ class DeviceListRow(QWidget):
             # Disabled devices cannot be reached remotely
             self.remote_fs_btn.setEnabled(False)
             self.remote_win_btn.setEnabled(False)
+            self.dashboard_btn.setEnabled(False)
 
     # ── Status ────────────────────────────────────────────────────
 
@@ -180,6 +190,7 @@ class DeviceListRow(QWidget):
         self.title.setText(self._display_name(local_ips))
         self.remote_fs_btn.setToolTip(Translations.tr("button.remote_fullscreen"))
         self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
+        self.dashboard_btn.setToolTip(Translations.tr("button.dashboard"))
         self.edit_btn.setToolTip(Translations.tr("device_manager.button.edit"))
         self.set_status(self._status)
 
@@ -192,6 +203,7 @@ class DeviceCard(QWidget):
     remote_requested = pyqtSignal(str, bool)  # device id, fullscreen
     edit_requested = pyqtSignal(str)
     ping_requested = pyqtSignal(str)
+    dashboard_requested = pyqtSignal(str)
 
     def __init__(self, device: dict, status: str, local_ips: set[str], parent=None) -> None:
         super().__init__(parent)
@@ -251,6 +263,14 @@ class DeviceCard(QWidget):
             lambda: self.remote_requested.emit(self.device_id, False))
         bottom.addWidget(self.remote_win_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        self.dashboard_btn = QPushButton("📊")
+        self.dashboard_btn.setObjectName("tileButton")
+        self.dashboard_btn.setFixedSize(36, 36)
+        self.dashboard_btn.setToolTip(Translations.tr("button.dashboard"))
+        self.dashboard_btn.clicked.connect(
+            lambda: self.dashboard_requested.emit(self.device_id))
+        bottom.addWidget(self.dashboard_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
         bottom.addStretch()
 
         self.action_btn = QPushButton()
@@ -267,6 +287,7 @@ class DeviceCard(QWidget):
             self.action_btn.setEnabled(False)
             self.remote_fs_btn.setEnabled(False)
             self.remote_win_btn.setEnabled(False)
+            self.dashboard_btn.setEnabled(False)
 
     # ── Status ───────────────────────────────────────────────────────────
 
@@ -320,6 +341,7 @@ class DeviceCard(QWidget):
         menu = QMenu(self)
         act_fs = menu.addAction(Translations.tr("button.remote_fullscreen"))
         act_win = menu.addAction(Translations.tr("button.remote_window"))
+        act_dashboard = menu.addAction(Translations.tr("button.dashboard"))
         menu.addSeparator()
         if self._status == "online":
             act_action = menu.addAction(Translations.tr("button.shutdown"))
@@ -334,6 +356,8 @@ class DeviceCard(QWidget):
             self.remote_requested.emit(self.device_id, True)
         elif chosen is act_win:
             self.remote_requested.emit(self.device_id, False)
+        elif chosen is act_dashboard:
+            self.dashboard_requested.emit(self.device_id)
         elif chosen is act_action:
             self._action_clicked()
         elif chosen is act_ping:
@@ -345,6 +369,7 @@ class DeviceCard(QWidget):
         self.title.setText(self._display_name(local_ips))
         self.remote_fs_btn.setToolTip(Translations.tr("button.remote_fullscreen"))
         self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
+        self.dashboard_btn.setToolTip(Translations.tr("button.dashboard"))
         self.set_status(self._status)  # refresh wake/shutdown button text
 
 
@@ -357,6 +382,7 @@ class DevicesView(QWidget):
     """
 
     devices_changed = pyqtSignal()
+    dashboard_requested = pyqtSignal(str)  # device id — open the dashboard view
 
     def __init__(self, config_manager: Any, parent=None) -> None:
         super().__init__(parent)
@@ -587,11 +613,13 @@ class DevicesView(QWidget):
             card.remote_requested.connect(self._remote_device)
             card.edit_requested.connect(self._edit_device)
             card.ping_requested.connect(self._ping_device)
+            card.dashboard_requested.connect(self._open_dashboard)
             self._cards[device["id"]] = card
 
             row = DeviceListRow(device, status, local_ips)
             row.remote_requested.connect(self._remote_device)
             row.edit_requested.connect(self._edit_device)
+            row.dashboard_requested.connect(self._open_dashboard)
             self._rows[device["id"]] = row
             self.list_layout.addWidget(row)
             if idx < len(devices) - 1:
@@ -674,6 +702,11 @@ class DevicesView(QWidget):
         if device is None:
             return
         start_remote_desktop(self, self.config, device, fullscreen)
+
+    def _open_dashboard(self, device_id: str) -> None:
+        """Forward the dashboard request to the main window (stack switch)."""
+        if self._device_by_id(device_id) is not None:
+            self.dashboard_requested.emit(device_id)
 
     def _ping_device(self, device_id: str) -> None:
         device = self._device_by_id(device_id)

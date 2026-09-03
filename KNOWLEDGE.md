@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.0.0                                                                 |
+| **version**         | 2.1.0                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -79,12 +79,17 @@ run.py
       │    ├── wol_app/views/schedule_view.py  (ScheduleView — schedule rows)
       │    ├── wol_app/views/logs_view.py      (LogsView — event log)
       │    ├── wol_app/views/settings_view.py  (SettingsView — native settings screen)
-      │    └── wol_app/views/update_view.py    (UpdateView — about + update check)
+      │    ├── wol_app/views/update_view.py    (UpdateView — about + update check)
+      │    └── wol_app/views/dashboard_view.py (DeviceDashboardView — live metrics + batches)
       │
       │  Shared modern dialogs/widgets
       ├── wol_app/views/device_edit_dialog.py  (ModernDeviceDialog)
       ├── wol_app/views/schedule_edit_dialog.py (ModernScheduleEditDialog)
-      └── wol_app/widgets/toggle_switch.py     (ToggleSwitch / ToggleWithLabel)
+      ├── wol_app/widgets/toggle_switch.py     (ToggleSwitch / ToggleWithLabel)
+      │
+      │  Host-service integration
+      ├── wol_app/host_service_client.py  (send_host_command, get_metrics, run_batch — TCP 8765)
+      └── wol_app/metrics_worker.py       (MetricsWorker / BatchWorker — cancellable QThread workers)
 
 installer.py                    (standalone installer, registry integration, UI-mode choice)
 uninstaller.py                  (standalone uninstaller, data wiping)
@@ -110,6 +115,14 @@ MainWindow (QApplication main thread)
  ├── UpdateChecker      → QThread for GitHub release checking
  ├── DownloadWorker     → QThread for update downloads
  └── ScanWorker         → QThread (in network_scan_dialog) for subnet scanning
+
+DeviceDashboardView (modern UI, stack index 6)
+ ├── MetricsWorker      → QThread per poll tick (get_metrics, 5 s socket timeout)
+ └── BatchWorker        → QThread per batch run (run_batch, timeout + 5 s)
+     Both subclass _CancellableWorker: cancel() closes the in-flight socket
+     (sock_sink pattern in host_service_client._request) so the thread exits
+     immediately — required to avoid "QThread: Destroyed while thread is
+     still running" at window teardown. run() returns silently when cancelled.
 
 Scheduler              → threading.Timer (60s recurrence, re-arms on each check)
 ```
@@ -268,7 +281,8 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
     "layout_mode_user_set": false,
     "display_mode": "auto",
     "devices_view_mode": "grid",
-    "devices_sort_key": "name"
+    "devices_sort_key": "name",
+    "dashboard_interval_ms": 3000
   },
   "updates": {
     "auto_check_enabled": true,
@@ -283,6 +297,7 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
 > - `ui.display_mode` — `"auto"` / `"light"` / `"dark"`; respected by both layouts (defaults to `"auto"` when absent).
 > - `ui.devices_view_mode` — `"grid"` (Kachelansicht) or `"list"` (Geräteliste) on the modern Devices screen; toggled via the toolbar icon, persisted by `ConfigManager.set_devices_view_mode()`.
 > - `ui.devices_sort_key` — `"name"` / `"ip"` / `"mac"` / `"status"` sort order of the modern Devices screen (status ranks Online → Offline → Unknown); persisted by `ConfigManager.set_devices_sort_key()`.
+> - `ui.dashboard_interval_ms` — polling interval of the per-device dashboard (ms, clamped to 2000–60000, default 3000); `ConfigManager.get/set_dashboard_interval_ms()`.
 
 ### 4.3 Device Schema
 
@@ -294,9 +309,21 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
   "ip": "IPv4 string (optional, max 15 chars)",
   "username": "string (optional, for remote shutdown)",
   "password": "string (optional, AES-256-GCM encrypted at rest)",
-  "enabled": true
+  "enabled": true,
+  "allow_batch": false,
+  "batches": [
+    { "id": "uuid4-string", "name": "string", "script": "cmd/batch text",
+      "timeout": 120 }
+  ]
 }
 ```
+
+> **Dashboard fields (protocol v2):** `allow_batch` is the per-device client-side
+> opt-in for remote batch execution (the host service has its own independent
+> opt-in). `batches` is the per-device batch library (max 50 entries, script
+> max 32 000 chars, timeout 5–3600 s, default 120 s) shown in the dashboard
+> editor; managed via `ConfigManager.set_device_batches()` /
+> `set_device_allow_batch()`. Malformed entries are skipped on read.
 
 ### 4.4 Schedule Schema
 
@@ -426,6 +453,48 @@ Format placeholders supported via `str.format(**kwargs)`:
 Translations.tr("scan.scanning_subnet", ip="192.168.1.0")
 # → "Scanning subnet 192.168.1.0..."
 ```
+
+### 5.5 WOL Host Service Protocol (TCP 8765, JSON lines, protocol v2)
+
+One JSON object per line in, one JSON object per line out. All commands
+authenticate first with `validate_credentials(username, password)`
+(LogonUserW, interactive profile) unless noted otherwise.
+
+| Command | Request | Response |
+|---------|---------|----------|
+| `shutdown` | `{"command":"shutdown","username","password"}` | `{"status":"ok"\|"error","message"}` |
+| `metrics` (v2) | `{"command":"metrics","username","password"}` | `{"status":"ok","protocol":2,"hostname","cpu","cpu_count","ram_used","ram_total","uptime","gpu","vram_used","vram_total","gpu_name"}` — bytes / per-cent, each field `null` when unavailable |
+| `run_batch` (v2) | `{"command":"run_batch","username","password","script","timeout"}` | `{"status":"ok","exit_code","stdout","stderr","duration_ms","truncated"}` or `{"status":"error","message"}` |
+
+**`metrics` implementation (`wol_host_service.py`):**
+- CPU/RAM/uptime via `psutil` (lazy import — the service still starts without it);
+  `psutil.cpu_percent` is primed with `interval=0.15` on the first call.
+- GPU/VRAM via `nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,name
+  --format=csv,noheader,nounits`; multiple GPUs are aggregated (mean utilisation,
+  summed memory); results cached `GPU_CACHE_SECONDS` (1.5 s). No NVIDIA driver,
+  timeout, or parse error → all GPU fields `null` ("k/A" in the UI).
+
+**`run_batch` security gating (double opt-in):**
+- Host side: disabled by default. Enable per machine with
+  `"WOL Host Service.exe" --enable-batch` / `--disable-batch`, persisted in
+  `%ProgramData%\WakeOnLAN\WOL Host Service\service.json` (`{"allow_batch": true}`,
+  re-read on every request). Requests are rejected with `"disabled"` otherwise.
+- Client side: per device `allow_batch` must be checked in the dashboard.
+- Execution: script is written to a temp `.cmd` and run as `cmd.exe /d /c`
+  (cwd `%TEMP%`, `CREATE_NO_WINDOW`), max 32 000 chars, timeout 5–3600 s
+  (default 120 s), combined output truncated at 64 000 chars (`"truncated": true`).
+  Output is decoded UTF-8 strict first, then cp850 (console OEM codepage).
+- ⚠ Scripts run with the privileges of the service (SYSTEM) — the feature is
+  off by default and must stay an explicit admin decision per target machine.
+
+**Client (`host_service_client.py`):** shared `_request()` core (connect →
+send line → read line, size-capped: 4 KB request, 16 KB metrics, 128 KB batch).
+`get_metrics()` rejects `protocol < 2` with "Host service too old for the
+dashboard". `sock_sink` exposes the connected socket to the caller so
+`_CancellableWorker.cancel()` can close it mid-flight.
+
+**Service config file:** `%ProgramData%\WakeOnLAN\WOL Host Service\service.json`
+(`_CONFIG_FILE`, guarded by `_CONFIG_LOCK`) — currently only `allow_batch`.
 
 ---
 
@@ -560,7 +629,7 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 - Left **sidebar** (fixed 230 px) with two sections:
   - *Areas*: `Devices` / `Manage` / `Schedule` / `Logs` (exclusive-checked nav buttons)
   - *Application*: `Settings` / `About` / `Quit`
-- Right **`QStackedWidget`** with six native screens:
+- Right **`QStackedWidget`** with six sidebar screens plus one detail screen:
 
 | Index | Screen            | Module (`views/`)   | Replaces (classic)              |
 |-------|-------------------|---------------------|--------------------------------|
@@ -570,11 +639,12 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 | 3     | Logs              | `logs_view.py`      | Log Viewer dialog               |
 | 4     | Settings          | `settings_view.py`  | Settings dialog                 |
 | 5     | About / Update    | `update_view.py`    | About dialog + manual update    |
+| 6     | Device Dashboard  | `dashboard_view.py` | (new — no sidebar entry)        |
 
 **Key behaviors:**
 - **Dual view** (`DevicesView`): the toolbar toggle (icon top-left, SVG glyphs `#viewListButton` three-lines / `#viewGridButton` four-tiles) switches between
-  - **Card grid** — responsive; each card shows a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window) and a primary action button that swaps between *Wake* (offline/unknown) and *Shutdown* (online).
-  - **Device list** (`DeviceListRow`) — panel rows with status dot, name, mono "IP · MAC" and three action tiles on the right (🖥️ remote fullscreen / 🪟 remote window / ✏️ edit; double-click also edits).
+  - **Card grid** — responsive; each card shows a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window), a 📊 dashboard tile and a primary action button that swaps between *Wake* (offline/unknown) and *Shutdown* (online).
+  - **Device list** (`DeviceListRow`) — panel rows with status dot, name, mono "IP · MAC" and action tiles on the right (🖥️ remote fullscreen / 🪟 remote window / 📊 dashboard / ✏️ edit; double-click also edits).
   Both views share `_statuses` and rebuild via `refresh_devices()`. Auto-refresh every 30 s (`QTimer`), paused when hidden.
 - **Sorting** (`DevicesView`): drop-down left of the search field — *Namen* (alphabetical), *IP-Adresse* (numeric via `_ip_sort_key`), *MAC-Adresse* (ascending), *Status* (rank Online → Offline → Unknown, then name). Persisted to `ui.devices_sort_key`; applies to both views; re-sorts after status updates when sorting by status.
 - **Cross-sync:** `ModernMainWindow._on_devices_changed` keeps the device lists of `DevicesView` and `ManageView` in sync when a device is added/edited/removed in either area.
@@ -582,6 +652,7 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 - **Theming:** `modern_theme.py` provides `DARK`/`LIGHT` token sets and `apply_modern_theme()`; objectName-based QSS so it never leaks into the classic UI. Respects `ui.display_mode` (auto/light/dark).
 - **Native dialogs:** `ModernDeviceDialog` (`views/device_edit_dialog.py`) and `ModernScheduleEditDialog` (`views/schedule_edit_dialog.py`); `widgets/toggle_switch.py` provides `ToggleSwitch`/`ToggleWithLabel`.
 - **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution) — devices/schedules/logs and the layout mode are preserved.
+- **Device Dashboard (`dashboard_view.py`, stack index 6, no sidebar entry):** opened via the 📊 tile on each device card/row (between the remote-desktop tiles and edit) or the context menu — `DevicesView.dashboard_requested(device_id)` → `ModernMainWindow.open_device_dashboard()` (also refreshes the header on `_on_devices_changed`; `closeEvent` and `back_requested` → nav index 0 call `cancel_workers()`). Widgets: `RingGauge` (painted arc, "–" when `None`), `Sparkline` (60-sample deque, gaps break the line), `MetricCard` (CPU/RAM/GPU/VRAM, gauge colours from theme tokens `gauge_cpu`/`gauge_ram`/`gauge_gpu`/`gauge_vram`). Polls `get_metrics()` every `ui.dashboard_interval_ms` (single-flight `_metrics_busy`, paused in `hideEvent`, guarded by `HEADLESS_MODE`); offline keeps the last values but flips the badge and shows the error in `status_line`. Batch library (QListWidget + editor + console) persists via `ConfigManager.set_device_batches()`; running a batch requires the device's `allow_batch` checkbox and the host-side gate (see §5.5).
 
 ### 7.3 Dialog Components
 
@@ -680,6 +751,7 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
+| 2.1.0   | 2026-09-03 | Dashboard Edition          | Per-device dashboard (CPU/RAM/GPU/VRAM ring gauges + sparklines, 2–10 s polling, NVIDIA-only GPU via nvidia-smi), remote batch execution with per-device library + console, host service protocol v2 (`metrics`/`run_batch`, double opt-in gating via `--enable-batch`), 📊 tile in devices view (no sidebar entry), cancellable socket workers |
 | 2.0.0   | 2026-09-01 | Modern UI Edition          | Modern "Dark Control Center" sidebar layout (Devices/Manage/Schedule/Logs/Settings/About screens), installer UI-mode choice, display mode (dark/light/auto), Devices screen with card/list dual view and sort drop-down |
 | 1.10.0  | 2026-08-22 | Search & Remote Desktop Edition | Remote Desktop sessions (fullscreen/window), device search in main window/device manager/scanner/schedules |
 | 1.6.0   | 2026-08-05 | Improvement Edition        | Lazy permissions fix, logging module, thread tracking, parallel wake/ping |
@@ -716,9 +788,11 @@ Application starts
 | Python          | 3.10            | Runtime requirement                |
 | PyQt6           | 6.6.0           | GUI framework                      |
 | cryptography    | 41.0.0          | AES-256-GCM encryption             |
+| psutil          | 5.9.0           | Host-service CPU/RAM metrics (dashboard) |
+| pywin32         | 306             | WOL Host Service (Windows service) |
 | PyInstaller     | (any recent)    | Packaging to standalone EXE        |
 
-All other imports are from the Python standard library (`json`, `socket`, `subprocess`, `threading`, `ctypes`, `urllib`, `uuid`, `datetime`, `tempfile`, `os`, `sys`, `logging`).
+All other imports are from the Python standard library (`json`, `socket`, `subprocess`, `threading`, `ctypes`, `urllib`, `uuid`, `datetime`, `tempfile`, `os`, `sys`, `logging`). `psutil` is imported lazily inside `collect_metrics()`; both host-service specs list it in `hiddenimports`.
 
 ---
 

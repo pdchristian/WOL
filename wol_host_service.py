@@ -1,13 +1,14 @@
-"""WOL Host Service - Windows service for remote shutdown via TCP.
+"""WOL Host Service - Windows service for remote control via TCP.
 
 This service runs on the *target* Windows machine and listens on TCP port
 8765. It accepts a single-line JSON request:
 
-    {"command": "shutdown" | "reboot" | "status", "username": "...", "password": "..."}
+    {"command": "shutdown" | "reboot" | "status" | "metrics" | "run_batch",
+     "username": "...", "password": "..."}
 
 and answers with a single-line JSON response:
 
-    {"status": "ok" | "error", "message": "..."}
+    {"status": "ok" | "error", "message": "..."}   (plus command-specific fields)
 
 Authentication: the supplied Windows credentials are validated with
 ``LogonUserW`` (interactive logon). A username of the form ``DOMAIN\\User``
@@ -17,15 +18,28 @@ Commands:
     shutdown  - shut the machine down immediately (``shutdown /s /t 0 /f``)
     reboot    - reboot the machine immediately    (``shutdown /r /t 0 /f``)
     status    - no authentication required, answers ``{"status": "ok", ...}``
+    metrics   - authenticated; answers with CPU/RAM/GPU/VRAM metrics
+                (``cpu``, ``ram_used``/``ram_total``, ``gpu``,
+                ``vram_used``/``vram_total``, ``gpu_name``, ``hostname``,
+                ``uptime``, ``protocol``). GPU fields are ``null`` when no
+                NVIDIA GPU/``nvidia-smi`` is available.
+    run_batch - authenticated AND gated: executes a cmd batch script
+                (``script`` field, ``timeout`` optional) and answers with
+                ``exit_code``/``stdout``/``stderr``/``duration_ms``.
+                Disabled by default - enable per machine with
+                ``--enable-batch`` (the service runs as SYSTEM, so executing
+                arbitrary scripts is a powerful operation).
 
 CLI usage (run as administrator for install/uninstall/start/stop):
 
-    WOL Host Service.exe --install     Install service + firewall rule
-    WOL Host Service.exe --uninstall   Remove firewall rule + service
-    WOL Host Service.exe --start       Start the service
-    WOL Host Service.exe --stop        Stop the service
-    WOL Host Service.exe --status      Show service status
-    WOL Host Service.exe --run         Run in the foreground (debugging)
+    WOL Host Service.exe --install        Install service + firewall rule
+    WOL Host Service.exe --uninstall      Remove firewall rule + service
+    WOL Host Service.exe --start          Start the service
+    WOL Host Service.exe --stop           Stop the service
+    WOL Host Service.exe --status         Show service status
+    WOL Host Service.exe --enable-batch   Allow run_batch on this machine
+    WOL Host Service.exe --disable-batch  Forbid run_batch (default)
+    WOL Host Service.exe --run            Run in the foreground (debugging)
 
 When started by the Windows Service Control Manager (no arguments), the
 service control dispatcher is entered automatically.
@@ -34,6 +48,7 @@ service control dispatcher is entered automatically.
 import ctypes
 import json
 import os
+import socket
 import socketserver
 import subprocess
 import sys
@@ -49,7 +64,22 @@ SERVICE_DESCRIPTION = (
 )
 FIREWALL_RULE_NAME = "WOL Host Service"
 DEFAULT_PORT = 8765
-MAX_REQUEST_BYTES = 4096
+MAX_REQUEST_BYTES = 65536
+
+# Protocol version reported in the "metrics" response so the client can
+# detect a host service that is too old for the dashboard features.
+PROTOCOL_VERSION = 2
+
+# Limits for run_batch (the service runs as SYSTEM - keep these strict).
+MAX_SCRIPT_CHARS = 32_000
+BATCH_TIMEOUT_DEFAULT = 120
+BATCH_TIMEOUT_MIN = 5
+BATCH_TIMEOUT_MAX = 3600
+MAX_BATCH_OUTPUT_CHARS = 64_000
+
+# Seconds a collected GPU sample is reused (nvidia-smi costs ~50-300 ms and
+# would otherwise be spawned on every dashboard poll).
+GPU_CACHE_SECONDS = 1.5
 
 SERVICE_REGISTRY_PATH = rf"SYSTEM\CurrentControlSet\Services\{SERVICE_NAME}"
 
@@ -96,6 +126,246 @@ def validate_credentials(username: str, password: str) -> bool:
     return True
 
 
+# --- Service configuration (feature gating) ---
+#
+# run_batch executes arbitrary scripts as SYSTEM and is therefore disabled
+# by default. --enable-batch/--disable-batch persist the opt-in in a small
+# JSON file next to the service log (see _CONFIG_FILE, defined with the
+# logging paths below); the running service re-reads it on every request
+# (cheap, takes effect without a restart).
+
+_CONFIG_LOCK = threading.Lock()
+
+
+def _read_config() -> dict:
+    try:
+        with open(_CONFIG_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_config(patch: dict) -> bool:
+    """Merge *patch* into the service config file (best effort)."""
+    try:
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        with _CONFIG_LOCK:
+            data = _read_config()
+            data.update(patch)
+            with open(_CONFIG_FILE, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
+        return True
+    except OSError:
+        return False
+
+
+def is_batch_allowed() -> bool:
+    """True when run_batch was explicitly enabled on this machine."""
+    with _CONFIG_LOCK:
+        return bool(_read_config().get("allow_batch", False))
+
+
+def set_batch_allowed(allowed: bool) -> bool:
+    return _write_config({"allow_batch": bool(allowed)})
+
+
+# --- Metrics collection (psutil + nvidia-smi) ---
+
+_gpu_cache: tuple[float, dict] = (0.0, {})
+_gpu_cache_lock = threading.Lock()
+_cpu_primed = False
+
+
+def _query_nvidia_smi() -> dict:
+    """Query GPU utilization/VRAM via nvidia-smi (aggregated over all GPUs).
+
+    Returns ``{"gpu": float|None, "vram_used": int|None,
+    "vram_total": int|None, "gpu_name": str|None}`` with VRAM in bytes.
+    All values are None when nvidia-smi is unavailable (no NVIDIA GPU or
+    missing driver).
+    """
+    empty = {"gpu": None, "vram_used": None, "vram_total": None, "gpu_name": None}
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=utilization.gpu,memory.used,memory.total,name",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True, timeout=3,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        if result.returncode != 0:
+            return empty
+    except (OSError, subprocess.TimeoutExpired):
+        return empty
+
+    utils: list[float] = []
+    vram_used = 0
+    vram_total = 0
+    names: list[str] = []
+    for line in result.stdout.decode("utf-8", errors="replace").splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 4:
+            continue
+        try:
+            utils.append(float(parts[0]))
+            vram_used += int(float(parts[1])) * 1024 * 1024  # MiB -> bytes
+            vram_total += int(float(parts[2])) * 1024 * 1024
+        except ValueError:
+            continue  # e.g. "[N/A]" on some drivers
+        names.append(parts[3])
+
+    if not utils or vram_total <= 0:
+        return empty
+    return {
+        "gpu": round(sum(utils) / len(utils), 1),
+        "vram_used": vram_used,
+        "vram_total": vram_total,
+        "gpu_name": ", ".join(names) if names else None,
+    }
+
+
+def _gpu_metrics_cached() -> dict:
+    """GPU metrics with a short cache (see GPU_CACHE_SECONDS)."""
+    global _gpu_cache
+    now = time.monotonic()
+    with _gpu_cache_lock:
+        if now - _gpu_cache[0] < GPU_CACHE_SECONDS:
+            return _gpu_cache[1]
+        data = _query_nvidia_smi()
+        # Replace the tuple as a whole (atomic rebinding for readers).
+        _gpu_cache = (now, data)
+        return data
+
+
+def collect_metrics() -> dict:
+    """Collect CPU/RAM/GPU/VRAM metrics for the dashboard.
+
+    All sizes are bytes, percentages 0-100. psutil is imported lazily so a
+    broken/missing psutil in an old build only degrades this command.
+    """
+    global _cpu_primed
+    metrics: dict = {
+        "status": "ok",
+        "protocol": PROTOCOL_VERSION,
+        "hostname": "",
+        "cpu": None,
+        "cpu_count": None,
+        "ram_used": None,
+        "ram_total": None,
+        "uptime": None,
+    }
+    try:
+        metrics["hostname"] = socket.gethostname()
+    except Exception:
+        pass
+    try:
+        import psutil  # type: ignore
+
+        if not _cpu_primed:
+            # First call with interval=None always returns 0.0 - sample a
+            # short blocking window instead so the first poll is plausible.
+            _cpu_primed = True
+            metrics["cpu"] = psutil.cpu_percent(interval=0.15)
+        else:
+            metrics["cpu"] = psutil.cpu_percent(interval=None)
+        metrics["cpu_count"] = psutil.cpu_count(logical=True)
+        vm = psutil.virtual_memory()
+        metrics["ram_used"] = vm.used
+        metrics["ram_total"] = vm.total
+        metrics["uptime"] = max(0, int(time.time() - psutil.boot_time()))
+    except Exception as e:
+        _log(f"collect_metrics: psutil failed: {e}")
+
+    try:
+        metrics.update(_gpu_metrics_cached())
+    except Exception as e:
+        _log(f"collect_metrics: gpu failed: {e}")
+        metrics.update({"gpu": None, "vram_used": None, "vram_total": None, "gpu_name": None})
+    return metrics
+
+
+# --- Batch execution ---
+
+def _decode_output(data: bytes) -> str:
+    """Decode subprocess output (UTF-8 first, then the OEM console codepage)."""
+    if not data:
+        return ""
+    text = data.decode("utf-8", errors="strict") if _is_valid_utf8(data) else None
+    if text is not None and "\ufffd" not in text:
+        return text
+    # Console tools (cmd built-ins) usually answer in the OEM codepage.
+    return data.decode("cp850", errors="replace")
+
+
+def _is_valid_utf8(data: bytes) -> bool:
+    try:
+        data.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
+def run_batch_script(script: str, timeout: float = BATCH_TIMEOUT_DEFAULT) -> dict:
+    """Execute *script* as a temporary .cmd file and capture its output.
+
+    Returns a response dict (``status``/``exit_code``/``stdout``/``stderr``/
+    ``duration_ms``/``truncated``). Caller must have authenticated and
+    checked :func:`is_batch_allowed` first.
+    """
+    if not script or not script.strip():
+        return {"status": "error", "message": "Empty script"}
+    if len(script) > MAX_SCRIPT_CHARS:
+        return {
+            "status": "error",
+            "message": f"Script too long (max {MAX_SCRIPT_CHARS} characters)",
+        }
+    timeout = max(BATCH_TIMEOUT_MIN, min(BATCH_TIMEOUT_MAX, float(timeout)))
+
+    import tempfile
+
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix="wol_batch_", suffix=".cmd")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8", errors="replace") as fh:
+            fh.write(script)
+        start = time.monotonic()
+        try:
+            result = subprocess.run(
+                ["cmd.exe", "/d", "/c", tmp_path],
+                capture_output=True,
+                timeout=timeout,
+                cwd=os.environ.get("TEMP", os.path.dirname(tmp_path)),
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "status": "error",
+                "message": f"Batch timed out after {int(timeout)} s",
+            }
+        except OSError as e:
+            return {"status": "error", "message": f"Could not run batch: {e}"}
+        duration_ms = int((time.monotonic() - start) * 1000)
+
+        stdout = _decode_output(result.stdout)
+        stderr = _decode_output(result.stderr)
+        truncated = len(stdout) > MAX_BATCH_OUTPUT_CHARS or len(stderr) > MAX_BATCH_OUTPUT_CHARS
+        return {
+            "status": "ok",
+            "exit_code": result.returncode,
+            "stdout": stdout[:MAX_BATCH_OUTPUT_CHARS],
+            "stderr": stderr[:MAX_BATCH_OUTPUT_CHARS],
+            "duration_ms": duration_ms,
+            "truncated": truncated,
+        }
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 # --- TCP command handler ---
 
 class _CommandHandler(socketserver.BaseRequestHandler):
@@ -129,6 +399,35 @@ class _CommandHandler(socketserver.BaseRequestHandler):
             if command == "status":
                 # Reachability probe - no authentication required.
                 self._respond({"status": "ok", "message": "online"})
+                return
+
+            if command == "metrics":
+                # Dashboard metrics - authentication required.
+                if not validate_credentials(username, password):
+                    self._respond({"status": "error", "message": "Authentication failed"})
+                    return
+                self._respond(collect_metrics())
+                return
+
+            if command == "run_batch":
+                # Arbitrary script execution - authentication AND the
+                # per-machine opt-in (--enable-batch) are required.
+                if not validate_credentials(username, password):
+                    self._respond({"status": "error", "message": "Authentication failed"})
+                    return
+                if not is_batch_allowed():
+                    self._respond({
+                        "status": "error",
+                        "message": "Batch execution disabled on host "
+                                   "(run: WOL Host Service.exe --enable-batch)",
+                    })
+                    return
+                script = str(request.get("script", ""))
+                try:
+                    batch_timeout = float(request.get("timeout", BATCH_TIMEOUT_DEFAULT))
+                except (TypeError, ValueError):
+                    batch_timeout = BATCH_TIMEOUT_DEFAULT
+                self._respond(run_batch_script(script, batch_timeout))
                 return
 
             if command not in ("shutdown", "reboot"):
@@ -182,6 +481,9 @@ _LOG_DIR = os.path.join(
     os.environ.get("ProgramData", r"C:\ProgramData"), "WakeOnLAN", "WOL Host Service"
 )
 _LOG_FILE = os.path.join(_LOG_DIR, "wol_host_service.log")
+
+# Persisted service settings (batch opt-in), see "Service configuration".
+_CONFIG_FILE = os.path.join(_LOG_DIR, "service.json")
 
 
 def _log(message: str) -> None:
@@ -655,6 +957,18 @@ def main() -> int:
         return 0 if stop_service() else 1
     if "--status" in args:
         return 0 if show_status() else 1
+    if "--enable-batch" in args:
+        if set_batch_allowed(True):
+            print("Batch execution ENABLED on this machine.")
+            return 0
+        print("ERROR: Could not write the service config file.")
+        return 1
+    if "--disable-batch" in args:
+        if set_batch_allowed(False):
+            print("Batch execution DISABLED on this machine (default).")
+            return 0
+        print("ERROR: Could not write the service config file.")
+        return 1
     if "--run" in args:
         run_foreground(port)
         return 0

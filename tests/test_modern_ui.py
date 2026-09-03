@@ -40,13 +40,35 @@ class TestModernMainWindow:
         from wol_app.modern_main_window import ModernMainWindow
 
         window = ModernMainWindow(config, dark_mode=True)
-        assert window.stack.count() == 6
+        # 6 sidebar screens + the per-device dashboard (no sidebar entry)
+        assert window.stack.count() == 7
         assert window.stack.currentIndex() == 0
 
         window._select_nav(1)
         assert window.stack.currentIndex() == 1
         assert window.nav_buttons[1].isChecked()
         assert not window.nav_buttons[0].isChecked()
+        window.close()
+
+    def test_open_dashboard_switches_stack_without_nav_entry(self, qapp, config, monkeypatch):
+        from wol_app.modern_main_window import DASHBOARD_NAV_INDEX, ModernMainWindow
+        from wol_app.views.dashboard_view import DeviceDashboardView
+
+        # No real network polling from tests (set_device starts a poll).
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics", lambda self: None)
+
+        window = ModernMainWindow(config, dark_mode=True)
+        device_id = config.get_devices()[0]["id"]
+        window.open_device_dashboard(device_id)
+        assert window.stack.currentIndex() == DASHBOARD_NAV_INDEX
+        # The dashboard is not a sidebar entry: no nav button stays checked
+        assert not any(btn.isChecked() for btn in window.nav_buttons)
+        assert not window.settings_btn.isChecked()
+        assert not window.about_btn.isChecked()
+        # Back returns to the devices screen
+        window.dashboard_view.back_requested.emit()
+        assert window.stack.currentIndex() == 0
+        window.dashboard_view.cancel_workers()
         window.close()
 
     def test_manage_view_lists_devices(self, qapp, config):

@@ -11,13 +11,14 @@
 8. [Remote Shutdown](#remote-shutdown)
 9. [Herunterfahren mit Host-Service](#herunterfahren-mit-host-service)
 10. [Remote Desktop](#remote-desktop)
-11. [Zeitpläne erstellen](#zeitpläne-erstellen)
-12. [Netzwerkeinstellungen](#netzwerkeinstellungen)
-13. [Protokoll anzeigen](#protokoll-anzeigen)
-14. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
-15. [Tastenkürzel](#tastenkürzel)
-16. [Häufige Fragen](#häufige-fragen)
-17. [Systemanforderungen](#systemanforderungen)
+11. [Geräte-Dashboard (Performance & Batches)](#geräte-dashboard-performance--batches)
+12. [Zeitpläne erstellen](#zeitpläne-erstellen)
+13. [Netzwerkeinstellungen](#netzwerkeinstellungen)
+14. [Protokoll anzeigen](#protokoll-anzeigen)
+15. [Passwort-Verschlüsselung](#passwort-verschlüsselung)
+16. [Tastenkürzel](#tastenkürzel)
+17. [Häufige Fragen](#häufige-fragen)
+18. [Systemanforderungen](#systemanforderungen)
 
 ---
 
@@ -75,7 +76,7 @@ Starten Sie die Anwendung über:
 
 ## Die moderne Benutzeroberfläche
 
-Mit **Version 2.0.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen. Es ist die größte Änderung dieser Version: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein.
+Mit **Version 2.1.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung – geöffnet über das 📊-Symbol an jedem Gerät (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
 
 > **Wichtig:** Die moderne und die klassische Oberfläche bieten **exakt dieselben Funktionen** – sie unterscheiden sich nur im Layout. Alle Einstellungen, Geräte, Zeitpläne, Protokolle und Sicherheitsfunktionen sind identisch. Sie können jederzeit zwischen beiden wechseln.
 
@@ -114,6 +115,7 @@ Die moderne Oberfläche besteht aus zwei Teilen:
 | **📋 Protokolle** | Alle Ereignisse der App (mit Suchfeld, Level-Filter und CSV-Export) |
 | **⚙ Einstellungen** | Alle App- und Netzwerkeinstellungen (natives Bildschirm statt Dialog) |
 | **ℹ Über** | Versionsinfo, **Nach Updates suchen** und **Changelog** |
+| **📊 Geräte-Dashboard** | Live-Performance (CPU/RAM/GPU/VRAM) und Batch-Ausführung für ein einzelnes Gerät – wird nur über das 📊-Symbol in der Geräteansicht geöffnet (kein Seitenleisten-Eintrag) |
 
 ### Die Geräteansicht (Bereiche → Geräte)
 Der Bildschirm **Geräte** zeigt alle Geräte in **zwei Ansichten**, die Sie über das **Umschalt-Icon links oben** in der Symbolleiste wechseln können:
@@ -127,7 +129,7 @@ Die zuletzt gewählte Ansicht wird **gespeichert** und beim nächsten Start wied
 Jedes Gerät wird als **Karte** dargestellt:
 - **Name** mit **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
 - **IP- und MAC-Adresse**
-- **Remote-Desktop-Kacheln** (🖥️ Vollbild / 🪟 Fenster)
+- **Remote-Desktop-Kacheln** (🖥️ Vollbild / 🪟 Fenster) und **📊 Dashboard** (öffnet das [Geräte-Dashboard](#geräte-dashboard-performance--batches))
 - **Aktions-Button:**
   - Gerät **offline/unbekannt** → **Aufwecken** (sendet das Wake-on-LAN-Signal)
   - Gerät **online** → **Herunterfahren** (Remote-Shutdown)
@@ -405,6 +407,49 @@ Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten
 
 ---
 
+## Geräte-Dashboard (Performance & Batches)
+
+Das **Geräte-Dashboard** zeigt für ein einzelnes Gerät live **CPU-Auslastung**, **RAM-Nutzung**, **GPU-Auslastung** und **VRAM-Nutzung** – zusätzlich können auf dem Zielsystem **Batch-Skripte** ausgeführt werden. Das Dashboard ist ein eigener Bildschirm innerhalb der modernen Oberfläche (kein eigener Menüpunkt).
+
+### Dashboard öffnen
+- **Kachelansicht:** klicken Sie auf der Gerätekarte auf das **📊**-Symbol (neben 🖥️ und 🪟).
+- **Listenansicht:** klicken Sie in der Zeile rechts auf das **📊**-Symbol.
+- **Kontextmenü (Rechtsklick auf das Gerät):** **Dashboard öffnen**.
+
+Mit **← Zurück** (links oben) kehren Sie zur Geräteansicht zurück.
+
+### Live-Metriken
+Vier Karten zeigen jeweils einen Ring-Gauge mit Prozentwert, eine Detailzeile (z. B. `12,0 / 32,0 GB` oder die GPU-Bezeichnung) und einen kleinen **Verlaufs-Sparkline** der letzten Messungen. Oberhalb der Karten stehen Hostname, IP/MAC, Online-Status und die **Uptime**.
+
+Das Dashboard aktualisiert die Werte automatisch im gewählten **Intervall** (Drop-down rechts oben: 2 / 3 / 5 / 10 Sekunden; Standard 3 s). Im Hintergrund wird jeweils nur eine Messung gleichzeitig ausgeführt; ist das Gerät nicht erreichbar, wechselt das Abzeichen auf **Offline** und die Fehlerursache erscheint unter der Konsole.
+
+**Voraussetzungen am Zielsystem:**
+1. Aktualisierter **WOL Host Service** (Protokollversion 2 – enthalten ab dieser Version; ältere Dienste melden *„Host service too old for the dashboard“*).
+2. Im Dashboard ist das Kontrollkästchen **Batch-Ausführung auf diesem Gerät erlauben** aktiviert (siehe unten) – es wird nur einmal pro Gerät gesetzt.
+3. Für **GPU/VRAM**: NVIDIA-Grafikkarte mit aktuellem Treiber (`nvidia-smi` im Systempfad). Ohne NVIDIA-GPU stehen die beiden Karten auf **k/A**.
+
+> Die Messwerte werden mit den Anmeldedaten des Geräts abgefragt (wie beim Remote Shutdown). Ohne gültige Benutzerdaten im Geräteeintrag liefert das Dashboard keine Werte.
+
+### Batches erstellen und ausführen
+Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
+
+1. **Neu** – legt einen leeren Batch an.
+2. **Name**, **Skript** (beliebiger `cmd`-Batchtext, bis 32.000 Zeichen) und **Timeout** (5–3600 s, Standard 120 s) im Editor ausfüllen – Änderungen werden mit **Speichern** dauerhaft im Geräteeintrag gesichert.
+3. **Duplizieren** / **Löschen** – Batch vervielfältigen oder entfernen (mit Rückfrage).
+4. **Ausführen** – sendet das Skript an das Zielsystem; **stdout/stderr**, **Exit-Code** und **Laufzeit** erscheinen in der **Konsole** darunter. Sehr lange Ausgaben werden gekürzt und mit *[… gekürzt …]* markiert. Mit **Stop** brechen Sie die laufende Ausführung ab.
+
+**Sicherheit – doppelte Freischaltung:** Batch-Skripte laufen auf dem Zielsystem mit den Rechten des Host Service (**SYSTEM**!). Deshalb ist die Ausführung **zweifelt abgesichert**:
+- **Clientseitig:** das Kontrollkästchen **Batch-Ausführung auf diesem Gerät erlauben** im Dashboard (pro Gerät gespeichert).
+- **Zielsystemseitig:** der Host Service ist standardmäßig gesperrt. Ein Administrator muss es einmalig pro Rechner aktivieren:
+  ```
+  "C:\Program Files\WakeOnLAN\WOL Host Service.exe" --enable-batch
+  ```
+  Rückgängig mit `--disable-batch`. Die Einstellung wird in `%ProgramData%\WakeOnLAN\WOL Host Service\service.json` gespeichert und bei jeder Anfrage neu gelesen. Ohne diese Freigabe antwortet der Dienst mit *„Batch execution is disabled on this host“*.
+
+> **Warnung:** Aktivieren Sie `--enable-batch` nur auf Rechnern, denen Sie vertrauen, und verwenden Sie ausschließlich starke Kennwörter – jeder mit gültigen Anmeldedaten kann dann Befehle mit SYSTEM-Rechten ausführen.
+
+---
+
 ## Zeitpläne erstellen
 
 1. Menü: **Datei → Zeitpläne verwalten...** (oder `Strg+S`)
@@ -558,4 +603,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.0.0 | Wake-on-LAN Manager*
+*Version 2.1.0 | Wake-on-LAN Manager*

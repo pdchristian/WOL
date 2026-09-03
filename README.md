@@ -1,9 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 2.0.0 - Modern UI Edition**
+**Version 2.1.0 - Dashboard Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.1.0:** a per-device **Dashboard** — live **CPU / RAM / GPU / VRAM** gauges with rolling sparklines plus **remote batch execution** (per-device script library, console output, exit code & duration). Opened via the 📊 tile on each device (no sidebar entry). Requires the updated **WOL Host Service** (protocol v2); batch runs need a double opt-in (per-device checkbox + `--enable-batch` on the target).
 > **New in 2.0.0:** a redesigned **Modern UI** ("Dark Control Center") with a sidebar and four native areas — *Geräte* (device status cards or device list), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens. It is feature-identical to the classic window and can be selected at install time or switched in **Settings → Design** at any time.
 
 🔒 **Security Note:** Passwords are encrypted with AES-256-GCM (DPAPI-protected master key), legacy plaintext passwords are auto-re-encrypted on load, and all subprocess calls use `shell=False` with input validation. See [SECURITY.md](SECURITY.md) for details.
@@ -11,6 +12,7 @@ A modern Windows GUI application for sending Wake-on-LAN magic packets to device
 ## Features
 
 - **Modern UI (new in 2.0.0)** — A redesigned "Dark Control Center" layout with a sidebar and native *Geräte* / *Verwalten* / *Zeitplan* / *Protokolle* / *Einstellungen* / *Über* screens (dark or light display mode). The *Geräte* screen offers a **card view and a list view** (toggle icon) plus a **sort drop-down** (name / IP / MAC / status). Feature-identical to the classic window; choose it at install time or switch it in **Settings → Design**
+- **Device Dashboard (new in 2.1.0)** — Per-device live metrics (CPU / RAM / GPU / VRAM ring gauges + rolling sparklines, hostname & uptime, configurable 2–10 s polling) and **remote batch execution** with a per-device script library, console output (stdout/stderr, exit code, duration) and cancellation. GPU/VRAM via `nvidia-smi` (NVIDIA only, "n/a" otherwise). Opened via the 📊 tile on each device — no sidebar entry. Batch runs are double-gated: a per-device checkbox plus `--enable-batch` on the target host (SYSTEM privileges!)
 - **Device Management** — Add, edit, and remove devices with friendly names, MAC addresses, and optional IP addresses (no device limit)
 - **Wake-on-LAN** — Send magic packets to individual devices or wake all at once (parallel, up to 8 concurrent)
 - **Status Monitoring** — Ping devices to check online/offline status (auto-refresh every 30 seconds, up to 16 concurrent)
@@ -91,6 +93,17 @@ A detailed user manual is available in German:
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
 ## 📝 Changelog
+
+### Version 2.1.0 - Dashboard Edition (2026-09-03)
+
+#### 📊 Device Dashboard (per device)
+- **Live performance metrics:** a new dashboard screen shows **CPU load, RAM usage, GPU load and VRAM usage** as ring gauges with rolling sparklines (last 60 samples), plus hostname, IP · MAC, online badge and uptime. Polling interval selectable (2 / 3 / 5 / 10 s, default 3 s), auto-pauses when hidden, single-flight requests
+- **Opened via the 📊 tile** on each device card/row (between the remote-desktop tiles and edit) and the context menu — deliberately **no sidebar entry**
+- **GPU/VRAM via `nvidia-smi`** (utilisation + memory, multi-GPU aggregated, cached 1.5 s); machines without an NVIDIA GPU show "k/A"
+- **Remote batch execution:** per-device script library (new/duplicate/delete, persisted in `config.json`), script editor with per-batch timeout (5–3600 s) and a console showing stdout/stderr, exit code and duration; running batches can be stopped
+- **Double opt-in for batches (security):** a per-device "allow batch execution" checkbox in the dashboard **and** an admin-side `--enable-batch` switch on the WOL Host Service (persisted in `%ProgramData%\...\service.json`, re-read per request). Scripts run with SYSTEM privileges — disabled by default on both sides
+- **Host service protocol v2:** new authenticated `metrics` and `run_batch` commands (psutil-based CPU/RAM/uptime; output size caps, UTF-8/cp850 decoding); older services are detected and reported ("Host service too old for the dashboard")
+- **Cancellable workers:** dashboard metric/batch threads close their in-flight socket on cancel/back-navigation, so switching devices or closing the window never blocks
 
 ### Version 2.0.0 - Modern UI Edition (2026-09-01)
 
