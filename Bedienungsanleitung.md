@@ -108,14 +108,22 @@ Die moderne Oberfläche besteht aus zwei Teilen:
 
 | Bildschirm | Inhalt |
 |------------|--------|
-| **💻 Geräte** | Alle Geräte als **Status-Karten** mit Live-Status, IP/MAC und Aktions-Buttons (Aufwecken / Herunterfahren / Remote Desktop) |
+| **💻 Geräte** | Alle Geräte mit Live-Status, wahlweise als **Kacheln** oder **Geräteliste** (Umschalter links oben), mit Sortier-Drop-down und Suchfeld |
 | **🔧 Verwalten** | **Geräte-Verwaltung** (Hinzufügen, Bearbeiten, Löschen, Import/Export, Suchen) und **Netzwerk-Scan** |
 | **🕒 Zeitplan** | Zeitpläne für automatisches Aufwecken/Herunterfahren (mit Live-Suche) |
 | **📋 Protokolle** | Alle Ereignisse der App (mit Suchfeld, Level-Filter und CSV-Export) |
 | **⚙ Einstellungen** | Alle App- und Netzwerkeinstellungen (natives Bildschirm statt Dialog) |
 | **ℹ Über** | Versionsinfo, **Nach Updates suchen** und **Changelog** |
 
-### Die Geräte-Karten (Bereiche → Geräte)
+### Die Geräteansicht (Bereiche → Geräte)
+Der Bildschirm **Geräte** zeigt alle Geräte in **zwei Ansichten**, die Sie über das **Umschalt-Icon links oben** in der Symbolleiste wechseln können:
+
+- **Kachelansicht** (Standard) – Icon mit **drei horizontalen Linien** → wechselt zur Listenansicht
+- **Listenansicht** – Icon mit **vier Kacheln** → wechselt zurück zur Kachelansicht
+
+Die zuletzt gewählte Ansicht wird **gespeichert** und beim nächsten Start wiederhergestellt.
+
+#### Kachelansicht
 Jedes Gerät wird als **Karte** dargestellt:
 - **Name** mit **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
 - **IP- und MAC-Adresse**
@@ -124,7 +132,26 @@ Jedes Gerät wird als **Karte** dargestellt:
   - Gerät **offline/unbekannt** → **Aufwecken** (sendet das Wake-on-LAN-Signal)
   - Gerät **online** → **Herunterfahren** (Remote-Shutdown)
 
-Die Status-Punkte werden **alle 30 Sekunden automatisch** aktualisiert. Über das Suchfeld können Sie die Karten **live filtern**.
+#### Listenansicht
+Jedes Gerät wird als **Zeile** dargestellt:
+- **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
+- **Name** sowie **IP- und MAC-Adresse** in einer Mono-Zeile darunter
+- **Drei Aktions-Icons rechts:**
+  - 🖥️ **Remote Vollbild** – startet die Remote-Desktop-Sitzung im Vollbild
+  - 🪟 **Remote Fenster** – startet die Remote-Desktop-Sitzung im Fenster
+  - ✏️ **Bearbeiten** – öffnet den Geräte-Dialog (alternativ **Doppelklick** auf die Zeile)
+
+#### Sortierung und Suche
+Links neben dem Suchfeld befindet sich ein **Sortier-Drop-down** mit folgenden Optionen:
+
+| Sortierung | Reihenfolge |
+|------------|-------------|
+| **Namen** | alphabetisch (A–Z) |
+| **IP-Adresse** | numerisch (z. B. 192.168.2.9 vor 192.168.2.50) |
+| **MAC-Adresse** | aufsteigend |
+| **Status** | **Online → Offline → Unbekannt** (bei Gleichstand alphabetisch nach Name) |
+
+Die gewählte Sortierung wird **gespeichert** und gilt für **beide Ansichten**. Über das Suchfeld können Sie die Geräte zusätzlich **live filtern** (nach Name, MAC, IP oder Benutzername). Die Status-Punkte werden **alle 30 Sekunden automatisch** aktualisiert — bei Sortierung nach **Status** sortiert sich die Liste nach jedem Update neu.
 
 > **Tipp:** Die Bereiche *Verwalten*, *Zeitplan*, *Protokolle*, *Einstellungen* und *Über* sind in der modernen Oberfläche **eigene Bildschirme** (keine Dialoge mehr). Die klassischen Menüs (Datei, Tools, Hilfe) existieren in der modernen Oberfläche nicht – alle Funktionen sind über die Seitenleiste erreichbar.
 

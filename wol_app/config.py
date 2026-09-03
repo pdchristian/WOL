@@ -153,6 +153,16 @@ REGISTRY_KEY_UI_MODE = r"SOFTWARE\Wake-on-LAN Manager"
 REGISTRY_VALUE_UI_MODE = "UiMode"
 VALID_LAYOUT_MODES = ("classic", "modern")
 
+# View modes of the modern devices screen: "grid" (Kachelansicht) or
+# "list" (Geräteliste). Persisted under ui.devices_view_mode.
+DEVICES_VIEW_GRID = "grid"
+DEVICES_VIEW_LIST = "list"
+VALID_DEVICES_VIEW_MODES = (DEVICES_VIEW_GRID, DEVICES_VIEW_LIST)
+
+# Sort keys of the modern devices screen (drop-down left of the search
+# field). Persisted under ui.devices_sort_key.
+DEVICES_SORT_KEYS = ("name", "ip", "mac", "status")
+
 
 def read_ui_mode_from_registry() -> str | None:
     """Read the installer-selected UI mode from the Windows registry.
@@ -215,6 +225,10 @@ DEFAULT_CONFIG = {
         # True once the user chose a layout explicitly (settings dialog).
         # Then the installer registry hint is no longer consulted.
         "layout_mode_user_set": False,
+        # Modern devices screen: "grid" (Kacheln) or "list" (Geräteliste).
+        "devices_view_mode": DEVICES_VIEW_GRID,
+        # Modern devices screen sort: "name" | "ip" | "mac" | "status".
+        "devices_sort_key": "name",
     },
     "updates": {
         "auto_check_enabled": True,
@@ -478,6 +492,30 @@ class ConfigManager:
         """Return the active UI layout: "classic" or "modern"."""
         mode = self.config.get("ui", {}).get("layout_mode", "classic")
         return mode if mode in VALID_LAYOUT_MODES else "classic"
+
+    def get_devices_view_mode(self) -> str:
+        """Return the modern devices screen mode: "grid" or "list"."""
+        mode = self.config.get("ui", {}).get("devices_view_mode", DEVICES_VIEW_GRID)
+        return mode if mode in VALID_DEVICES_VIEW_MODES else DEVICES_VIEW_GRID
+
+    def set_devices_view_mode(self, mode: str) -> None:
+        """Persist the modern devices screen mode ("grid" or "list")."""
+        if mode not in VALID_DEVICES_VIEW_MODES:
+            raise ValueError(f"Invalid devices view mode: {mode}")
+        self.config.setdefault("ui", {})["devices_view_mode"] = mode
+        self.save()
+
+    def get_devices_sort_key(self) -> str:
+        """Return the modern devices sort key (name/ip/mac/status)."""
+        key = self.config.get("ui", {}).get("devices_sort_key", "name")
+        return key if key in DEVICES_SORT_KEYS else "name"
+
+    def set_devices_sort_key(self, key: str) -> None:
+        """Persist the modern devices sort key (name/ip/mac/status)."""
+        if key not in DEVICES_SORT_KEYS:
+            raise ValueError(f"Invalid devices sort key: {key}")
+        self.config.setdefault("ui", {})["devices_sort_key"] = key
+        self.save()
 
     def set_layout_mode(self, mode: str) -> None:
         """Persist the user's explicit layout choice (takes precedence over the installer hint)."""

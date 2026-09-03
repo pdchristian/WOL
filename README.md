@@ -4,13 +4,13 @@
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
-> **New in 2.0.0:** a redesigned **Modern UI** ("Dark Control Center") with a sidebar and four native areas — *Geräte* (device status cards), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens. It is feature-identical to the classic window and can be selected at install time or switched in **Settings → Design** at any time.
+> **New in 2.0.0:** a redesigned **Modern UI** ("Dark Control Center") with a sidebar and four native areas — *Geräte* (device status cards or device list), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens. It is feature-identical to the classic window and can be selected at install time or switched in **Settings → Design** at any time.
 
 🔒 **Security Note:** Passwords are encrypted with AES-256-GCM (DPAPI-protected master key), legacy plaintext passwords are auto-re-encrypted on load, and all subprocess calls use `shell=False` with input validation. See [SECURITY.md](SECURITY.md) for details.
 
 ## Features
 
-- **Modern UI (new in 2.0.0)** — A redesigned "Dark Control Center" layout with a sidebar and native *Geräte* / *Verwalten* / *Zeitplan* / *Protokolle* / *Einstellungen* / *Über* screens (dark or light display mode). Feature-identical to the classic window; choose it at install time or switch it in **Settings → Design**
+- **Modern UI (new in 2.0.0)** — A redesigned "Dark Control Center" layout with a sidebar and native *Geräte* / *Verwalten* / *Zeitplan* / *Protokolle* / *Einstellungen* / *Über* screens (dark or light display mode). The *Geräte* screen offers a **card view and a list view** (toggle icon) plus a **sort drop-down** (name / IP / MAC / status). Feature-identical to the classic window; choose it at install time or switch it in **Settings → Design**
 - **Device Management** — Add, edit, and remove devices with friendly names, MAC addresses, and optional IP addresses (no device limit)
 - **Wake-on-LAN** — Send magic packets to individual devices or wake all at once (parallel, up to 8 concurrent)
 - **Status Monitoring** — Ping devices to check online/offline status (auto-refresh every 30 seconds, up to 16 concurrent)
@@ -97,6 +97,8 @@ A detailed user manual is available in German:
 #### 🎨 Modern UI ("Dark Control Center")
 - **New application design:** a sidebar-based control center with four native areas — *Geräte* (device status cards), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens
 - **Device cards:** each device is shown as a card with a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window) and a primary action button that switches between *Aufwecken* (wake, while offline) and *Herunterfahren* (shutdown, while online); auto-refresh every 30 s
+- **Card / list dual view:** the *Geräte* screen toggles between the card grid and a **device list** (rows with status dot, name, IP · MAC and three action tiles: remote fullscreen / remote window / edit) via the icon in the top-left of the toolbar; the chosen view is persisted
+- **Sort drop-down:** left of the search field — *Namen* (alphabetical), *IP-Adresse* (numeric), *MAC-Adresse* (ascending) or *Status* (online → offline → unknown); applies to both views and is persisted
 - **Native settings & update screens:** *Einstellungen* (network, language, display mode, design, updates, log limit, shutdown method, RDP resolution) and *Über* (about + "Nach Updates suchen" / changelog) are full screens instead of dialogs
 - **Design choice at install time:** the installer asks for **Modern app** or **Classic app** (recorded in the registry); the layout can be changed later in **Settings → Design** (requires an app restart)
 - **Display mode:** dark / light / auto is respected by both layouts

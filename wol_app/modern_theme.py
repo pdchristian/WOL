@@ -77,6 +77,75 @@ def _arrow_url(direction: str, color: str) -> str:
     return _svg_url(f"chevron_{direction}_{color.lstrip('#')}.svg", svg)
 
 
+def _refresh_url(color: str, glyph_px: int = 16, canvas: int = 36) -> str:
+    """Return a file URL of a refresh (circular arrow) SVG glyph.
+
+    Used by the devices-view toolbar refresh button. A font glyph such as
+    U+27F3 renders small, faint and font-dependent, so the arrow is drawn
+    as a stroke-based SVG (feather "rotate-cw" path) that the QSS
+    references via ``image: url(...)``.
+
+    The transparent canvas is the button size (``canvas`` px) and the arrow
+    is centred at ``glyph_px``. Qt then draws the QSS ``image`` 1:1, so the
+    glyph appears at exactly ``glyph_px`` instead of being stretched to the
+    whole button.
+    """
+    scale = glyph_px / 24.0
+    off = (canvas - glyph_px) / 2.0
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{canvas}" '
+        f'height="{canvas}" viewBox="0 0 {canvas} {canvas}" fill="none">'
+        f'<g transform="translate({off},{off}) scale({scale})">'
+        f'<polyline points="23 4 23 10 17 10" stroke="{color}" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" stroke="{color}" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+        "</g></svg>"
+    )
+    return _svg_url(f"refresh_{glyph_px}_{color.lstrip('#')}.svg", svg)
+
+
+def _glyph_canvas(color: str, paths: str, name: str,
+                  glyph_px: int = 16, canvas: int = 36) -> str:
+    """Wrap 24x24 feather-style ``paths`` into a centered ``canvas`` SVG.
+
+    Same 1:1 rendering trick as :func:`_refresh_url`: the transparent
+    canvas equals the button size so the QSS ``image`` is not stretched.
+    """
+    scale = glyph_px / 24.0
+    off = (canvas - glyph_px) / 2.0
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{canvas}" '
+        f'height="{canvas}" viewBox="0 0 {canvas} {canvas}" fill="none">'
+        f'<g transform="translate({off},{off}) scale({scale})">'
+        f'{paths}</g></svg>'
+    )
+    return _svg_url(f"{name}_{glyph_px}_{color.lstrip('#')}.svg", svg)
+
+
+def _list_view_url(color: str, glyph_px: int = 16, canvas: int = 36) -> str:
+    """Three horizontal lines (feather "menu") — switch to list view."""
+    paths = (
+        f'<line x1="3" y1="6" x2="21" y2="6" stroke="{color}" '
+        'stroke-width="2" stroke-linecap="round"/>'
+        f'<line x1="3" y1="12" x2="21" y2="12" stroke="{color}" '
+        'stroke-width="2" stroke-linecap="round"/>'
+        f'<line x1="3" y1="18" x2="21" y2="18" stroke="{color}" '
+        'stroke-width="2" stroke-linecap="round"/>'
+    )
+    return _glyph_canvas(color, paths, "list_view", glyph_px, canvas)
+
+
+def _grid_view_url(color: str, glyph_px: int = 16, canvas: int = 36) -> str:
+    """Four tiles (feather "grid") — switch to card/grid view."""
+    rects = "".join(
+        f'<rect x="{x}" y="{y}" width="7" height="7" rx="1.5" '
+        f'stroke="{color}" stroke-width="2"/>'
+        for x, y in ((3, 3), (14, 3), (3, 14), (14, 14))
+    )
+    return _glyph_canvas(color, rects, "grid_view", glyph_px, canvas)
+
+
 def _checkmark_url(color: str) -> str:
     """Return a file URL of a checkmark SVG for checked checkbox indicators."""
     svg = (
@@ -201,6 +270,38 @@ QPushButton#iconBtn {{
     font-size: 14px; border-radius: 8px;
 }}
 QPushButton#iconBtn:hover {{ background: {t['surface_hover']}; }}
+/* Refresh button (devices toolbar): visible surface tile + SVG glyph so
+   the icon reads clearly instead of a faint font glyph. */
+QPushButton#refreshButton {{
+    background: {t['surface']}; border: 1px solid {t['border']};
+    border-radius: 9px; padding: 0px;
+    image: url("{_refresh_url(t['text_dim'])}");
+}}
+QPushButton#refreshButton:hover {{
+    background: {t['surface_hover']}; border-color: {t['accent']};
+    image: url("{_refresh_url(t['text'])}");
+}}
+/* View-mode toggle (devices toolbar): three lines while the card grid is
+   active (click → list), four tiles while the list is active (click →
+   grid). The objectName swap in DevicesView picks the glyph. */
+QPushButton#viewListButton {{
+    background: {t['surface']}; border: 1px solid {t['border']};
+    border-radius: 9px; padding: 0px;
+    image: url("{_list_view_url(t['text_dim'])}");
+}}
+QPushButton#viewListButton:hover {{
+    background: {t['surface_hover']}; border-color: {t['accent']};
+    image: url("{_list_view_url(t['text'])}");
+}}
+QPushButton#viewGridButton {{
+    background: {t['surface']}; border: 1px solid {t['border']};
+    border-radius: 9px; padding: 0px;
+    image: url("{_grid_view_url(t['text_dim'])}");
+}}
+QPushButton#viewGridButton:hover {{
+    background: {t['surface_hover']}; border-color: {t['accent']};
+    image: url("{_grid_view_url(t['text'])}");
+}}
 
 /* ── Dialogs (QDialog / QMessageBox) ─────────────────────────────────── */
 /* Without these rules every QDialog falls back to the native gray system

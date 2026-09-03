@@ -74,7 +74,7 @@ run.py
       │  Modern UI (new in 2.0.0) — selected when ui.layout_mode == "modern"
       ├── wol_app/modern_main_window.py  (ModernMainWindow, run_modern_window)
       │    ├── wol_app/modern_theme.py    (DARK/LIGHT tokens, apply_modern_theme)
-      │    ├── wol_app/views/devices_view.py   (DevicesView — status cards)
+      │    ├── wol_app/views/devices_view.py   (DevicesView — status cards + device list)
       │    ├── wol_app/views/manage_view.py    (ManageView — devices + network scan)
       │    ├── wol_app/views/schedule_view.py  (ScheduleView — schedule rows)
       │    ├── wol_app/views/logs_view.py      (LogsView — event log)
@@ -266,7 +266,9 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
     "remote_desktop_resolution": "1920x1080",
     "layout_mode": "classic",
     "layout_mode_user_set": false,
-    "display_mode": "auto"
+    "display_mode": "auto",
+    "devices_view_mode": "grid",
+    "devices_sort_key": "name"
   },
   "updates": {
     "auto_check_enabled": true,
@@ -279,6 +281,8 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
 > **UI layout & display mode (new in 2.0.0):**
 > - `ui.layout_mode` — `"classic"` (single-view `MainWindow`) or `"modern"` (sidebar `ModernMainWindow`). On first start the installer-written registry value `HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode` wins (see `ConfigManager._apply_installer_ui_mode`); `layout_mode_user_set` is set to `true` once the user picks a layout in Settings, after which the registry hint is ignored.
 > - `ui.display_mode` — `"auto"` / `"light"` / `"dark"`; respected by both layouts (defaults to `"auto"` when absent).
+> - `ui.devices_view_mode` — `"grid"` (Kachelansicht) or `"list"` (Geräteliste) on the modern Devices screen; toggled via the toolbar icon, persisted by `ConfigManager.set_devices_view_mode()`.
+> - `ui.devices_sort_key` — `"name"` / `"ip"` / `"mac"` / `"status"` sort order of the modern Devices screen (status ranks Online → Offline → Unknown); persisted by `ConfigManager.set_devices_sort_key()`.
 
 ### 4.3 Device Schema
 
@@ -568,7 +572,11 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 | 5     | About / Update    | `update_view.py`    | About dialog + manual update    |
 
 **Key behaviors:**
-- **Device cards** (`DevicesView`): responsive grid; each card shows a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window) and a primary action button that swaps between *Wake* (offline/unknown) and *Shutdown* (online). Auto-refresh every 30 s (`QTimer`), paused when hidden.
+- **Dual view** (`DevicesView`): the toolbar toggle (icon top-left, SVG glyphs `#viewListButton` three-lines / `#viewGridButton` four-tiles) switches between
+  - **Card grid** — responsive; each card shows a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window) and a primary action button that swaps between *Wake* (offline/unknown) and *Shutdown* (online).
+  - **Device list** (`DeviceListRow`) — panel rows with status dot, name, mono "IP · MAC" and three action tiles on the right (🖥️ remote fullscreen / 🪟 remote window / ✏️ edit; double-click also edits).
+  Both views share `_statuses` and rebuild via `refresh_devices()`. Auto-refresh every 30 s (`QTimer`), paused when hidden.
+- **Sorting** (`DevicesView`): drop-down left of the search field — *Namen* (alphabetical), *IP-Adresse* (numeric via `_ip_sort_key`), *MAC-Adresse* (ascending), *Status* (rank Online → Offline → Unknown, then name). Persisted to `ui.devices_sort_key`; applies to both views; re-sorts after status updates when sorting by status.
 - **Cross-sync:** `ModernMainWindow._on_devices_changed` keeps the device lists of `DevicesView` and `ManageView` in sync when a device is added/edited/removed in either area.
 - **Shared flows:** both layouts reuse `wol_app/remote_desktop.py` (`start_remote_desktop`) and `wol_app/shutdown_flow.py` (`confirm_shutdown`/`execute_shutdown`), the same `ConfigManager` API, the same `WOLEngine`, and the classic `UpdateAvailableDialog` for downloads.
 - **Theming:** `modern_theme.py` provides `DARK`/`LIGHT` token sets and `apply_modern_theme()`; objectName-based QSS so it never leaks into the classic UI. Respects `ui.display_mode` (auto/light/dark).
@@ -672,7 +680,7 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
-| 2.0.0   | 2026-09-01 | Modern UI Edition          | Modern "Dark Control Center" sidebar layout (Devices/Manage/Schedule/Logs/Settings/About screens), installer UI-mode choice, display mode (dark/light/auto) |
+| 2.0.0   | 2026-09-01 | Modern UI Edition          | Modern "Dark Control Center" sidebar layout (Devices/Manage/Schedule/Logs/Settings/About screens), installer UI-mode choice, display mode (dark/light/auto), Devices screen with card/list dual view and sort drop-down |
 | 1.10.0  | 2026-08-22 | Search & Remote Desktop Edition | Remote Desktop sessions (fullscreen/window), device search in main window/device manager/scanner/schedules |
 | 1.6.0   | 2026-08-05 | Improvement Edition        | Lazy permissions fix, logging module, thread tracking, parallel wake/ping |
 | 1.5.1   | 2026-07-21 | Scheduler Fix Edition      | Scheduler reliability improvements              |

@@ -21,6 +21,7 @@ from typing import Any
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -33,6 +34,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from wol_app.config import DEVICES_VIEW_GRID, DEVICES_VIEW_LIST
 from wol_app.main_window import HEADLESS_MODE, StatusWorker
 from wol_app.network_scanner import get_local_ips
 from wol_app.remote_desktop import start_remote_desktop
@@ -48,6 +50,138 @@ GRID_SPACING = 16
 
 # Auto-refresh interval for the status dots (prototype footer: 30 s)
 AUTO_REFRESH_MS = 30_000
+
+# Fixed height of one device row in the list view (px)
+LIST_ROW_HEIGHT = 64
+
+# Sort order of the "Status" sort key: Online, offline, unbekannt
+STATUS_SORT_RANK = {"online": 0, "offline": 1, "unknown": 2}
+
+
+def _ip_sort_key(ip: str) -> tuple:
+    """Sort IPv4 addresses numerically (192.168.1.9 < 192.168.1.10).
+
+    Anything that is not four dotted decimals sorts after the numeric
+    addresses, still alphabetically among itself.
+    """
+    parts = (ip or "").split(".")
+    if len(parts) == 4 and all(p.isdigit() for p in parts):
+        return (0, tuple(int(p) for p in parts), "")
+    return (1, (), ip or "")
+
+
+class DeviceListRow(QWidget):
+    """One device in the list view: dot · name / mono IP · MAC · action tiles.
+
+    Mirrors the layout proposal: status dot and the two-line info block on
+    the left, three action tiles on the right (remote fullscreen, remote
+    window, edit).
+    """
+
+    remote_requested = pyqtSignal(str, bool)  # device id, fullscreen
+    edit_requested = pyqtSignal(str)
+
+    def __init__(self, device: dict, status: str, local_ips: set[str], parent=None) -> None:
+        super().__init__(parent)
+        self.device_id: str = device["id"]
+        self.device_name: str = device.get("name", "")
+        self._device_ip: str = device.get("ip", "")
+        self.enabled: bool = device.get("enabled", True)
+        self._status = status
+
+        self.setObjectName("deviceRow")
+        self.setFixedHeight(LIST_ROW_HEIGHT)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(18, 10, 18, 10)
+        layout.setSpacing(14)
+
+        self.dot = QLabel()
+        self.dot.setFixedSize(10, 10)
+        layout.addWidget(self.dot, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        info = QVBoxLayout()
+        info.setSpacing(2)
+        self.title = QLabel(self._display_name(local_ips))
+        self.title.setObjectName(
+            "rowTitle" if self.enabled else "rowTitleDisabled")
+        ip = device.get("ip", "")
+        mac = device.get("mac", "")
+        self.mono = QLabel(f"{ip} · {mac}" if ip else mac)
+        self.mono.setObjectName("rowMono")
+        info.addWidget(self.title)
+        info.addWidget(self.mono)
+        layout.addLayout(info)
+
+        layout.addStretch()
+
+        self.remote_fs_btn = QPushButton("🖥️")
+        self.remote_fs_btn.setObjectName("tileButton")
+        self.remote_fs_btn.setFixedSize(36, 36)
+        self.remote_fs_btn.setToolTip(Translations.tr("button.remote_fullscreen"))
+        self.remote_fs_btn.clicked.connect(
+            lambda: self.remote_requested.emit(self.device_id, True))
+        layout.addWidget(self.remote_fs_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.remote_win_btn = QPushButton("🪟")
+        self.remote_win_btn.setObjectName("tileButton")
+        self.remote_win_btn.setFixedSize(36, 36)
+        self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
+        self.remote_win_btn.clicked.connect(
+            lambda: self.remote_requested.emit(self.device_id, False))
+        layout.addWidget(self.remote_win_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.edit_btn = QPushButton("✏️")
+        self.edit_btn.setObjectName("tileButton")
+        self.edit_btn.setFixedSize(36, 36)
+        self.edit_btn.setToolTip(Translations.tr("device_manager.button.edit"))
+        self.edit_btn.clicked.connect(
+            lambda: self.edit_requested.emit(self.device_id))
+        layout.addWidget(self.edit_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.set_status(status)
+        if not self.enabled:
+            # Disabled devices cannot be reached remotely
+            self.remote_fs_btn.setEnabled(False)
+            self.remote_win_btn.setEnabled(False)
+
+    # ── Status ────────────────────────────────────────────────────
+
+    def _display_name(self, local_ips: set[str]) -> str:
+        """Device name with the classic "(ich)" marker for the local machine."""
+        name = self.device_name
+        if self._device_ip in local_ips:
+            name = f"{name} {Translations.tr('device.me')}"
+        if not self.enabled:
+            name = f"{name} {Translations.tr('device.disabled')}"
+        return name
+
+    def set_status(self, status: str) -> None:
+        """Update the color of the status dot (objectName selects the style)."""
+        self._status = status
+        self.dot.setToolTip(Translations.tr(f"status.{status}"))
+        dot_name = {
+            "online": "dotOnline",
+            "offline": "dotOffline",
+        }.get(status, "dotUnknown")
+        if self.dot.objectName() != dot_name:
+            self.dot.setObjectName(dot_name)
+            style = self.dot.style()
+            style.unpolish(self.dot)
+            style.polish(self.dot)
+
+    # ── Mouse interaction ────────────────────────────────────────
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        self.edit_requested.emit(self.device_id)
+
+    def retranslate(self, local_ips: set[str]) -> None:
+        self.title.setText(self._display_name(local_ips))
+        self.remote_fs_btn.setToolTip(Translations.tr("button.remote_fullscreen"))
+        self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
+        self.edit_btn.setToolTip(Translations.tr("device_manager.button.edit"))
+        self.set_status(self._status)
 
 
 class DeviceCard(QWidget):
@@ -215,7 +349,12 @@ class DeviceCard(QWidget):
 
 
 class DevicesView(QWidget):
-    """The modern "Geräte" screen (status card grid)."""
+    """The modern "Geräte" screen (card grid or device list).
+
+    The toolbar toggles between the two views (icon top-left) and offers a
+    sort drop-down (name / IP / MAC / status) next to the search field.
+    Both the view mode and the sort key are persisted via ConfigManager.
+    """
 
     devices_changed = pyqtSignal()
 
@@ -227,7 +366,10 @@ class DevicesView(QWidget):
         self._status_worker: StatusWorker | None = None
         self._statuses: dict[str, str] = {}  # device id -> last known status
         self._cards: dict[str, DeviceCard] = {}
+        self._rows: dict[str, DeviceListRow] = {}
         self._grid_cols = 0
+        self._view_mode: str = self.config.get_devices_view_mode()
+        self._sort_key: str = self.config.get_devices_sort_key()
 
         self._setup_ui()
         self.refresh_devices()
@@ -270,21 +412,24 @@ class DevicesView(QWidget):
         title_col.addWidget(self.subtitle)
         header.addLayout(title_col)
         header.addStretch()
-
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
-        self.search_input.setClearButtonEnabled(True)
-        self.search_input.setFixedWidth(260)
-        self.search_input.textChanged.connect(self.refresh_devices)
-        header.addWidget(self.search_input, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(header)
         layout.addSpacing(4)
 
-        # ── Toolbar: refresh · wake all ──
+        # ── Toolbar: view toggle · refresh · wake all … sort · search ──
         toolbar = QHBoxLayout()
         toolbar.setSpacing(10)
-        self.refresh_btn = QPushButton("⟳")
-        self.refresh_btn.setObjectName("iconBtn")
+        # View-mode toggle (icon top left): three lines while the card grid
+        # is active, four tiles while the list is active. Glyphs come from
+        # the #viewListButton / #viewGridButton QSS images (SVG).
+        self.view_btn = QPushButton()
+        self.view_btn.setFixedSize(36, 36)
+        self.view_btn.clicked.connect(self._toggle_view_mode)
+        toolbar.addWidget(self.view_btn)
+
+        # No text: the glyph comes from the #refreshButton QSS image (SVG),
+        # a font glyph like "⟳" renders small and font-dependent.
+        self.refresh_btn = QPushButton()
+        self.refresh_btn.setObjectName("refreshButton")
         self.refresh_btn.setFixedSize(36, 36)
         self.refresh_btn.setToolTip(Translations.tr("button.refresh"))
         self.refresh_btn.clicked.connect(self.refresh_statuses)
@@ -295,16 +440,48 @@ class DevicesView(QWidget):
         self.wake_all_btn.clicked.connect(self._wake_all)
         toolbar.addWidget(self.wake_all_btn)
         toolbar.addStretch()
+
+        # Sort drop-down (left of the search field) — persisted setting.
+        self.sort_combo = QComboBox()
+        self.sort_combo.setObjectName("devicesSortCombo")
+        self.sort_combo.setFixedWidth(150)
+        self._sort_keys: list[str] = []
+        for key in ("name", "ip", "mac", "status"):
+            self.sort_combo.addItem(
+                Translations.tr(f"modern.devices.sort.{key}"), key)
+            self._sort_keys.append(key)
+        idx = self.sort_combo.findData(self._sort_key)
+        self.sort_combo.setCurrentIndex(max(0, idx))
+        self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        toolbar.addWidget(self.sort_combo, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.setFixedWidth(260)
+        self.search_input.textChanged.connect(self.refresh_devices)
+        toolbar.addWidget(self.search_input, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(toolbar)
         layout.addSpacing(6)
 
-        # ── Card grid ──
+        # ── Card grid (Kachelansicht) ──
         grid_host = QWidget()
         grid_host.setObjectName("deviceGrid")
         self.grid = QGridLayout(grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setSpacing(GRID_SPACING)
+        self._grid_host = grid_host
         layout.addWidget(grid_host)
+
+        # ── Device list (Listenansicht): panel with rows + separators ──
+        list_panel = QWidget()
+        list_panel.setObjectName("panel")
+        list_panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.list_layout = QVBoxLayout(list_panel)
+        self.list_layout.setContentsMargins(0, 0, 0, 0)
+        self.list_layout.setSpacing(0)
+        self._list_panel = list_panel
+        layout.addWidget(list_panel)
 
         # Empty state
         self.empty_label = QLabel(Translations.tr("modern.devices.empty"))
@@ -316,11 +493,67 @@ class DevicesView(QWidget):
 
         layout.addStretch()
 
+        self._apply_view_mode()
+
+    # ── View mode / sorting ──────────────────────────────────────────────
+
+    def _apply_view_mode(self) -> None:
+        """Show grid or list and set the toggle icon (three lines ↔ tiles)."""
+        is_list = self._view_mode == DEVICES_VIEW_LIST
+        self._grid_host.setVisible(not is_list)
+        self._list_panel.setVisible(is_list)
+        name = "viewGridButton" if is_list else "viewListButton"
+        tip_key = (
+            "modern.devices.view.grid" if is_list
+            else "modern.devices.view.list")
+        if self.view_btn.objectName() != name:
+            self.view_btn.setObjectName(name)
+            style = self.view_btn.style()
+            style.unpolish(self.view_btn)
+            style.polish(self.view_btn)
+        self.view_btn.setToolTip(Translations.tr(tip_key))
+
+    def _toggle_view_mode(self) -> None:
+        self._view_mode = (
+            DEVICES_VIEW_GRID if self._view_mode == DEVICES_VIEW_LIST
+            else DEVICES_VIEW_LIST)
+        try:
+            self.config.set_devices_view_mode(self._view_mode)
+        except Exception:  # pragma: no cover - persistence must not break UI
+            pass
+        self._apply_view_mode()
+
+    def _on_sort_changed(self, index: int) -> None:
+        if 0 <= index < len(self._sort_keys):
+            self._sort_key = self._sort_keys[index]
+            try:
+                self.config.set_devices_sort_key(self._sort_key)
+            except Exception:  # pragma: no cover - persistence must not break UI
+                pass
+            self.refresh_devices()
+
+    def _sort_devices(self, devices: list[dict]) -> list[dict]:
+        """Sort by the active key; name/IP/MAC ascending, status by rank."""
+        key = self._sort_key
+        if key == "ip":
+            return sorted(devices, key=lambda d: _ip_sort_key(str(d.get("ip", ""))))
+        if key == "mac":
+            return sorted(devices, key=lambda d: str(d.get("mac", "")).upper())
+        if key == "status":
+            return sorted(
+                devices,
+                key=lambda d: (
+                    STATUS_SORT_RANK.get(self._statuses.get(d.get("id"), "unknown"), 2),
+                    str(d.get("name", "")).lower(),
+                ),
+            )
+        return sorted(devices, key=lambda d: str(d.get("name", "")).lower())
+
     # ── Device list ──────────────────────────────────────────────────────
 
     def _filtered_devices(self) -> list[dict]:
         query = self.search_input.text().strip().lower()
-        devices = sorted(self.config.get_devices(), key=lambda d: d.get("name", ""))
+        devices = self._sort_devices(self.config.get_devices())
         if not query:
             return devices
         fields = ("name", "mac", "ip", "username")
@@ -330,17 +563,23 @@ class DevicesView(QWidget):
         ]
 
     def refresh_devices(self) -> None:
-        """Rebuild the card grid (device list or search filter changed)."""
+        """Rebuild cards and list rows (device list, sort or filter changed)."""
         while self.grid.count():
             item = self.grid.takeAt(0)
             w = item.widget()
             if w is not None:
                 w.deleteLater()
         self._cards.clear()
+        while self.list_layout.count():
+            item = self.list_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._rows.clear()
 
         local_ips = get_local_ips()
         devices = self._filtered_devices()
-        for device in devices:
+        for idx, device in enumerate(devices):
             status = self._statuses.get(device["id"], "unknown")
             card = DeviceCard(device, status, local_ips)
             card.wake_requested.connect(self._wake_device)
@@ -349,6 +588,17 @@ class DevicesView(QWidget):
             card.edit_requested.connect(self._edit_device)
             card.ping_requested.connect(self._ping_device)
             self._cards[device["id"]] = card
+
+            row = DeviceListRow(device, status, local_ips)
+            row.remote_requested.connect(self._remote_device)
+            row.edit_requested.connect(self._edit_device)
+            self._rows[device["id"]] = row
+            self.list_layout.addWidget(row)
+            if idx < len(devices) - 1:
+                sep = QWidget()
+                sep.setObjectName("rowSeparator")
+                sep.setFixedHeight(1)
+                self.list_layout.addWidget(sep)
 
         self._relayout_grid()
         self._update_summary()
@@ -371,6 +621,8 @@ class DevicesView(QWidget):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         super().resizeEvent(event)
+        if self._view_mode == DEVICES_VIEW_LIST:
+            return
         # Reflow the grid when the column count changes
         avail = max(self._scroll.viewport().width() - 64, CARD_MIN_WIDTH)
         cols = max(1, (avail + GRID_SPACING) // (CARD_MIN_WIDTH + GRID_SPACING))
@@ -432,6 +684,12 @@ class DevicesView(QWidget):
         card = self._cards.get(device_id)
         if card is not None:
             card.set_status(status)
+        row = self._rows.get(device_id)
+        if row is not None:
+            row.set_status(status)
+        # The "status" sort order depends on the new status
+        if self._sort_key == "status":
+            self.refresh_devices()
         self._update_summary()
         QMessageBox.information(
             self,
@@ -516,6 +774,12 @@ class DevicesView(QWidget):
             card = self._cards.get(device_id)
             if card is not None:
                 card.set_status(status)
+            row = self._rows.get(device_id)
+            if row is not None:
+                row.set_status(status)
+        # Keep the list order correct when sorting by status
+        if self._sort_key == "status":
+            self.refresh_devices()
         self._update_summary()
 
     def _auto_refresh(self) -> None:
@@ -535,9 +799,15 @@ class DevicesView(QWidget):
         self.refresh_btn.setToolTip(Translations.tr("button.refresh"))
         self.wake_all_btn.setText(Translations.tr("button.wake_all"))
         self.empty_label.setText(Translations.tr("modern.devices.empty"))
+        # Re-label the sort drop-down, keeping the selected key
+        for i, key in enumerate(self._sort_keys):
+            self.sort_combo.setItemText(i, Translations.tr(f"modern.devices.sort.{key}"))
+        self._apply_view_mode()  # refresh the toggle tooltip
         local_ips = get_local_ips()
         for card in self._cards.values():
             card.retranslate(local_ips)
+        for row in self._rows.values():
+            row.retranslate(local_ips)
         self._update_summary()
 
     def cancel_workers(self) -> None:
