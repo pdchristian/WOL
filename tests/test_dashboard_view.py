@@ -57,6 +57,12 @@ METRICS = {
 }
 
 
+def view_status_creds(view) -> bool:
+    """Status line shows the credential hint (popup regression helper)."""
+    return view.status_line.text() == \
+        Translations.tr("modern.dashboard.creds.message")
+
+
 class TestFormatting:
     def test_bytes_gb(self):
         assert _fmt_bytes_gb(12 * 1024**3) == "12.0"
@@ -132,6 +138,25 @@ class TestDashboardView:
         view.allow_batch_check.setChecked(True)
         assert view.run_btn.isEnabled()
 
+    def test_run_reenabled_after_going_online(self, view, tmp_config):
+        """Regression: run_btn must not stay disabled after an offline phase.
+
+        Toggling the opt-in before the host answered (or while it was down)
+        used to leave the button dead until the checkbox was toggled again.
+        """
+        _, dev_id = tmp_config
+        view.set_device(dev_id)
+        view.allow_batch_check.setChecked(True)
+        # Host not reachable yet -> run disabled
+        view._on_metrics_failed("Connection refused")
+        assert not view.run_btn.isEnabled()
+        # Host answers -> run becomes available without touching the checkbox
+        view._on_metrics(dict(METRICS))
+        assert view.run_btn.isEnabled()
+        # And offline again -> disabled
+        view._on_metrics_failed("Connection refused")
+        assert not view.run_btn.isEnabled()
+
     def test_batch_crud_persists(self, qapp, tmp_config, monkeypatch):
         cfg, dev_id = tmp_config
         monkeypatch.setattr(DeviceDashboardView, "_poll_metrics", lambda self: None)
@@ -172,6 +197,49 @@ class TestDashboardView:
         assert cfg.get_device_by_id(dev_id).get("allow_batch") is True
         view.allow_batch_check.setChecked(False)
         assert cfg.get_device_by_id(dev_id).get("allow_batch") is False
+
+    def test_missing_credentials_popup_once(self, qapp, tmp_path, monkeypatch):
+        """No stored credentials -> offline status + warning popup (once)."""
+        cfg = ConfigManager(config_path=str(tmp_path / "creds.json"))
+        cfg.add_device("NoCreds", "AA:BB:CC:00:11:33")
+        dev_id = cfg.get_devices()[0]["id"]
+        cfg.update_device(dev_id, ip="192.168.1.11")
+        monkeypatch.setattr("wol_app.views.dashboard_view.HEADLESS_MODE", False)
+        calls = []
+        monkeypatch.setattr(
+            "wol_app.views.dashboard_view.QMessageBox.warning",
+            lambda *a, **k: calls.append(a))
+        v = DeviceDashboardView(cfg)
+        v.set_device(dev_id)
+        assert len(calls) == 1
+        assert Translations.tr("modern.dashboard.creds.message") in calls[0][2]
+        assert view_status_creds(v)
+        # Polling again must not spam the popup …
+        v._poll_metrics()
+        assert len(calls) == 1
+        # … but switching devices arms it again.
+        v.set_device(dev_id)
+        assert len(calls) == 2
+        v.cancel_workers()
+
+    def test_auth_failure_shows_credential_message(self, view, tmp_config):
+        """Host rejects credentials -> credential text (not "unreachable")."""
+        _, dev_id = tmp_config
+        view.set_device(dev_id)
+        calls = []
+        import wol_app.views.dashboard_view as dv
+        orig_warning = dv.QMessageBox.warning
+        dv.QMessageBox.warning = staticmethod(lambda *a, **k: calls.append(a))
+        try:
+            view._on_metrics_failed("Authentication failed")
+        finally:
+            dv.QMessageBox.warning = orig_warning
+        assert view.status_line.text() == \
+            Translations.tr("modern.dashboard.creds.message")
+        assert len(calls) == 1
+        # A later transport error falls back to the normal offline text
+        view._on_metrics_failed("Connection timed out")
+        assert "timed out" in view.status_line.text()
 
     def test_retranslate_does_not_raise(self, view, tmp_config):
         _, dev_id = tmp_config

@@ -256,6 +256,10 @@ class DeviceDashboardView(QWidget):
         self._batch_worker: BatchWorker | None = None
         self._batch_active: int = -1
         self._batch_dirty = False
+        # Popup about missing/incorrect credentials: once per opened device
+        # (the host service rejects every request without them, so polling
+        # would repeat the same error every interval).
+        self._cred_warned = False
 
         self._setup_ui()
 
@@ -358,7 +362,7 @@ class DeviceDashboardView(QWidget):
         lib_head.addWidget(self.lib_title)
         lib_head.addStretch()
         self.new_btn = QPushButton(Translations.tr("modern.dashboard.batch.new"))
-        self.new_btn.setFixedHeight(26)
+        self.new_btn.setObjectName("smallButton")
         self.new_btn.clicked.connect(self._new_batch)
         lib_head.addWidget(self.new_btn)
         lib_layout.addLayout(lib_head)
@@ -372,11 +376,10 @@ class DeviceDashboardView(QWidget):
         lib_foot.setContentsMargins(10, 6, 10, 10)
         lib_foot.setSpacing(6)
         self.dup_btn = QPushButton(Translations.tr("modern.dashboard.batch.duplicate"))
-        self.dup_btn.setFixedHeight(26)
+        self.dup_btn.setObjectName("smallButton")
         self.dup_btn.clicked.connect(self._duplicate_batch)
         self.delete_btn = QPushButton(Translations.tr("modern.dashboard.batch.delete"))
-        self.delete_btn.setObjectName("tileDanger")
-        self.delete_btn.setFixedHeight(26)
+        self.delete_btn.setObjectName("smallDanger")
         self.delete_btn.clicked.connect(self._delete_batch)
         lib_foot.addWidget(self.dup_btn)
         lib_foot.addWidget(self.delete_btn)
@@ -426,6 +429,8 @@ class DeviceDashboardView(QWidget):
         tool.addStretch()
         self.allow_batch_check = QCheckBox(
             Translations.tr("modern.dashboard.allow_batch"))
+        self.allow_batch_check.setToolTip(
+            Translations.tr("modern.dashboard.allow_batch_tip"))
         self.allow_batch_check.toggled.connect(self._on_allow_batch_toggled)
         tool.addWidget(self.allow_batch_check, 0, Qt.AlignmentFlag.AlignVCenter)
         self.save_btn = QPushButton(Translations.tr("modern.dashboard.batch.save"))
@@ -453,7 +458,7 @@ class DeviceDashboardView(QWidget):
         console_head.addWidget(self.console_title)
         console_head.addStretch()
         self.clear_btn = QPushButton(Translations.tr("modern.dashboard.batch.clear"))
-        self.clear_btn.setFixedHeight(26)
+        self.clear_btn.setObjectName("smallButton")
         self.clear_btn.clicked.connect(lambda: self.console_edit.clear())
         console_head.addWidget(self.clear_btn)
         console_layout.addLayout(console_head)
@@ -461,6 +466,9 @@ class DeviceDashboardView(QWidget):
         self.console_edit = QPlainTextEdit()
         self.console_edit.setObjectName("consoleEdit")
         self.console_edit.setReadOnly(True)
+        # Bound the buffer: an unbounded QPlainTextEdit slows down repaints
+        # (notably after window activation) once batches ran often.
+        self.console_edit.setMaximumBlockCount(5000)
         self.console_edit.setMinimumHeight(140)
         self.console_edit.setFont(f)
         console_layout.addWidget(self.console_edit)
@@ -479,10 +487,16 @@ class DeviceDashboardView(QWidget):
 
     def set_device(self, device_id: str) -> None:
         """Open the dashboard for *device_id* (reset state, start polling)."""
+        # Drop any in-flight work for the previous device: its results would
+        # otherwise paint the old host's metrics into the new dashboard (and
+        # a finished old thread could clear the *new* thread's references).
+        self._stop_metrics_worker()
+        self._stop_batch_worker()
         device = self.config.get_device_by_id(device_id)
         self._device_id = device_id
         self._device = device
         self._metrics_ok = False
+        self._cred_warned = False
         for card in self.cards.values():
             card.reset_display()
         self.console_edit.clear()
@@ -521,6 +535,8 @@ class DeviceDashboardView(QWidget):
         self.console_title.setText(Translations.tr("modern.dashboard.console"))
         self.allow_batch_check.setText(
             Translations.tr("modern.dashboard.allow_batch"))
+        self.allow_batch_check.setToolTip(
+            Translations.tr("modern.dashboard.allow_batch_tip"))
         self.name_edit.setPlaceholderText(
             Translations.tr("modern.dashboard.batch.untitled"))
         for key, card in self.cards.items():
@@ -564,6 +580,14 @@ class DeviceDashboardView(QWidget):
             self._show_offline(Translations.tr("dialog.no_ip.message",
                                                name=self._device.get("name", "")))
             return
+        if not (self._device.get("username", "")
+                and self._device.get("password", "")):
+            # Without credentials every host-service request is rejected —
+            # skip the network round-trip and tell the user once.
+            self._show_offline(
+                "", text=Translations.tr("modern.dashboard.creds.message"))
+            self._warn_credentials()
+            return
         self._metrics_busy = True
         worker = MetricsWorker(
             ip, self._device.get("username", ""), self._device.get("password", ""))
@@ -576,12 +600,17 @@ class DeviceDashboardView(QWidget):
         worker.failed.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._metrics_thread_done)
+        # Capture the thread: a stale worker finishing late must not clear
+        # the references of a newer poll (device switch / restart).
+        thread.finished.connect(
+            lambda t=thread: self._metrics_thread_done(t))
         self._metrics_worker = worker
         self._metrics_thread = thread
         thread.start()
 
-    def _metrics_thread_done(self) -> None:
+    def _metrics_thread_done(self, thread: QThread | None = None) -> None:
+        if thread is not None and self._metrics_thread is not thread:
+            return  # stale worker — the current poll keeps its state
         self._metrics_busy = False
         self._metrics_thread = None
         self._metrics_worker = None
@@ -634,18 +663,40 @@ class DeviceDashboardView(QWidget):
                 used=_fmt_bytes_gb(vram_used), total=_fmt_bytes_gb(vram_total))
             vram_pct = vram_used / vram_total * 100.0
         self.cards["vram"].set_value(vram_pct, vram_detail)
+        # The host just became reachable — "run_btn" may have been disabled
+        # because metrics had not arrived yet when the opt-in was toggled.
+        self._update_run_enabled()
 
     def _on_metrics_failed(self, message: str) -> None:
+        if "authentication" in message.lower():
+            # Stored credentials were rejected by the host service — the
+            # generic "host unreachable" text would be misleading here.
+            self._show_offline(
+                message, text=Translations.tr("modern.dashboard.creds.message"))
+            self._warn_credentials()
+            return
         self._show_offline(message)
 
-    def _show_offline(self, message: str) -> None:
+    def _show_offline(self, message: str,
+                      text: "str | None" = None) -> None:
         self._metrics_ok = False
         self._set_badge("offline")
         for card in self.cards.values():
             card.gauge.set_value(None)
         self.status_line.setText(
-            Translations.tr("modern.dashboard.offline", message=message))
+            text or Translations.tr("modern.dashboard.offline", message=message))
         self._update_run_enabled()
+
+    def _warn_credentials(self) -> None:
+        """Popup about missing/incorrect credentials (once per device open)."""
+        if self._cred_warned:
+            return
+        self._cred_warned = True
+        QMessageBox.warning(
+            self,
+            Translations.tr("modern.dashboard.creds.title"),
+            Translations.tr("modern.dashboard.creds.message"),
+        )
 
     def _set_badge(self, status: str) -> None:
         name = {"online": "badgeOnline", "offline": "badgeOffline"}.get(
@@ -840,12 +891,15 @@ class DeviceDashboardView(QWidget):
         worker.failed.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._batch_thread_done)
+        thread.finished.connect(
+            lambda t=thread: self._batch_thread_done(t))
         self._batch_worker = worker
         self._batch_thread = thread
         thread.start()
 
-    def _batch_thread_done(self) -> None:
+    def _batch_thread_done(self, thread: QThread | None = None) -> None:
+        if thread is not None and self._batch_thread is not thread:
+            return  # stale worker — the current batch keeps its state
         self._batch_thread = None
         self._batch_worker = None
         self._update_run_enabled()

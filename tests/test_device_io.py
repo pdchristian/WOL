@@ -80,3 +80,84 @@ class TestDeviceIO:
             assert import_devices(config) is True
         names = [d["name"] for d in config.get_devices()]
         assert names == ["Good"]
+
+
+class TestBatchImportExport:
+    """Dashboard batches travel with the device through export/import."""
+
+    def _export(self, config, path):
+        with patch("wol_app.device_io.QFileDialog.getSaveFileName",
+                   return_value=(str(path), "")), \
+             patch("wol_app.device_io.QMessageBox.information"):
+            assert export_devices(config) is True
+
+    def _import(self, config, path):
+        with patch("wol_app.device_io.QFileDialog.getOpenFileName",
+                   return_value=(str(path), "")), \
+             patch("wol_app.device_io.QMessageBox.information"):
+            return import_devices(config)
+
+    def test_roundtrip_with_batches(self, config, tmp_path):
+        d1 = config.add_device("PC1", "AA:BB:CC:DD:EE:01")
+        config.set_device_batches(d1["id"], [
+            {"id": "b1", "name": "Ping", "script": "ping 1.2.3.4",
+             "timeout": 10},
+            {"id": "b2", "name": "Maint", "script": "@echo off\r\necho hi",
+             "timeout": 60},
+        ])
+        config.set_device_allow_batch(d1["id"], True)
+        src = tmp_path / "dev.json"
+        self._export(config, src)
+        data = json.loads(src.read_text(encoding="utf-8"))
+        assert len(data[0]["batches"]) == 2
+        assert data[0]["allow_batch"] is True
+
+        config2 = ConfigManager(config_path=str(tmp_path / "config2.json"))
+        assert self._import(config2, src) is True
+        imported = config2.get_device_by_name("PC1")
+        batches = ConfigManager.get_device_batches(imported)
+        assert [b["name"] for b in batches] == ["Ping", "Maint"]
+        assert batches[1]["timeout"] == 60
+        assert imported.get("allow_batch") is True
+
+    def test_export_omits_empty_batches(self, config, tmp_path):
+        config.add_device("Plain", "AA:BB:CC:DD:EE:02")
+        src = tmp_path / "dev.json"
+        self._export(config, src)
+        data = json.loads(src.read_text(encoding="utf-8"))
+        assert "batches" not in data[0]
+
+    def test_import_sanitizes_batches(self, config, tmp_path):
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([{
+            "name": "PC", "mac": "AA:BB:CC:DD:EE:03",
+            "allow_batch": True,
+            "batches": [
+                {"name": "OK", "script": "echo ok", "timeout": 10},
+                {"name": "Empty", "script": "   ", "timeout": 10},
+                {"name": "NoScript"},
+                "not-a-dict",
+                {"name": "Timeout", "script": "echo t", "timeout": 999999},
+            ],
+        }]), encoding="utf-8")
+        assert self._import(config, src) is True
+        dev = config.get_device_by_name("PC")
+        batches = ConfigManager.get_device_batches(dev)
+        assert [b["name"] for b in batches] == ["OK", "Timeout"]
+        assert all(b["id"] for b in batches)
+        assert batches[1]["timeout"] == 3600
+        assert dev.get("allow_batch") is True
+
+    def test_import_without_batches_keeps_existing(self, config, tmp_path):
+        d1 = config.add_device("PC1", "AA:BB:CC:DD:EE:01")
+        config.set_device_batches(d1["id"], [
+            {"id": "b1", "name": "Keep", "script": "echo keep", "timeout": 7}])
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([
+            {"name": "PC1", "mac": "AA:BB:CC:DD:EE:01", "ip": "10.0.0.9"},
+        ]), encoding="utf-8")
+        assert self._import(config, src) is True
+        dev = config.get_device_by_name("PC1")
+        assert dev.get("ip") == "10.0.0.9"
+        batches = ConfigManager.get_device_batches(dev)
+        assert [b["name"] for b in batches] == ["Keep"]

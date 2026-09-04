@@ -80,10 +80,16 @@ class MetricsWorker(_CancellableWorker):
         self.timeout = timeout
 
     def run(self) -> None:
-        ok, result = get_metrics(
-            self.ip, self.username, self.password,
-            timeout=self.timeout, sock_sink=self._sink,
-        )
+        try:
+            ok, result = get_metrics(
+                self.ip, self.username, self.password,
+                timeout=self.timeout, sock_sink=self._sink,
+            )
+        except Exception as e:  # never let run() raise: it would wedge the
+            # dashboard's single-flight flag and leave the QThread dangling.
+            if not self.cancelled:
+                self.failed.emit(str(e))
+            return
         if self.cancelled:
             return  # dashboard closed — do not signal into a dying view
         if ok and isinstance(result, dict):
@@ -114,10 +120,16 @@ class BatchWorker(_CancellableWorker):
         self.timeout = timeout
 
     def run(self) -> None:
-        ok, result = run_batch(
-            self.ip, self.script, self.username, self.password,
-            timeout=self.timeout, sock_sink=self._sink,
-        )
+        try:
+            ok, result = run_batch(
+                self.ip, self.script, self.username, self.password,
+                timeout=self.timeout, sock_sink=self._sink,
+            )
+        except Exception as e:  # never let run() raise — thread.quit is
+            # connected to the result signals and would never fire otherwise.
+            if not self.cancelled:
+                self.failed.emit(str(e))
+            return
         if self.cancelled:
             return
         if ok and isinstance(result, dict):

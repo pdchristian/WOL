@@ -673,31 +673,48 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 
 ### 8.1 build.ps1
 
-PowerShell script that orchestrates the three-stage PyInstaller build:
+PowerShell script that orchestrates the PyInstaller build:
 
 ```powershell
-# Stage 1: Clean previous builds (dist/, build/)
-# Stage 2: pyinstaller "Wake-on-LAN Manager.spec" → main app EXE
-# Stage 3: pyinstaller "uninstaller.spec"          → uninstaller EXE
-# Stage 4: pyinstaller "installer.spec" --clean    → installer EXE
-# Stage 5: Verify all outputs exist and report sizes
+# Stage 0: version sync across docs (update_docs_version.py)
+# Stage 1: Clean previous builds (dist/, dist_onefile/, build/)
+# Stage 2: python -m PyInstaller "Wake-on-LAN Manager.spec" → main app EXE
+# Stage 3: python -m PyInstaller "wol_host_service[_onefile].spec" → host service
+# Stage 4: python -m PyInstaller "uninstaller.spec"          → uninstaller EXE
+# Stage 5: python -m PyInstaller "installer.spec" --clean    → installer EXE
+# Stage 6: ISCC setup.iss /DAppVersion=<ver>                 → GUI installer
+# Stage 7: Verify all outputs exist and report sizes
 ```
+
+**Interpreter:** the script always builds with the project venv
+(`venv\Scripts\python.exe`, Python 3.12) — resolved via `$PY` at the top of
+the script, which aborts if the venv is missing. It never uses
+`python`/`pyinstaller` from `PATH`: an unrelated interpreter silently
+produces EXEs with missing dependencies (e.g. `psutil` absent from the host
+service bundle). After each service build,
+`build/wol_host_service/warn-wol_host_service.txt` should be free of
+`missing module named ...` entries for runtime dependencies.
 
 **PyInstaller Spec Files:**
 
 | Spec File                      | Output                                        | Description                     |
 |--------------------------------|-----------------------------------------------|---------------------------------|
 | `Wake-on-LAN Manager.spec`     | `dist/Wake-on-LAN Manager.exe`                 | Main application                |
+| `wol_host_service.spec`        | `dist/WOL Host Service/`                       | Host service (onedir)           |
+| `wol_host_service_onefile.spec`| `dist_onefile/WOL Host Service.exe`            | Host service (onefile)          |
 | `uninstaller.spec`             | `dist/uninstall.exe`                           | Standalone uninstaller          |
-| `installer.spec`               | `dist/Wake-on-LAN Manager Installer.exe`       | Full installer with embedded app|
+| `installer.spec`               | `dist/installer.exe`                           | Custom-action helper (SCM/perms)|
+| `setup.iss` (Inno Setup)       | `dist/Wake-on-LAN Manager WinInstaller.exe`    | GUI installer with embedded app |
 
 ### 8.2 Build Prerequisites
 
 ```
-Python 3.10+
-PyInstaller (pip install pyinstaller)
-PyQt6>=6.6.0
-cryptography>=41.0.0
+Project venv at venv/ (Python 3.12):
+  py -3.12 -m venv venv
+  .\venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+PyInstaller >= 6.20 (in requirements-dev.txt)
+PyQt6>=6.6.0, cryptography>=41.0.0, psutil>=5.9.0, pywin32>=306
+Inno Setup 6 (ISCC.exe, winget install JRSoftware.InnoSetup)
 PowerShell 5.1+ (for build.ps1)
 ```
 
@@ -768,6 +785,7 @@ Application starts
 | Variable       | Effect                                       |
 |----------------|----------------------------------------------|
 | HEADLESS_MODE  | Disables background threads (status worker, update checker, scheduler); intended for test/CI environments |
+| WOL_WATCHDOG   | Opt-in GUI freeze diagnostics (`1`/`true` or seconds, default 5 s). A monitor thread watches a GUI-thread heartbeat; when the window stops responding, all Python thread stacks are dumped to `%LOCALAPPDATA%\WakeOnLAN\wol_watchdog.log` (once per hang). Implemented in `wol_app/watchdog.py`, started via `maybe_start_watchdog(app)` in `main()`. |
 
 ---
 

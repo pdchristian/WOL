@@ -2,3 +2,5 @@
 -r requirements.txt
 pytest>=7.0
 pytest-qt>=4.0
+# Build (used by build.ps1 via `python -m PyInstaller`)
+pyinstaller>=6.20

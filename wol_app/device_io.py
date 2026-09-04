@@ -10,9 +10,50 @@ from typing import Any
 
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
+from wol_app.config import (
+    BATCH_TIMEOUT_MAX_S,
+    BATCH_TIMEOUT_MIN_S,
+    DEFAULT_BATCH_TIMEOUT_S,
+    MAX_BATCHES_PER_DEVICE,
+    MAX_BATCH_SCRIPT_CHARS,
+)
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.translations import Translations
 from wol_app.utils import validate_mac
+
+
+def _sanitize_batches(raw: Any) -> list[dict]:
+    """Normalise an imported ``batches`` list (defensive: foreign files)."""
+    if not isinstance(raw, list):
+        return []
+    result: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        script = str(item.get("script", ""))
+        if not script.strip():
+            continue
+        try:
+            timeout = int(item.get("timeout", DEFAULT_BATCH_TIMEOUT_S))
+        except (TypeError, ValueError):
+            timeout = DEFAULT_BATCH_TIMEOUT_S
+        result.append({
+            "id": str(item.get("id", "")) or f"b{len(result) + 1}-imp",
+            "name": str(item.get("name", ""))[:64],
+            "script": script[:MAX_BATCH_SCRIPT_CHARS],
+            "timeout": min(BATCH_TIMEOUT_MAX_S,
+                           max(BATCH_TIMEOUT_MIN_S, timeout)),
+        })
+    return result[:MAX_BATCHES_PER_DEVICE]
+
+
+def _apply_batches(config_manager: Any, device_id: str, batches: list[dict],
+                   allow_batch: bool) -> None:
+    """Write imported batches only when the file actually carried them."""
+    if not batches:
+        return
+    config_manager.set_device_batches(device_id, batches)
+    config_manager.set_device_allow_batch(device_id, allow_batch)
 
 
 def export_devices(config_manager: Any, parent=None) -> bool:
@@ -32,14 +73,21 @@ def export_devices(config_manager: Any, parent=None) -> bool:
     # Passwords are encrypted in the export file for security.
     export_data = []
     for dev in devices:
-        export_data.append({
+        entry = {
             "name": dev.get("name", ""),
             "mac": dev.get("mac", ""),
             "ip": dev.get("ip", ""),
             "username": dev.get("username", ""),
             "password": encrypt_password(dev.get("password", "")),
             "enabled": dev.get("enabled", True),
-        })
+        }
+        # Dashboard batches (scripts may contain credentials, just like the
+        # password field — they travel with the device).
+        batches = dev.get("batches") or []
+        if batches:
+            entry["batches"] = batches
+            entry["allow_batch"] = bool(dev.get("allow_batch", False))
+        export_data.append(entry)
 
     try:
         with open(file_path, "w") as f:
@@ -109,6 +157,8 @@ def import_devices(config_manager: Any, parent=None) -> bool:
             )
             continue
 
+        batches = _sanitize_batches(dev_data.get("batches"))
+        allow_batch = bool(dev_data.get("allow_batch", False))
         existing = config_manager.get_device_by_name(name)
         if existing:
             # Update existing device
@@ -123,6 +173,8 @@ def import_devices(config_manager: Any, parent=None) -> bool:
                 password=pw,
                 enabled=dev_data.get("enabled", True),
             )
+            _apply_batches(config_manager, existing["id"], batches,
+                           allow_batch)
             updated += 1
         else:
             # Add new device
@@ -138,6 +190,8 @@ def import_devices(config_manager: Any, parent=None) -> bool:
                     password=pw,
                     enabled=dev_data.get("enabled", True),
                 )
+                _apply_batches(config_manager, device["id"], batches,
+                               allow_batch)
                 imported += 1
 
     # Build summary message

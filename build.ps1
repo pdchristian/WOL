@@ -25,9 +25,24 @@ $UNINSTALLER_SPEC = "uninstaller.spec"
 $INSTALLER_SPEC = "installer.spec"
 $DIST_DIR = "dist"
 
+# --- Interpreter: always build with the project venv (Python 3.12) ---
+# Never rely on whatever `python`/`pyinstaller` happen to be on PATH: an
+# unrelated interpreter silently produces EXEs with missing or mismatched
+# dependencies (e.g. psutil absent from the host service bundle).
+$PY = Join-Path $PSScriptRoot "venv\Scripts\python.exe"
+if (-not (Test-Path $PY)) {
+    Write-Host "ERROR: Project venv not found at $PY" -ForegroundColor Red
+    Write-Host "Create it with:" -ForegroundColor Red
+    Write-Host '  py -3.12 -m venv venv' -ForegroundColor Red
+    Write-Host '  .\venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt'
+    exit 1
+}
+Write-Host "  Interpreter: $PY" -ForegroundColor DarkGray
+& $PY --version | Write-Host -ForegroundColor DarkGray
+
 # --- Step 0: Sync version across documentation ---
 Write-Host "[0/8] Syncing version in docs..." -ForegroundColor Yellow
-$versionResult = python update_docs_version.py
+$versionResult = & $PY update_docs_version.py
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Version sync failed!" -ForegroundColor Red
     exit 1
@@ -49,7 +64,7 @@ Write-Host "  Clean." -ForegroundColor Green
 # --- Step 2: Build the main application ---
 Write-Host ""
 Write-Host "[2/8] Building main application..." -ForegroundColor Yellow
-$appResult = pyinstaller "$APP_SPEC" --distpath $DIST_DIR --noconfirm
+$appResult = & $PY -m PyInstaller "$APP_SPEC" --distpath $DIST_DIR --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Application build failed!" -ForegroundColor Red
     exit 1
@@ -66,7 +81,7 @@ if (-not (Test-Path $appExe)) {
 # --- Step 3: Build the host service ---
 Write-Host ""
 Write-Host "[3/8] Building host service..." -ForegroundColor Yellow
-$serviceResult = pyinstaller "$SERVICE_SPEC" --distpath $DIST_DIR --noconfirm
+$serviceResult = & $PY -m PyInstaller "$SERVICE_SPEC" --distpath $DIST_DIR --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Host service build failed!" -ForegroundColor Red
     exit 1
@@ -94,7 +109,7 @@ if (Test-Path $strayServiceExe) {
 # --- Step 3b: Build the host service (onefile variant) ---
 Write-Host ""
 Write-Host "[3b/8] Building host service (onefile variant)..." -ForegroundColor Yellow
-$serviceOneFileResult = pyinstaller "wol_host_service_onefile.spec" --distpath "dist_onefile" --noconfirm
+$serviceOneFileResult = & $PY -m PyInstaller "wol_host_service_onefile.spec" --distpath "dist_onefile" --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Host service onefile build failed!" -ForegroundColor Red
     exit 1
@@ -110,7 +125,7 @@ if (-not (Test-Path $serviceOneFileExe)) {
 # --- Step 4: Build the uninstaller ---
 Write-Host ""
 Write-Host "[4/8] Building uninstaller..." -ForegroundColor Yellow
-$uninstallResult = pyinstaller "$UNINSTALLER_SPEC" --distpath $DIST_DIR --noconfirm
+$uninstallResult = & $PY -m PyInstaller "$UNINSTALLER_SPEC" --distpath $DIST_DIR --noconfirm
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Uninstaller build failed!" -ForegroundColor Red
     exit 1
@@ -127,7 +142,7 @@ if (-not (Test-Path $uninstallExe)) {
 # --- Step 5: Build the installer helper (custom-action EXE) ---
 Write-Host ""
 Write-Host "[5/8] Building installer helper..." -ForegroundColor Yellow
-$installerResult = pyinstaller "$INSTALLER_SPEC" --distpath $DIST_DIR --noconfirm --clean
+$installerResult = & $PY -m PyInstaller "$INSTALLER_SPEC" --distpath $DIST_DIR --noconfirm --clean
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Installer helper build failed!" -ForegroundColor Red
     exit 1
@@ -168,7 +183,7 @@ if (-not $iscc) {
 Write-Host "  Using ISCC: $iscc" -ForegroundColor DarkGray
 
 # Read the app version for the installer
-$appVersion = python -c "from wol_app import __version__; print(__version__)"
+$appVersion = & $PY -c "from wol_app import __version__; print(__version__)"
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($appVersion)) {
     Write-Host "ERROR: Could not determine app version." -ForegroundColor Red
     exit 1

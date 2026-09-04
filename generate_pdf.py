@@ -1,6 +1,12 @@
-"""Convert Bedienungsanleitung.md to PDF."""
+"""Convert Bedienungsanleitung.md to PDF.
+
+Run from the repository root with the project venv:
+    .\\venv\\Scripts\\python.exe generate_pdf.py
+"""
 import markdown
 from xhtml2pdf import pisa
+
+from wol_app import __version__ as APP_VERSION
 
 md = open("Bedienungsanleitung.md", encoding="utf-8").read()
 
@@ -79,7 +85,7 @@ hr {{
 <body>
 ''' + markdown.markdown(md, extensions=['tables', 'fenced_code']) + '''
 <footer style="text-align:center;font-size:10pt;color:#888;margin-top:30pt;">
-Version 1.10.3 | Wake-on-LAN Manager
+Version {APP_VERSION} | Wake-on-LAN Manager
 </footer>
 </body>
 </html>'''

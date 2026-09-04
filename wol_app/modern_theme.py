@@ -437,6 +437,21 @@ QPushButton#tileDanger:hover {{
     border: 1px solid {t['danger']};
 }}
 
+/* ── Compact buttons (dashboard batch actions) ──────────────────────── */
+QPushButton#smallButton {{
+    padding: 4px 12px; font-size: 12px; border-radius: 7px;
+    min-height: 18px;
+}}
+QPushButton#smallDanger {{
+    background: {t['surface_hover']}; color: {t['danger']};
+    border: 1px solid {t['border']}; border-radius: 7px;
+    padding: 4px 12px; font-size: 12px; min-height: 18px;
+}}
+QPushButton#smallDanger:hover {{
+    background: {t['danger']}; color: #ffffff;
+    border: 1px solid {t['danger']};
+}}
+
 /* ── Status dots ─────────────────────────────────────────────────────── */
 #dotOnline {{ background: {t['online']}; border-radius: 5px; max-width: 10px; max-height: 10px; }}
 #dotOffline {{ background: {t['offline']}; border-radius: 5px; max-width: 10px; max-height: 10px; }}

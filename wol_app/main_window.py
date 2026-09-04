@@ -53,6 +53,9 @@ from wol_app.utils import (
 )
 from wol_app.wol_engine import WOLEngine
 
+# Optional GUI freeze watchdog (opt-in via WOL_WATCHDOG env var, see watchdog.py)
+from wol_app.watchdog import maybe_start_watchdog
+
 # Module-level registry to hold thread references until native threads truly finish
 # Prevents premature GC of QThread wrapper objects while C-level I/O is blocked
 _active_threads = []
@@ -916,6 +919,10 @@ class MainWindow(QMainWindow):
 def main() -> NoReturn:
     app = QApplication(sys.argv)
     app.setStyle("Fusion")  # Clean modern look on Windows
+
+    # Diagnostics: set WOL_WATCHDOG=1 (or seconds) to dump all thread stacks
+    # to %LOCALAPPDATA%\WakeOnLAN\wol_watchdog.log when the GUI thread hangs.
+    maybe_start_watchdog(app)
 
     # Initialize config and translations
     config = ConfigManager()
