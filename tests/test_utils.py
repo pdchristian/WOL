@@ -3,18 +3,24 @@
 import base64
 import os
 import shutil
+import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from wol_app.utils import (
     _build_rdp_content,
+    _delete_rdp_credentials,
+    _monitor_mstsc_fast_exit,
     _register_rdp_credentials,
     auto_rdp_resolution,
     ensure_user_data_dir,
     get_ip_key,
     launch_remote_desktop,
+    retry_remote_desktop_without_password,
     validate_device_name,
     validate_hostname,
     validate_ip,
@@ -213,6 +219,16 @@ class TestBuildRdpContent(unittest.TestCase):
         content = _build_rdp_content("10.0.0.5", "user", "pw", True, 1920, 1080)
         self.assertIn("authentication level:i:0", content)
 
+    def test_redirection_server_name_enabled(self):
+        # xrdp (Ubuntu) needs the connected address kept as the server
+        # identity across the RDP redirection hop.
+        content = _build_rdp_content("10.0.0.5", "user", "pw", True, 1920, 1080)
+        self.assertIn("use redirection server name:i:1", content)
+        # The retry (prompt) variant goes through the same builder.
+        content = _build_rdp_content("10.0.0.5", "user", "", True, 1920, 1080,
+                                     prompt_for_password=True)
+        self.assertIn("use redirection server name:i:1", content)
+
     def test_prompt_for_password_fallback(self):
         # When credential registration failed, mstsc must prompt even though a
         # password is set (connecting without one drops xrdp sessions).
@@ -262,6 +278,170 @@ class TestRegisterRdpCredentials(unittest.TestCase):
                    side_effect=OSError("cmdkey missing")) as mock_run:
             _register_rdp_credentials("192.168.1.10", "user", "pw")
         self.assertTrue(mock_run.called)  # no exception propagated
+
+
+class TestDeleteRdpCredentials(unittest.TestCase):
+    def test_deletes_termsrv_entry(self):
+        with patch("wol_app.utils.subprocess.run",
+                   return_value=MagicMock(returncode=0)) as mock_run:
+            ok = _delete_rdp_credentials("192.168.1.10")
+        mock_run.assert_called_once_with(
+            ["cmdkey", "/delete:TERMSRV/192.168.1.10"], check=False
+        )
+        self.assertTrue(ok)
+
+    def test_returns_false_on_error_returncode(self):
+        with patch("wol_app.utils.subprocess.run",
+                   return_value=MagicMock(returncode=1)):
+            self.assertFalse(_delete_rdp_credentials("192.168.1.10"))
+
+    def test_oserror_is_non_fatal(self):
+        with patch("wol_app.utils.subprocess.run",
+                   side_effect=OSError("cmdkey missing")):
+            self.assertFalse(_delete_rdp_credentials("192.168.1.10"))
+
+
+class TestMonitorMstscFastExit(unittest.TestCase):
+    def test_fast_exit_invokes_callback(self):
+        proc = MagicMock()
+        proc.wait.return_value = 0  # exits immediately
+        called = threading.Event()
+        _monitor_mstsc_fast_exit(
+            proc, time.monotonic(), 10.0, lambda: called.set()
+        )
+        self.assertTrue(called.is_set())
+        proc.wait.assert_called_once_with(timeout=40.0)
+
+    def test_slow_exit_does_not_invoke_callback(self):
+        proc = MagicMock()
+        proc.wait.return_value = 0
+        called = threading.Event()
+        # Pretend the process started 30 s ago -> lifetime exceeds the window.
+        _monitor_mstsc_fast_exit(
+            proc, time.monotonic() - 30.0, 10.0, lambda: called.set()
+        )
+        self.assertFalse(called.is_set())
+
+    def test_still_running_does_not_invoke_callback(self):
+        proc = MagicMock()
+        proc.wait.side_effect = subprocess.TimeoutExpired("mstsc", 40.0)
+        called = threading.Event()
+        _monitor_mstsc_fast_exit(
+            proc, time.monotonic(), 10.0, lambda: called.set()
+        )
+        self.assertFalse(called.is_set())
+
+    def test_callback_errors_are_swallowed(self):
+        proc = MagicMock()
+        proc.wait.return_value = 0
+
+        def boom():
+            raise RuntimeError("callback failed")
+
+        # Must not raise out of the monitor thread.
+        _monitor_mstsc_fast_exit(proc, time.monotonic(), 10.0, boom)
+
+
+class TestLaunchRemoteDesktopFastExit(unittest.TestCase):
+    """The mstsc process is watched and the callback fires on fast exit."""
+
+    def setUp(self):
+        patcher = patch("wol_app.utils._RDP_DIR", new=Path(tempfile.mkdtemp()))
+        self.mock_rdp_dir = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, self.mock_rdp_dir, ignore_errors=True)
+        self.cmdkey_patcher = patch("wol_app.utils.subprocess.run")
+        self.cmdkey_patcher.start()
+        self.addCleanup(self.cmdkey_patcher.stop)
+        patcher = patch("wol_app.utils.ensure_user_data_dir")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_fast_exit_with_password_triggers_callback(self):
+        fired = threading.Event()
+        proc = MagicMock()
+        proc.wait.return_value = 0  # session dies right away
+        with patch("wol_app.utils.subprocess.Popen", return_value=proc):
+            launch_remote_desktop(
+                "10.0.0.5", "user", "pw", cleanup_delay=60.0,
+                device_name="Ubuntu", on_fast_exit=lambda: fired.set(),
+            )
+        self.assertTrue(fired.wait(2.0), "on_fast_exit was not invoked")
+
+    def test_no_password_does_not_watch_process(self):
+        proc = MagicMock()
+        with patch("wol_app.utils.subprocess.Popen", return_value=proc):
+            launch_remote_desktop(
+                "10.0.0.5", "user", "", cleanup_delay=60.0,
+                device_name="NoPw", on_fast_exit=lambda: None,
+            )
+        time.sleep(0.2)
+        proc.wait.assert_not_called()
+
+    def test_without_callback_does_not_watch_process(self):
+        proc = MagicMock()
+        with patch("wol_app.utils.subprocess.Popen", return_value=proc):
+            launch_remote_desktop(
+                "10.0.0.5", "user", "pw", cleanup_delay=60.0,
+                device_name="NoCallback",
+            )
+        time.sleep(0.2)
+        proc.wait.assert_not_called()
+
+
+class TestRetryRemoteDesktopWithoutPassword(unittest.TestCase):
+    def setUp(self):
+        patcher = patch("wol_app.utils._RDP_DIR", new=Path(tempfile.mkdtemp()))
+        self.mock_rdp_dir = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, self.mock_rdp_dir, ignore_errors=True)
+        self.mock_run_patcher = patch("wol_app.utils.subprocess.run")
+        self.mock_run = self.mock_run_patcher.start()
+        self.addCleanup(self.mock_run_patcher.stop)
+        patcher = patch("wol_app.utils.ensure_user_data_dir")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_retry_fullscreen(self):
+        with patch("wol_app.utils.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+            retry_remote_desktop_without_password(
+                "10.0.0.5", "user", fullscreen=True, device_name="Ubuntu",
+            )
+        # The stored TERMSRV entry must be deleted, otherwise mstsc keeps
+        # authenticating with the wrong password and never prompts.
+        self.assertIn(
+            ["cmdkey", "/delete:TERMSRV/10.0.0.5"],
+            [c[0][0] for c in self.mock_run.call_args_list],
+        )
+        cmd = mock_popen.call_args[0][0]
+        self.assertEqual(cmd[0], "mstsc")
+        self.assertEqual(cmd[1], "/v:10.0.0.5")
+        self.assertIn("/f", cmd)
+        rdp_path = Path(cmd[-1])
+        self.assertEqual(rdp_path, self.mock_rdp_dir / "Ubuntu.rdp")
+        content = rdp_path.read_text(encoding="utf-8")
+        self.assertIn("username:s:user", content)
+        self.assertIn("prompt for password:i:1", content)
+        self.assertNotIn("password:54:", content)
+        os.remove(rdp_path)
+
+    def test_retry_windowed_keeps_geometry(self):
+        with patch("wol_app.utils.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+            retry_remote_desktop_without_password(
+                "10.0.0.5", "user", fullscreen=False, width=2560, height=1440,
+                device_name="Ubuntu",
+            )
+        cmd = mock_popen.call_args[0][0]
+        self.assertIn("/w:2560", cmd)
+        self.assertIn("/h:1440", cmd)
+        self.assertNotIn("/f", cmd)
+        os.remove(Path(cmd[-1]))
+
+    def test_retry_empty_ip_raises(self):
+        with self.assertRaises(ValueError):
+            retry_remote_desktop_without_password("")
 
 
 class TestLaunchRemoteDesktop(unittest.TestCase):

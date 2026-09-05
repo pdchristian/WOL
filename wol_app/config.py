@@ -262,6 +262,9 @@ DEFAULT_CONFIG = {
         # collapsed state (see SIDEBAR_* constants).
         "sidebar_width": SIDEBAR_WIDTH_DEFAULT,
         "sidebar_collapsed": False,
+        # Modern main window rect [x, y, w, h] (normal state, restored on
+        # start when it still intersects an attached screen).
+        "window_geometry": None,
         # Device dashboard: metrics poll interval in milliseconds
         # (clamped to DASHBOARD_INTERVAL_MIN_MS..DASHBOARD_INTERVAL_MAX_MS).
         "dashboard_interval_ms": DEFAULT_DASHBOARD_INTERVAL_MS,
@@ -580,6 +583,32 @@ class ConfigManager:
     def set_sidebar_collapsed(self, collapsed: bool) -> None:
         """Persist the modern sidebar collapsed (icon-only) state."""
         self.config.setdefault("ui", {})["sidebar_collapsed"] = bool(collapsed)
+        self.save()
+
+    # --- Modern main window geometry ---
+
+    def get_window_geometry(self) -> list[int] | None:
+        """Return the persisted main-window rect ``[x, y, w, h]`` or None.
+
+        Malformed or incomplete values (wrong type, fewer than 4 entries,
+        non-positive size) fall back to None so the window uses its default
+        size instead of an unusable rectangle.
+        """
+        try:
+            value = self.config.get("ui", {}).get("window_geometry")
+            if not isinstance(value, list) or len(value) != 4:
+                return None
+            x, y, w, h = (int(value[0]), int(value[1]), int(value[2]), int(value[3]))
+        except (TypeError, ValueError):
+            return None
+        if w <= 0 or h <= 0:
+            return None
+        return [x, y, w, h]
+
+    def set_window_geometry(self, x: int, y: int, w: int, h: int) -> None:
+        """Persist the modern main-window rect (normal, non-maximized state)."""
+        self.config.setdefault("ui", {})["window_geometry"] = [
+            int(x), int(y), int(w), int(h)]
         self.save()
 
     # --- Device dashboard (metrics + batches) ---

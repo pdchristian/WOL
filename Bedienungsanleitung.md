@@ -76,7 +76,7 @@ Starten Sie die Anwendung über:
 
 ## Die moderne Benutzeroberfläche
 
-Mit **Version 2.2.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
+Mit **Version 2.2.1** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
 
 > **Wichtig:** Die moderne und die klassische Oberfläche bieten **exakt dieselben Funktionen** – sie unterscheiden sich nur im Layout. Alle Einstellungen, Geräte, Zeitpläne, Protokolle und Sicherheitsfunktionen sind identisch. Sie können jederzeit zwischen beiden wechseln.
 
@@ -400,7 +400,9 @@ Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten
 
 > **Passwort-Anmeldung:** Aktuelle Windows-Versionen (10/11) übernehmen das Passwort aus Sicherheitsgründen nicht mehr aus der `.rdp`-Datei. Die Anwendung legt die Anmeldedaten daher beim Start einer Remote-Desktop-Sitzung automatisch über `cmdkey` im **Windows-Anmeldeinformations-Manager** ab – zwingend mit dem Ziel-Präfix `TERMSRV/`, da `mstsc` sonst keinen Eintrag findet (`/generic:TERMSRV/<IP> /user:<Benutzer> /pass:<Passwort>`). `mstsc` liest diesen Eintrag beim Verbinden aus – Sie müssen das Passwort dann nicht neu eingeben. Ist die Registrierung nicht möglich, fragt `mstsc` wie bisher nach dem Passwort.
 
-> **Linux-/xrdp-Gegenstellen:** Gegenüber Windows-Hosts, die ohne passenden Anmelde-Eintrag einfach noch einmal nachfragen, bricht `xrdp` (Ubuntu) eine Verbindung ohne Passwort sofort ab – das `mstsc`-Fenster öffnet und schließt sich in diesem Fall innerhalb einer Sekunde. Stellen Sie daher sicher, dass Benutzername **und** Passwort am Gerät hinterlegt sind. Zusätzlich setzt die Anwendung `authentication level:i:0`, damit bei selbstsignierten Server-Zertifikaten (bei xrdp üblich) nicht bei jeder Verbindung die Sicherheitswarnung erscheint.
+> **Linux-/xrdp-Gegenstellen:** Gegenüber Windows-Hosts, die ohne passenden Anmelde-Eintrag einfach noch einmal nachfragen, bricht `xrdp` (Ubuntu) eine Verbindung ohne Passwort sofort ab – das `mstsc`-Fenster öffnet und schließt sich in diesem Fall innerhalb einer Sekunde. Stellen Sie daher sicher, dass Benutzername **und** Passwort am Gerät hinterlegt sind. Zusätzlich setzt die Anwendung `authentication level:i:0`, damit bei selbstsignierten Server-Zertifikaten (bei xrdp üblich) nicht bei jeder Verbindung die Sicherheitswarnung erscheint, sowie `use redirection server name:i:1`, damit der Client nach einem RDP-Redirection-Hop die verbundene Adresse als Server-Identität behält – was xrdp-Server zwingend erwarten.
+
+> **Automatischer 2. Versuch ohne Passwort:** Wird ein gespeichertes Passwort verwendet und schließt sich `mstsc` innerhalb von 10 Sekunden wieder (schwarzes Bild, Fenster verschwindet – das typische Antwortverhalten von xrdp/Ubuntu auf ein falsches Passwort), fragt die Anwendung nach, ob **ohne das gespeicherte Passwort** neu verbunden werden soll. Bestätigen Sie die Rückfrage, entfernt die Anwendung den Eintrag `TERMSRV/<Host>` aus dem Windows-Anmeldeinformations-Manager und startet `mstsc` erneut – mit vor ausgefülltem Benutzernamen, sodass Sie das Passwort direkt im Remotedesktop-Fenster eingeben können. Das im Geräteeintrag gespeicherte Passwort bleibt dabei unverändert; im Protokoll wird der Vorfall als Warnung (`RDP`) festgehalten. Verbindungen, die länger als 10 Sekunden bestehen, sowie Verbindungen ganz ohne gespeichertes Passwort lösen keine Rückfrage aus.
 
 ### Auflösung für das Fenster einstellen
 1. Menü: **Tools → Einstellungen...**
@@ -623,4 +625,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.2.0 | Wake-on-LAN Manager*
+*Version 2.2.1 | Wake-on-LAN Manager*

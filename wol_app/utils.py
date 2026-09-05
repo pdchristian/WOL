@@ -167,6 +167,11 @@ def _build_rdp_content(
         # otherwise trigger the "unknown publisher" security dialog on every
         # connect. Level 0 connects without verifying the server certificate.
         "authentication level:i:0",
+        # Keep the address we connected to as the server identity after an
+        # RDP redirection/broker hop. Required for xrdp (Ubuntu) hosts, which
+        # otherwise present a redirection name the client cannot match or
+        # resolve; harmless for plain Windows hosts.
+        "use redirection server name:i:1",
     ]
     if username:
         lines.append(f"username:s:{username}")
@@ -195,6 +200,31 @@ def _cleanup_rdp_file(path: str, delay: float) -> None:
         os.remove(path)
     except OSError:
         pass
+
+
+def _monitor_mstsc_fast_exit(process, started_at: float,
+                             fast_exit_window: float, callback) -> None:
+    """Invoke *callback* when *process* exits within *fast_exit_window* seconds.
+
+    Runs in a daemon thread. *started_at* is a ``time.monotonic()`` value taken
+    just before ``mstsc`` was launched, so the measured lifetime is accurate.
+
+    A wrong password against an xrdp/Linux host (typical for Ubuntu) shows as a
+    black screen followed by an immediate exit — a very short process lifetime
+    is the signal that the caller offers a password-less retry for. The monitor
+    waits at most ``fast_exit_window + 30`` seconds; a session that survives
+    the window (or is still running when the extra wait expires) never triggers
+    *callback*. Any error is swallowed: the monitor must never crash the app.
+    """
+    try:
+        process.wait(timeout=fast_exit_window + 30.0)
+    except Exception:  # noqa: BLE001 - TimeoutExpired/wait errors => still running
+        return
+    if (time.monotonic() - started_at) <= fast_exit_window:
+        try:
+            callback()
+        except Exception:  # noqa: BLE001 - never propagate out of the monitor
+            pass
 
 
 def _sanitize_filename_part(name: str) -> str:
@@ -473,69 +503,58 @@ def _register_rdp_credentials(host: str, username: str, password: str) -> bool:
     return getattr(result, "returncode", 0) == 0
 
 
-def launch_remote_desktop(
-    ip: str,
-    username: str = "",
-    password: str = "",
-    fullscreen: bool = True,
-    width: int = 1920,
-    height: int = 1080,
-    cleanup_delay: float = 5.0,
-    device_name: str = "",
-) -> None:
-    """Launch Windows Remote Desktop (``mstsc``) to *ip*.
+def _delete_rdp_credentials(host: str) -> bool:
+    """Remove the ``TERMSRV/<host>`` entry from the Windows Credential Manager.
 
-    A temporary ``.rdp`` file carrying the credentials is written and passed
-    to mstsc; it is deleted *cleanup_delay* seconds later so the password
-    does not linger on disk.
-
-    The session geometry is forced via **command-line arguments**, because
-    mstsc is known to ignore ``fullscreen:i:0`` inside an .rdp file (it then
-    falls back to full-screen). The .rdp file is still passed so that the
-    username (which mstsc cannot take on the command line) is supplied.
-    Because Windows 10/11 mstsc ignores an embedded password, the credentials
-    are additionally registered with the Windows Credential Manager via
-    ``cmdkey`` so the password does not have to be re-entered:
-
-    * ``fullscreen=True``  → ``mstsc /v:<ip> /f <file>``
-    * ``fullscreen=False`` → ``mstsc /v:<ip> /w:<width> /h:<height> <file>``
-
-    The ``/w:``/``/h:``/``/f`` arguments have the highest precedence and
-    reliably determine whether the session opens in a window or full-screen.
+    Used before a password-less retry: while the stored entry exists, mstsc
+    keeps authenticating with it automatically and never shows its credential
+    prompt — the connection would fail exactly like the first attempt. Only
+    the Credential Manager entry is deleted; the password stored in the device
+    record stays untouched.
 
     Args:
-        ip: Target host (IPv4 address or name).
-        username: Optional RDP user; empty leaves mstsc's default.
-        password: Optional RDP password; empty makes mstsc prompt.
-        fullscreen: Full-screen mode when True, windowed mode when False.
-        width: Window width in pixels (windowed mode only).
-        height: Window height in pixels (windowed mode only).
-        cleanup_delay: Seconds to wait before deleting the temp file.
-        device_name: Device name used for the temp file's basename; falls
-            back to *ip* when empty or missing.
+        host: Target host (IPv4 address or name) as used by mstsc.
+
+    Returns:
+        True when ``cmdkey`` reported success. False on errors — non-fatal:
+        the entry usually does not exist, and mstsc prompts on its own when
+        no credentials are available.
+    """
+    try:
+        result = subprocess.run(
+            ["cmdkey", f"/delete:TERMSRV/{host}"], check=False
+        )
+    except OSError:
+        return False
+    return getattr(result, "returncode", 0) == 0
+
+
+def _write_rdp_and_start_mstsc(
+    ip: str,
+    content: str,
+    fullscreen: bool,
+    width: int,
+    height: int,
+    device_name: str,
+    cleanup_delay: float,
+) -> tuple[str, object]:
+    """Write the ``.rdp`` *content* for *ip* and launch ``mstsc`` on it.
+
+    Shared machinery for :func:`launch_remote_desktop` and
+    :func:`retry_remote_desktop_without_password`. The file lives in
+    ``~/.wol_app/rdp/`` named after the device (falling back to *ip*) and is
+    deleted *cleanup_delay* seconds later so credentials do not linger on
+    disk. The geometry is forced on the command line because mstsc ignores
+    ``fullscreen:i:0`` inside an .rdp file; the .rdp path is always the last
+    argument and supplies the username (which mstsc cannot take via CLI).
+
+    Returns:
+        A ``(rdp_path, process)`` tuple.
 
     Raises:
-        ValueError: if *ip* is empty.
-        OSError: if mstsc cannot be started (e.g. not found).
+        RuntimeError: if the file cannot be written even after an ACL repair.
+        OSError: if mstsc cannot be started (the .rdp file is removed).
     """
-    if not ip:
-        raise ValueError("IP address is empty")
-
-    # Register the credentials with the Windows Credential Manager so mstsc
-    # can log in without re-prompting for the password. If that fails we must
-    # NOT connect anyway: mstsc would then authenticate without a password,
-    # which Windows hosts mask with a re-prompt but xrdp hosts answer by
-    # closing the session immediately (window opens and vanishes again).
-    credentials_ready = _register_rdp_credentials(ip, username, password)
-
-    content = _build_rdp_content(
-        ip, username, password, fullscreen, width, height,
-        prompt_for_password=not credentials_ready,
-    )
-
-    # Write to a per-device file in ~/.wol_app/rdp/, named after the device
-    # (falling back to its IP). The file is still temporary: it is deleted
-    # *cleanup_delay* seconds later so the embedded password does not linger.
     base_name = _sanitize_filename_part(device_name or ip)
     ensure_user_data_dir(_RDP_DIR)
     rdp_path = _RDP_DIR / f"{base_name}.rdp"
@@ -573,7 +592,7 @@ def launch_remote_desktop(
             rdp_path,
         ]
     try:
-        subprocess.Popen(cmd)
+        process = subprocess.Popen(cmd)
     except Exception:
         # mstsc could not start; do not leak the credential file.
         try:
@@ -587,6 +606,156 @@ def launch_remote_desktop(
         args=(rdp_path, cleanup_delay),
         daemon=True,
     ).start()
+    return str(rdp_path), process
+
+
+def launch_remote_desktop(
+    ip: str,
+    username: str = "",
+    password: str = "",
+    fullscreen: bool = True,
+    width: int = 1920,
+    height: int = 1080,
+    cleanup_delay: float = 5.0,
+    device_name: str = "",
+    on_fast_exit=None,
+    fast_exit_window: float = 10.0,
+) -> str:
+    """Launch Windows Remote Desktop (``mstsc``) to *ip*.
+
+    A temporary ``.rdp`` file carrying the credentials is written and passed
+    to mstsc; it is deleted *cleanup_delay* seconds later so the password
+    does not linger on disk.
+
+    The session geometry is forced via **command-line arguments**, because
+    mstsc is known to ignore ``fullscreen:i:0`` inside an .rdp file (it then
+    falls back to full-screen). The .rdp file is still passed so that the
+    username (which mstsc cannot take on the command line) is supplied.
+    Because Windows 10/11 mstsc ignores an embedded password, the credentials
+    are additionally registered with the Windows Credential Manager via
+    ``cmdkey`` so the password does not have to be re-entered:
+
+    * ``fullscreen=True``  → ``mstsc /v:<ip> /f <file>``
+    * ``fullscreen=False`` → ``mstsc /v:<ip> /w:<width> /h:<height> <file>``
+
+    The ``/w:``/``/h:``/``/f`` arguments have the highest precedence and
+    reliably determine whether the session opens in a window or full-screen.
+
+    **Fast-exit monitoring:** when a *password* is set and *on_fast_exit* is
+    provided, the mstsc process is watched in a daemon thread. If it exits
+    within *fast_exit_window* seconds — the black-screen-then-close pattern
+    of a wrong password against an xrdp/Linux (Ubuntu) host — *on_fast_exit*
+    is invoked **on that background thread**. The callback must be thread-safe
+    and should marshal any UI work (e.g. via a Qt signal) to the main thread;
+    :func:`retry_remote_desktop_without_password` is the intended follow-up.
+
+    Args:
+        ip: Target host (IPv4 address or name).
+        username: Optional RDP user; empty leaves mstsc's default.
+        password: Optional RDP password; empty makes mstsc prompt.
+        fullscreen: Full-screen mode when True, windowed mode when False.
+        width: Window width in pixels (windowed mode only).
+        height: Window height in pixels (windowed mode only).
+        cleanup_delay: Seconds to wait before deleting the temp file.
+        device_name: Device name used for the temp file's basename; falls
+            back to *ip* when empty or missing.
+        on_fast_exit: Optional callable invoked (from a background thread)
+            when mstsc exits within *fast_exit_window* seconds. Only watched
+            when a password was supplied.
+        fast_exit_window: Seconds below which an mstsc exit counts as fast.
+
+    Returns:
+        Path of the written ``.rdp`` file.
+
+    Raises:
+        ValueError: if *ip* is empty.
+        OSError: if mstsc cannot be started (e.g. not found).
+    """
+    if not ip:
+        raise ValueError("IP address is empty")
+
+    # Register the credentials with the Windows Credential Manager so mstsc
+    # can log in without re-prompting for the password. If that fails we must
+    # NOT connect anyway: mstsc would then authenticate without a password,
+    # which Windows hosts mask with a re-prompt but xrdp hosts answer by
+    # closing the session immediately (window opens and vanishes again).
+    credentials_ready = _register_rdp_credentials(ip, username, password)
+
+    content = _build_rdp_content(
+        ip, username, password, fullscreen, width, height,
+        prompt_for_password=not credentials_ready,
+    )
+
+    # Take the timestamp before launching so the monitor measures the full
+    # process lifetime (Popen setup included).
+    started_at = time.monotonic()
+    rdp_path, process = _write_rdp_and_start_mstsc(
+        ip, content, fullscreen, width, height, device_name, cleanup_delay
+    )
+
+    if password and on_fast_exit is not None and fast_exit_window > 0:
+        threading.Thread(
+            target=_monitor_mstsc_fast_exit,
+            args=(process, started_at, float(fast_exit_window), on_fast_exit),
+            daemon=True,
+        ).start()
+    return rdp_path
+
+
+def retry_remote_desktop_without_password(
+    ip: str,
+    username: str = "",
+    fullscreen: bool = True,
+    width: int = 1920,
+    height: int = 1080,
+    device_name: str = "",
+    cleanup_delay: float = 30.0,
+) -> str:
+    """Second connection attempt in which the user types the password.
+
+    Used after :func:`launch_remote_desktop` detected a fast mstsc exit —
+    the signature of a rejected password on an xrdp/Linux host. The stored
+    ``TERMSRV/<host>`` Credential Manager entry is deleted first (otherwise
+    mstsc keeps authenticating with the wrong password automatically and
+    never shows its prompt), then mstsc is started with the username but
+    **without** a password so the user is asked for it directly in the mstsc
+    dialog. The password stored in the device record is not modified.
+
+    No fast-exit monitoring is armed for this attempt — the user is expected
+    to type the correct password, and a retry loop is never desirable.
+
+    Args:
+        ip: Target host (IPv4 address or name).
+        username: RDP user to pre-fill; empty leaves mstsc's default.
+        fullscreen: Full-screen mode when True, windowed mode when False.
+        width: Window width in pixels (windowed mode only).
+        height: Window height in pixels (windowed mode only).
+        device_name: Device name used for the temp file's basename.
+        cleanup_delay: Seconds before the temp file is deleted; generous by
+            default because the user needs time at the password prompt.
+
+    Returns:
+        Path of the written ``.rdp`` file.
+
+    Raises:
+        ValueError: if *ip* is empty.
+        OSError: if mstsc cannot be started (e.g. not found).
+    """
+    if not ip:
+        raise ValueError("IP address is empty")
+
+    # Without this deletion mstsc would silently re-use the stored (wrong)
+    # password from the Credential Manager and skip the prompt entirely.
+    _delete_rdp_credentials(ip)
+
+    content = _build_rdp_content(
+        ip, username, "", fullscreen, width, height,
+        prompt_for_password=True,
+    )
+    rdp_path, _process = _write_rdp_and_start_mstsc(
+        ip, content, fullscreen, width, height, device_name, cleanup_delay
+    )
+    return rdp_path
 
 # ── Sorting helpers ────────────────────────────────────────────────────────
 

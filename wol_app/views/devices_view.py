@@ -44,9 +44,15 @@ from wol_app.views.device_edit_dialog import ModernDeviceDialog
 from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
 from wol_app.wol_engine import WOLEngine
 
-# Minimum card width incl. gap (prototype .grid: minmax(230px, 1fr) + 16px gap)
+# Grid geometry mirrors the prototype 1:1 (.grid in dark_control_center_full.html):
+# repeat(auto-fill, minmax(230px, 1fr)) with 16px gap, inside .main padding 36px.
+# The column formula below reproduces that behaviour for the Qt grid.
 CARD_MIN_WIDTH = 230
 GRID_SPACING = 16
+
+# Horizontal page margins inside the scroll content — matches the prototype's
+# .main padding (28px 36px) so the column formula sees the same available width.
+PAGE_MARGIN_H = 36
 
 # Auto-refresh interval for the status dots (prototype footer: 30 s)
 AUTO_REFRESH_MS = 30_000
@@ -422,7 +428,8 @@ class DevicesView(QWidget):
         content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         scroll.setWidget(content)
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(32, 26, 32, 26)
+        # Horizontal margins match PAGE_MARGIN_H (prototype .main padding 36px)
+        layout.setContentsMargins(PAGE_MARGIN_H, 26, PAGE_MARGIN_H, 26)
         layout.setSpacing(14)
 
         # ── Page header: title + summary (left), search (right) ──
@@ -632,12 +639,32 @@ class DevicesView(QWidget):
         self._update_summary()
         self.empty_label.setVisible(not devices)
 
+    def _grid_columns(self) -> int:
+        """Column count from the current viewport width (0 = not measured yet).
+
+        Before the first real layout the view is hidden and its viewport only
+        has a placeholder size; measuring then would produce a bogus column
+        count that visibly "jumps" on the first resize. Return 0 as a sentinel
+        so the first visible layout (resizeEvent or the deferred showEvent
+        pass) always establishes the real column count.
+        """
+        if not self.isVisible():
+            return 0
+        vw = self._scroll.viewport().width()
+        if vw <= 0:
+            return 0
+        avail = max(vw - 2 * PAGE_MARGIN_H, CARD_MIN_WIDTH)
+        return max(1, (avail + GRID_SPACING) // (CARD_MIN_WIDTH + GRID_SPACING))
+
     def _relayout_grid(self) -> None:
         """Place the cards into the grid, computing the column count from width."""
-        # Viewport width minus the page margins (32 + 32)
-        avail = max(self._scroll.viewport().width() - 64, CARD_MIN_WIDTH)
-        cols = max(1, (avail + GRID_SPACING) // (CARD_MIN_WIDTH + GRID_SPACING))
-        self._grid_cols = cols
+        cols = self._grid_columns()
+        # Not laid out yet: stack in one column, keep the 0 sentinel so the
+        # first real resize (or the deferred showEvent pass) reflows properly.
+        placeholder = cols == 0
+        cols = cols or 1
+        if not placeholder:
+            self._grid_cols = cols
 
         while self.grid.count():
             self.grid.takeAt(0)
@@ -651,10 +678,10 @@ class DevicesView(QWidget):
         super().resizeEvent(event)
         if self._view_mode == DEVICES_VIEW_LIST:
             return
-        # Reflow the grid when the column count changes
-        avail = max(self._scroll.viewport().width() - 64, CARD_MIN_WIDTH)
-        cols = max(1, (avail + GRID_SPACING) // (CARD_MIN_WIDTH + GRID_SPACING))
-        if cols != self._grid_cols:
+        # Reflow the grid when the column count changes (0 sentinel: the
+        # constructor measured before layout — first resize always reflows)
+        cols = self._grid_columns()
+        if cols and cols != self._grid_cols:
             self._relayout_grid()
 
     def _update_summary(self) -> None:
@@ -822,6 +849,11 @@ class DevicesView(QWidget):
     def showEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         super().showEvent(event)
         self.refresh_statuses()
+        # Safety net: if the grid was built before the first real layout
+        # (sentinel _grid_cols == 0), reflow once the viewport has a width —
+        # even when showing never triggers a resizeEvent.
+        if self._grid_cols == 0:
+            QTimer.singleShot(0, self._relayout_grid)
 
     # ── Language / lifecycle ─────────────────────────────────────────────
 

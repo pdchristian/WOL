@@ -1,9 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 2.2.0 - Service Watch Edition**
+**Version 2.2.1 - Service Watch Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.2.1:** **Remote Desktop auto-retry for xrdp/Ubuntu hosts** — if a session with a stored password closes within 10 seconds (black screen, window vanishes), the app offers to reconnect **without the stored password** so it can be typed directly into the Remote Desktop prompt.
 > **New in 2.2.0:** **Watched processes / service status** on the dashboard — watch named processes (e.g. `llama-server.exe`) on the target and see live status chips, PID, uptime, RAM/CPU, API-port reachability and the loaded llama.cpp model. Configured per device directly in the device dialog. Requires **WOL Host Service protocol v3** (older hosts simply hide the panel).
 > **New in 2.1.0:** a per-device **Dashboard** — live **CPU / RAM / GPU / VRAM** gauges with rolling sparklines plus **remote batch execution** (per-device script library, console output, exit code & duration). Opened via the 📊 tile on each device (no sidebar entry). Requires the updated **WOL Host Service** (protocol v2); batch runs need a double opt-in (per-device checkbox + `--enable-batch` on the target).
 > **New in 2.0.0:** a redesigned **Modern UI** ("Dark Control Center") with a sidebar and four native areas — *Geräte* (device status cards or device list), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens. It is feature-identical to the classic window and can be selected at install time or switched in **Settings → Design** at any time.
@@ -97,6 +98,11 @@ A detailed user manual is available in German:
 ## 📝 Changelog
 
 ### Unreleased
+
+#### 🔄 Remote Desktop: automatic second attempt without password
+- **Fast-exit detection for xrdp/Ubuntu hosts:** when a stored password is used and `mstsc` closes again within 10 seconds (black screen, window vanishes — the typical response of an xrdp host to a wrong password), the app now asks whether to reconnect **without the stored password**. Confirming deletes the `TERMSRV/<host>` entry from the Windows Credential Manager and reopens `mstsc` with the username pre-filled, so the password can be typed directly into the Remote Desktop prompt. The password stored in the device record stays untouched, and a `RDP/WARNING` entry is written to the log
+- **No false alarms:** sessions that survive the 10-second window, connections without a stored password (mstsc prompts anyway) and the retry attempt itself are never watched or re-prompted
+- **`use redirection server name:i:1`:** every generated `.rdp` file now carries this option, which xrdp (Ubuntu) hosts require so the client keeps the address it connected to as the server identity after the RDP redirection hop
 
 #### 🌐 Host names as device addresses
 - **The device address field accepts host names:** besides IPv4 addresses, entries like `ubuntu-mercury` or `nas01.lan` are now valid (RFC 1123). Ping status checks, SMB shutdown and Remote Desktop all resolve names natively — useful for devices with changing DHCP addresses and for xrdp/Linux hosts that must be reached by name

@@ -2,7 +2,7 @@
 
 ## 📋 Dokumentinformationen
 
-- **Version:** 2.2.0
+- **Version:** 2.2.1
 - **Datum:** 2026-08-22
 - **Status:** alle kritischen Sicherheitsrisiken behoben
 - **Verantwortlicher:** GitHub Copilot (automatisierte Sicherheitsanalyse)
@@ -13,7 +13,7 @@
 
 Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.6.0** implementiert wurden. 
 
-Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert. Seit **Version 1.7.0** kommt der optionale **WOL Host Service** hinzu (siehe unten). Seit **Version 1.10.0** kann die Anwendung **Remote Desktop**-Sitzungen starten; dabei werden die Geräte-Anmeldedaten in einer temporären `.rdp`-Datei unter `~/.wol_app/rdp/` abgelegt (benannt nach dem Gerät), die nach wenigen Sekunden automatisch gelöscht wird, damit Passwörter nicht auf der Festplatte verbleiben. Da aktuelle Windows-Versionen (10/11) ein eingebettetes Passwort in der `.rdp`-Datei aus Sicherheitsgründen ignorieren, registriert die Anwendung die Anmeldedaten beim Start einer Sitzung zusätzlich über `cmdkey` im **Windows-Anmeldeinformations-Manager**; der Eintrag ist auf den Benutzer und den Ziel-Host beschränkt und wird bei jeder Verbindung aktualisiert.
+Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert. Seit **Version 1.7.0** kommt der optionale **WOL Host Service** hinzu (siehe unten). Seit **Version 1.10.0** kann die Anwendung **Remote Desktop**-Sitzungen starten; dabei werden die Geräte-Anmeldedaten in einer temporären `.rdp`-Datei unter `~/.wol_app/rdp/` abgelegt (benannt nach dem Gerät), die nach wenigen Sekunden automatisch gelöscht wird, damit Passwörter nicht auf der Festplatte verbleiben. Da aktuelle Windows-Versionen (10/11) ein eingebettetes Passwort in der `.rdp`-Datei aus Sicherheitsgründen ignorieren, registriert die Anwendung die Anmeldedaten beim Start einer Sitzung zusätzlich über `cmdkey` im **Windows-Anmeldeinformations-Manager**; der Eintrag ist auf den Benutzer und den Ziel-Host beschränkt und wird bei jeder Verbindung aktualisiert. Schließt sich `mstsc` innerhalb von 10 Sekunden wieder (xrdp/Ubuntu verwirft die Session bei falschem Passwort), fragt die Anwendung nach dem besten Vorgehen und löscht bei Bestätigung ausschließlich den `TERMSRV/<Host>`-Eintrag über `cmdkey /delete:`, um eine Verbindung ohne gespeichertes Passwort zu ermöglichen — das Geräte-Passwort selbst bleibt unverändert in der verschlüsselten Konfiguration.
 
 ---
 

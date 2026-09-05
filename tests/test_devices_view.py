@@ -4,6 +4,11 @@ import json
 import os
 from pathlib import Path
 
+# Grid tests show() the view — keep those windows offscreen so no real
+# windows flash during the suite (same pattern as test_sidebar.py).
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("WOL_HEADLESS", "1")
+
 import pytest
 
 from wol_app.config import ConfigManager
@@ -13,7 +18,14 @@ pytest.importorskip("PyQt6")
 
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
-from wol_app.views.devices_view import DeviceCard, DevicesView  # noqa: E402
+from wol_app.config import DEVICES_VIEW_LIST  # noqa: E402
+from wol_app.views.devices_view import (  # noqa: E402
+    CARD_MIN_WIDTH,
+    GRID_SPACING,
+    PAGE_MARGIN_H,
+    DeviceCard,
+    DevicesView,
+)
 
 # Translation keys asserted below — must exist in every locale so the
 # locale-synchronous assertions never fall back to the raw key string.
@@ -137,6 +149,90 @@ class TestDevicesView:
         view._on_statuses_finished([("d1", "Desktop", "online", "")])
         view.retranslate()
         assert view._cards["d1"].action_btn.text() == Translations.tr("button.shutdown")
+
+
+class TestGridColumnCount:
+    """Column count comes from the *real* viewport width — never a pre-layout guess.
+
+    Regression: measuring in the constructor (before Qt lays the widget out)
+    produced a bogus column count that visibly "jumped" to more/other columns
+    on the first window resize.
+    """
+
+    @staticmethod
+    def _expected_cols(viewport_w: int) -> int:
+        avail = max(viewport_w - 2 * PAGE_MARGIN_H, CARD_MIN_WIDTH)
+        return max(1, (avail + GRID_SPACING) // (CARD_MIN_WIDTH + GRID_SPACING))
+
+    @pytest.fixture()
+    def shown_view(self, qapp, config_with_devices, monkeypatch):
+        """DevicesView factory: shown at a given width with pings silenced."""
+        views = []
+
+        def _make(width: int) -> DevicesView:
+            view = DevicesView(config_with_devices)
+            # showEvent triggers refresh_statuses → skip real ICMP pings in tests
+            monkeypatch.setattr(view, "refresh_statuses", lambda: None)
+            view.resize(width, 700)
+            view.show()
+            qapp.processEvents()  # includes the deferred singleShot reflow
+            views.append(view)
+            return view
+
+        yield _make
+        for v in views:
+            v.cancel_workers()
+            v.deleteLater()
+
+    def test_unmeasured_view_uses_placeholder_not_bogus_count(self, qapp, config_with_devices):
+        # Not shown yet → viewport has no width: cards stack in one column and
+        # the sentinel stays 0 so the first real layout reflows.
+        view = DevicesView(config_with_devices)
+        assert view._grid_cols == 0
+        # All 3 cards placed in a single column (rows 0, 1, 2 / col 0).
+        # getItemPosition returns (row, column, rowspan, colspan).
+        positions = [view.grid.getItemPosition(i) for i in range(3)]
+        assert [p[0] for p in positions] == [0, 1, 2]
+        assert all(p[1] == 0 for p in positions)
+        view.cancel_workers()
+        view.deleteLater()
+
+    def test_show_without_resize_reflows_to_real_width(self, shown_view):
+        view = shown_view(930)
+        assert view._grid_cols == self._expected_cols(view._scroll.viewport().width())
+        assert view._grid_cols >= 2
+
+    @pytest.mark.parametrize("width", [620, 930, 1080, 1500])
+    def test_columns_track_width(self, shown_view, width):
+        view = shown_view(width)
+        assert view._grid_cols == self._expected_cols(view._scroll.viewport().width())
+        # Cards fill exactly the computed columns: no card beyond the last one
+        max_col = max(
+            view.grid.getItemPosition(i)[1] for i in range(view.grid.count()))
+        assert max_col < view._grid_cols
+
+    def test_three_columns_at_default_window_width(self, shown_view):
+        """Prototype parity: 1180 px window − 230 px sidebar ≈ 935 px viewport → 3 columns.
+
+        Measured in design_prototype/dark_control_center_full.html at the same
+        width: .grid yields 3 columns of ~298 px (minmax(230px, 1fr), gap 16).
+        """
+        view = shown_view(935)
+        assert view._grid_cols == 3
+
+    def test_list_mode_resize_does_not_reflow(self, qapp, config_with_devices, monkeypatch):
+        config_with_devices.set_devices_view_mode(DEVICES_VIEW_LIST)
+        view = DevicesView(config_with_devices)
+        monkeypatch.setattr(view, "refresh_statuses", lambda: None)
+        view.resize(935, 700)
+        view.show()
+        qapp.processEvents()
+        before = view._grid_cols
+        view.resize(1500, 700)
+        qapp.processEvents()
+        assert view._grid_cols == before  # early-return while the list is shown
+        view.cancel_workers()
+        view.deleteLater()
 
 
 class TestLocaleKeyConsistency:

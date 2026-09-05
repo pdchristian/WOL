@@ -14,7 +14,7 @@ settings dialog); see :func:`wol_app.main_window.main`.
 import os
 from typing import Any, NoReturn
 
-from PyQt6.QtCore import QEvent, QSize, Qt, QTimer
+from PyQt6.QtCore import QEvent, QRect, QSize, Qt, QTimer
 from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -101,6 +101,9 @@ class ModernMainWindow(QMainWindow):
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         self.resize(1180, 740)
+        # Restore the last window rect (ui.window_geometry) when it still
+        # intersects an attached screen; otherwise keep the default size.
+        self._restore_window_geometry()
 
         # Scheduler engine (wake/shutdown for fired schedule entries)
         self.engine: WOLEngine = WOLEngine(self.config)
@@ -389,6 +392,37 @@ class ModernMainWindow(QMainWindow):
         except OSError:
             pass  # non-fatal: sidebar cosmetics only
 
+    # ── Window geometry persistence ──────────────────────────────────────
+
+    def _restore_window_geometry(self) -> None:
+        """Apply the saved window rect if it is still on a connected screen."""
+        try:
+            rect = self.config.get_window_geometry()
+        except OSError:
+            return
+        if not rect:
+            return
+        x, y, w, h = rect
+        candidate = QRect(x, y, w, h)
+        app = QApplication.instance()
+        screens = app.screens() if app is not None else []
+        # Guard against unplugged monitors: only restore when the saved rect
+        # overlaps one of the available geometries.
+        if any(g.availableGeometry().intersects(candidate) for g in screens):
+            self.setGeometry(candidate)
+
+    def _save_window_geometry(self) -> None:
+        """Persist the normal (non-maximized) window rect on close."""
+        # normalGeometry() keeps the restored size while the window is
+        # maximized, so a maximized session does not lock the next start to
+        # the maximized state.
+        rect = self.normalGeometry()
+        try:
+            self.config.set_window_geometry(
+                rect.x(), rect.y(), rect.width(), rect.height())
+        except OSError:
+            pass  # non-fatal: window cosmetics only
+
     # ── Navigation ───────────────────────────────────────────────────────
 
     def _select_nav(self, index: int, trigger: QPushButton | None = None) -> None:
@@ -509,6 +543,7 @@ class ModernMainWindow(QMainWindow):
         if self._sidebar_save_timer is not None:
             self._sidebar_save_timer.stop()
         self._save_sidebar_state()
+        self._save_window_geometry()
         self.devices_view.cancel_workers()
         self.manage_view.cancel_workers()
         self.dashboard_view.cancel_workers()

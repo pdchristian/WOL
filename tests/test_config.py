@@ -182,5 +182,41 @@ class TestRemoteDesktopResolution(ConfigManagerTestBase):
         self.assertEqual(cm.get_remote_desktop_resolution(), "1920x1080")
 
 
+class TestWindowGeometry(ConfigManagerTestBase):
+    """ui.window_geometry: [x, y, w, h] of the modern main window."""
+
+    def test_default_is_none(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertIsNone(cm.get_window_geometry())
+
+    def test_roundtrip_and_persist(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_window_geometry(120, 80, 1280, 800)
+        self.assertEqual(cm.get_window_geometry(), [120, 80, 1280, 800])
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        self.assertEqual(saved["ui"]["window_geometry"], [120, 80, 1280, 800])
+
+    def test_negative_position_allowed(self):
+        # Multi-monitor setups place secondary screens at negative coords.
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_window_geometry(-1920, 0, 1280, 800)
+        self.assertEqual(cm.get_window_geometry(), [-1920, 0, 1280, 800])
+
+    def test_malformed_values_fall_back_to_none(self):
+        for bad in (
+            "not-a-list",                      # wrong type
+            [10, 20, 30],                      # too few entries
+            [10, 20, 30, 40, 50],              # too many entries
+            [10, "x", 30, 40],                 # non-numeric entry
+            [10, 20, 0, 40],                   # zero width
+            [10, 20, 30, -5],                  # negative height
+            {"x": 1},                          # dict instead of list
+        ):
+            self._write_raw({"ui": {"window_geometry": bad}})
+            cm = ConfigManager(config_path=str(self.config_path))
+            self.assertIsNone(cm.get_window_geometry(), msg=f"bad value: {bad!r}")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -113,6 +113,8 @@
   "dialog.no_devices.title": "Sin dispositivos",
   "dialog.no_ip.message": "El dispositivo \"{name}\" no tiene una dirección IP configurada.",
   "dialog.no_ip.title": "Sin dirección IP",
+  "dialog.rdp_retry.message": "La conexión con \"{name}\" se cerró inmediatamente. Normalmente la causa es una contraseña guardada incorrecta. ¿Desea reconectar sin la contraseña guardada para introducirla usted mismo en el escritorio remoto?",
+  "dialog.rdp_retry.title": "Escritorio remoto",
   "dialog.remote_desktop_error.message": "No se pudo iniciar la conexión de escritorio remoto.",
   "dialog.remote_desktop_error.title": "Error de escritorio remoto",
   "dialog.saved.message": "Ajustes guardados correctamente.",

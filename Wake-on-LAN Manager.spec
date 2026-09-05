@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 2.2.0 - Service Watch Edition
+# Wake-on-LAN Manager Version 2.2.1 - Service Watch Edition
 # Generated on 2026-09-03
 
 a = Analysis(

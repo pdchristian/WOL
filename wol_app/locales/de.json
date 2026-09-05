@@ -113,6 +113,8 @@
   "dialog.no_devices.title": "Keine Geräte",
   "dialog.no_ip.message": "Das Gerät \"{name}\" hat keine IP-Adresse konfiguriert.",
   "dialog.no_ip.title": "Keine IP-Adresse",
+  "dialog.rdp_retry.message": "Die Verbindung zu \"{name}\" wurde sofort wieder geschlossen. Meistens ist ein falsches gespeichertes Passwort die Ursache. Möchten Sie ohne das gespeicherte Passwort neu verbinden, um es selbst im Remotedesktop-Fenster einzugeben?",
+  "dialog.rdp_retry.title": "Remotedesktop",
   "dialog.remote_desktop_error.message": "Die Remotedesktopverbindung konnte nicht gestartet werden.",
   "dialog.remote_desktop_error.title": "Remote-Desktop-Fehler",
   "dialog.saved.message": "Einstellungen erfolgreich gespeichert.",

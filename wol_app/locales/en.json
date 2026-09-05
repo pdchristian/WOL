@@ -113,6 +113,8 @@
   "dialog.no_devices.title": "No Devices",
   "dialog.no_ip.message": "The device \"{name}\" has no IP address configured.",
   "dialog.no_ip.title": "No IP Address",
+  "dialog.rdp_retry.message": "The connection to \"{name}\" was closed immediately. This is usually caused by an incorrect saved password. Do you want to reconnect without the saved password so you can enter it in Remote Desktop?",
+  "dialog.rdp_retry.title": "Remote Desktop",
   "dialog.remote_desktop_error.message": "The remote desktop connection could not be started.",
   "dialog.remote_desktop_error.title": "Remote Desktop Error",
   "dialog.saved.message": "Settings saved successfully.",

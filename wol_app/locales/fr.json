@@ -113,6 +113,8 @@
   "dialog.no_devices.title": "Aucun appareil",
   "dialog.no_ip.message": "L'appareil \"{name}\" n'a pas d'adresse IP configurée.",
   "dialog.no_ip.title": "Aucune adresse IP",
+  "dialog.rdp_retry.message": "La connexion vers \"{name}\" s'est fermée immédiatement. La cause est généralement un mot de passe enregistré incorrect. Voulez-vous vous reconnecter sans le mot de passe enregistré afin de le saisir vous-même dans la fenêtre du bureau à distance ?",
+  "dialog.rdp_retry.title": "Bureau à distance",
   "dialog.remote_desktop_error.message": "Impossible de démarrer la connexion du bureau à distance.",
   "dialog.remote_desktop_error.title": "Erreur du bureau à distance",
   "dialog.saved.message": "Paramètres enregistrés avec succès.",
