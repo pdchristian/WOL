@@ -59,12 +59,26 @@ def _power_icon_pixmap(size: int, color: str, dpr: float = 1.0) -> QPixmap:
 
 
 class ModernShutdownConfirmDialog(QDialog):
-    """Confirmation dialog for shutting down a device (modern look)."""
+    """Confirmation dialog for destructive actions (modern look).
 
-    def __init__(self, device_name: str, parent: QWidget | None = None) -> None:
+    Defaults to the device-shutdown texts; the window-quit confirmation
+    reuses the same layout with ``title_key``/``message_key`` overrides.
+    """
+
+    def __init__(self, device_name: str, parent: QWidget | None = None, *,
+                 title_key: str = "modern.shutdown_confirm.title",
+                 message_key: str = "modern.shutdown_confirm.message",
+                 yes_key: str = "modern.shutdown_confirm.yes",
+                 no_key: str = "modern.shutdown_confirm.no",
+                 message_kwargs: dict | None = None) -> None:
         super().__init__(parent)
         self.device_name = device_name
-        self.setWindowTitle(Translations.tr("modern.shutdown_confirm.title"))
+        self._title_key = title_key
+        self._message_key = message_key
+        self._message_kwargs = message_kwargs or {}
+        self._yes_key = yes_key
+        self._no_key = no_key
+        self.setWindowTitle(Translations.tr(title_key))
         self.setMinimumWidth(380)
         self._setup_ui()
 
@@ -85,7 +99,7 @@ class ModernShutdownConfirmDialog(QDialog):
         layout.addLayout(icon_row)
 
         # Question
-        msg = QLabel(Translations.tr("modern.shutdown_confirm.message"))
+        msg = QLabel(Translations.tr(self._message_key, **self._message_kwargs))
         msg.setObjectName("rowTitle")
         msg.setWordWrap(True)
         msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -96,10 +110,10 @@ class ModernShutdownConfirmDialog(QDialog):
         # Buttons: Ja (danger/confirm) — Nein
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self.yes_btn = QPushButton(Translations.tr("modern.shutdown_confirm.yes"))
+        self.yes_btn = QPushButton(Translations.tr(self._yes_key))
         self.yes_btn.setObjectName("dangerButton")
         self.yes_btn.clicked.connect(self.accept)
-        self.no_btn = QPushButton(Translations.tr("modern.shutdown_confirm.no"))
+        self.no_btn = QPushButton(Translations.tr(self._no_key))
         self.no_btn.clicked.connect(self.reject)
         btn_row.addWidget(self.yes_btn)
         btn_row.addWidget(self.no_btn)

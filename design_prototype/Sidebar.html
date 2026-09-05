@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>WOL – Sidebar: Collapse + Resize (Prototyp v4)</title>
+<style>
+  :root {
+    --bg:#0f1115; --surface:#1a1d24; --surface-hover:#232733; --border:#2c303a;
+    --text:#e6e8ee; --text-dim:#9aa0ab; --accent:#00b8a9; --accent-dark:#006b63;
+    --online:#22c55e; --offline:#ef4444; --unknown:#f59e0b;
+    --sidebar-w:230px; --collapsed-w:64px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; font-family:"Segoe UI",sans-serif; }
+  body { background:var(--bg); color:var(--text); display:flex; height:100vh; overflow:hidden; }
+
+  /* ===== Sidebar ===== */
+  .sidebar {
+    width:var(--sidebar-w); background:var(--surface); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; padding:16px 12px; flex-shrink:0; overflow:hidden;
+    transition:width .18s ease, padding .18s ease;
+  }
+  .sidebar.collapsed { width:var(--collapsed-w); padding:16px 8px; }
+  body.resizing .sidebar { transition:none; }
+
+  /* App-Icon = Toggle-Fläche */
+  .logo { display:flex; align-items:center; gap:12px; padding:4px 8px; margin-bottom:14px; }
+  .logo .mark {
+    width:40px; height:40px; border-radius:12px; flex-shrink:0; cursor:pointer;
+    background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+    display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff;
+    font-size:17px; box-shadow:0 0 0 0 rgba(0,184,169,.55); transition:box-shadow .15s, filter .15s;
+  }
+  .logo .mark:hover { box-shadow:0 0 0 3px rgba(0,184,169,.35); filter:brightness(1.1); }
+  .logo .name { font-weight:600; font-size:15px; white-space:nowrap; }
+  .sidebar.collapsed .logo .name { display:none; }
+  .sidebar.collapsed .logo { justify-content:center; padding:4px 0; }
+
+  .section-label { color:var(--text-dim); font-size:11px; text-transform:uppercase;
+    letter-spacing:1px; padding:8px 12px; margin-top:8px; white-space:nowrap; }
+  .sidebar.collapsed .section-label { display:none; }
+
+  .nav-item { display:flex; align-items:center; gap:12px; padding:10px 12px;
+    border-radius:10px; color:var(--text-dim); font-size:14px; margin-bottom:4px;
+    cursor:pointer; border:none; background:none; text-align:left; width:100%; }
+  .nav-item:hover { background:var(--surface-hover); color:var(--text); }
+  .nav-item.active { background:rgba(0,184,169,.14); color:var(--accent); font-weight:600; }
+  .nav-item .emoji { font-size:16px; width:20px; flex-shrink:0; text-align:center; }
+  .nav-item .label { white-space:nowrap; overflow:hidden; }
+  .sidebar.collapsed .nav-item { justify-content:center; padding:10px 0; }
+  .sidebar.collapsed .nav-item .label { display:none; }
+
+  .nav-spacer { flex:1; }
+  .nav-footer { border-top:1px solid var(--border); padding-top:12px; }
+
+  /* ===== Resizer (Drag & Drop) ===== */
+  .resizer { width:5px; cursor:col-resize; background:transparent; flex-shrink:0; z-index:40;
+    transition:background .15s; }
+  .resizer:hover, .resizer.dragging { background:var(--accent); }
+  body.resizing { user-select:none; cursor:col-resize; }
+
+  /* ===== Main ===== */
+  .main { flex:1; overflow:auto; padding:28px 36px; min-width:0; }
+  .screen { display:none; animation:fade .18s ease; }
+  .screen.active { display:block; }
+  @keyframes fade { from { opacity:0; transform:translateY(4px); } to { opacity:1; } }
+  .page-header h1 { font-size:22px; margin-bottom:4px; }
+  .page-header p { color:var(--text-dim); font-size:13px; margin-bottom:24px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; }
+  .card h3 { font-size:15px; margin-bottom:10px; }
+  .card .meta { color:var(--text-dim); font-size:12px; line-height:1.7; }
+  .placeholder { color:var(--text-dim); font-size:14px; background:var(--surface);
+    border:1px dashed var(--border); border-radius:14px; padding:40px; text-align:center; }
+  #hint { margin-top:24px; color:var(--text-dim); font-size:12px; line-height:1.9; }
+  code { background:var(--surface); padding:2px 6px; border-radius:6px; font-size:12px; }
+</style>
+</head>
+<body>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="logo">
+      <div class="mark" id="appMark" title="Seitenleiste ein-/ausklappen">W</div>
+      <span class="name">Wake-on-LAN</span>
+    </div>
+
+    <div class="section-label">Bereiche</div>
+    <button class="nav-item active" data-screen="devices"  title="Geräte"><span class="emoji">💻</span><span class="label">Geräte</span></button>
+    <button class="nav-item" data-screen="manage"   title="Verwalten"><span class="emoji">🔧</span><span class="label">Verwalten</span></button>
+    <button class="nav-item" data-screen="schedule" title="Zeitplan"><span class="emoji">🕒</span><span class="label">Zeitplan</span></button>
+    <button class="nav-item" data-screen="logs"     title="Protokolle"><span class="emoji">📋</span><span class="label">Protokolle</span></button>
+
+    <div class="nav-spacer"></div>
+
+    <div class="section-label">Applikation</div>
+    <div class="nav-footer">
+      <button class="nav-item" data-screen="settings" title="Einstellungen"><span class="emoji">⚙️</span><span class="label">Einstellungen</span></button>
+      <button class="nav-item" data-screen="about" title="Über"><span class="emoji">ℹ️</span><span class="label">Über</span></button>
+      <button class="nav-item" data-quit title="Beenden"><span class="emoji">⏻</span><span class="label">Beenden</span></button>
+    </div>
+  </aside>
+
+  <div class="resizer" id="resizer" title="Ziehen zum Anpassen · Doppelklick = ein/ausklappen"></div>
+
+  <main class="main">
+    <div class="screen active" id="devices">
+      <header class="page-header"><h1>Geräte</h1><p>Prototyp v4: Collapse ohne Pfeil – per aktivem Icon oder App-Icon</p></header>
+      <div class="grid">
+        <div class="card"><h3>Workstation</h3><div class="meta">192.168.1.10<br>AA:BB:CC:00:11:22</div></div>
+        <div class="card"><h3>Media-Server</h3><div class="meta">192.168.1.21<br>AA:BB:CC:33:44:55</div></div>
+        <div class="card"><h3>Gaming-PC</h3><div class="meta">192.168.1.15<br>AA:BB:CC:66:77:88</div></div>
+        <div class="card"><h3>NAS · Synology</h3><div class="meta">192.168.1.30<br>AA:BB:CC:99:00:11</div></div>
+      </div>
+    </div>
+    <div class="screen" id="manage"><header class="page-header"><h1>Verwalten</h1></header><div class="placeholder">Netzwerk-Scan &amp; Geräte-Verwaltung</div></div>
+    <div class="screen" id="schedule"><header class="page-header"><h1>Zeitplan</h1></header><div class="placeholder">Zeitpläne</div></div>
+    <div class="screen" id="logs"><header class="page-header"><h1>Protokolle</h1></header><div class="placeholder">Protokoll-Einträge</div></div>
+    <div class="screen" id="settings"><header class="page-header"><h1>Einstellungen</h1></header><div class="placeholder">Einstellungen</div></div>
+    <div class="screen" id="about"><header class="page-header"><h1>Über</h1></header><div class="placeholder">Wake-on-LAN Manager · v2.4.1</div></div>
+
+    <p id="hint">
+      ① Klick auf das <b>aktive</b> Bereichs-Icon → klappt zu · erneuter Klick auf dasselbe Icon → auf.<br>
+      ② Klick auf das <b>App-Icon „W“</b> → togglet immer.<br>
+      ↔ Ziehen am Rand: 180–360 px · unter <b>120 px</b> schnappt die Sidebar ein ·
+      Doppelklick auf den Griff · <code>Strg+B</code>
+    </p>
+  </main>
+
+<script>
+  const sidebar = document.getElementById('sidebar');
+  const resizer = document.getElementById('resizer');
+  const appMark = document.getElementById('appMark');
+  const root = document.documentElement;
+  const navItems = [...sidebar.querySelectorAll('.nav-item')];
+  const screens = [...document.querySelectorAll('.screen')];
+  const MIN = 180, MAX = 360, SNAP = 120, COLLAPSED = 64, DEFAULT = 230;
+
+  let width = parseInt(localStorage.getItem('wol.sidebar.width')) || DEFAULT;
+  let collapsed = localStorage.getItem('wol.sidebar.collapsed') === '1';
+  let lastExpanded = collapsed ? DEFAULT : width;
+
+  function apply() {
+    sidebar.classList.toggle('collapsed', collapsed);
+    root.style.setProperty('--sidebar-w',
+      collapsed ? COLLAPSED + 'px' : Math.min(MAX, Math.max(MIN, width)) + 'px');
+    // Tooltips: aktives Icon signalisiert die Toggle-Funktion
+    navItems.forEach(b => {
+      const base = b.getAttribute('data-screen')
+        ? b.querySelector('.label').textContent : 'Beenden';
+      b.title = (b.classList.contains('active'))
+        ? (collapsed ? base + ' – Seitenleiste ausklappen' : base + ' – erneut klicken klappt ein')
+        : base;
+    });
+    appMark.title = collapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen';
+    localStorage.setItem('wol.sidebar.width', width);
+    localStorage.setItem('wol.sidebar.collapsed', collapsed ? '1' : '0');
+  }
+
+  function toggle() {
+    collapsed = !collapsed;
+    if (!collapsed) width = lastExpanded; else lastExpanded = width;
+    apply();
+  }
+
+  function selectScreen(key) {
+    navItems.forEach(b => b.classList.toggle('active', b.dataset.screen === key));
+    screens.forEach(s => s.classList.toggle('active', s.id === key));
+  }
+
+  // ① Nav-Items: aktives Icon = Toggle, andere = Navigation
+  navItems.forEach(btn => btn.addEventListener('click', () => {
+    if (btn.dataset.screen === undefined) return;   // „Beenden"
+    if (btn.classList.contains('active')) { toggle(); }
+    else { selectScreen(btn.dataset.screen); }
+  }));
+
+  // ② App-Icon: Toggle in beiden Zuständen
+  appMark.addEventListener('click', toggle);
+
+  resizer.addEventListener('dblclick', toggle);
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); toggle(); }
+  });
+
+  let dragging = false;
+  resizer.addEventListener('mousedown', () => {
+    if (collapsed) { width = lastExpanded; collapsed = false; apply(); }
+    dragging = true; resizer.classList.add('dragging');
+    document.body.classList.add('resizing');
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    if (e.clientX < SNAP) {                          // Snap-Schwelle → einklappen
+      collapsed = true; width = Math.max(MIN, lastExpanded); dragging = false;
+      resizer.classList.remove('dragging'); document.body.classList.remove('resizing');
+    } else {
+      width = Math.min(MAX, Math.max(MIN, e.clientX)); lastExpanded = width;
+    }
+    apply();
+  });
+  window.addEventListener('mouseup', () => {
+    dragging = false; resizer.classList.remove('dragging');
+    document.body.classList.remove('resizing');
+  });
+
+  apply();
+</script>
+</body>
+</html>

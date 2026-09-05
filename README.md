@@ -1,9 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 2.1.0 - Dashboard Edition**
+**Version 2.2.0 - Service Watch Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.2.0:** **Watched processes / service status** on the dashboard — watch named processes (e.g. `llama-server.exe`) on the target and see live status chips, PID, uptime, RAM/CPU, API-port reachability and the loaded llama.cpp model. Configured per device directly in the device dialog. Requires **WOL Host Service protocol v3** (older hosts simply hide the panel).
 > **New in 2.1.0:** a per-device **Dashboard** — live **CPU / RAM / GPU / VRAM** gauges with rolling sparklines plus **remote batch execution** (per-device script library, console output, exit code & duration). Opened via the 📊 tile on each device (no sidebar entry). Requires the updated **WOL Host Service** (protocol v2); batch runs need a double opt-in (per-device checkbox + `--enable-batch` on the target).
 > **New in 2.0.0:** a redesigned **Modern UI** ("Dark Control Center") with a sidebar and four native areas — *Geräte* (device status cards or device list), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens. It is feature-identical to the classic window and can be selected at install time or switched in **Settings → Design** at any time.
 
@@ -13,6 +14,7 @@ A modern Windows GUI application for sending Wake-on-LAN magic packets to device
 
 - **Modern UI (new in 2.0.0)** — A redesigned "Dark Control Center" layout with a sidebar and native *Geräte* / *Verwalten* / *Zeitplan* / *Protokolle* / *Einstellungen* / *Über* screens (dark or light display mode). The *Geräte* screen offers a **card view and a list view** (toggle icon) plus a **sort drop-down** (name / IP / MAC / status). Feature-identical to the classic window; choose it at install time or switch it in **Settings → Design**
 - **Device Dashboard (new in 2.1.0)** — Per-device live metrics (CPU / RAM / GPU / VRAM ring gauges + rolling sparklines, hostname & uptime, configurable 2–10 s polling) and **remote batch execution** with a per-device script library, console output (stdout/stderr, exit code, duration) and cancellation. GPU/VRAM via `nvidia-smi` (NVIDIA only, "n/a" otherwise). Opened via the 📊 tile on each device — no sidebar entry. Batch runs are double-gated: a per-device checkbox plus `--enable-batch` on the target host (SYSTEM privileges!)
+- **Watched processes / service status (new in 2.2.0)** — The dashboard can watch named processes on the target (e.g. `llama-server.exe`) and shows a live **status chip** in the header plus a **Services panel** (PID, uptime, process RAM/CPU, API-port reachability and the loaded llama.cpp model). Configure per device via `config.json` → `"watch_processes": ["llama-server.exe:8080"]` (the `:port` turns the chip green only once the API also answers; without it, "running" is enough). Requires Host Service **protocol v3** — older hosts simply omit it (chip hidden, no error). A heuristic "⚡ Inference active" badge lights up while a ready service coincides with high GPU load.
 - **Device Management** — Add, edit, and remove devices with friendly names, MAC addresses, and optional IP addresses (no device limit)
 - **Wake-on-LAN** — Send magic packets to individual devices or wake all at once (parallel, up to 8 concurrent)
 - **Status Monitoring** — Ping devices to check online/offline status (auto-refresh every 30 seconds, up to 16 concurrent)
@@ -93,6 +95,23 @@ A detailed user manual is available in German:
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
 ## 📝 Changelog
+
+### Unreleased
+
+#### 🌐 Host names as device addresses
+- **The device address field accepts host names:** besides IPv4 addresses, entries like `ubuntu-mercury` or `nas01.lan` are now valid (RFC 1123). Ping status checks, SMB shutdown and Remote Desktop all resolve names natively — useful for devices with changing DHCP addresses and for xrdp/Linux hosts that must be reached by name
+- **Fixed:** `update_device()` truncated the IP field to 15 characters (IPv4 limit), silently cutting host names short; the limit is now 253 (max DNS name length)
+- **Fixed (RDP to xrdp):** credentials are registered with the Credential Manager under the `TERMSRV/<host>` target that `mstsc` actually reads (previously a prefix-less generic entry that mstsc never picked up — xrdp hosts dropped the session immediately); generated `.rdp` files set `authentication level:i:0` so self-signed server certificates no longer trigger the per-connect security warning
+
+### Version 2.2.0 - Service Watch Edition (2026-09-04)
+
+#### 👁 Watched processes / service status
+- **Process watching on the dashboard:** each device can watch up to 8 named processes on the target (e.g. `llama-server.exe`). The dashboard header shows a live **status chip** per watched process — green (running, API port answers), amber (*starting…*, process runs but the port is closed) or grey (not running); chips are hidden while the device is offline or the host service is too old
+- **Services panel with details:** per watched process the dashboard shows PID, uptime, process RAM and CPU, plus the **loaded llama.cpp model** (parsed from the command line, `-m` / `--model`) when detected; llama.cpp processes get a 🦙 icon
+- **API-port probing:** an entry may carry a port suffix (`llama-server.exe:8080`); the host service checks loopback reachability (250 ms, parallel) and the chip only turns green once the API also answers
+- **"⚡ Inference active" badge:** heuristic indicator that lights up on the dashboard while a watched service is ready and GPU load stays high (≥ 60 % over consecutive polls)
+- **Device dialog field:** watched processes are configured directly in the device dialog (*Beobachtete Prozesse*, comma-separated) — no manual `config.json` editing needed; stored per device as `"watch_processes"`
+- **Host service protocol v3:** the `metrics` request accepts an optional `"watch"` list (max 8 entries); the response gains a `"processes"` map keyed by the original entry. Fully back-compatible — v2 clients and v3 clients behave correctly in both directions; older hosts simply omit the field
 
 ### Version 2.1.0 - Dashboard Edition (2026-09-03)
 

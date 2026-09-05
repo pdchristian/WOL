@@ -132,6 +132,22 @@ class TestConfigShutdownMethod(ConfigManagerTestBase):
         # Invalid value is ignored; default stays
         self.assertEqual(cm.get_device_shutdown_method(device), "host_service")
 
+    def test_update_device_keeps_hostname_longer_than_ipv4(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("Mercury", "AA:BB:CC:DD:EE:FF")
+        cm.update_device(device["id"], ip="ubuntu-mercury.lan.fritz.box")
+        # Host names must not be truncated to the old 15-char IPv4 limit.
+        self.assertEqual(
+            device["ip"], "ubuntu-mercury.lan.fritz.box")
+
+    def test_update_device_strips_and_caps_ip(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.update_device(device["id"], ip="  192.168.1.10  ")
+        self.assertEqual(device["ip"], "192.168.1.10")
+        cm.update_device(device["id"], ip="a" * 300)
+        self.assertEqual(len(device["ip"]), 253)
+
 
 class TestRemoteDesktopResolution(ConfigManagerTestBase):
     def test_default_resolution(self):

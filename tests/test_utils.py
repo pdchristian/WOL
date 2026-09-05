@@ -16,7 +16,9 @@ from wol_app.utils import (
     get_ip_key,
     launch_remote_desktop,
     validate_device_name,
+    validate_hostname,
     validate_ip,
+    validate_ip_or_hostname,
     validate_mac,
     validate_password,
     validate_username,
@@ -35,6 +37,51 @@ class TestValidateIP(unittest.TestCase):
         self.assertFalse(validate_ip("not-an-ip"))
         self.assertFalse(validate_ip(""))
         self.assertFalse(validate_ip("256.256.256.256"))
+
+
+class TestValidateHostname(unittest.TestCase):
+    def test_valid_hostnames(self):
+        self.assertTrue(validate_hostname("ubuntu-mercury"))
+        self.assertTrue(validate_hostname("localhost"))
+        self.assertTrue(validate_hostname("MY-HOST"))
+        self.assertTrue(validate_hostname("a"))
+        self.assertTrue(validate_hostname("host.fritz.box"))
+        self.assertTrue(validate_hostname("nas01.lan.example.com"))
+        # A single label may start with a digit.
+        self.assertTrue(validate_hostname("nas01"))
+
+    def test_invalid_hostnames(self):
+        self.assertFalse(validate_hostname(""))
+        self.assertFalse(validate_hostname("-leading-hyphen"))
+        self.assertFalse(validate_hostname("trailing-hyphen-"))
+        self.assertFalse(validate_hostname("has space"))
+        self.assertFalse(validate_hostname("under_score"))
+        self.assertFalse(validate_hostname("umlaut-ä"))
+        self.assertFalse(validate_hostname("empty..label"))
+        self.assertFalse(validate_hostname("a" * 64))
+        self.assertFalse(validate_hostname(("a" * 60 + ".") * 5))
+
+    def test_accepts_ip_input(self):
+        # An IPv4 literal is also a syntactically valid hostname string.
+        self.assertTrue(validate_hostname("192.168.1.10"))
+
+
+class TestValidateIpOrHostname(unittest.TestCase):
+    def test_accepts_ipv4(self):
+        self.assertTrue(validate_ip_or_hostname("192.168.1.100"))
+        self.assertTrue(validate_ip_or_hostname("255.255.255.255"))
+
+    def test_accepts_hostname(self):
+        self.assertTrue(validate_ip_or_hostname("ubuntu-mercury"))
+        self.assertTrue(validate_ip_or_hostname("host.fritz.box"))
+        self.assertTrue(validate_ip_or_hostname("  ubuntu-mercury  "))
+
+    def test_rejects_invalid(self):
+        self.assertFalse(validate_ip_or_hostname(""))
+        self.assertFalse(validate_ip_or_hostname("   "))
+        self.assertFalse(validate_ip_or_hostname("999.1.1.1"))
+        self.assertFalse(validate_ip_or_hostname("invalid host name"))
+        self.assertFalse(validate_ip_or_hostname("-bad"))
 
 
 class TestValidateMac(unittest.TestCase):
@@ -160,17 +207,45 @@ class TestBuildRdpContent(unittest.TestCase):
         self.assertNotIn("username:s:", content)
         self.assertIn("prompt for password:i:1", content)
 
+    def test_authentication_level_suppresses_cert_warning(self):
+        # xrdp hosts use self-signed certs; level 0 avoids the per-connect
+        # "unknown publisher" security dialog.
+        content = _build_rdp_content("10.0.0.5", "user", "pw", True, 1920, 1080)
+        self.assertIn("authentication level:i:0", content)
+
+    def test_prompt_for_password_fallback(self):
+        # When credential registration failed, mstsc must prompt even though a
+        # password is set (connecting without one drops xrdp sessions).
+        content = _build_rdp_content(
+            "10.0.0.5", "user", "pw", True, 1920, 1080,
+            prompt_for_password=True,
+        )
+        self.assertIn("prompt for password:i:1", content)
+
 
 class TestRegisterRdpCredentials(unittest.TestCase):
     def test_registers_cmdkey_entry(self):
         with patch("wol_app.utils.subprocess.run") as mock_run:
             _register_rdp_credentials("192.168.1.10", "user", "pw")
-        cmd = mock_run.call_args[0][0]
-        self.assertEqual(cmd[0], "cmdkey")
-        self.assertEqual(cmd[1], "/generic:192.168.1.10")
-        self.assertEqual(cmd[2], "/user:user")
-        self.assertEqual(cmd[3], "/pass:pw")
-        self.assertEqual(mock_run.call_args[1]["check"], False)
+        # mstsc only reads TERMSRV/<host> entries — the prefix is mandatory.
+        store_cmd = [
+            c[0][0] for c in mock_run.call_args_list
+            if any(str(a).startswith("/generic:") for a in c[0][0])
+        ][0]
+        self.assertEqual(store_cmd[0], "cmdkey")
+        self.assertEqual(store_cmd[1], "/generic:TERMSRV/192.168.1.10")
+        self.assertEqual(store_cmd[2], "/user:user")
+        self.assertEqual(store_cmd[3], "/pass:pw")
+
+    def test_removes_legacy_bare_entry(self):
+        with patch("wol_app.utils.subprocess.run") as mock_run:
+            _register_rdp_credentials("192.168.1.10", "user", "pw")
+        # The legacy entry under the bare host (no TERMSRV/ prefix) is deleted.
+        delete_cmds = [
+            c[0][0] for c in mock_run.call_args_list
+            if len(c[0][0]) >= 2 and str(c[0][0][1]).startswith("/delete:")
+        ]
+        self.assertEqual(delete_cmds[0][1], "/delete:192.168.1.10")
 
     def test_skips_when_username_empty(self):
         with patch("wol_app.utils.subprocess.run") as mock_run:
@@ -186,7 +261,7 @@ class TestRegisterRdpCredentials(unittest.TestCase):
         with patch("wol_app.utils.subprocess.run",
                    side_effect=OSError("cmdkey missing")) as mock_run:
             _register_rdp_credentials("192.168.1.10", "user", "pw")
-        mock_run.assert_called_once()  # no exception propagated
+        self.assertTrue(mock_run.called)  # no exception propagated
 
 
 class TestLaunchRemoteDesktop(unittest.TestCase):

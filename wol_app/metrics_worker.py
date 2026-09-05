@@ -72,18 +72,21 @@ class MetricsWorker(_CancellableWorker):
         username: str = "",
         password: str = "",
         timeout: float = 5.0,
+        watch: "list[str] | None" = None,
     ) -> None:
         super().__init__()
         self.ip = ip
         self.username = username
         self.password = password
         self.timeout = timeout
+        self.watch = watch
 
     def run(self) -> None:
         try:
             ok, result = get_metrics(
                 self.ip, self.username, self.password,
                 timeout=self.timeout, sock_sink=self._sink,
+                watch=self.watch,
             )
         except Exception as e:  # never let run() raise: it would wedge the
             # dashboard's single-flight flag and leave the QThread dangling.

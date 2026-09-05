@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.1.0                                                                 |
+| **version**         | 2.2.0                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -768,6 +768,7 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
+| 2.2.0   | 2026-09-04 | Service Watch Edition      | Watched processes on the dashboard (up to 8 per device): live status chips (green/amber/grey), services panel with PID/uptime/RAM/CPU + llama.cpp model, `:port` loopback probing, "⚡ Inference active" GPU heuristic, device-dialog field `watch_processes`; host service protocol v3 (`metrics` + `watch` → `processes` map, back-compatible) |
 | 2.1.0   | 2026-09-03 | Dashboard Edition          | Per-device dashboard (CPU/RAM/GPU/VRAM ring gauges + sparklines, 2–10 s polling, NVIDIA-only GPU via nvidia-smi), remote batch execution with per-device library + console, host service protocol v2 (`metrics`/`run_batch`, double opt-in gating via `--enable-batch`), 📊 tile in devices view (no sidebar entry), cancellable socket workers |
 | 2.0.0   | 2026-09-01 | Modern UI Edition          | Modern "Dark Control Center" sidebar layout (Devices/Manage/Schedule/Logs/Settings/About screens), installer UI-mode choice, display mode (dark/light/auto), Devices screen with card/list dual view and sort drop-down |
 | 1.10.0  | 2026-08-22 | Search & Remote Desktop Edition | Remote Desktop sessions (fullscreen/window), device search in main window/device manager/scanner/schedules |

@@ -5,6 +5,8 @@ ctypes.windll inside functions, so importing is safe on Windows; on other
 platforms the tests that need Windows-only behaviour are skipped.
 """
 
+import http.client
+import json
 import os
 import subprocess
 import sys
@@ -96,6 +98,210 @@ class TestCollectMetrics:
         wol_host_service._gpu_metrics_cached()
         wol_host_service._gpu_metrics_cached()
         assert calls["n"] == 1  # second call hits the cache
+
+
+class TestWatchedProcesses:
+    """The optional "watch" field on the metrics command (protocol v3)."""
+
+    def test_protocol_version_at_least_3(self):
+        assert wol_host_service.PROTOCOL_VERSION >= 3
+
+    def test_parse_watch_entry(self):
+        assert wol_host_service._parse_watch_entry(
+            "llama-server.exe:8080") == ("llama-server.exe", 8080)
+        assert wol_host_service._parse_watch_entry(
+            "llama-server.exe") == ("llama-server.exe", None)
+        # A non-numeric or out-of-range "port" stays part of the name
+        assert wol_host_service._parse_watch_entry(
+            "agent:service") == ("agent:service", None)
+        assert wol_host_service._parse_watch_entry(
+            "x.exe:99999") == ("x.exe:99999", None)
+
+    def test_watched_processes_not_running(self, monkeypatch):
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = []
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        result = wol_host_service._watched_processes(["llama-server.exe"])
+        assert result == {"llama-server.exe": {"running": False}}
+
+    def test_watched_processes_running_with_port(self, monkeypatch):
+        proc = mock.MagicMock()
+        proc.info = {"pid": 4711, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 12.5
+        proc.memory_info.return_value = mock.MagicMock(rss=5 * 1024**3)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe", "-m",
+                                     "models/qwen2.5.gguf", "--port", "8080"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: True)
+        monkeypatch.setattr(wol_host_service.time, "time", lambda: 3600.0)
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        info = result["llama-server.exe:8080"]
+        assert info["running"] is True
+        assert info["pid"] == 4711
+        assert info["api_port"] == 8080
+        assert info["api_port_open"] is True
+        assert info["model"] == "qwen2.5"
+        assert info["ram"] == 5 * 1024**3
+
+    def test_watched_processes_port_closed(self, monkeypatch):
+        proc = mock.MagicMock()
+        proc.info = {"pid": 1, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 0.0
+        proc.memory_info.return_value = mock.MagicMock(rss=1)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: False)
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        info = result["llama-server.exe:8080"]
+        assert info["running"] is True
+        assert info["api_port_open"] is False
+
+    def test_collect_metrics_adds_processes_only_with_watch(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "psutil", None)  # base metrics degrade
+        monkeypatch.setattr(wol_host_service, "_gpu_metrics_cached",
+                            lambda: {"gpu": None, "vram_used": None,
+                                     "vram_total": None, "gpu_name": None})
+        assert "processes" not in wol_host_service.collect_metrics()
+        metrics = wol_host_service.collect_metrics(watch=["x.exe"])
+        assert metrics["processes"] == {"x.exe": {"running": False}}
+
+
+class TestLoadedModels:
+    """GET /v1/models on the watched port -> the "models" field (v4)."""
+
+    def test_protocol_version_at_least_4(self):
+        assert wol_host_service.PROTOCOL_VERSION >= 4
+
+    def test_model_display_name_keeps_dots(self):
+        # The regression: splitext truncated "Qwen3.8-Flash-256k-62" to "Qwen3".
+        assert wol_host_service._model_display_name(
+            "Qwen3.8-Flash-256k-62") == "Qwen3.8-Flash-256k-62"
+        # Only a real model extension is stripped.
+        assert wol_host_service._model_display_name(
+            "models/qwen2.5-coder-14b-q4.gguf") == "qwen2.5-coder-14b-q4"
+        assert wol_host_service._model_display_name(
+            r"C:\models\My Model.safetensors") == "My Model"
+        # A dot that is not a known extension stays part of the name.
+        assert wol_host_service._model_display_name(
+            "unsloth/Qwen3.8-27B-GGUF:Q4_K_M") == "Qwen3.8-27B-GGUF:Q4_K_M"
+
+    def test_parse_api_json_prefers_alias_resident_only(self):
+        payload = {"data": [
+            {"id": "qwen.gguf", "alias": "Qwen3.8-Flash-256k-62",
+             "status": {"value": "loaded"}},
+            {"id": "idle/Idle-Model-1.5", "status": {"value": "sleeping"}},
+            {"id": "other/model.gguf", "status": {"value": "unloaded"}},
+            {"id": "plain.gguf", "status": "loaded"},
+            "junk",
+        ]}
+        names = wol_host_service._models_from_api_json(payload)
+        # alias preferred; loaded + sleeping count, unloaded skipped;
+        # dots inside names preserved, real extension stripped.
+        assert names == ["Qwen3.8-Flash-256k-62", "Idle-Model-1.5", "plain"]
+
+    def test_parse_api_json_malformed(self):
+        assert wol_host_service._models_from_api_json({}) == []
+        assert wol_host_service._models_from_api_json(
+            {"data": "nope"}) == []
+        assert wol_host_service._models_from_api_json(
+            {"data": [{"status": {"value": "loaded"}}]}) == []
+
+    def test_fetch_loaded_models_ok(self, monkeypatch):
+        body = json.dumps({"data": [
+            {"id": "x.gguf", "alias": "MyModel",
+             "status": {"value": "loaded"}}]}).encode()
+        fake_conn = mock.MagicMock()
+        fake_conn.getresponse.return_value.status = 200
+        fake_conn.getresponse.return_value.read.return_value = body
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_conn)
+        assert wol_host_service._fetch_loaded_models(8080) == ["MyModel"]
+        fake_conn.request.assert_called_once_with(
+            "GET", "/v1/models", headers={"Accept": "application/json"})
+
+    def test_fetch_loaded_models_degrades(self, monkeypatch):
+        # non-200 -> []
+        fake_conn = mock.MagicMock()
+        fake_conn.getresponse.return_value.status = 404
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_conn)
+        assert wol_host_service._fetch_loaded_models(1) == []
+        # connection error -> []
+        def boom(*a, **k):
+            raise ConnectionRefusedError()
+        monkeypatch.setattr(wol_host_service.http.client, "HTTPConnection",
+                            boom)
+        assert wol_host_service._fetch_loaded_models(1) == []
+
+    def test_watched_processes_reports_models(self, monkeypatch):
+        proc = mock.MagicMock()
+        proc.info = {"pid": 4711, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 0.0
+        proc.memory_info.return_value = mock.MagicMock(rss=1)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe", "-m", "a.gguf"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: True)
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_loaded_models",
+            lambda port: ["Qwen3.8-Flash-256k-50", "glm-4.7-air"])
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        info = result["llama-server.exe:8080"]
+        assert info["api_port_open"] is True
+        assert info["models"] == ["Qwen3.8-Flash-256k-50", "glm-4.7-air"]
+
+    def test_watched_processes_no_models_when_port_closed(self, monkeypatch):
+        proc = mock.MagicMock()
+        proc.info = {"pid": 1, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 0.0
+        proc.memory_info.return_value = mock.MagicMock(rss=1)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: False)
+        called = []
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_loaded_models",
+            lambda port: called.append(port) or [])
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        assert "models" not in result["llama-server.exe:8080"]
+        assert called == []  # API never queried while the port is closed
 
 
 class TestBatchGating:

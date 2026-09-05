@@ -26,6 +26,7 @@ from wol_app.widgets.toggle_switch import ToggleWithLabel
 from wol_app.utils import (
     get_ip_key,
     validate_device_name,
+    validate_ip_or_hostname,
     validate_mac,
     validate_password,
     validate_username,
@@ -161,6 +162,11 @@ class DeviceDialog(QDialog):
             return
         if not validate_mac(mac):
             QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_mac"))
+            return
+        # The address is optional but must be a valid IPv4 or host name when set
+        # (xrdp/Linux hosts are typically reached by name, e.g. ubuntu-mercury).
+        if ip and not validate_ip_or_hostname(ip):
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_ip_or_host"))
             return
 
         username: str = self.username_input.text().strip()

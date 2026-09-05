@@ -9,7 +9,12 @@ from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from wol_app.network_scanner import find_interface_for_device
-from wol_app.utils import run_subprocess_safe, validate_ip, validate_mac
+from wol_app.utils import (
+    run_subprocess_safe,
+    validate_ip,
+    validate_ip_or_hostname,
+    validate_mac,
+)
 
 # Max concurrent magic packets when waking all devices (network-friendly)
 MAX_CONCURRENT_WAKE = 8
@@ -183,7 +188,7 @@ class WOLEngine(QObject):
         if not ip:
             status = "unknown"
             message = f"No IP configured for {name}. Add an IP to enable ping checks."
-        elif not validate_ip(ip):
+        elif not validate_ip_or_hostname(ip):
             status = "unknown"
             message = f"Invalid IP configured for {name}."
         else:

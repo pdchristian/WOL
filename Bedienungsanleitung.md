@@ -76,7 +76,7 @@ Starten Sie die Anwendung über:
 
 ## Die moderne Benutzeroberfläche
 
-Mit **Version 2.1.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung – geöffnet über das 📊-Symbol an jedem Gerät (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
+Mit **Version 2.2.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
 
 > **Wichtig:** Die moderne und die klassische Oberfläche bieten **exakt dieselben Funktionen** – sie unterscheiden sich nur im Layout. Alle Einstellungen, Geräte, Zeitpläne, Protokolle und Sicherheitsfunktionen sind identisch. Sie können jederzeit zwischen beiden wechseln.
 
@@ -172,7 +172,7 @@ Die gewählte Sortierung wird **gespeichert** und gilt für **beide Ansichten**.
 3. Geben Sie folgende Daten ein:
    - **Gerätename:** Ein sprechender Name (z. B. "Büro-PC", "Gaming-Rig")
    - **MAC-Adresse:** Die MAC-Adresse des Zielsystems (Format: `AA:BB:CC:DD:EE:FF`)
-   - **IP-Adresse:** Optional, für Status-Prüfung per Ping
+   - **IP-Adresse / Hostname:** Optional, für Status-Prüfung per Ping. Neben IPv4-Adressen sind auch Hostnamen erlaubt (z. B. `ubuntu-mercury` oder `nas01.lan`) – nützlich für Geräte mit wechselnder DHCP-Adresse und für Linux-/xrdp-Rechner, die per Namen erreichbar sein müssen
    - **Nutzer:** Optional, Benutzername für Remote-Shutdown (z. B. `Administrator` oder `Benutzername`)
    - **Passwort:** Optional, Passwort für Remote-Shutdown (wird verschlüsselt gespeichert)
 4. Klicken Sie auf **Speichern**.
@@ -394,9 +394,13 @@ Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten
    - **Remote Window** – öffnet die Sitzung in einem Fenster mit der konfigurierten Auflösung
 3. Die Windows-Remotedesktopverbindung (`mstsc`) startet und verbindet sich mit dem Gerät.
 
-> **Voraussetzung:** Auf dem Zielsystem muss **Remotedesktop** aktiviert sein (Systemeigenschaften → Remotefunktionen → „Remotedesktopverbindungen zulassen“). Das Gerät muss eine **IP-Adresse** besitzen; Benutzername und Passwort sind optional – ohne Passwort fragt `mstsc` beim Verbinden danach.
+> **Voraussetzung:** Auf dem Zielsystem muss **Remotedesktop** aktiviert sein (Systemeigenschaften → Remotefunktionen → „Remotedesktopverbindungen zulassen“). Das Gerät muss eine **IP-Adresse oder einen Hostnamen** besitzen; Benutzername und Passwort sind optional – ohne Passwort fragt `mstsc` beim Verbinden danach.
 
-> **Passwort-Anmeldung:** Aktuelle Windows-Versionen (10/11) übernehmen das Passwort aus Sicherheitsgründen nicht mehr aus der `.rdp`-Datei. Die Anwendung legt die Anmeldedaten daher beim Start einer Remote-Desktop-Sitzung automatisch über `cmdkey` im **Windows-Anmeldeinformations-Manager** ab (`/generic:<IP> /user:<Benutzer> /pass:<Passwort>`). `mstsc` liest diesen Eintrag beim Verbinden aus – Sie müssen das Passwort dann nicht neu eingeben. Ist die Registrierung nicht möglich, fragt `mstsc` wie bisher nach dem Passwort.
+> **Linux-/xrdp-Gegenstellen:** Manche xrdp-Konfigurationen (typisch für Ubuntu) trennen Verbindungen auf die rohe IPv4-Adresse sofort wieder. Tragen Sie in diesem Fall den **Hostnamen** des Rechners (z. B. `ubuntu-mercury`) im Feld *IP-Adresse / Hostname* ein – die Anwendung verbindet Remote Desktop dann über den Namen.
+
+> **Passwort-Anmeldung:** Aktuelle Windows-Versionen (10/11) übernehmen das Passwort aus Sicherheitsgründen nicht mehr aus der `.rdp`-Datei. Die Anwendung legt die Anmeldedaten daher beim Start einer Remote-Desktop-Sitzung automatisch über `cmdkey` im **Windows-Anmeldeinformations-Manager** ab – zwingend mit dem Ziel-Präfix `TERMSRV/`, da `mstsc` sonst keinen Eintrag findet (`/generic:TERMSRV/<IP> /user:<Benutzer> /pass:<Passwort>`). `mstsc` liest diesen Eintrag beim Verbinden aus – Sie müssen das Passwort dann nicht neu eingeben. Ist die Registrierung nicht möglich, fragt `mstsc` wie bisher nach dem Passwort.
+
+> **Linux-/xrdp-Gegenstellen:** Gegenüber Windows-Hosts, die ohne passenden Anmelde-Eintrag einfach noch einmal nachfragen, bricht `xrdp` (Ubuntu) eine Verbindung ohne Passwort sofort ab – das `mstsc`-Fenster öffnet und schließt sich in diesem Fall innerhalb einer Sekunde. Stellen Sie daher sicher, dass Benutzername **und** Passwort am Gerät hinterlegt sind. Zusätzlich setzt die Anwendung `authentication level:i:0`, damit bei selbstsignierten Server-Zertifikaten (bei xrdp üblich) nicht bei jeder Verbindung die Sicherheitswarnung erscheint.
 
 ### Auflösung für das Fenster einstellen
 1. Menü: **Tools → Einstellungen...**
@@ -424,11 +428,27 @@ Vier Karten zeigen jeweils einen Ring-Gauge mit Prozentwert, eine Detailzeile (z
 Das Dashboard aktualisiert die Werte automatisch im gewählten **Intervall** (Drop-down rechts oben: 2 / 3 / 5 / 10 Sekunden; Standard 3 s). Im Hintergrund wird jeweils nur eine Messung gleichzeitig ausgeführt; ist das Gerät nicht erreichbar, wechselt das Abzeichen auf **Offline** und die Fehlerursache erscheint unter der Konsole.
 
 **Voraussetzungen am Zielsystem:**
-1. Aktualisierter **WOL Host Service** (Protokollversion 2 – enthalten ab dieser Version; ältere Dienste melden *„Host service too old for the dashboard“*).
+1. Aktualisierter **WOL Host Service** (Protokollversion 3 – enthalten ab dieser Version; ältere Dienste melden *„Host service too old for the dashboard“*).
 2. Im Dashboard ist das Kontrollkästchen **Batch-Ausführung auf diesem Gerät erlauben** aktiviert (siehe unten) – es wird nur einmal pro Gerät gesetzt.
 3. Für **GPU/VRAM**: NVIDIA-Grafikkarte mit aktuellem Treiber (`nvidia-smi` im Systempfad). Ohne NVIDIA-GPU stehen die beiden Karten auf **k/A**.
 
 > Die Messwerte werden mit den Anmeldedaten des Geräts abgefragt (wie beim Remote Shutdown). Ohne gültige Benutzerdaten im Geräteeintrag liefert das Dashboard keine Werte.
+
+### Beobachtete Prozesse (Service-Status)
+
+Das Dashboard kann **benannte Prozesse auf dem Zielsystem beobachten** – z. B. einen lokalen llama.cpp-Server. Pro Gerät sind bis zu **8 Prozesse** konfigurierbar:
+
+1. Öffnen Sie den **Geräte-Dialog** (Bearbeiten-Symbol bzw. Rechtsklick → *Bearbeiten*).
+2. Tragen Sie das Feld **Beobachtete Prozesse** ein – kommagetrennt, z. B. `llama-server.exe, ollama.exe`.
+3. Mit einem **Port-Suffix** (`llama-server.exe:8080`) prüfen Sie zusätzlich, ob die API des Prozesses antwortet.
+
+Im Dashboard erscheint daraufhin:
+
+- Ein **Status-Chip** pro Prozess im Kopfbereich: **grün** (läuft, API-Port erreichbar bzw. kein Port geprüft), **gelb** (*startet…* – Prozess läuft, Port noch geschlossen) oder **grau** (läuft nicht). Ist das Gerät offline oder der Host Service zu alt (vor Protokoll v3), werden die Chips ausgeblendet.
+- Ein **Service-Panel** mit **PID**, **Uptime**, **Prozess-RAM** und **Prozess-CPU** – bei llama.cpp-Prozessen zusätzlich das **geladene Modell** (aus der Kommandozeile erkannt, 🦙-Symbol).
+- Ein **⚡ Inferenz aktiv**-Abzeichen, wenn ein bereiter Service mit dauerhaft hoher GPU-Auslastung (≥ 60 %) zusammenfällt.
+
+> **Hinweis:** Die Prozess-Beobachtung erfordert den **WOL Host Service ab Protokollversion 3** auf dem Zielsystem. Ältere Dienste ignorieren die Anfrage einfach – es erscheint kein Fehler, das Panel wird nur nicht angezeigt.
 
 ### Batches erstellen und ausführen
 Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
@@ -603,4 +623,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.1.0 | Wake-on-LAN Manager*
+*Version 2.2.0 | Wake-on-LAN Manager*

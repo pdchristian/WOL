@@ -20,6 +20,45 @@ def validate_ip(ip: str) -> bool:
     return bool(re.match(ipv4_pattern, ip))
 
 
+# RFC 1123 hostname: labels of alphanumerics plus interior hyphens,
+# 1-63 chars each, optionally dot-separated (FQDN), max 253 chars total.
+_HOSTNAME_RE = re.compile(
+    r'^(?=.{1,253}$)'
+    r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?'
+    r'(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'
+)
+
+
+def validate_hostname(hostname: str) -> bool:
+    """Validate a DNS hostname / FQDN (RFC 1123, single-label allowed)."""
+    return bool(_HOSTNAME_RE.match(hostname.strip()))
+
+
+def validate_ip_or_hostname(value: str) -> bool:
+    """Validate a device address: either an IPv4 address or a hostname.
+
+    Devices are addressed by ping, shutdown and Remote Desktop (``mstsc``),
+    all of which accept host names. Host names are especially useful for
+    xrdp/Linux hosts that must be reached by name (e.g. ``ubuntu-mercury``)
+    and for devices whose DHCP address changes.
+
+    A value whose labels are all numeric must be a valid IPv4 address —
+    otherwise a mistyped address such as ``999.1.1.1`` would silently pass as
+    a "hostname".
+    """
+    value = value.strip()
+    if not value:
+        return False
+    if validate_ip(value):
+        return True
+    if not validate_hostname(value):
+        return False
+    if all(label.isdigit() for label in value.split(".")):
+        # Looks like an IPv4 address but failed validate_ip().
+        return False
+    return True
+
+
 def validate_mac(mac: str) -> bool:
     """Validate MAC address format (colon or hyphen separated).
 
@@ -105,17 +144,29 @@ def _build_rdp_content(
     fullscreen: bool,
     width: int,
     height: int,
+    prompt_for_password: bool = False,
 ) -> str:
     """Build the content of a temporary ``.rdp`` file for *ip*.
 
     mstsc cannot take credentials on the command line, so the username and
     password are embedded in the file. ``password:54:`` is base64-encoded
     UTF-16LE — the exact format mstsc expects.
+
+    *prompt_for_password* forces mstsc's credential prompt even when a
+    password is set. Used as a fallback when the password could not be
+    registered with the Credential Manager: connecting without credentials
+    is not a graceful failure — Windows hosts re-prompt, but xrdp hosts
+    (Linux) drop the connection immediately.
     """
+    prompt = (not password) or prompt_for_password
     lines = [
         f"full address:s:{ip}",
         # Use the embedded password instead of prompting when one is set.
-        f"prompt for password:i:{0 if password else 1}",
+        f"prompt for password:i:{1 if prompt else 0}",
+        # Self-signed server certificates (typical for xrdp/Linux hosts) would
+        # otherwise trigger the "unknown publisher" security dialog on every
+        # connect. Level 0 connects without verifying the server certificate.
+        "authentication level:i:0",
     ]
     if username:
         lines.append(f"username:s:{username}")
@@ -368,7 +419,7 @@ def auto_rdp_resolution(
     return (target_width, target_height)
 
 
-def _register_rdp_credentials(host: str, username: str, password: str) -> None:
+def _register_rdp_credentials(host: str, username: str, password: str) -> bool:
     """Store Remote Desktop credentials in the Windows Credential Manager.
 
     Windows 10/11 ``mstsc`` ignores the password embedded in an ``.rdp``
@@ -377,24 +428,49 @@ def _register_rdp_credentials(host: str, username: str, password: str) -> None:
     matching entry automatically when it connects to *host*, which lets the
     session open without re-prompting for the password.
 
-    The entry is scoped to *username* on *host*. Nothing extra is written to
-    disk; the Credential Manager stores the secret itself. Failures are
-    non-fatal: if the registration fails, mstsc simply falls back to its own
-    login prompt.
+    IMPORTANT: mstsc only picks up entries whose target carries the
+    ``TERMSRV/`` prefix (``TERMSRV/<host>``) — a plain generic entry without
+    the prefix is never offered to Remote Desktop. Without a matching entry
+    mstsc connects with an empty password, which a Windows host masks with a
+    re-prompt dialog but an xrdp host answers by dropping the connection
+    immediately (the mstsc window opens and closes right away).
+
+    A generic entry stored under the bare *host* (the pre-TERMSRV format used
+    by older app versions) is deleted so it cannot linger in the Credential
+    Manager.
 
     Args:
         host: Target host (IPv4 address or name) as used by mstsc.
         username: RDP username; empty skips registration.
         password: RDP password; empty skips registration.
+
+    Returns:
+        True when *username* and *password* were stored (or nothing needed to
+        be stored because one of them is empty). False when a password was
+        present but ``cmdkey`` could not run or reported an error — the caller
+        then forces mstsc's own credential prompt instead of connecting with
+        an empty password.
     """
     if not username or not password:
-        return
-    cmd = ["cmdkey", f"/generic:{host}", f"/user:{username}", f"/pass:{password}"]
+        return True
+    # Remove a legacy entry stored under the bare host (old format without
+    # the TERMSRV/ prefix). Non-fatal: the entry usually does not exist.
     try:
-        subprocess.run(cmd, check=False)
+        subprocess.run(["cmdkey", f"/delete:{host}"], check=False)
     except OSError:
-        # cmdkey is unavailable; mstsc will prompt for the password itself.
         pass
+    cmd = [
+        "cmdkey",
+        f"/generic:TERMSRV/{host}",
+        f"/user:{username}",
+        f"/pass:{password}",
+    ]
+    try:
+        result = subprocess.run(cmd, check=False)
+    except OSError:
+        # cmdkey is unavailable; the caller will make mstsc prompt instead.
+        return False
+    return getattr(result, "returncode", 0) == 0
 
 
 def launch_remote_desktop(
@@ -446,10 +522,16 @@ def launch_remote_desktop(
         raise ValueError("IP address is empty")
 
     # Register the credentials with the Windows Credential Manager so mstsc
-    # can log in without re-prompting for the password. Non-fatal on failure.
-    _register_rdp_credentials(ip, username, password)
+    # can log in without re-prompting for the password. If that fails we must
+    # NOT connect anyway: mstsc would then authenticate without a password,
+    # which Windows hosts mask with a re-prompt but xrdp hosts answer by
+    # closing the session immediately (window opens and vanishes again).
+    credentials_ready = _register_rdp_credentials(ip, username, password)
 
-    content = _build_rdp_content(ip, username, password, fullscreen, width, height)
+    content = _build_rdp_content(
+        ip, username, password, fullscreen, width, height,
+        prompt_for_password=not credentials_ready,
+    )
 
     # Write to a per-device file in ~/.wol_app/rdp/, named after the device
     # (falling back to its IP). The file is still temporary: it is deleted

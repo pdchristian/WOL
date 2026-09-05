@@ -81,6 +81,38 @@ class TestDeviceIO:
         names = [d["name"] for d in config.get_devices()]
         assert names == ["Good"]
 
+    def test_import_accepts_hostname(self, config, tmp_path):
+        src = tmp_path / "devices.json"
+        src.write_text(json.dumps([
+            {"name": "Mercury", "mac": "AA:BB:CC:DD:EE:10",
+             "ip": "ubuntu-mercury"},
+            {"name": "Fqdn", "mac": "AA:BB:CC:DD:EE:11",
+             "ip": "nas01.lan.example.com"},
+        ]), encoding="utf-8")
+        with patch("wol_app.device_io.QFileDialog.getOpenFileName",
+                   return_value=(str(src), "")), \
+             patch("wol_app.device_io.QMessageBox.information"):
+            assert import_devices(config) is True
+        devices = {d["name"]: d for d in config.get_devices()}
+        assert devices["Mercury"]["ip"] == "ubuntu-mercury"
+        assert devices["Fqdn"]["ip"] == "nas01.lan.example.com"
+
+    def test_import_skips_invalid_ip(self, config, tmp_path):
+        # A mistyped address must be reported, not silently truncated.
+        src = tmp_path / "devices.json"
+        src.write_text(json.dumps([
+            {"name": "Good", "mac": "AA:BB:CC:DD:EE:12", "ip": "192.168.1.5"},
+            {"name": "Bad", "mac": "AA:BB:CC:DD:EE:13", "ip": "999.1.1.1"},
+            {"name": "Also Bad", "mac": "AA:BB:CC:DD:EE:14",
+             "ip": "host name with spaces"},
+        ]), encoding="utf-8")
+        with patch("wol_app.device_io.QFileDialog.getOpenFileName",
+                   return_value=(str(src), "")), \
+             patch("wol_app.device_io.QMessageBox.information"):
+            assert import_devices(config) is True
+        names = [d["name"] for d in config.get_devices()]
+        assert names == ["Good"]
+
 
 class TestBatchImportExport:
     """Dashboard batches travel with the device through export/import."""

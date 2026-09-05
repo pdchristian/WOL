@@ -69,6 +69,45 @@ INTERVAL_CHOICES = (2, 3, 5, 10)
 _GAUGE_TOKENS = {"cpu": "gauge_cpu", "ram": "gauge_ram", "gpu": "gauge_gpu",
                  "vram": "gauge_vram"}
 
+# "Inferenz aktiv" indicator: whole-machine GPU load at/above this percent
+# for INFERENCE_GPU_POLLS consecutive polls while a watched service is
+# ready. The host service only reports the machine's GPU utilization, so
+# this is a heuristic that tells an idle llama-server apart from one
+# answering requests (shown as a small badge next to the service name).
+INFERENCE_GPU_PCT = 60.0
+INFERENCE_GPU_POLLS = 2
+
+
+def _watch_display_name(entry: str) -> str:
+    """``"llama-server.exe:8080"`` -> ``"llama-server"`` (chip/row label)."""
+    name = entry.rpartition(":")[0] or entry
+    if name.lower().endswith(".exe"):
+        name = name[:-4]
+    return name
+
+
+def _watch_icon(entry: str) -> str:
+    return "🦙" if "llama" in entry.lower() else "⚙️"
+
+
+def _model_names(info: dict) -> list[str]:
+    """Loaded model names for one watched-process entry (dashboard order).
+
+    Prefers the host's ``models`` list (llama-server API ``GET /v1/models``,
+    host protocol v4: every model resident on the server, loaded or sleeping
+    in a llama-swap setup). Falls back to the single argv-derived ``model``
+    (``-m`` flag) that older hosts report. Names keep their internal dots
+    (``Qwen3.8-Flash-256k-62``) - the host already strips only a real file
+    extension. Never raises; may return an empty list.
+    """
+    models = info.get("models")
+    if isinstance(models, list):
+        names = [str(m).strip() for m in models if str(m or "").strip()]
+        if names:
+            return names
+    legacy = str(info.get("model") or "").strip()
+    return [legacy] if legacy else []
+
 
 def _fmt_bytes_gb(value: int | float | None) -> str:
     """Bytes → "12.3" GB string (one decimal, German-agnostic dot)."""
@@ -238,6 +277,232 @@ class MetricCard(QWidget):
         self.spark.reset()
 
 
+class ServiceChip(QLabel):
+    """Header chip for one watched process (prototype .svc-chip).
+
+    Three visual states, matching the design prototype:
+    running + API port open → green "aktiv", running but port closed →
+    amber "startet…", not found → grey "inaktiv". The chip is hidden when
+    the host is offline or the host service is too old (no ``processes``).
+    """
+
+    def __init__(self, entry: str, parent=None) -> None:
+        super().__init__(parent)
+        self.entry = entry
+        self.setFixedHeight(20)
+        # Chip padding comes from contentsMargins, NOT the QSS padding:
+        # the initial set_state(None) hides the label, and a QLabel that was
+        # hidden before its first style polish never picks up QSS box-model
+        # properties (padding stays 0) - which made the chips render tight.
+        self.setContentsMargins(22, 0, 22, 0)
+        self.setAlignment(
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self._state = ""
+        self.set_state(None)
+
+    def set_state(self, info: dict | None) -> None:
+        """*info* is the per-entry dict from the metrics ``processes`` map.
+
+        ``None`` hides the chip (host offline / host service too old).
+        """
+        if info is None:
+            self.setObjectName("")
+            self.setText("")
+            self.setToolTip("")
+            self.setVisible(False)
+            self._repolish("")
+            return
+        self.setVisible(True)
+        running = bool(info.get("running"))
+        # A port was only requested for "name.exe:port" entries; without one
+        # "running" alone is enough for the green state.
+        wants_port = info.get("api_port") is not None
+        port_open = bool(info.get("api_port_open"))
+        ready = running and (port_open or not wants_port)
+        name = _watch_display_name(self.entry)
+        icon = _watch_icon(self.entry)
+        if ready:
+            state, model = "svcChipRunning", ""
+            names = _model_names(info)
+            if names:
+                # Chip stays compact: first model, "+N" for the rest.
+                label = names[0]
+                if len(names) > 1:
+                    label = f"{label} +{len(names) - 1}"
+                model = f" · {label}"
+            self.setText(f"{icon} {name}{model}")
+            tip = Translations.tr("modern.dashboard.svc.tip_running",
+                                  pid=info.get("pid", "?"),
+                                  uptime=_fmt_uptime(info.get("uptime")),
+                                  cpu=info.get("cpu", 0.0),
+                                  ram=_fmt_bytes_gb(info.get("ram")))
+            if names:
+                tip += "\n" + Translations.tr(
+                    "modern.dashboard.svc.tip_models",
+                    models=", ".join(names))
+        elif running:
+            state = "svcChipProbing"
+            self.setText(f"{icon} {name} · {Translations.tr('modern.dashboard.svc.starting')}")
+            tip = Translations.tr("modern.dashboard.svc.tip_no_port",
+                                  pid=info.get("pid", "?"),
+                                  port=info.get("api_port", ""))
+        else:
+            state = "svcChipInactive"
+            self.setText(f"{icon} {name} · {Translations.tr('modern.dashboard.svc.inactive')}")
+            tip = Translations.tr("modern.dashboard.svc.tip_stopped")
+        self.setToolTip(tip)
+        self._repolish(state)
+
+    def _repolish(self, state: str) -> None:
+        if self._state == state:
+            return
+        self._state = state
+        self.setObjectName(state)
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
+
+
+class ServiceRow(QWidget):
+    """One row of the services panel: icon, status line, process metrics."""
+
+    def __init__(self, entry: str, parent=None) -> None:
+        super().__init__(parent)
+        self.entry = entry
+        self.setObjectName("svcRow")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(16)
+
+        self.icon = QLabel(_watch_icon(entry))
+        self.icon.setObjectName("svcIcon")
+        self.icon.setFixedSize(42, 42)
+        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        self.name = QLabel(_watch_display_name(entry))
+        self.name.setObjectName("svcName")
+        self.live = QLabel("")
+        self.live.setObjectName("svcStatusWarn")
+        name_row.addWidget(self.name)
+        name_row.addWidget(self.live, 0, Qt.AlignmentFlag.AlignVCenter)
+        name_row.addStretch()
+        text_col.addLayout(name_row)
+        self.status = QLabel("")
+        self.status.setObjectName("svcStatusOff")
+        text_col.addWidget(self.status)
+        # One mono line per loaded model (llama-server GET /v1/models, host
+        # protocol v4); hidden until the metrics carry a model list.
+        self._model_holder = QVBoxLayout()
+        self._model_holder.setSpacing(1)
+        self._model_labels: list[QLabel] = []
+        text_col.addLayout(self._model_holder)
+        layout.addLayout(text_col, 1)
+
+        # Right-aligned metric columns (value over caption), like the
+        # prototype's .svc-metrics.
+        self._metric_labels: dict[str, tuple[QLabel, QLabel]] = {}
+        metrics_row = QHBoxLayout()
+        metrics_row.setSpacing(22)
+        for key in ("uptime", "ram", "cpu"):
+            col = QVBoxLayout()
+            col.setSpacing(0)
+            value = QLabel("")
+            value.setObjectName("svcMetricValue")
+            value.setAlignment(Qt.AlignmentFlag.AlignRight)
+            caption = QLabel(Translations.tr(f"modern.dashboard.svc.{key}"))
+            caption.setObjectName("svcMetricCaption")
+            caption.setAlignment(Qt.AlignmentFlag.AlignRight)
+            col.addWidget(value)
+            col.addWidget(caption)
+            self._metric_labels[key] = (value, caption)
+            metrics_row.addLayout(col)
+        # Nested layouts cannot carry an alignment; the columns are wrapped
+        # in a widget so they sit vertically centered next to the text.
+        metrics_wrap = QWidget()
+        metrics_wrap.setLayout(metrics_row)
+        layout.addWidget(metrics_wrap, 0, Qt.AlignmentFlag.AlignVCenter)
+
+    def update_info(self, info: dict | None, inferring: bool = False) -> None:
+        if info is None:
+            self.setVisible(False)
+            return
+        self.setVisible(True)
+        running = bool(info.get("running"))
+        wants_port = info.get("api_port") is not None
+        port_open = bool(info.get("api_port_open"))
+        ready = running and (port_open or not wants_port)
+        if ready:
+            if wants_port:
+                status_obj = "svcStatusRunning"
+                status_txt = Translations.tr(
+                    "modern.dashboard.svc.status_ready",
+                    pid=info.get("pid", "?"), port=info.get("api_port", ""))
+            else:
+                status_obj = "svcStatusRunning"
+                status_txt = Translations.tr(
+                    "modern.dashboard.svc.status_running",
+                    pid=info.get("pid", "?"))
+        elif running:
+            status_obj, status_txt = "svcStatusWarn", Translations.tr(
+                "modern.dashboard.svc.status_no_port", pid=info.get("pid", "?"),
+                port=info.get("api_port", ""))
+        else:
+            status_obj, status_txt = "svcStatusOff", Translations.tr(
+                "modern.dashboard.svc.stopped")
+        if self.status.objectName() != status_obj:
+            self.status.setObjectName(status_obj)
+            self.status.style().unpolish(self.status)
+            self.status.style().polish(self.status)
+        self.status.setText(status_txt)
+
+        # Loaded models: one line per model (llama-server API list when the
+        # host reports it, else the single argv-derived name).
+        names = _model_names(info) if running else []
+        while len(self._model_labels) < len(names):
+            lbl = QLabel("")
+            lbl.setObjectName("rowMono")
+            self._model_holder.addWidget(lbl)
+            self._model_labels.append(lbl)
+        while len(self._model_labels) > len(names):
+            lbl = self._model_labels.pop()
+            lbl.setParent(None)
+            lbl.deleteLater()
+        for lbl, model_name in zip(self._model_labels, names):
+            lbl.setText(f"🧠 {model_name}")
+            lbl.setToolTip(model_name)
+            lbl.setVisible(True)
+
+        for key in ("uptime", "ram", "cpu"):
+            value_lbl, caption_lbl = self._metric_labels[key]
+            if not running:
+                value_lbl.setText("–")
+            elif key == "uptime":
+                value_lbl.setText(_fmt_uptime(info.get("uptime")) or "–")
+            elif key == "ram":
+                value_lbl.setText(
+                    f"{_fmt_bytes_gb(info.get('ram'))} GB")
+            else:
+                value_lbl.setText(f"{float(info.get('cpu') or 0.0):.1f} %")
+            caption_lbl.setText(Translations.tr(f"modern.dashboard.svc.{key}"))
+
+        # "Inferenz aktiv" badge next to the service name (heuristic, see
+        # INFERENCE_GPU_PCT - only meaningful while the service is ready).
+        if inferring and ready:
+            self.live.setText(Translations.tr("modern.dashboard.svc.inferring"))
+            self.live.setVisible(True)
+        else:
+            self.live.setText("")
+            self.live.setVisible(False)
+
+
 class DeviceDashboardView(QWidget):
     """Per-device dashboard: live metrics + remote batch execution."""
 
@@ -260,6 +525,18 @@ class DeviceDashboardView(QWidget):
         # (the host service rejects every request without them, so polling
         # would repeat the same error every interval).
         self._cred_warned = False
+        # Watched processes (dashboard service chips). _watch_entries is the
+        # per-device config; _gpu_high_counts consecutive GPU samples feeding
+        # the "inference active" heuristic (see INFERENCE_GPU_PCT).
+        self._watch_entries: list[str] = []
+        self._gpu_high_count = 0
+        self._chip_widgets: dict[str, ServiceChip] = {}
+        self._svc_row_widgets: dict[str, ServiceRow] = {}
+        # Last metrics "processes" map (re-painted on retranslate()).
+        self._last_processes: dict | None = None
+        # Host service protocol version from the last metrics response
+        # (shown behind the MAC in the header); None until metrics arrive.
+        self._host_protocol: int | None = None
 
         self._setup_ui()
 
@@ -307,6 +584,12 @@ class DeviceDashboardView(QWidget):
             Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         name_row.addWidget(self.title)
         name_row.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        # Watched-process chips (e.g. llama-server) - hidden until the host
+        # service reports a "processes" map (protocol v3 + watch config).
+        self._chip_widgets: dict[str, ServiceChip] = {}
+        self._chip_holder = QHBoxLayout()
+        self._chip_holder.setSpacing(8)
+        name_row.addLayout(self._chip_holder)
         name_row.addStretch()
         self.mono = QLabel("")
         self.mono.setObjectName("rowMono")
@@ -329,6 +612,31 @@ class DeviceDashboardView(QWidget):
         header.addWidget(self.interval_combo, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(header)
         layout.addSpacing(4)
+
+        # ── Services panel (watched processes, hidden when none) ─────
+        self.svc_panel = QFrame()
+        self.svc_panel.setObjectName("panel")
+        self.svc_panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        svc_layout = QVBoxLayout(self.svc_panel)
+        svc_layout.setContentsMargins(0, 0, 0, 0)
+        svc_layout.setSpacing(0)
+
+        svc_head = QHBoxLayout()
+        svc_head.setContentsMargins(14, 10, 10, 10)
+        self.svc_title = QLabel(Translations.tr("modern.dashboard.svc.title"))
+        self.svc_title.setObjectName("sectionHeading")
+        svc_head.addWidget(self.svc_title)
+        svc_head.addStretch()
+        self.svc_subtitle = QLabel("")
+        self.svc_subtitle.setObjectName("pageSubtitle")
+        svc_head.addWidget(self.svc_subtitle)
+        svc_layout.addLayout(svc_head)
+
+        self._svc_row_holder = QVBoxLayout()
+        self._svc_row_holder.setSpacing(0)
+        svc_layout.addLayout(self._svc_row_holder)
+        self.svc_panel.setVisible(False)
+        layout.addWidget(self.svc_panel)
 
         # ── Metric cards ─────────────────────────────────────────────
         cards_row = QHBoxLayout()
@@ -497,6 +805,12 @@ class DeviceDashboardView(QWidget):
         self._device = device
         self._metrics_ok = False
         self._cred_warned = False
+        self._watch_entries = (
+            ConfigManager.get_device_watch_processes(device)
+            if device is not None else [])
+        self._gpu_high_count = 0
+        self._host_protocol = None
+        self._rebuild_service_widgets()
         for card in self.cards.values():
             card.reset_display()
         self.console_edit.clear()
@@ -519,9 +833,25 @@ class DeviceDashboardView(QWidget):
             self.mono.setText("")
             return
         self.title.setText(device.get("name", ""))
-        ip = device.get("ip", "")
-        mac = device.get("mac", "")
-        self.mono.setText(f"{ip} · {mac}" if ip else mac)
+        self._update_mono_line()
+        # Watch list may have changed in the device dialog while open.
+        watch = ConfigManager.get_device_watch_processes(device)
+        if watch != self._watch_entries:
+            self._watch_entries = watch
+            self._rebuild_service_widgets()
+
+    def _update_mono_line(self) -> None:
+        """Header line: ``IP · MAC · Host Service vN`` (version once known)."""
+        if self._device is None:
+            self.mono.setText("")
+            return
+        ip = self._device.get("ip", "")
+        mac = self._device.get("mac", "")
+        parts = [p for p in (ip, mac) if p]
+        if self._host_protocol is not None:
+            parts.append(Translations.tr(
+                "modern.dashboard.svc.version", version=self._host_protocol))
+        self.mono.setText(" · ".join(parts))
 
     def retranslate(self) -> None:
         self.back_btn.setText(Translations.tr("modern.dashboard.back"))
@@ -541,8 +871,14 @@ class DeviceDashboardView(QWidget):
             Translations.tr("modern.dashboard.batch.untitled"))
         for key, card in self.cards.items():
             card.set_title(Translations.tr(f"modern.dashboard.metric.{key}"))
+        # Watched-process widgets: rebuild (static labels) + repaint state
+        if self._watch_entries:
+            self._rebuild_service_widgets()
+            if self._metrics_ok:
+                self._update_services(self._last_processes)
         # Re-apply metric-dependent texts (detail lines, status line)
         if self._device is not None:
+            self._update_mono_line()
             self._load_batches()
 
     def cancel_workers(self) -> None:
@@ -590,7 +926,8 @@ class DeviceDashboardView(QWidget):
             return
         self._metrics_busy = True
         worker = MetricsWorker(
-            ip, self._device.get("username", ""), self._device.get("password", ""))
+            ip, self._device.get("username", ""), self._device.get("password", ""),
+            watch=self._watch_entries or None)
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -631,6 +968,13 @@ class DeviceDashboardView(QWidget):
             self._set_badge("online")
         na = Translations.tr("modern.dashboard.metric.na")
 
+        # Host service protocol version behind the MAC in the header.
+        protocol = data.get("protocol")
+        new_proto = protocol if isinstance(protocol, int) else None
+        if new_proto != self._host_protocol:
+            self._host_protocol = new_proto
+            self._update_mono_line()
+
         cpu = data.get("cpu")
         cpu_count = data.get("cpu_count")
         cpu_detail = (
@@ -663,6 +1007,16 @@ class DeviceDashboardView(QWidget):
                 used=_fmt_bytes_gb(vram_used), total=_fmt_bytes_gb(vram_total))
             vram_pct = vram_used / vram_total * 100.0
         self.cards["vram"].set_value(vram_pct, vram_detail)
+
+        # Watched processes (chips + services panel). The GPU-load counter
+        # feeds the "inference active" heuristic and counts consecutive
+        # high samples; a missing/None GPU sample resets it.
+        gpu_pct = data.get("gpu")
+        if gpu_pct is not None and gpu_pct >= INFERENCE_GPU_PCT:
+            self._gpu_high_count += 1
+        else:
+            self._gpu_high_count = 0
+        self._update_services(data.get("processes"))
         # The host just became reachable — "run_btn" may have been disabled
         # because metrics had not arrived yet when the opt-in was toggled.
         self._update_run_enabled()
@@ -680,6 +1034,12 @@ class DeviceDashboardView(QWidget):
     def _show_offline(self, message: str,
                       text: "str | None" = None) -> None:
         self._metrics_ok = False
+        self._gpu_high_count = 0
+        # The version is only known while the host service answers.
+        if self._host_protocol is not None:
+            self._host_protocol = None
+            self._update_mono_line()
+        self._hide_services()
         self._set_badge("offline")
         for card in self.cards.values():
             card.gauge.set_value(None)
@@ -707,6 +1067,64 @@ class DeviceDashboardView(QWidget):
             style.unpolish(self.badge)
             style.polish(self.badge)
         self.badge.setText(Translations.tr(f"status.{status}"))
+
+    # ── Watched processes (service chips + services panel) ───────────────
+
+    def _rebuild_service_widgets(self) -> None:
+        """(Re)create chips + panel rows for the current watch entries."""
+        for chip in self._chip_widgets.values():
+            chip.setParent(None)
+            chip.deleteLater()
+        self._chip_widgets.clear()
+        for row in self._svc_row_widgets.values():
+            row.setParent(None)
+            row.deleteLater()
+        self._svc_row_widgets.clear()
+        for entry in self._watch_entries:
+            chip = ServiceChip(entry)
+            self._chip_holder.addWidget(chip)
+            self._chip_widgets[entry] = chip
+            row = ServiceRow(entry)
+            row.setObjectName("svcRow")
+            if self._svc_row_holder.count():
+                sep = QFrame()
+                sep.setObjectName("rowSeparator")
+                sep.setFrameShape(QFrame.Shape.HLine)
+                self._svc_row_holder.addWidget(sep)
+            self._svc_row_holder.addWidget(row)
+            self._svc_row_widgets[entry] = row
+        has_watch = bool(self._watch_entries)
+        self.svc_panel.setVisible(False)  # hidden until processes data arrives
+        self.svc_title.setText(Translations.tr("modern.dashboard.svc.title"))
+        self.svc_subtitle.setText("")
+
+    def _update_services(self, processes: dict | None) -> None:
+        """Paint chips + panel from the metrics ``processes`` map.
+
+        *processes* is None while the host is unreachable or its service is
+        too old (no watch support) - then everything service-related hides.
+        """
+        if not self._watch_entries:
+            return
+        supported = isinstance(processes, dict)
+        self._last_processes = processes if supported else None
+        self.svc_panel.setVisible(supported)
+        inferring = self._gpu_high_count >= INFERENCE_GPU_POLLS
+        for entry, chip in self._chip_widgets.items():
+            info = processes.get(entry) if supported else None
+            chip.set_state(info)
+        for entry, row in self._svc_row_widgets.items():
+            info = processes.get(entry) if supported else None
+            row.update_info(info, inferring=inferring)
+        if supported:
+            self.svc_subtitle.setText(
+                Translations.tr("modern.dashboard.svc.subtitle"))
+
+    def _hide_services(self) -> None:
+        """Host offline / no watch config: hide chips and panel."""
+        for chip in self._chip_widgets.values():
+            chip.set_state(None)
+        self.svc_panel.setVisible(False)
 
     # ── Batch library ────────────────────────────────────────────────────
 

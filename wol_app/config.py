@@ -163,6 +163,15 @@ VALID_DEVICES_VIEW_MODES = (DEVICES_VIEW_GRID, DEVICES_VIEW_LIST)
 # field). Persisted under ui.devices_sort_key.
 DEVICES_SORT_KEYS = ("name", "ip", "mac", "status")
 
+# Modern sidebar: drag-resizable width range (QSplitter), the icon-only
+# collapsed width and the drag threshold below which the sidebar snaps
+# shut. Persisted under ui.sidebar_width / ui.sidebar_collapsed.
+SIDEBAR_WIDTH_DEFAULT = 230
+SIDEBAR_WIDTH_MIN = 180
+SIDEBAR_WIDTH_MAX = 360
+SIDEBAR_COLLAPSED_WIDTH = 64
+SIDEBAR_SNAP_WIDTH = 120
+
 # Dashboard (device metrics view): metrics poll interval and the per-device
 # batch library limits. The interval is persisted under ui.dashboard_interval_ms.
 DEFAULT_DASHBOARD_INTERVAL_MS = 3000
@@ -170,6 +179,10 @@ DASHBOARD_INTERVAL_MIN_MS = 2000
 DASHBOARD_INTERVAL_MAX_MS = 60_000
 MAX_BATCHES_PER_DEVICE = 50
 MAX_BATCH_SCRIPT_CHARS = 32_000  # must match the host service limit
+# Watched processes per device (dashboard service chips, host protocol v3).
+# Entries: "name.exe" or "name.exe:port" (port = "running AND API reachable").
+MAX_WATCH_PROCESSES_PER_DEVICE = 8
+MAX_WATCH_ENTRY_CHARS = 128
 DEFAULT_BATCH_TIMEOUT_S = 120
 BATCH_TIMEOUT_MIN_S = 5
 BATCH_TIMEOUT_MAX_S = 3600
@@ -211,8 +224,10 @@ DEFAULT_CONFIG = {
     "devices": [],
     # Each device: {"id": uuid, "name": str, "mac": str, "ip": str, "username": str,
     #               "password": str, "enabled": bool, "shutdown_method": str,
-    #               "allow_batch": bool, "batches": [{"id","name","script","timeout"}]}
-    # ("allow_batch"/"batches" are optional, see get_device_batches)
+    #               "allow_batch": bool, "batches": [{"id","name","script","timeout"}],
+    #               "watch_processes": ["llama-server.exe", ...]}
+    # ("allow_batch"/"batches" are optional, see get_device_batches;
+    #  "watch_processes" is optional, see get_device_watch_processes)
     "network": {
         "broadcast_ip": "255.255.255.255",
         "broadcast_port": 9,
@@ -243,6 +258,10 @@ DEFAULT_CONFIG = {
         "devices_view_mode": DEVICES_VIEW_GRID,
         # Modern devices screen sort: "name" | "ip" | "mac" | "status".
         "devices_sort_key": "name",
+        # Modern sidebar: drag-resizable expanded width (px) and icon-only
+        # collapsed state (see SIDEBAR_* constants).
+        "sidebar_width": SIDEBAR_WIDTH_DEFAULT,
+        "sidebar_collapsed": False,
         # Device dashboard: metrics poll interval in milliseconds
         # (clamped to DASHBOARD_INTERVAL_MIN_MS..DASHBOARD_INTERVAL_MAX_MS).
         "dashboard_interval_ms": DEFAULT_DASHBOARD_INTERVAL_MS,
@@ -431,7 +450,9 @@ class ConfigManager:
                 if "mac" in kwargs and validate_mac(kwargs["mac"]):
                     dev["mac"] = kwargs["mac"].upper()
                 if "ip" in kwargs:
-                    dev["ip"] = kwargs["ip"][:15]  # Max IPv4 length
+                    # IPv4 or hostname (xrdp/Linux hosts often require the
+                    # name); 253 is the maximum DNS name length.
+                    dev["ip"] = kwargs["ip"].strip()[:253]
                 if "enabled" in kwargs:
                     dev["enabled"] = bool(kwargs["enabled"])
                 if "username" in kwargs and validate_username(kwargs["username"]):
@@ -534,6 +555,33 @@ class ConfigManager:
         self.config.setdefault("ui", {})["devices_sort_key"] = key
         self.save()
 
+    # --- Modern sidebar (width + collapsed state) ---
+
+    def get_sidebar_width(self) -> int:
+        """Return the modern sidebar expanded width (px, clamped)."""
+        try:
+            value = int(self.config.get("ui", {}).get(
+                "sidebar_width", SIDEBAR_WIDTH_DEFAULT))
+        except (TypeError, ValueError):
+            return SIDEBAR_WIDTH_DEFAULT
+        return min(max(value, SIDEBAR_WIDTH_MIN), SIDEBAR_WIDTH_MAX)
+
+    def set_sidebar_width(self, width: int) -> None:
+        """Persist the modern sidebar expanded width (clamped to the range)."""
+        value = int(width)
+        value = min(max(value, SIDEBAR_WIDTH_MIN), SIDEBAR_WIDTH_MAX)
+        self.config.setdefault("ui", {})["sidebar_width"] = value
+        self.save()
+
+    def get_sidebar_collapsed(self) -> bool:
+        """Return whether the modern sidebar starts icon-only (collapsed)."""
+        return bool(self.config.get("ui", {}).get("sidebar_collapsed", False))
+
+    def set_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Persist the modern sidebar collapsed (icon-only) state."""
+        self.config.setdefault("ui", {})["sidebar_collapsed"] = bool(collapsed)
+        self.save()
+
     # --- Device dashboard (metrics + batches) ---
 
     def get_dashboard_interval_ms(self) -> int:
@@ -615,6 +663,44 @@ class ConfigManager:
         for dev in self.config.get("devices", []):
             if dev["id"] == device_id:
                 dev["allow_batch"] = bool(allowed)
+                self.save()
+                return True
+        return False
+
+    @staticmethod
+    def get_device_watch_processes(device: dict) -> list:
+        """Return the (validated) watched-process list of *device*.
+
+        Entries are process names like ``"llama-server.exe"`` or
+        ``"llama-server.exe:8080"`` (the port turns the dashboard chip into
+        "running AND API reachable"). Malformed/oversized entries are
+        skipped and the list is capped at MAX_WATCH_PROCESSES_PER_DEVICE so
+        a hand-edited config never breaks the dashboard or the host service.
+        """
+        result: list = []
+        raw = device.get("watch_processes", [])
+        if not isinstance(raw, list):
+            return result
+        for entry in raw:
+            if not isinstance(entry, str):
+                continue
+            entry = entry.strip()
+            if not entry or len(entry) > MAX_WATCH_ENTRY_CHARS:
+                continue
+            if entry not in result:
+                result.append(entry)
+            if len(result) >= MAX_WATCH_PROCESSES_PER_DEVICE:
+                break
+        return result
+
+    def set_device_watch_processes(self, device_id: str, entries: list) -> bool:
+        """Persist the watched-process list of a device (validated, deduped)."""
+        if not isinstance(entries, list):
+            raise ValueError("Invalid watch list")
+        cleaned = self.get_device_watch_processes({"watch_processes": entries})
+        for dev in self.config.get("devices", []):
+            if dev["id"] == device_id:
+                dev["watch_processes"] = cleaned
                 self.save()
                 return True
         return False

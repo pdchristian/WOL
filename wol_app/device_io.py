@@ -19,7 +19,7 @@ from wol_app.config import (
 )
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.translations import Translations
-from wol_app.utils import validate_mac
+from wol_app.utils import validate_ip_or_hostname, validate_mac
 
 
 def _sanitize_batches(raw: Any) -> list[dict]:
@@ -157,6 +157,13 @@ def import_devices(config_manager: Any, parent=None) -> bool:
             )
             continue
 
+        ip = str(dev_data.get("ip", "") or "").strip()
+        if ip and not validate_ip_or_hostname(ip):
+            errors.append(
+                Translations.tr("dialog.import.invalid_ip", line=idx + 1, name=name)
+            )
+            continue
+
         batches = _sanitize_batches(dev_data.get("batches"))
         allow_batch = bool(dev_data.get("allow_batch", False))
         existing = config_manager.get_device_by_name(name)
@@ -168,7 +175,7 @@ def import_devices(config_manager: Any, parent=None) -> bool:
             config_manager.update_device(
                 existing["id"],
                 mac=mac,
-                ip=dev_data.get("ip", ""),
+                ip=ip,
                 username=dev_data.get("username", ""),
                 password=pw,
                 enabled=dev_data.get("enabled", True),
@@ -185,7 +192,7 @@ def import_devices(config_manager: Any, parent=None) -> bool:
                     pw: str = decrypt_password(pw)
                 config_manager.update_device(
                     device["id"],
-                    ip=dev_data.get("ip", ""),
+                    ip=ip,
                     username=dev_data.get("username", ""),
                     password=pw,
                     enabled=dev_data.get("enabled", True),

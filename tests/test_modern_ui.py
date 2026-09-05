@@ -489,6 +489,27 @@ class TestModernDeviceDialog:
         assert dialog.mac_input.text() == "11:22:33:44:55:66"
         assert dialog.ip_input.text() == "192.168.1.30"
 
+    def test_watch_processes_roundtrip(self, qapp, config):
+        """The watched-processes field persists on save and prefills on edit."""
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        dialog = ModernDeviceDialog(config)
+        dialog.name_input.setText("AI-Server")
+        dialog.mac_input.setText("AA:BB:CC:11:22:33")
+        dialog.watch_input.setText("llama-server.exe:8080, ollama.exe")
+        dialog._save()
+        device = next(d for d in config.get_devices()
+                      if d["name"] == "AI-Server")
+        assert config.get_device_watch_processes(device) == [
+            "llama-server.exe:8080", "ollama.exe"]
+        # Reopen for editing -> prefilled, and clearing it persists as empty
+        edit = ModernDeviceDialog(config, device=device)
+        assert edit.watch_input.text() == "llama-server.exe:8080, ollama.exe"
+        edit.watch_input.setText("")
+        edit._save()
+        assert config.get_device_watch_processes(
+            config.get_device_by_id(device["id"])) == []
+
     def test_uses_modern_dialog_in_views(self, qapp, config):
         """The modern manage/devices views open the modern dialog."""
         from wol_app.views import devices_view, manage_view

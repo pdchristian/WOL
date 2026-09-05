@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>WOL – Dashboard Prototyp: llama-server Anzeige</title>
+<style>
+  :root {
+    --bg: #0f1115; --surface: #1a1d24; --surface-hover: #232733; --border: #2c303a;
+    --text: #e6e8ee; --text-dim: #9aa0ab; --accent: #00b8a9; --accent-dark: #006b63;
+    --online: #22c55e; --offline: #ef4444; --unknown: #f59e0b; --danger: #e0485a;
+    --cpu: #00b8a9; --ram: #60a5fa; --gpu: #a78bfa; --vram: #f59e0b;
+    --svc: #f97316;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", sans-serif; }
+  body { background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+
+  /* Sidebar (identisch zum Haupt-Prototyp) */
+  .sidebar { width: 230px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 20px 12px; flex-shrink: 0; }
+  .logo { display: flex; align-items: center; gap: 12px; padding: 6px 10px; margin-bottom: 24px; }
+  .logo .mark { width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; color: #fff; }
+  .logo span { font-weight: 600; font-size: 15px; }
+  .section-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 8px 12px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
+    color: var(--text-dim); font-size: 14px; margin-bottom: 4px; cursor: pointer; border: none; background: none; text-align: left; width: 100%; }
+  .nav-item:hover { background: var(--surface-hover); color: var(--text); }
+  .nav-item.active { background: rgba(0,184,169,.14); color: var(--accent); font-weight: 600; }
+  .nav-spacer { flex: 1; }
+  .nav-footer { border-top: 1px solid var(--border); padding-top: 12px; }
+
+  .main { flex: 1; overflow: auto; padding: 26px 34px; }
+
+  /* ── Demo-Steuerleiste (nur Prototyp) ── */
+  .demo-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: rgba(249,115,22,.07); border: 1px dashed rgba(249,115,22,.45);
+    border-radius: 12px; padding: 10px 14px; margin-bottom: 20px; font-size: 12.5px; }
+  .demo-bar .tag { font-weight: 700; color: var(--svc); text-transform: uppercase; letter-spacing: .8px; font-size: 11px; }
+  .demo-bar label { display: flex; align-items: center; gap: 6px; color: var(--text-dim); cursor: pointer; }
+  .demo-bar input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+  .demo-bar .hint { color: var(--text-dim); font-style: italic; margin-left: auto; }
+
+  /* Header */
+  .page-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
+  .page-header h1 { font-size: 22px; font-weight: 600; }
+  .page-header .sub { color: var(--text-dim); font-size: 13px; margin-top: 2px; font-family: Consolas, monospace; }
+  .title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.online { background: rgba(34,197,94,.15); color: var(--online); }
+  .badge.offline { background: rgba(239,68,68,.15); color: var(--offline); }
+  .spacer { flex: 1; }
+  .btn { border: 1px solid var(--border); border-radius: 10px; padding: 9px 15px; font-size: 13px;
+    font-weight: 600; cursor: pointer; background: var(--surface); color: var(--text); transition: .15s; }
+  .btn:hover { background: var(--surface-hover); }
+  .btn.primary { background: var(--accent); color: #032019; border: none; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  select { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); padding: 8px 10px; font-size: 13px; outline: none; }
+
+  /* ── Service-Chips (Header) ── */
+  .svc-chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px;
+    border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.6;
+    border: 1px solid transparent; cursor: default; }
+  .svc-chip .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .svc-chip .model { font-family: Consolas, monospace; font-size: 11px; font-weight: 400;
+    padding-left: 7px; border-left: 1px solid currentColor; opacity: .75; }
+  .svc-chip .port { font-family: Consolas, monospace; font-size: 11px; font-weight: 400; opacity: .7; }
+  .svc-chip.running { background: rgba(34,197,94,.13); color: var(--online); border-color: rgba(34,197,94,.4); }
+  .svc-chip.running .dot { background: var(--online); animation: pulse 2s infinite; }
+  .svc-chip.probing { background: rgba(245,158,11,.13); color: var(--unknown); border-color: rgba(245,158,11,.4); }
+  .svc-chip.probing .dot { background: var(--unknown); }
+  .svc-chip.inactive { background: rgba(154,160,171,.09); color: var(--text-dim); border-color: rgba(154,160,171,.3); }
+  .svc-chip.inactive .dot { background: #5b6675; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.5); } 50% { box-shadow: 0 0 0 5px rgba(34,197,94,0); } }
+
+  /* ── Dienste-Panel ── */
+  .svc-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    margin-bottom: 22px; overflow: hidden; }
+  .svc-panel .phead { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); background: var(--surface-hover); }
+  .svc-panel .phead h2 { font-size: 13px; font-weight: 600; }
+  .svc-panel .phead .meta { font-size: 11px; color: var(--text-dim); }
+  .svc-row { display: flex; align-items: center; gap: 16px; padding: 14px 16px; }
+  .svc-row + .svc-row { border-top: 1px solid var(--border); }
+  .svc-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 21px; background: rgba(249,115,22,.12); border: 1px solid rgba(249,115,22,.3); flex-shrink: 0; }
+  .svc-name { font-size: 14px; font-weight: 600; }
+  .svc-name .exe { font-family: Consolas, monospace; font-size: 12px; color: var(--text-dim); font-weight: 400; margin-left: 8px; }
+  .svc-status { font-size: 12px; margin-top: 3px; }
+  .svc-status.ok { color: var(--online); } .svc-status.warn { color: var(--unknown); } .svc-status.off { color: var(--text-dim); }
+  .svc-metrics { display: flex; gap: 26px; margin-left: auto; text-align: right; }
+  .svc-metrics .m { min-width: 76px; }
+  .svc-metrics .m b { display: block; font-size: 15px; font-weight: 700; }
+  .svc-metrics .m span { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+  .live { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .live.on { background: rgba(249,115,22,.16); color: var(--svc); }
+  .live.idle { background: rgba(154,160,171,.1); color: var(--text-dim); }
+  .spark-wrap { width: 150px; }
+  .spark-wrap .lbl { font-size: 10.5px; color: var(--text-dim); text-align: center; margin-top: 2px; }
+  canvas.svcspark { width: 150px; height: 34px; display: block; }
+  .svc-empty { padding: 16px; color: var(--text-dim); font-size: 13px; }
+
+  /* Metrik-Karten */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .card .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card .title { font-size: 12px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--text-dim); }
+  .card .dotc { width: 8px; height: 8px; border-radius: 50%; }
+  .gauge-row { display: flex; align-items: center; gap: 16px; }
+  .gauge { position: relative; width: 86px; height: 86px; flex-shrink: 0; }
+  .gauge svg { transform: rotate(-90deg); }
+  .gauge .val { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 19px; font-weight: 700; }
+  .gauge .val small { font-size: 11px; color: var(--text-dim); font-weight: 400; }
+  .ginfo { font-size: 12px; color: var(--text-dim); line-height: 1.8; }
+  .ginfo b { color: var(--text); font-weight: 600; }
+  canvas.spark { width: 100%; height: 34px; margin-top: 10px; display: block; }
+  .card.hostdown { opacity: .45; }
+
+  .note { margin-top: 14px; font-size: 12px; color: var(--text-dim); line-height: 1.7; }
+</style>
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="logo"><div class="mark">W</div><span>WOL Manager</span></div>
+    <div class="section-label">Bereiche</div>
+    <button class="nav-item">💻 Geräte</button>
+    <button class="nav-item active">📊 Dashboard</button>
+    <button class="nav-item">🔧 Verwalten</button>
+    <button class="nav-item">🕒 Zeitplan</button>
+    <button class="nav-item">📋 Protokolle</button>
+    <div class="nav-spacer"></div>
+    <div class="nav-footer">
+      <button class="nav-item">⚙ Einstellungen</button>
+      <button class="nav-item">ℹ️ Über</button>
+      <button class="nav-item">⏻ Beenden</button>
+    </div>
+  </nav>
+
+  <main class="main">
+    <!-- Demo-Steuerung: schaltet die simulierten Zustände durch -->
+    <div class="demo-bar">
+      <span class="tag">Demo</span>
+      <label><input type="checkbox" id="chkHost" checked> Host online</label>
+      <label><input type="checkbox" id="chkProc" checked> llama-server.exe läuft</label>
+      <label><input type="checkbox" id="chkPort" checked> API-Port erreichbar</label>
+      <label><input type="checkbox" id="chkProto" checked> Host Service v3 (watch-Feature)</label>
+      <label><input type="checkbox" id="chkInfer" checked> Inferenz aktiv (GPU-Last)</label>
+      <span class="hint">simuliert die Antwort des Host Services</span>
+    </div>
+
+    <div class="page-header">
+      <div>
+        <div class="title-row">
+          <h1>🖥️ AI-SERVER-01</h1>
+          <span class="badge online" id="devBadge">● Online</span>
+          <span id="chipArea"></span>
+        </div>
+        <div class="sub" id="mono">192.168.1.50 · Windows 11 Pro · Uptime 3 d 4 h · Host Service v3</div>
+      </div>
+      <div class="spacer"></div>
+      <label style="font-size:12px;color:var(--text-dim)">Intervall</label>
+      <select id="interval"><option>2 s</option><option selected>3 s</option><option>5 s</option><option>10 s</option></select>
+      <button class="btn">← Zurück</button>
+    </div>
+
+    <!-- Dienste-Panel (Detailansicht, sichtbar bei watched processes) -->
+    <div id="svcPanel"></div>
+
+    <!-- Metrik-Karten -->
+    <div class="cards" id="cards"></div>
+
+    <div class="note">
+      <b>Prototyp — beobachtete Prozesse pro Gerät</b> (config: <code>"watch_processes": ["llama-server.exe"]</code>).<br>
+      Zustände: Host offline → nur rotes Badge, keine Chips · Host online, Prozess nicht gefunden → grauer Chip
+      „inaktiv" · Prozess läuft, Port offen → grüner Chip + Modell · Prozess läuft, Port zu → gelb „startet…".<br>
+      real: Host Service antwortet auf <code>metrics</code> um Feld <code>processes</code> erweitert (Protokoll v3);
+      GPU-Auslastung und Inferenz-Badge werden clientseitig aus den bestehenden Metriken abgeleitet (Schwellwert).
+    </div>
+  </main>
+
+<script>
+// ── Demo-Zustand ────────────────────────────────────────────────
+const demo = {
+  get host()     { return document.getElementById('chkHost').checked; },
+  get proc()     { return document.getElementById('chkProc').checked; },
+  get port()     { return document.getElementById('chkPort').checked; },
+  get proto()    { return document.getElementById('chkProto').checked; },
+  get infer()    { return document.getElementById('chkInfer').checked; },
+};
+const SVC = { name: 'llama-server.exe', label: 'llama-server', icon: '🦙', port: 8080,
+              model: 'qwen2.5-coder-14b-q4' };
+
+// ── Metrik-Karten (wie Haupt-Prototyp) ──────────────────────────
+const METRICS = [
+  { key:'cpu',  label:'CPU',  color:'var(--cpu)',  detail:v=>`<b>${v.cores}</b> Kerne · ${v.ghz} GHz` },
+  { key:'ram',  label:'RAM',  color:'var(--ram)',  detail:v=>`<b>${v.used}</b> / ${v.total} GB` },
+  { key:'gpu',  label:'GPU',  color:'var(--gpu)',  detail:v=>`${v.name}` },
+  { key:'vram', label:'VRAM', color:'var(--vram)', detail:v=>`<b>${v.used}</b> / ${v.total} GB` },
+];
+const state = {}, details = {
+  cpu:  { cores: 16, ghz: '4.20' },
+  ram:  { used: 0, total: 64 },
+  gpu:  { name: 'NVIDIA RTX 4070 Ti SUPER' },
+  vram: { used: 0, total: 16 },
+};
+const cardsEl = document.getElementById('cards');
+METRICS.forEach(m => {
+  state[m.key] = { pct: 10, hist: Array(60).fill(0) };
+  cardsEl.insertAdjacentHTML('beforeend', `
+    <div class="card" id="card_${m.key}">
+      <div class="head"><span class="title">${m.label}</span><span class="dotc" style="background:${m.color}"></span></div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <svg width="86" height="86"><circle cx="43" cy="43" r="36" stroke="var(--border)" stroke-width="8" fill="none"/>
+            <circle id="arc_${m.key}" cx="43" cy="43" r="36" stroke="${m.color}" stroke-width="8" fill="none"
+              stroke-linecap="round" stroke-dasharray="226.2" stroke-dashoffset="226.2"/></svg>
+          <div class="val"><span id="val_${m.key}">–</span><small>%</small></div>
+        </div>
+        <div class="ginfo" id="info_${m.key}"></div>
+      </div>
+      <canvas class="spark" id="spark_${m.key}" width="220" height="34"></canvas>
+    </div>`);
+});
+function drawSpark(m) {
+  const cv = document.getElementById('spark_' + m.key), ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.beginPath();
+  state[m.key].hist.forEach((v, i) => {
+    const x = i * cv.width / 59, y = cv.height - (v / 100) * (cv.height - 4) - 2;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--' + m.key).trim();
+  ctx.lineWidth = 1.5; ctx.stroke();
+}
+
+// ── simulierter metrics-Response (entspricht Host Service v3) ───
+function fakeMetricsResponse() {
+  if (!demo.host) return null;  // Transportfehler
+  const r = { protocol: demo.proto ? 3 : 2, cpu: 0, ram_used: 0, ram_total: 64 * 1024**3,
+              gpu: 4, vram_used: 0.9 * 1024**3, vram_total: 16 * 1024**3, uptime: 275040 };
+  if (demo.proto && demo.proc) {
+    r.processes = { 'llama-server.exe': { running: true, pid: 4711, cpu: 2.4,
+        ram: 5.2 * 1024**3, uptime: 93420, api_port_open: demo.port, model: SVC.model } };
+  } else if (demo.proto) {
+    r.processes = { 'llama-server.exe': { running: false } };
+  }
+  if (demo.proc) {
+    // laufender llama-server belegt VRAM; bei Inferenz GPU-Last
+    r.gpu = demo.infer ? 78 + Math.random() * 18 : 6 + Math.random() * 6;
+    r.vram_used = (demo.infer ? 11.4 : 10.9) * 1024**3;
+    r.cpu = 8 + Math.random() * 6;
+    r.ram_used = 22 * 1024**3;
+  } else {
+    r.gpu = 3 + Math.random() * 4;
+    r.vram_used = 0.6 * 1024**3;
+    r.cpu = 3 + Math.random() * 4;
+    r.ram_used = 8 * 1024**3;
+  }
+  return r;
+}
+
+// ── Rendering ───────────────────────────────────────────────────
+const chipArea = document.getElementById('chipArea'), devBadge = document.getElementById('devBadge');
+const mono = document.getElementById('mono'), svcPanel = document.getElementById('svcPanel');
+const gpuHist = [];
+
+function chipHTML(p) {
+  if (!p) return '';
+  if (p.running && p.api_port_open)
+    return `<span class="svc-chip running" title="PID ${p.pid} · läuft seit ${fmtDur(p.uptime)} · CPU ${p.cpu}% · RAM ${(p.ram/1024**3).toFixed(1)} GB · API http://192.168.1.50:${SVC.port}">
+      <span class="dot"></span>🦙 llama-server · aktiv<span class="model">${(p.model||'').replace(/-q\d.*$/,'')}</span></span>`;
+  if (p.running)
+    return `<span class="svc-chip probing" title="PID ${p.pid} gefunden, aber Port ${SVC.port} antwortet nicht">
+      <span class="dot"></span>🦙 llama-server · startet…<span class="port">:${SVC.port} ✗</span></span>`;
+  return `<span class="svc-chip inactive" title="Prozess nicht gefunden">
+    <span class="dot"></span>🦙 llama-server · inaktiv</span>`;
+}
+
+function fmtDur(s) {
+  if (!s) return '';
+  const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+  return d ? `${d} d ${h} h` : h ? `${h} h ${m} m` : `${m} m`;
+}
+
+function render() {
+  const r = fakeMetricsResponse();
+
+  // Header-Badge + Mono-Zeile
+  devBadge.className = 'badge ' + (r ? 'online' : 'offline');
+  devBadge.textContent = r ? '● Online' : '● Offline';
+  mono.textContent = '192.168.1.50 · Windows 11 Pro · ' +
+    (r ? `Uptime ${fmtDur(r.uptime)} · Host Service v${r.protocol}` : 'Host Service nicht erreichbar');
+
+  // Chips: nur wenn Host online UND watch-Feature vorhanden
+  chipArea.innerHTML = (r && r.processes) ? chipHTML(r.processes['llama-server.exe']) : '';
+
+  // Dienste-Panel
+  if (!r || !r.processes) {
+    svcPanel.innerHTML = '';
+  } else {
+    const p = r.processes['llama-server.exe'];
+    const inferring = p.running && p.api_port_open && demo.infer;
+    let statusCls = 'off', statusTxt = 'Prozess nicht gefunden';
+    if (p.running && p.api_port_open) { statusCls = 'ok'; statusTxt = `läuft · PID ${p.pid} · API-Bereit :${SVC.port}`; }
+    else if (p.running) { statusCls = 'warn'; statusTxt = `läuft (PID ${p.pid}), aber Port ${SVC.port} nicht erreichbar`; }
+    svcPanel.innerHTML = `
+      <div class="svc-panel">
+        <div class="phead"><h2>Dienste</h2>
+          <span class="meta">über Host Service v3 · Intervall-Poll</span>
+          <span class="spacer"></span>
+          <span class="live ${inferring ? 'on' : 'idle'}">${inferring ? '⚡ Inferenz aktiv' : 'Leerlauf'}</span></div>
+        <div class="svc-row">
+          <div class="svc-icon">🦙</div>
+          <div>
+            <div class="svc-name">llama-server<span class="exe">${SVC.name}</span></div>
+            <div class="svc-status ${statusCls}">${statusTxt}</div>
+            ${p.running ? `<div class="svc-status off" style="font-family:Consolas,monospace;font-size:11px">Modell: ${p.model}</div>` : ''}
+          </div>
+          <div class="svc-metrics">
+            ${p.running ? `
+              <div class="m"><b>${fmtDur(p.uptime)}</b><span>laufzeit</span></div>
+              <div class="m"><b>${(p.ram/1024**3).toFixed(1)} GB</b><span>RAM</span></div>
+              <div class="m"><b>${p.cpu.toFixed(1)} %</b><span>Proz-CPU</span></div>` : ''}
+          </div>
+          <div class="spark-wrap">
+            <canvas class="svcspark" id="svcspark" width="300" height="68"></canvas>
+            <div class="lbl">GPU-Auslastung (abgeleitet)</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Metrik-Karten
+  METRICS.forEach(m => {
+    const card = document.getElementById('card_' + m.key);
+    card.classList.toggle('hostdown', !r);
+    if (!r) {
+      document.getElementById('val_' + m.key).textContent = '–';
+      document.getElementById('arc_' + m.key).style.strokeDashoffset = 226.2;
+      document.getElementById('info_' + m.key).innerHTML = '';
+      return;
+    }
+    let pct;
+    if (m.key === 'cpu')  pct = r.cpu;
+    if (m.key === 'ram')  pct = r.ram_used / r.ram_total * 100;
+    if (m.key === 'gpu')  pct = r.gpu;
+    if (m.key === 'vram') pct = r.vram_used / r.vram_total * 100;
+    const s = state[m.key];
+    s.pct = pct; s.hist.push(pct); s.hist.shift();
+    document.getElementById('arc_' + m.key).style.strokeDashoffset = 226.2 * (1 - pct / 100);
+    document.getElementById('val_' + m.key).textContent = Math.round(pct);
+    if (m.key === 'ram')  details.ram.used = (r.ram_used / 1024**3).toFixed(1);
+    if (m.key === 'vram') details.vram.used = (r.vram_used / 1024**3).toFixed(1);
+    document.getElementById('info_' + m.key).innerHTML = m.detail(details[m.key]);
+    drawSpark(m);
+  });
+
+  // Mini-Sparkline im Dienste-Panel (GPU abgeleitet)
+  const cv = document.getElementById('svcspark');
+  if (cv) {
+    gpuHist.push(r.gpu); if (gpuHist.length > 60) gpuHist.shift();
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.beginPath();
+    gpuHist.forEach((v, i) => {
+      const x = i * cv.width / 59, y = cv.height - (v / 100) * (cv.height - 8) - 4;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.strokeStyle = demo.proc && demo.port && demo.infer ? '#f97316' : '#5b6675';
+    ctx.lineWidth = 2; ctx.stroke();
+  }
+}
+
+document.querySelectorAll('.demo-bar input').forEach(i => i.addEventListener('change', render));
+render();
+setInterval(render, 2000);
+</script>
+</body>
+</html>

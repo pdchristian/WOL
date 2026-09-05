@@ -27,6 +27,7 @@ from wol_app.translations import Translations
 from wol_app.widgets.toggle_switch import ToggleSwitch
 from wol_app.utils import (
     validate_device_name,
+    validate_ip_or_hostname,
     validate_mac,
     validate_password,
     validate_username,
@@ -134,6 +135,16 @@ class ModernDeviceDialog(QDialog):
         self._add_field(grid, 3, 0, "device_dialog.label.shutdown_method",
                         self.method_combo, col_span=2)
 
+        # Watched processes (dashboard service chips, host service v3) -
+        # comma separated, entries may carry ":port" for the API check.
+        self.watch_input = QLineEdit()
+        self.watch_input.setPlaceholderText(
+            Translations.tr("device_dialog.placeholder.watch"))
+        self.watch_input.setToolTip(
+            Translations.tr("device_dialog.tooltip.watch"))
+        self._add_field(grid, 4, 0, "device_dialog.label.watch",
+                        self.watch_input, col_span=2)
+
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         layout.addWidget(panel)
@@ -184,6 +195,8 @@ class ModernDeviceDialog(QDialog):
         self.ip_input.setText(device.get("ip", ""))
         self.username_input.setText(device.get("username", ""))
         self.password_input.setText(device.get("password", ""))
+        self.watch_input.setText(", ".join(
+            self.config.get_device_watch_processes(device)))
         self.enabled_toggle.setChecked(device.get("enabled", True))
         # Set shutdown method (legacy devices default to "smb")
         method = self.config.get_device_shutdown_method(device)
@@ -209,6 +222,11 @@ class ModernDeviceDialog(QDialog):
         if not validate_mac(mac):
             QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_mac"))
             return
+        # The address is optional but must be a valid IPv4 or host name when set
+        # (xrdp/Linux hosts are typically reached by name, e.g. ubuntu-mercury).
+        if ip and not validate_ip_or_hostname(ip):
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_ip_or_host"))
+            return
 
         username: str = self.username_input.text().strip()
         password: str = self.password_input.text().strip()
@@ -222,6 +240,8 @@ class ModernDeviceDialog(QDialog):
             return
 
         shutdown_method = self.method_combo.currentData()
+        watch_entries = self.config.get_device_watch_processes(
+            {"watch_processes": self.watch_input.text().replace(";", ",").split(",")})
 
         if self.editing_device:
             updates = {
@@ -237,6 +257,12 @@ class ModernDeviceDialog(QDialog):
             if password:
                 updates["password"] = password
             self.config.update_device(self.editing_device["id"], **updates)
+            # Only touch watch_processes on an actual change (avoids writing
+            # an empty list into every edited device).
+            if watch_entries != self.config.get_device_watch_processes(
+                    self.editing_device):
+                self.config.set_device_watch_processes(
+                    self.editing_device["id"], watch_entries)
             # Re-fetch updated device
             updated = self.config.get_device_by_id(self.editing_device["id"])
             self.device_saved.emit(updated)
@@ -255,6 +281,9 @@ class ModernDeviceDialog(QDialog):
                 # user's explicit selection (may differ from the default)
                 if shutdown_method != device.get("shutdown_method"):
                     self.config.update_device(device["id"], shutdown_method=shutdown_method)
+                if watch_entries:
+                    self.config.set_device_watch_processes(
+                        device["id"], watch_entries)
                 self.device_saved.emit(self.config.get_device_by_id(device["id"]))
             else:
                 QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.save_failed"))

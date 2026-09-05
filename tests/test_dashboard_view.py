@@ -103,6 +103,19 @@ class TestDashboardView:
         assert view.title.text() == "Workstation"
         assert "192.168.1.10" in view.mono.text()
 
+    def test_header_shows_host_service_version_after_metrics(self, view, tmp_config):
+        _, dev_id = tmp_config
+        view.set_device(dev_id)
+        # No version in the header before the first metrics response.
+        assert "Host Service" not in view.mono.text()
+        view._on_metrics(dict(METRICS))
+        assert "192.168.1.10" in view.mono.text()
+        assert "AA:BB:CC:00:11:22" in view.mono.text()
+        assert "Host Service v2" in view.mono.text()
+        # Offline: the version hint disappears with the connection.
+        view._on_metrics_failed("Connection timed out")
+        assert "Host Service" not in view.mono.text()
+
     def test_apply_metrics_updates_cards(self, view, tmp_config):
         _, dev_id = tmp_config
         view.set_device(dev_id)
@@ -256,3 +269,148 @@ class TestDashboardView:
         card.reset_display()
         assert card.gauge._pct is None
         assert card.detail.text() == ""
+
+
+class TestWatchedProcesses:
+    """Service chips + services panel for watched processes (v3)."""
+
+    def _view_with_watch(self, qapp, tmp_path, monkeypatch, entries):
+        cfg = ConfigManager(config_path=str(tmp_path / "watch.json"))
+        cfg.add_device("AIServer", "AA:BB:CC:00:11:99")
+        dev_id = cfg.get_devices()[0]["id"]
+        cfg.update_device(dev_id, ip="192.168.1.50",
+                          username="user", password="pass")
+        cfg.set_device_watch_processes(dev_id, entries)
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics", lambda self: None)
+        v = DeviceDashboardView(cfg)
+        v.set_device(dev_id)
+        return v
+
+    def test_no_watch_no_chips(self, view, tmp_config):
+        _, dev_id = tmp_config
+        view.set_device(dev_id)
+        view._on_metrics(dict(METRICS))
+        assert view._chip_widgets == {}
+        assert view.svc_panel.isHidden()
+
+    def test_chip_running_ready(self, qapp, tmp_path, monkeypatch):
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe:8080"])
+        assert "llama-server.exe:8080" in v._chip_widgets
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe:8080": {"running": True, "pid": 4711, "cpu": 3.0,
+                                       "ram": 5 * 1024**3, "uptime": 3600,
+                                       "api_port": 8080, "api_port_open": True,
+                                       "model": "qwen2.5-coder-14b-q4.gguf"}}))
+        chip = v._chip_widgets["llama-server.exe:8080"]
+        assert chip.objectName() == "svcChipRunning"
+        assert not chip.isHidden()
+        assert not v.svc_panel.isHidden()
+
+    def test_chip_and_row_list_loaded_models(self, qapp, tmp_path, monkeypatch):
+        """Host v4 "models" list: chip shows first + "+N", row one line each."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe:8080"])
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe:8080": {
+                "running": True, "pid": 4711, "cpu": 3.0,
+                "ram": 5 * 1024**3, "uptime": 3600,
+                "api_port": 8080, "api_port_open": True,
+                "models": ["Qwen3.8-Flash-256k-50", "glm-4.7-air"]}}))
+        chip = v._chip_widgets["llama-server.exe:8080"]
+        assert "Qwen3.8-Flash-256k-50 +1" in chip.text()
+        row = v._svc_row_widgets["llama-server.exe:8080"]
+        row_models = [lbl.text() for lbl in row._model_labels
+                      if not lbl.isHidden()]
+        assert any("Qwen3.8-Flash-256k-50" in t for t in row_models)
+        assert any("glm-4.7-air" in t for t in row_models)
+
+    def test_row_falls_back_to_argv_model(self, qapp, tmp_path, monkeypatch):
+        """Hosts without "models" (v3) keep showing the argv-derived name;
+
+        dots inside the name are NOT truncated (regression: "Qwen3.8-…"
+        was cut to "Qwen3" by a split(".") on the dashboard).
+        """
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe"])
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe": {"running": True, "pid": 9, "cpu": 1.0,
+                                  "ram": 1024, "uptime": 10,
+                                  "model": "Qwen3.8-Flash-256k-62"}}))
+        row = v._svc_row_widgets["llama-server.exe"]
+        texts = [lbl.text() for lbl in row._model_labels if not lbl.isHidden()]
+        assert texts == ["🧠 Qwen3.8-Flash-256k-62"]
+
+    def test_chip_starting_when_port_closed(self, qapp, tmp_path, monkeypatch):
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe:8080"])
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe:8080": {"running": True, "pid": 1, "cpu": 0.0,
+                                       "ram": 1024, "uptime": 5,
+                                       "api_port": 8080, "api_port_open": False}}))
+        chip = v._chip_widgets["llama-server.exe:8080"]
+        assert chip.objectName() == "svcChipProbing"
+
+    def test_chip_inactive_when_stopped(self, qapp, tmp_path, monkeypatch):
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe"])
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe": {"running": False}}))
+        chip = v._chip_widgets["llama-server.exe"]
+        assert chip.objectName() == "svcChipInactive"
+
+    def test_chip_green_without_port(self, qapp, tmp_path, monkeypatch):
+        """No port in the entry -> running alone is the green state."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["ollama.exe"])
+        v._on_metrics(dict(METRICS, processes={
+            "ollama.exe": {"running": True, "pid": 7, "cpu": 1.0,
+                            "ram": 1024, "uptime": 10}}))
+        assert v._chip_widgets["ollama.exe"].objectName() == "svcChipRunning"
+
+    def test_chips_hidden_when_host_offline(self, qapp, tmp_path, monkeypatch):
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe"])
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe": {"running": True, "pid": 1, "cpu": 0.0,
+                                  "ram": 1, "uptime": 1}}))
+        assert not v._chip_widgets["llama-server.exe"].isHidden()
+        v._on_metrics_failed("Connection refused")
+        assert v._chip_widgets["llama-server.exe"].isHidden()
+        assert v.svc_panel.isHidden()
+
+    def test_no_process_field_hides_services(self, qapp, tmp_path, monkeypatch):
+        """Old host service (no processes map) -> chips hidden, no error."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe"])
+        v._on_metrics(dict(METRICS))  # protocol 2, no "processes"
+        assert v._chip_widgets["llama-server.exe"].isHidden()
+        assert v.svc_panel.isHidden()
+
+    def test_inference_badge_after_consecutive_high_gpu(self, qapp, tmp_path, monkeypatch):
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe:8080"])
+        proc = {"llama-server.exe:8080": {"running": True, "pid": 1, "cpu": 1.0,
+                "ram": 1024, "uptime": 1, "api_port": 8080, "api_port_open": True}}
+        row = v._svc_row_widgets["llama-server.exe:8080"]
+        v._on_metrics(dict(METRICS, gpu=90.0, processes=proc))
+        assert row.live.isHidden()          # 1 sample: not yet
+        v._on_metrics(dict(METRICS, gpu=90.0, processes=proc))
+        assert not row.live.isHidden()      # 2 consecutive: inference active
+        v._on_metrics(dict(METRICS, gpu=5.0, processes=proc))
+        assert row.live.isHidden()          # low sample resets the counter
+
+    def test_watch_list_edit_refreshes_header(self, qapp, tmp_path, monkeypatch):
+        cfg = ConfigManager(config_path=str(tmp_path / "edit.json"))
+        cfg.add_device("D", "AA:BB:CC:00:11:AA")
+        dev_id = cfg.get_devices()[0]["id"]
+        cfg.update_device(dev_id, ip="1.2.3.4", username="u", password="p")
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics", lambda self: None)
+        v = DeviceDashboardView(cfg)
+        v.set_device(dev_id)
+        assert v._chip_widgets == {}
+        # Watch list added while the dashboard is open -> header refresh picks it up
+        cfg.set_device_watch_processes(dev_id, ["llama-server.exe"])
+        v.refresh_device_header()
+        assert "llama-server.exe" in v._chip_widgets
+        v.cancel_workers()

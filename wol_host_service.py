@@ -22,7 +22,14 @@ Commands:
                 (``cpu``, ``ram_used``/``ram_total``, ``gpu``,
                 ``vram_used``/``vram_total``, ``gpu_name``, ``hostname``,
                 ``uptime``, ``protocol``). GPU fields are ``null`` when no
-                NVIDIA GPU/``nvidia-smi`` is available.
+                NVIDIA GPU/``nvidia-smi`` is available. An optional
+                ``watch`` list of process names (``name.exe`` or
+                ``name.exe:port``) adds a ``processes`` map with
+                ``running``/``count``/``pid``/``cpu``/``ram``/``uptime`` and,
+                when a port was given, ``api_port``/``api_port_open``.
+                Entries with an open port also get ``models``: the model
+                names the llama-server API (``GET /v1/models``) reports as
+                loaded (``alias`` preferred, else the ``id`` file stem).
     run_batch - authenticated AND gated: executes a cmd batch script
                 (``script`` field, ``timeout`` optional) and answers with
                 ``exit_code``/``stdout``/``stderr``/``duration_ms``.
@@ -46,6 +53,7 @@ service control dispatcher is entered automatically.
 """
 
 import ctypes
+import http.client
 import json
 import os
 import socket
@@ -55,6 +63,7 @@ import sys
 import threading
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 
 SERVICE_NAME = "WOLHostService"
 SERVICE_DISPLAY_NAME = "WOL Host Service"
@@ -68,7 +77,27 @@ MAX_REQUEST_BYTES = 65536
 
 # Protocol version reported in the "metrics" response so the client can
 # detect a host service that is too old for the dashboard features.
-PROTOCOL_VERSION = 2
+# v3 added the optional "watch" field on "metrics" (response: "processes").
+# v4 adds "models" per watch entry with an open API port (llama-server
+#    GET /v1/models -> the model names currently resident on the server;
+#    status "loaded" or "sleeping", as llama-swap keeps idle models in RAM).
+PROTOCOL_VERSION = 4
+
+# Max number of entries in a "watch" list (client configures e.g.
+# ["llama-server.exe", "ollama.exe:11434"] - keep the loop bounded).
+WATCH_MAX_ENTRIES = 8
+# Seconds for the loopback connect() of the API-port check.
+WATCH_PORT_TIMEOUT_S = 0.25
+# Seconds for the HTTP GET of the llama-server model list.
+WATCH_MODELS_TIMEOUT_S = 0.6
+# Max model names surfaced per watch entry (a llama-server --parallel N run
+# or a llama-swap setup can report many; the dashboard shows a handful).
+WATCH_MAX_MODELS = 16
+
+# File extensions stripped from model file names for display. ONLY these -
+# never a blind splitext(): model ids like "Qwen3.8-Flash-256k-62" contain
+# dots that belong to the name (splitext would truncate to "Qwen3").
+MODEL_FILE_EXTS = (".gguf", ".ggml", ".safetensors", ".bin", ".pt")
 
 # Limits for run_batch (the service runs as SYSTEM - keep these strict).
 MAX_SCRIPT_CHARS = 32_000
@@ -240,11 +269,264 @@ def _gpu_metrics_cached() -> dict:
         return data
 
 
-def collect_metrics() -> dict:
+# --- Watched processes (e.g. llama-server.exe on the dashboard) ---
+#
+# The client sends a "watch" list of process names on the "metrics"
+# command; each entry is "name.exe" or "name.exe:port" (the port turns the
+# check into "running AND API reachable" - a llama-server that exists but
+# does not answer yet shows as "starting" on the dashboard). Answers are
+# keyed by the original entry string. Process objects are cached per PID
+# so psutil's cpu_percent() has a sample window on every poll.
+
+_WATCH_PROCS: dict[int, "object"] = {}
+_WATCH_PROCS_LOCK = threading.Lock()
+
+
+def _parse_watch_entry(entry: str) -> tuple[str, int | None]:
+    """``"llama-server.exe:8080"`` -> ``("llama-server.exe", 8080)``."""
+    name = str(entry).strip()
+    if not name:
+        return "", None
+    base, sep, port_str = name.rpartition(":")
+    if sep and base and port_str.isdigit():
+        port = int(port_str)
+        if 1 <= port <= 65535:
+            return base, port
+    return name, None
+
+
+def _check_port_loopback(port: int) -> bool:
+    """True when a TCP connect to 127.0.0.1:*port* succeeds quickly."""
+    try:
+        with socket.create_connection(("127.0.0.1", port),
+                                      timeout=WATCH_PORT_TIMEOUT_S):
+            return True
+    except OSError:
+        return False
+
+
+def _model_display_name(raw: str) -> str:
+    """File name of a model path/id for display, dots preserved.
+
+    Takes the last path segment (``/`` or ``\\``) and strips only a known
+    model file extension. A blind ``os.path.splitext`` is NOT used: model
+    names such as ``Qwen3.8-Flash-256k-62`` contain dots that belong to the
+    name and would be truncated to ``Qwen3``.
+    """
+    name = str(raw or "").replace("\\", "/").rstrip("/").rpartition("/")[2]
+    lower = name.lower()
+    for ext in MODEL_FILE_EXTS:
+        if lower.endswith(ext):
+            name = name[: -len(ext)]
+            break
+    return name.strip()[:64]
+
+
+def _models_from_api_json(payload: dict) -> list:
+    """Extract the resident model names from a llama-server ``/v1/models`` body.
+
+    Only entries whose ``status.value`` is ``loaded`` or ``sleeping`` count
+    (llama-server reports ``status`` as an object: ``{"value": "loaded",
+    ...}``; some builds use a plain string). ``sleeping`` is included
+    because llama-swap-style servers keep idle-but-resident models in RAM -
+    they are still "geladen" and can answer immediately. The display name is
+    the ``alias`` when the server was started with one, else the file name
+    of ``id`` (dots preserved). Returns a de-duplicated, capped list; never
+    raises on malformed input.
+    """
+    data = payload.get("data")
+    if not isinstance(data, list):
+        return []
+    names: list = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        status = item.get("status")
+        if isinstance(status, dict):
+            state = str(status.get("value", "")).lower()
+        else:
+            state = str(status or "").lower()
+        if state not in ("loaded", "sleeping"):
+            continue
+        name = _model_display_name(
+            str(item.get("alias") or "").strip()
+            or str(item.get("id") or ""))
+        if name and name not in names:
+            names.append(name)
+        if len(names) >= WATCH_MAX_MODELS:
+            break
+    return names
+
+
+def _fetch_loaded_models(port: int) -> list:
+    """``GET http://127.0.0.1:port/v1/models`` -> loaded model names ([]).
+
+    Plain ``http.client`` on loopback: llama-server answers the model list
+    without authentication, and any failure (timeout, non-200, non-JSON,
+    a non-llama API that happens to listen on the port) degrades to an
+    empty list so the dashboard falls back to the command-line model name.
+    """
+    try:
+        import http.client  # stdlib, cheap import inside the poll
+
+        conn = http.client.HTTPConnection("127.0.0.1", port,
+                                          timeout=WATCH_MODELS_TIMEOUT_S)
+        try:
+            conn.request("GET", "/v1/models",
+                         headers={"Accept": "application/json"})
+            resp = conn.getresponse()
+            if resp.status != 200:
+                return []
+            body = resp.read(262_144)
+        finally:
+            conn.close()
+        payload = json.loads(body.decode("utf-8", errors="replace"))
+    except Exception:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    return _models_from_api_json(payload)
+
+
+def _model_from_argv(argv: list) -> str:
+    """Best-effort model name from a llama.cpp-style command line.
+
+    Reads ``-m``/``--model`` and returns the file name of the path (e.g.
+    ``qwen2.5-coder-14b-q4``), with a known model extension stripped but
+    dots inside the name preserved (see :func:`_model_display_name`).
+    Returns "" when no such flag is present - never raises.
+    """
+    if not isinstance(argv, list):
+        return ""
+    for i, arg in enumerate(argv):
+        if arg in ("-m", "--model") and i + 1 < len(argv):
+            return _model_display_name(argv[i + 1])
+        if arg.startswith("--model="):  # "--model=path" form
+            return _model_display_name(arg.split("=", 1)[1])
+    return ""
+
+
+def _watched_processes(watch: list) -> dict:
+    """Status of the watched process names, keyed by the original entry.
+
+    Each value: ``{"running": bool}`` plus - when running - ``count``,
+    ``pid``, ``cpu`` (percent, summed), ``ram`` (bytes, summed), ``uptime``
+    (seconds) and, for ``name:port`` entries, ``api_port``/``api_port_open``.
+    """
+    entries: dict[str, tuple[str, int | None]] = {}
+    for raw in list(watch)[:WATCH_MAX_ENTRIES]:
+        name, port = _parse_watch_entry(str(raw))
+        if name:
+            entries[str(raw)] = (name, port)
+    result: dict[str, dict] = {key: {"running": False} for key in entries}
+    if not entries:
+        return result
+    try:
+        import psutil  # type: ignore
+    except Exception:
+        return result  # no psutil -> everything reports as not running
+
+    wanted = {name.lower() for name, _port in entries.values()}
+    found: dict[str, list] = {name.lower(): [] for name in wanted}
+    now = time.time()
+    with _WATCH_PROCS_LOCK:
+        alive: set[int] = set()
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                pname = (proc.info["name"] or "").lower()
+                if pname not in wanted:
+                    continue
+                pid = proc.info["pid"]
+                cached = _WATCH_PROCS.get(pid)
+                if cached is None:
+                    # First sighting: cpu_percent() needs two calls, so the
+                    # first poll reports 0 - keep the object for the next one.
+                    _WATCH_PROCS[pid] = proc
+                    cpu = 0.0
+                else:
+                    cpu = cached.cpu_percent(interval=None)
+                alive.add(pid)
+                ram = 0
+                try:
+                    mem = proc.memory_info()
+                    ram = int(mem.rss)
+                except (psutil.Error, OSError):
+                    pass
+                # cmdline is only read for matching processes (a full
+                # cmdline scan of every process would be too expensive on
+                # each poll); used to surface the llama.cpp model name.
+                try:
+                    argv = proc.cmdline()
+                except (psutil.Error, OSError):
+                    argv = []
+                found[pname].append(
+                    (pid, cpu, ram, now - proc.create_time(), argv))
+            except (psutil.NoSuchProcess, psutil.AccessDenied,
+                    psutil.ZombieProcess, OSError):
+                continue
+        # Drop cached objects of processes that disappeared.
+        for dead in [p for p in _WATCH_PROCS if p not in alive]:
+            del _WATCH_PROCS[dead]
+
+    port_tasks: list[tuple[dict, int]] = []
+    for key, (name, port) in entries.items():
+        procs = found.get(name.lower(), [])
+        if not procs:
+            continue
+        entry_result = {
+            "running": True,
+            "count": len(procs),
+            "pid": min(p[0] for p in procs),
+            "cpu": round(sum(p[1] for p in procs), 1),
+            "ram": sum(p[2] for p in procs),
+            "uptime": int(max(p[3] for p in procs)),
+        }
+        model = _model_from_argv(min(procs, key=lambda p: p[0])[4])
+        if model:
+            entry_result["model"] = model
+        result[key] = entry_result
+        if port:
+            entry_result["api_port"] = port
+            entry_result["api_port_open"] = False  # set below
+            port_tasks.append((entry_result, port))
+
+    # Loopback checks in parallel so one closed port never adds its full
+    # timeout to every other entry (0.25 s worst case for the whole poll).
+    if port_tasks:
+        with ThreadPoolExecutor(max_workers=len(port_tasks)) as pool:
+            futures = {pool.submit(_check_port_loopback, p): e
+                       for e, p in port_tasks}
+            for fut in futures:
+                try:
+                    futures[fut]["api_port_open"] = bool(fut.result())
+                except Exception:
+                    pass
+        # On top of the open port, ask the llama-server API which models it
+        # currently reports as loaded (GET /v1/models). Only done for ready
+        # entries; failures degrade to no "models" field (the argv-derived
+        # "model" above stays as the fallback on the dashboard).
+        ready = [(e, p) for e, p in port_tasks if e.get("api_port_open")]
+        if ready:
+            with ThreadPoolExecutor(max_workers=len(ready)) as pool:
+                model_futures = {pool.submit(_fetch_loaded_models, p): e
+                                 for e, p in ready}
+                for fut in model_futures:
+                    try:
+                        names = fut.result()
+                    except Exception:
+                        names = []
+                    if names:
+                        model_futures[fut]["models"] = names
+    return result
+
+
+def collect_metrics(watch: "list | None" = None) -> dict:
     """Collect CPU/RAM/GPU/VRAM metrics for the dashboard.
 
     All sizes are bytes, percentages 0-100. psutil is imported lazily so a
     broken/missing psutil in an old build only degrades this command.
+    *watch* (optional list of process names, see :func:`_watched_processes`)
+    adds a ``processes`` field to the response.
     """
     global _cpu_primed
     metrics: dict = {
@@ -284,6 +566,12 @@ def collect_metrics() -> dict:
     except Exception as e:
         _log(f"collect_metrics: gpu failed: {e}")
         metrics.update({"gpu": None, "vram_used": None, "vram_total": None, "gpu_name": None})
+
+    if watch:
+        try:
+            metrics["processes"] = _watched_processes(watch)
+        except Exception as e:
+            _log(f"collect_metrics: watch failed: {e}")
     return metrics
 
 
@@ -406,7 +694,11 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                 if not validate_credentials(username, password):
                     self._respond({"status": "error", "message": "Authentication failed"})
                     return
-                self._respond(collect_metrics())
+                watch = request.get("watch")
+                if isinstance(watch, list) and watch:
+                    self._respond(collect_metrics(watch=watch))
+                else:
+                    self._respond(collect_metrics())
                 return
 
             if command == "run_batch":

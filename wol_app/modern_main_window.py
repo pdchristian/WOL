@@ -14,8 +14,8 @@ settings dialog); see :func:`wol_app.main_window.main`.
 import os
 from typing import Any, NoReturn
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QEvent, QSize, Qt, QTimer
+from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -24,12 +24,20 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from wol_app.config import ConfigManager
+from wol_app.config import (
+    ConfigManager,
+    SIDEBAR_COLLAPSED_WIDTH,
+    SIDEBAR_SNAP_WIDTH,
+    SIDEBAR_WIDTH_MAX,
+    SIDEBAR_WIDTH_MIN,
+)
 from wol_app.main_window import HEADLESS_MODE
 from wol_app.modern_theme import DARK, LIGHT, app_icon_pixmap, apply_modern_theme
 from wol_app.schedule_runner import dispatch_schedule_action
@@ -41,6 +49,7 @@ from wol_app.views.logs_view import LogsView
 from wol_app.views.manage_view import ManageView
 from wol_app.views.schedule_view import ScheduleView
 from wol_app.views.settings_view import SettingsView
+from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
 from wol_app.views.update_view import UpdateView
 from wol_app.wol_engine import WOLEngine
 
@@ -59,6 +68,16 @@ UPDATE_NAV_INDEX = 5
 # Stack index of the per-device dashboard (opened via the 📊 tile on the
 # devices screen — intentionally NOT a sidebar entry).
 DASHBOARD_NAV_INDEX = 6
+
+# Sidebar area entries (icon, translation key) in stack order 0..3. Single
+# source of truth for _build_sidebar, _retranslate and the collapsed
+# icon-only rendering.
+NAV_DEFS = [
+    ("💻", "modern.nav.devices"),
+    ("🔧", "modern.nav.manage"),
+    ("🕒", "modern.nav.schedule"),
+    ("📋", "modern.nav.logs"),
+]
 
 
 
@@ -86,7 +105,15 @@ class ModernMainWindow(QMainWindow):
         # Scheduler engine (wake/shutdown for fired schedule entries)
         self.engine: WOLEngine = WOLEngine(self.config)
 
+        # Sidebar collapse/resize state (persisted under ui.sidebar_*).
+        self._sidebar_collapsed: bool = self.config.get_sidebar_collapsed()
+        self._sidebar_last_width: int = self.config.get_sidebar_width()
+        self._sidebar_save_timer: QTimer | None = None
+        self._sidebar_applying: bool = False
+        self._active_nav_btn: QPushButton | None = None
+
         self._setup_ui()
+        self._apply_sidebar_mode()
         self._select_nav(0)
 
         # Start the schedule engine (skip in headless mode)
@@ -104,11 +131,23 @@ class ModernMainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        root.addWidget(self._build_sidebar())
+        # Sidebar and content live in a splitter so the sidebar width is
+        # drag-resizable (design_prototype/Sidebar.html).
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setObjectName("modernSplitter")
+        self.splitter.setHandleWidth(5)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        root.addWidget(self.splitter)
+
+        self.sidebar = self._build_sidebar()
+        self.splitter.addWidget(self.sidebar)
 
         # Stacked screens
         self.stack = QStackedWidget()
-        root.addWidget(self.stack, 1)
+        self.splitter.addWidget(self.stack)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
 
         self.devices_view = DevicesView(self.config)
         self.manage_view = ManageView(self.config)
@@ -134,6 +173,25 @@ class ModernMainWindow(QMainWindow):
         self.devices_view.dashboard_requested.connect(self.open_device_dashboard)
         self.dashboard_view.back_requested.connect(lambda: self._select_nav(0))
 
+        # Sidebar resize/collapse wiring (after the widgets exist).
+        self._sidebar_save_timer = QTimer(self)
+        self._sidebar_save_timer.setSingleShot(True)
+        self._sidebar_save_timer.timeout.connect(self._save_sidebar_state)
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
+        # Double-click the drag handle toggles the sidebar (like the
+        # prototype's resizer dblclick).
+        self.splitter.handle(1).installEventFilter(self)
+        shortcut = QShortcut(QKeySequence("Ctrl+B"), self)
+        shortcut.activated.connect(self._toggle_sidebar)
+
+    def eventFilter(self, obj, event) -> bool:
+        # Toggle on double-click of the splitter handle.
+        if (obj is self.splitter.handle(1)
+                and event.type() == QEvent.Type.MouseButtonDblClick):
+            self._toggle_sidebar()
+            return True
+        return super().eventFilter(obj, event)
+
     def _on_devices_changed(self) -> None:
         """A device was added/edited/removed in either area — refresh both."""
         self.devices_view.refresh_devices()
@@ -154,51 +212,50 @@ class ModernMainWindow(QMainWindow):
             btn.setChecked(False)
         self.settings_btn.setChecked(False)
         self.about_btn.setChecked(False)
+        # No active entry → the next icon click navigates, never toggles.
+        self._active_nav_btn = None
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(230)
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(12, 20, 12, 16)
         layout.setSpacing(4)
 
-        # Logo
+        # Logo — the app icon doubles as the collapse toggle (v4: no arrow).
         logo_row = QHBoxLayout()
         logo_row.setSpacing(12)
-        mark = QLabel()
-        mark.setObjectName("logoMark")
-        mark.setFixedSize(40, 40)
-        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.logo_mark = QToolButton()
+        self.logo_mark.setObjectName("logoMark")
+        self.logo_mark.setFixedSize(40, 40)
+        self.logo_mark.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.logo_mark.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         _pix = app_icon_pixmap(40)
         if _pix is not None:
-            mark.setPixmap(_pix)
-        logo_text = QLabel(Translations.tr("app.name.short"))
-        logo_text.setObjectName("logoText")
-        logo_row.addWidget(mark)
-        logo_row.addWidget(logo_text)
+            self.logo_mark.setIcon(QIcon(_pix))
+            self.logo_mark.setIconSize(QSize(40, 40))
+        self.logo_mark.clicked.connect(self._toggle_sidebar)
+        self.logo_text = QLabel(Translations.tr("app.name.short"))
+        self.logo_text.setObjectName("logoText")
+        logo_row.addWidget(self.logo_mark)
+        logo_row.addWidget(self.logo_text)
         logo_row.addStretch()
         layout.addLayout(logo_row)
         layout.addSpacing(18)
 
         # Area section
-        lbl_areas = QLabel(Translations.tr("modern.nav.areas").upper())
-        lbl_areas.setObjectName("sectionLabel")
-        layout.addWidget(lbl_areas)
+        self.lbl_areas = QLabel(Translations.tr("modern.nav.areas").upper())
+        self.lbl_areas.setObjectName("sectionLabel")
+        layout.addWidget(self.lbl_areas)
 
         self.nav_buttons: list[QPushButton] = []
-        nav_defs = [
-            ("💻", "modern.nav.devices"),
-            ("🔧", "modern.nav.manage"),
-            ("🕒", "modern.nav.schedule"),
-            ("📋", "modern.nav.logs"),
-        ]
-        for idx, (icon, key) in enumerate(nav_defs):
+        for idx, (icon, key) in enumerate(NAV_DEFS):
             btn = QPushButton(nav_text(icon, key))
             btn.setObjectName("navItem")
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda _c=False, i=idx: self._select_nav(i))
+            btn.setToolTip(Translations.tr(key).replace("&", ""))
+            btn.clicked.connect(lambda _c=False, i=idx, b=btn: self._select_nav(i, b))
             self.nav_buttons.append(btn)
             layout.addWidget(btn)
 
@@ -209,21 +266,23 @@ class ModernMainWindow(QMainWindow):
         sep.setObjectName("navSeparator")
         sep.setFixedHeight(1)
         layout.addWidget(sep)
-        lbl_app = QLabel(Translations.tr("modern.nav.application").upper())
-        lbl_app.setObjectName("sectionLabel")
-        layout.addWidget(lbl_app)
+        self.lbl_app = QLabel(Translations.tr("modern.nav.application").upper())
+        self.lbl_app.setObjectName("sectionLabel")
+        layout.addWidget(self.lbl_app)
 
         self.settings_btn = self._nav_action(
-            "⚙", "menu.tools.settings",
-            lambda: self._select_nav(SETTINGS_NAV_INDEX, self.settings_btn))
+            "⚙", "menu.tools.settings", lambda: None)
         self.settings_btn.setCheckable(True)
+        self.settings_btn.clicked.connect(
+            lambda _c=False, b=self.settings_btn: self._select_nav(SETTINGS_NAV_INDEX, b))
         # The native update/about screen is opened via "Über"; the update
         # check itself is the primary button on that screen.
         self.about_btn = self._nav_action(
-            "\u2139\ufe0f", "menu.help.about",
-            lambda: self._select_nav(UPDATE_NAV_INDEX, self.about_btn))
+            "\u2139\ufe0f", "menu.help.about", lambda: None)
         self.about_btn.setCheckable(True)
-        self.quit_btn = self._nav_action("⏻", "menu.file.exit", self.close)
+        self.about_btn.clicked.connect(
+            lambda _c=False, b=self.about_btn: self._select_nav(UPDATE_NAV_INDEX, b))
+        self.quit_btn = self._nav_action("⏻", "menu.file.exit", self._confirm_quit)
         layout.addWidget(self.settings_btn)
         layout.addWidget(self.about_btn)
         layout.addWidget(self.quit_btn)
@@ -233,12 +292,114 @@ class ModernMainWindow(QMainWindow):
         btn = QPushButton(nav_text(icon, text_key))
         btn.setObjectName("navItem")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(Translations.tr(text_key).replace("&", ""))
         btn.clicked.connect(handler)
         return btn
+
+    # ── Sidebar collapse / resize ────────────────────────────────────────
+
+    def _toggle_sidebar(self) -> None:
+        """Switch between expanded (icon + label) and icon-only sidebar."""
+        if not self._sidebar_collapsed:
+            # Remember the intentional width before collapsing.
+            current = self.splitter.sizes()[0] if len(self.splitter.sizes()) else 0
+            if current >= SIDEBAR_WIDTH_MIN:
+                self._sidebar_last_width = min(current, SIDEBAR_WIDTH_MAX)
+        self._sidebar_collapsed = not self._sidebar_collapsed
+        self._apply_sidebar_mode()
+        self._save_sidebar_state()
+
+    def _apply_sidebar_mode(self) -> None:
+        """Push the collapsed state onto splitter, widgets and QSS."""
+        collapsed = self._sidebar_collapsed
+        if collapsed:
+            self.sidebar.setMinimumWidth(SIDEBAR_COLLAPSED_WIDTH)
+            self.sidebar.setMaximumWidth(SIDEBAR_COLLAPSED_WIDTH)
+        else:
+            # The minimum is the snap threshold so the user can drag into
+            # the collapse zone; widths below SIDEBAR_WIDTH_MIN bounce back
+            # (see _on_splitter_moved, mirrors the prototype).
+            self.sidebar.setMinimumWidth(SIDEBAR_SNAP_WIDTH)
+            self.sidebar.setMaximumWidth(SIDEBAR_WIDTH_MAX)
+
+        # Labels vanish in icon-only mode (hide() instead of QSS width:0 —
+        # hidden widgets with QSS padding keep stale layout gaps).
+        self.logo_text.setVisible(not collapsed)
+        self.lbl_areas.setVisible(not collapsed)
+        self.lbl_app.setVisible(not collapsed)
+
+        footer_defs = [
+            (self.settings_btn, "⚙", "menu.tools.settings"),
+            (self.about_btn, "\u2139\ufe0f", "menu.help.about"),
+            (self.quit_btn, "⏻", "menu.file.exit"),
+        ]
+        for btn, (icon, key) in zip(
+                self.nav_buttons, NAV_DEFS, strict=True):
+            self._set_nav_button_text(btn, icon, key)
+        for btn, icon, key in footer_defs:
+            self._set_nav_button_text(btn, icon, key)
+
+        total = sum(self.splitter.sizes()) or self.width()
+        width = (SIDEBAR_COLLAPSED_WIDTH if collapsed
+                 else min(max(self._sidebar_last_width, SIDEBAR_WIDTH_MIN),
+                          SIDEBAR_WIDTH_MAX))
+        self._sidebar_applying = True
+        self.splitter.setSizes([width, max(total - width, 100)])
+        self._sidebar_applying = False
+        self.logo_mark.setToolTip(Translations.tr(
+            "modern.nav.expand" if collapsed else "modern.nav.collapse"))
+
+    def _set_nav_button_text(self, btn: QPushButton, icon: str, key: str) -> None:
+        """Icon-only while collapsed, icon + label while expanded."""
+        btn.setText(icon if self._sidebar_collapsed else nav_text(icon, key))
+        btn.setProperty("collapsed", "true" if self._sidebar_collapsed else None)
+        style = btn.style()
+        style.unpolish(btn)
+        style.polish(btn)
+
+    def _on_splitter_moved(self, pos: int, index: int) -> None:
+        """Track drag width, snap shut below the threshold, persist width."""
+        if self._sidebar_save_timer is None or self._sidebar_applying:
+            return  # signal fired during __init__ or a programmatic resize
+        if self._sidebar_collapsed:
+            return  # fixed-width while collapsed; re-expand via click
+        width = self.splitter.sizes()[0]
+        if width <= SIDEBAR_SNAP_WIDTH:
+            # Snap: collapse instead of letting the sidebar shrink further.
+            self._sidebar_collapsed = True
+            self._apply_sidebar_mode()
+            self._save_sidebar_state()
+            return
+        if width < SIDEBAR_WIDTH_MIN:
+            # Between snap threshold and minimum: bounce back to the minimum
+            # (the prototype clamps the same way).
+            self._sidebar_applying = True
+            total = sum(self.splitter.sizes()) or self.width()
+            self.splitter.setSizes([SIDEBAR_WIDTH_MIN, max(total - SIDEBAR_WIDTH_MIN, 100)])
+            self._sidebar_applying = False
+            return
+        self._sidebar_last_width = min(width, SIDEBAR_WIDTH_MAX)
+        self._sidebar_save_timer.start(400)
+
+    def _save_sidebar_state(self) -> None:
+        """Persist sidebar width + collapsed flag (debounced via the timer)."""
+        try:
+            self.config.set_sidebar_width(self._sidebar_last_width)
+            self.config.set_sidebar_collapsed(self._sidebar_collapsed)
+        except OSError:
+            pass  # non-fatal: sidebar cosmetics only
 
     # ── Navigation ───────────────────────────────────────────────────────
 
     def _select_nav(self, index: int, trigger: QPushButton | None = None) -> None:
+        # v4 UX: clicking the already-active entry toggles the sidebar
+        # instead of re-selecting the screen (footer entries included;
+        # "Beenden" is not checkable and never routes here). Qt flips
+        # isChecked() before emitting clicked, so restore the highlight.
+        if trigger is not None and trigger is self._active_nav_btn:
+            trigger.setChecked(True)
+            self._toggle_sidebar()
+            return
         self.stack.setCurrentIndex(index)
         for i, btn in enumerate(self.nav_buttons):
             btn.setChecked(i == index)
@@ -246,8 +407,34 @@ class ModernMainWindow(QMainWindow):
         # exclusive checked state as the area buttons.
         self.settings_btn.setChecked(trigger is self.settings_btn)
         self.about_btn.setChecked(trigger is self.about_btn)
+        if trigger is not None:
+            self._active_nav_btn = trigger
+        elif index < len(self.nav_buttons):
+            self._active_nav_btn = self.nav_buttons[index]
 
     # ── Application actions (reuse classic dialogs) ──────────────────────
+
+    def _confirm_quit(self) -> None:
+        """Ask for confirmation before closing the window (modern layout).
+
+        Reuses the modern shutdown-confirm dialog with quit-specific texts;
+        the application name is substituted into the ``{app}`` placeholder.
+        Always shown — even with WOL_HEADLESS set — because a stray
+        environment variable in the user's shell must not silently disable
+        the confirmation (automated tests call ``close()`` directly and
+        never route through here).
+        """
+        dialog = ModernShutdownConfirmDialog(
+            "",
+            self,
+            title_key="modern.quit_confirm.title",
+            message_key="modern.quit_confirm.message",
+            yes_key="modern.quit_confirm.yes",
+            no_key="modern.quit_confirm.no",
+            message_kwargs={"app": Translations.tr("app.name")},
+        )
+        if dialog.exec():
+            self.close()
 
     def _on_settings_saved(self) -> None:
         """React to a save/reset on the native settings screen.
@@ -288,18 +475,24 @@ class ModernMainWindow(QMainWindow):
     def _retranslate(self) -> None:
         """Refresh all UI text after a language change in the settings dialog."""
         self.setWindowTitle(Translations.tr("app.name"))
-        # Navigation labels (nav_buttons: devices, manage, schedule, logs)
-        nav_defs = [
-            ("💻", "modern.nav.devices"),
-            ("🔧", "modern.nav.manage"),
-            ("🕒", "modern.nav.schedule"),
-            ("📋", "modern.nav.logs"),
+        # Section labels (hidden while collapsed — text still refreshed).
+        self.lbl_areas.setText(Translations.tr("modern.nav.areas").upper())
+        self.lbl_app.setText(Translations.tr("modern.nav.application").upper())
+        # Navigation labels: collapse-aware (icon-only must stay icon-only).
+        for btn, (icon, key) in zip(self.nav_buttons, NAV_DEFS, strict=True):
+            self._set_nav_button_text(btn, icon, key)
+            btn.setToolTip(Translations.tr(key).replace("&", ""))
+        footer_defs = [
+            (self.settings_btn, "⚙", "menu.tools.settings"),
+            (self.about_btn, "\u2139\ufe0f", "menu.help.about"),
+            (self.quit_btn, "⏻", "menu.file.exit"),
         ]
-        for btn, (icon, key) in zip(self.nav_buttons, nav_defs, strict=True):
-            btn.setText(nav_text(icon, key))
-        self.settings_btn.setText(nav_text("⚙", "menu.tools.settings"))
-        self.about_btn.setText(nav_text("\u2139\ufe0f", "menu.help.about"))
-        self.quit_btn.setText(nav_text("⏻", "menu.file.exit"))
+        for btn, icon, key in footer_defs:
+            self._set_nav_button_text(btn, icon, key)
+            btn.setToolTip(Translations.tr(key).replace("&", ""))
+        self.logo_mark.setToolTip(Translations.tr(
+            "modern.nav.expand" if self._sidebar_collapsed
+            else "modern.nav.collapse"))
 
         self.devices_view.retranslate()
         self.manage_view.retranslate()
@@ -312,6 +505,10 @@ class ModernMainWindow(QMainWindow):
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        # Flush any pending debounced sidebar width save.
+        if self._sidebar_save_timer is not None:
+            self._sidebar_save_timer.stop()
+        self._save_sidebar_state()
         self.devices_view.cancel_workers()
         self.manage_view.cancel_workers()
         self.dashboard_view.cancel_workers()

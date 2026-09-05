@@ -130,8 +130,14 @@ def get_metrics(
     port: int = HOST_SERVICE_PORT,
     timeout: float = 5.0,
     sock_sink: "callable | None" = None,
+    watch: "list[str] | None" = None,
 ) -> tuple[bool, dict | str]:
     """Fetch CPU/RAM/GPU/VRAM metrics from the host service.
+
+    *watch* (optional, host service protocol ≥ 3) is a list of process
+    names (``"llama-server.exe"`` or ``"name.exe:port"``); the response then
+    contains a ``processes`` map with their status. Older hosts simply
+    ignore the field.
 
     Returns:
         (True, metrics_dict) on success — keys include ``cpu``, ``cpu_count``,
@@ -141,9 +147,13 @@ def get_metrics(
         (False, error_message) on any transport/auth/protocol error. A host
         service without dashboard support is reported explicitly.
     """
+    payload: dict = {"command": "metrics",
+                     "username": username or "", "password": password or ""}
+    if watch:
+        payload["watch"] = [str(w) for w in watch][:8]
     ok, response = _request(
         ip,
-        {"command": "metrics", "username": username or "", "password": password or ""},
+        payload,
         port,
         timeout,
         _MAX_METRICS_BYTES,

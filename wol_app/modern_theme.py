@@ -180,6 +180,8 @@ DARK = {
     "gauge_ram": "#60a5fa",
     "gauge_gpu": "#a78bfa",
     "gauge_vram": "#f59e0b",
+    # Watched-process chips/rows (prototype --svc, llama-orange)
+    "svc": "#f97316",
     "console_bg": "#12141a",
 }
 
@@ -203,6 +205,7 @@ LIGHT = {
     "gauge_ram": "#2563eb",
     "gauge_gpu": "#7c3aed",
     "gauge_vram": "#d97706",
+    "svc": "#ea580c",
     "console_bg": "#f7f8fa",
 }
 
@@ -218,9 +221,17 @@ QWidget {{ color: {t['text']}; font-family: "Segoe UI", sans-serif; font-size: 1
     background: {t['surface']};
     border-right: 1px solid {t['border']};
 }}
+/* Drag handle between sidebar and content (accent on hover — mirrors the
+   .resizer in design_prototype/Sidebar.html). */
+QSplitter#modernSplitter {{ border: none; }}
+QSplitter#modernSplitter::handle {{ background: {t['bg']}; width: 5px; }}
+QSplitter#modernSplitter::handle:hover,
+QSplitter#modernSplitter::handle:pressed {{ background: {t['accent']}; }}
+/* App icon doubles as the collapse toggle (v4: no separate arrow button). */
 #logoMark {{
-    background: transparent;
+    background: transparent; border: none; border-radius: 12px;
 }}
+#logoMark:hover {{ background: rgba(0, 184, 169, 0.22); }}
 #logoText {{ color: {t['text']}; font-weight: 600; font-size: 15px; }}
 #sectionLabel {{
     color: {t['text_dim']}; font-size: 10px; font-weight: 600;
@@ -235,6 +246,8 @@ QWidget {{ color: {t['text']}; font-family: "Segoe UI", sans-serif; font-size: 1
 #navItem:checked {{
     background: rgba(0, 184, 169, 0.14); color: {t['accent']}; font-weight: 600;
 }}
+/* Icon-only mode (sidebar collapsed): center the emoji, drop side padding. */
+#navItem[collapsed="true"] {{ text-align: center; padding: 10px 0; }}
 #navSeparator {{ background: {t['border']}; max-height: 1px; border: none; }}
 
 /* ── Page header ─────────────────────────────────────────────────────── */
@@ -407,6 +420,32 @@ QListWidget#batchList::item:selected {{
 #badgeOnline {{ background: rgba(34, 197, 94, 0.15); color: {t['online']}; }}
 #badgeOffline {{ background: rgba(239, 68, 68, 0.15); color: {t['offline']}; }}
 #badgeUnknown {{ background: rgba(245, 158, 11, 0.15); color: {t['unknown']}; }}
+
+/* ── Watched-process chips + services panel (dashboard) ──────────────── */
+/* No box padding here: the chips are hidden at construction and Qt applies
+   QSS box-model properties only after the first visible polish, so the
+   padding lives in ServiceChip.setContentsMargins (dashboard_view.py). */
+#svcChipRunning, #svcChipProbing, #svcChipInactive {{
+    border-radius: 10px;
+    font-size: 12px; font-weight: 600;
+}}
+#svcChipRunning {{ background: rgba(34, 197, 94, 0.15); color: {t['online']}; }}
+#svcChipProbing {{ background: rgba(245, 158, 11, 0.15); color: {t['unknown']}; }}
+#svcChipInactive {{ background: rgba(154, 160, 171, 0.10); color: {t['text_dim']}; }}
+#svcRow {{ background: transparent; border: none; }}
+#svcIcon {{
+    font-size: 19px; background: {t['surface_hover']};
+    border: 1px solid {t['border']}; border-radius: 12px;
+}}
+#svcName {{ color: {t['text']}; font-size: 14px; font-weight: 600; }}
+#svcStatusRunning {{ color: {t['online']}; font-size: 12px; }}
+#svcStatusWarn {{ color: {t['unknown']}; font-size: 12px; }}
+#svcStatusOff {{ color: {t['text_dim']}; font-size: 12px; }}
+#svcMetricValue {{ color: {t['text']}; font-size: 15px; font-weight: 700; }}
+#svcMetricCaption {{
+    color: {t['text_dim']}; font-size: 10px; font-weight: 600;
+    letter-spacing: 0.5px;
+}}
 
 /* ── Log level badges (prototype .level) ─────────────────────────────── */
 #badgeInfo, #badgeWarn, #badgeError {{
