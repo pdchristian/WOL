@@ -19,7 +19,7 @@ desktop and shutdown flows from :mod:`wol_app.remote_desktop` /
 
 from typing import Any
 
-from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -44,10 +45,13 @@ from wol_app.views.device_edit_dialog import ModernDeviceDialog
 from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
 from wol_app.wol_engine import WOLEngine
 
-# Grid geometry mirrors the prototype 1:1 (.grid in dark_control_center_full.html):
-# repeat(auto-fill, minmax(230px, 1fr)) with 16px gap, inside .main padding 36px.
+# Grid geometry mirrors the prototype (.grid in dark_control_center_full.html):
+# repeat(auto-fill, minmax(MIN, 1fr)) with 16px gap, inside .main padding 36px.
 # The column formula below reproduces that behaviour for the Qt grid.
-CARD_MIN_WIDTH = 230
+# MIN is 300 (not the prototype's 230): at 230 the action button
+# "Herunterfahren" no longer fits next to the three remote tiles and gets
+# elided; 3 tiles (108) + gaps + button (~130) + card margins (36) ≈ 290.
+CARD_MIN_WIDTH = 300
 GRID_SPACING = 16
 
 # Horizontal page margins inside the scroll content — matches the prototype's
@@ -74,6 +78,137 @@ def _ip_sort_key(ip: str) -> tuple:
     if len(parts) == 4 and all(p.isdigit() for p in parts):
         return (0, tuple(int(p) for p in parts), "")
     return (1, (), ip or "")
+
+
+def compute_columns(avail: int) -> int:
+    """CSS ``repeat(auto-fill, minmax(MIN, 1fr))``: max Spalten mit MIN-Breite.
+
+    Eine weitere Spalte passt, sobald die gleichmäßige Kachelbreite noch
+    >= CARD_MIN_WIDTH wäre: ``cols = (avail + GAP) // (MIN + GAP)``.
+    """
+    if avail <= 0:
+        return 1
+    return max(1, (avail + GRID_SPACING) // (CARD_MIN_WIDTH + GRID_SPACING))
+
+
+class WidthPinnedScrollArea(QScrollArea):
+    """ScrollArea whose content width is ALWAYS exactly the viewport width.
+
+    Fixes the "ratchet" bug of the plain QScrollArea: normally the content
+    is never narrower than its layout's minimum (fixed toolbar widths, card
+    content hints). Shrinking the window then clamps the content width — no
+    resizeEvent with a smaller width ever arrives, the grid formula sees a
+    stale too-large width and a dead margin (or overflow) appears on the
+    right. CSS block elements behave the other way (width == containing
+    block, period); setFixedWidth in resizeEvent enforces exactly that here.
+    """
+
+    def __init__(self, content: QWidget, parent=None) -> None:
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setWidget(content)
+        self._content = content
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().resizeEvent(event)
+        vw = self.viewport().width()
+        if vw > 0 and self._content.width() != vw:
+            self._content.setFixedWidth(vw)
+
+
+class FlexToolbar(QWidget):
+    """Toolbar laid out like CSS ``display:flex; justify-content:space-between``.
+
+    A QBoxLayout distributes a width deficit over ALL items — the search
+    field slides left and is no longer flush with the right edge of the
+    card grid. Here everything is positioned manually instead:
+
+    - right group (sort combo + search): ALWAYS right-aligned at the
+      container edge; the search field shrinks first (260 → 160 px),
+      then the combo (150 → 100 px);
+    - left group (view toggle · refresh · wake all): starts at the left
+      edge, the last button compresses first when space gets tight.
+
+    Invariant: right edge of the search field == right edge of the grid
+    == content width (both share the same PAGE_MARGIN_H margins).
+    """
+
+    # CSS parity: the right group shrinks the search field first, then the
+    # combo; the left group gives way without limit.
+    SEARCH_MIN = 160
+    SEARCH_MAX = 260
+    COMBO_MIN = 100
+    COMBO_W = 150
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._left: list[QWidget] = []
+        self._right: list[QWidget] = []
+        self._gap = 10
+
+    def add_left(self, widget: QWidget) -> None:
+        widget.setParent(self)
+        self._left.append(widget)
+
+    def add_right(self, widget: QWidget) -> None:
+        widget.setParent(self)
+        self._right.append(widget)
+
+    def _widths_right(self, avail: int) -> list[int]:
+        """Widths of the right group (list end == search field)."""
+        widths = [self.COMBO_W, self.SEARCH_MAX][: len(self._right)]
+        need = sum(widths) + self._gap * max(0, len(widths) - 1)
+        deficit = need - avail
+        if deficit <= 0:
+            return widths
+        take = min(deficit, self.SEARCH_MAX - self.SEARCH_MIN)
+        widths[-1] -= take
+        deficit -= take
+        if deficit > 0:
+            widths[-2] = max(self.COMBO_MIN, widths[-2] - deficit)
+        return widths
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().resizeEvent(event)
+        w, h = self.width(), self.height()
+
+        def place(widget: QWidget, x: int, width: int) -> None:
+            # Center on the height ACTUALLY given (>= 36), not the smaller
+            # sizeHint height — centering on sizeHint (≈20) inside a 36px
+            # toolbar pushed widgets ~8px below the toolbar's bottom edge.
+            height = max(widget.sizeHint().height(), h)
+            y = (h - height) // 2
+            widget.setGeometry(x, y, width, height)
+
+        # Right group: build from the right edge leftwards.
+        widths = self._widths_right(w)
+        x = w
+        for widget, width in zip(reversed(self._right), reversed(widths)):
+            x -= width
+            place(widget, x, width)
+            x -= self._gap
+        right_block_left = x + self._gap
+        # Left group: from the left; the last button compresses first.
+        x = 0
+        for i, widget in enumerate(self._left):
+            pref = widget.sizeHint().width()
+            remaining = right_block_left - self._gap - x
+            if i == len(self._left) - 1:
+                width = max(0, min(pref, remaining))
+            else:
+                width = min(pref, max(0, remaining))
+            place(widget, x, width)
+            x += width + self._gap
+
+    def sizeHint(self) -> QSize:  # noqa: N802 (Qt naming)
+        lh = max((w.sizeHint().height() for w in self._left + self._right),
+                 default=36)
+        return QSize(400, max(lh, 36))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 (Qt naming)
+        return QSize(0, self.sizeHint().height())
 
 
 class DeviceListRow(QWidget):
@@ -224,6 +359,17 @@ class DeviceCard(QWidget):
         # Plain QWidget subclasses only paint QSS background/border with this
         # attribute set (same as #pageContent in ManageView).
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # No minimum-width ratchet: Qt clamps a widget at its minimumSizeHint
+        # (tiles + action button ≈ 290 px here), so a shrinking window could
+        # never make the card narrower — the grid formula would keep seeing
+        # the stale wide width and leave a dead margin on the right. With
+        # Ignored, qSmartMinSize uses only the explicit minimumSize (0) and
+        # the card follows its grid column exactly. (setMinimumWidth(0) alone
+        # does NOT work: Preferred policy ignores it.)
+        size_policy = self.sizePolicy()
+        size_policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        size_policy.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(size_policy)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 14, 18, 14)
@@ -400,6 +546,12 @@ class DevicesView(QWidget):
         self._cards: dict[str, DeviceCard] = {}
         self._rows: dict[str, DeviceListRow] = {}
         self._grid_cols = 0
+        # Highest column count ever used: QGridLayout keeps per-column
+        # properties (stretch, min width) PERMANENTLY, so a column left over
+        # from a wider layout would keep stretch=1 and split the row into a
+        # phantom extra column — cards too narrow with a dead margin on the
+        # right. Every reflow resets all columns up to this high-water mark.
+        self._grid_max_cols = 0
         self._view_mode: str = self.config.get_devices_view_mode()
         self._sort_key: str = self.config.get_devices_sort_key()
 
@@ -418,15 +570,15 @@ class DevicesView(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        outer.addWidget(scroll)
-        self._scroll = scroll
-
         content = QWidget()
         content.setObjectName("pageContent")
         content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        scroll.setWidget(content)
+        # Content width is pinned to the viewport (see WidthPinnedScrollArea):
+        # the grid formula below always measures the REAL visible width.
+        scroll = WidthPinnedScrollArea(content)
+        outer.addWidget(scroll)
+        self._scroll = scroll
+
         layout = QVBoxLayout(content)
         # Horizontal margins match PAGE_MARGIN_H (prototype .main padding 36px)
         layout.setContentsMargins(PAGE_MARGIN_H, 26, PAGE_MARGIN_H, 26)
@@ -449,15 +601,19 @@ class DevicesView(QWidget):
         layout.addSpacing(4)
 
         # ── Toolbar: view toggle · refresh · wake all … sort · search ──
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(10)
+        # FlexToolbar (manual CSS space-between): the right group (sort +
+        # search) is ALWAYS right-aligned at the content edge, so the
+        # search field's right edge coincides with the last card's right
+        # edge at every window width. A QBoxLayout would spread width
+        # deficits over all items and slide the search field left instead.
+        toolbar = FlexToolbar()
         # View-mode toggle (icon top left): three lines while the card grid
         # is active, four tiles while the list is active. Glyphs come from
         # the #viewListButton / #viewGridButton QSS images (SVG).
         self.view_btn = QPushButton()
         self.view_btn.setFixedSize(36, 36)
         self.view_btn.clicked.connect(self._toggle_view_mode)
-        toolbar.addWidget(self.view_btn)
+        toolbar.add_left(self.view_btn)
 
         # No text: the glyph comes from the #refreshButton QSS image (SVG),
         # a font glyph like "⟳" renders small and font-dependent.
@@ -466,18 +622,16 @@ class DevicesView(QWidget):
         self.refresh_btn.setFixedSize(36, 36)
         self.refresh_btn.setToolTip(Translations.tr("button.refresh"))
         self.refresh_btn.clicked.connect(self.refresh_statuses)
-        toolbar.addWidget(self.refresh_btn)
+        toolbar.add_left(self.refresh_btn)
 
         self.wake_all_btn = QPushButton(Translations.tr("button.wake_all"))
         self.wake_all_btn.setObjectName("primaryButton")
         self.wake_all_btn.clicked.connect(self._wake_all)
-        toolbar.addWidget(self.wake_all_btn)
-        toolbar.addStretch()
+        toolbar.add_left(self.wake_all_btn)
 
         # Sort drop-down (left of the search field) — persisted setting.
         self.sort_combo = QComboBox()
         self.sort_combo.setObjectName("devicesSortCombo")
-        self.sort_combo.setFixedWidth(150)
         self._sort_keys: list[str] = []
         for key in ("name", "ip", "mac", "status"):
             self.sort_combo.addItem(
@@ -486,20 +640,24 @@ class DevicesView(QWidget):
         idx = self.sort_combo.findData(self._sort_key)
         self.sort_combo.setCurrentIndex(max(0, idx))
         self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
-        toolbar.addWidget(self.sort_combo, 0, Qt.AlignmentFlag.AlignVCenter)
+        toolbar.add_right(self.sort_combo)
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
         self.search_input.setClearButtonEnabled(True)
-        self.search_input.setFixedWidth(260)
         self.search_input.textChanged.connect(self.refresh_devices)
-        toolbar.addWidget(self.search_input, 0, Qt.AlignmentFlag.AlignVCenter)
-        layout.addLayout(toolbar)
+        toolbar.add_right(self.search_input)
+        layout.addWidget(toolbar)
         layout.addSpacing(6)
 
         # ── Card grid (Kachelansicht) ──
         grid_host = QWidget()
         grid_host.setObjectName("deviceGrid")
+        # Same no-ratchet rule as the cards: the host must always follow the
+        # content width, never hold it open at its layout minimum.
+        host_policy = grid_host.sizePolicy()
+        host_policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        grid_host.setSizePolicy(host_policy)
         self.grid = QGridLayout(grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setSpacing(GRID_SPACING)
@@ -653,8 +811,11 @@ class DevicesView(QWidget):
         vw = self._scroll.viewport().width()
         if vw <= 0:
             return 0
+        # The content is pinned to the viewport width (WidthPinnedScrollArea)
+        # and the grid host fills it minus the page margins — so this is the
+        # REAL width the cards get, never a stale clamped one.
         avail = max(vw - 2 * PAGE_MARGIN_H, CARD_MIN_WIDTH)
-        return max(1, (avail + GRID_SPACING) // (CARD_MIN_WIDTH + GRID_SPACING))
+        return compute_columns(avail)
 
     def _relayout_grid(self) -> None:
         """Place the cards into the grid, computing the column count from width."""
@@ -670,9 +831,17 @@ class DevicesView(QWidget):
             self.grid.takeAt(0)
         for i, card in enumerate(self._cards.values()):
             self.grid.addWidget(card, i // cols, i % cols)
+        # Reset EVERY column ever used before stretching the active ones:
+        # QGridLayout keeps columnStretch permanently, so a leftover column
+        # from a wider layout would act as a phantom stretch column — cards
+        # too narrow with a dead margin on the right (takeAt does NOT clear
+        # column properties).
+        for c in range(cols, self._grid_max_cols + 1):
+            self.grid.setColumnStretch(c, 0)
         # Stretch columns so cards fill the row like the prototype grid
         for c in range(cols):
             self.grid.setColumnStretch(c, 1)
+        self._grid_max_cols = max(self._grid_max_cols, cols)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         super().resizeEvent(event)

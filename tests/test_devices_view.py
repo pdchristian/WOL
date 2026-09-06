@@ -212,13 +212,17 @@ class TestGridColumnCount:
         assert max_col < view._grid_cols
 
     def test_three_columns_at_default_window_width(self, shown_view):
-        """Prototype parity: 1180 px window − 230 px sidebar ≈ 935 px viewport → 3 columns.
+        """With CARD_MIN_WIDTH=300 three columns start at ≈ 1004 px viewport.
 
-        Measured in design_prototype/dark_control_center_full.html at the same
-        width: .grid yields 3 columns of ~298 px (minmax(230px, 1fr), gap 16).
+        3 columns need 3·300 + 2·16 = 932 px of grid width; plus the 2·36 px
+        page margins the viewport must be ≥ 1004 px — e.g. a 1230 px window
+        behind the 230 px sidebar. Below that the row drops to two wider
+        cards (never narrower than 300 px, so "Herunterfahren" always fits).
         """
-        view = shown_view(935)
+        view = shown_view(1020)
         assert view._grid_cols == 3
+        view_2col = shown_view(935)
+        assert view_2col._grid_cols == 2
 
     def test_list_mode_resize_does_not_reflow(self, qapp, config_with_devices, monkeypatch):
         config_with_devices.set_devices_view_mode(DEVICES_VIEW_LIST)
@@ -233,6 +237,109 @@ class TestGridColumnCount:
         assert view._grid_cols == before  # early-return while the list is shown
         view.cancel_workers()
         view.deleteLater()
+
+
+class TestGridRightEdgeFlush:
+    """The right edge of the last card is flush with the search field.
+
+    Regression (2026-09-06): two separate bugs left a dead margin on the
+    right of the card grid:
+
+    1. "ratchet" — a plain QScrollArea never makes its content narrower
+       than the layout minimum (fixed toolbar widths), so shrinking the
+       window never delivered a smaller resizeEvent and the column formula
+       saw a stale, too-large width.
+    2. phantom columns — QGridLayout keeps columnStretch permanently, so a
+       column left over from a wider layout kept stretch=1 and split the
+       row into an extra narrow column.
+    """
+
+    @pytest.fixture()
+    def many_devices_config(self, tmp_path, monkeypatch):
+        """6 devices: enough that every tested width's row ends in a real card."""
+        cfg = ConfigManager(str(tmp_path / "flush.json"))
+        cfg.config["devices"] = [
+            {
+                "id": f"f{i}",
+                "name": f"Flush{i}",
+                "mac": f"AA:BB:CC:DD:EE:{i:02X}",
+                "ip": f"192.168.1.{i}",
+                "enabled": True,
+            }
+            for i in range(1, 7)
+        ]
+        return cfg
+
+    @pytest.fixture()
+    def shown_view(self, qapp, many_devices_config, monkeypatch):
+        views = []
+
+        def _make(width: int) -> DevicesView:
+            view = DevicesView(many_devices_config)
+            monkeypatch.setattr(view, "refresh_statuses", lambda: None)
+            view.resize(width, 700)
+            view.show()
+            qapp.processEvents()
+            views.append(view)
+            return view
+
+        yield _make
+        for v in views:
+            v.cancel_workers()
+            v.deleteLater()
+
+    @staticmethod
+    def _settle(qapp, view: DevicesView, width: int) -> None:
+        view.resize(width, 700)
+        for _ in range(5):
+            qapp.processEvents()
+
+    def test_content_width_tracks_viewport(self, qapp, shown_view):
+        """No ratchet: pageContent follows the viewport when shrinking."""
+        view = shown_view(1400)
+        for width in (1100, 900, 760, 620, 900, 1400):
+            self._settle(qapp, view, width)
+            vp = view._scroll.viewport().width()
+            assert view._scroll.widget().width() <= vp + 1
+
+    def test_last_card_flush_with_search_field(self, qapp, shown_view):
+        """Right card edge == search field right edge at every width."""
+        view = shown_view(1400)
+        content = view._scroll.widget()
+        for width in (1400, 1200, 1000, 900, 760, 700, 600, 900, 1400):
+            self._settle(qapp, view, width)
+            cards = list(view._cards.values())
+            assert cards, f"no cards at width {width}"
+            rightmost = max(
+                c.mapTo(content, c.rect().topRight()).x() for c in cards)
+            search_right = view.search_input.mapTo(
+                content, view.search_input.rect().topRight()).x()
+            assert abs(rightmost - search_right) <= 2, (
+                f"width {width}: card edge {rightmost} vs search {search_right}")
+
+    def test_no_phantom_column_after_shrinking(self, qapp, shown_view):
+        """Cards fill the row after a wide→narrow step (stretch reset)."""
+        view = shown_view(1400)
+        self._settle(qapp, view, 1400)
+        wide_cols = view._grid_cols
+        self._settle(qapp, view, 900)
+        assert view._grid_cols < wide_cols
+        # Every card is (near) as wide as the formula promises — a leftover
+        # stretch column would leave the cards much narrower.
+        avail = view._grid_host.width()
+        expected = (avail - (view._grid_cols - 1) * GRID_SPACING) // view._grid_cols
+        for card in view._cards.values():
+            assert card.width() >= expected - 2
+
+    def test_search_field_right_edge_at_content_edge(self, qapp, shown_view):
+        """FlexToolbar keeps the search field right-aligned when shrinking."""
+        view = shown_view(1400)
+        content = view._scroll.widget()
+        for width in (1400, 900, 760, 620, 1400):
+            self._settle(qapp, view, width)
+            right = view.search_input.mapTo(
+                content, view.search_input.rect().topRight()).x()
+            assert abs(right - (content.width() - PAGE_MARGIN_H)) <= 2
 
 
 class TestLocaleKeyConsistency:
