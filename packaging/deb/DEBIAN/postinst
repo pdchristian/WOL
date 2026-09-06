@@ -1,0 +1,52 @@
+#!/bin/sh
+# postinst: enable + start the WOL Host Service after the package files are in
+# place. systemd integration is done with plain systemctl (no debhelper).
+set -u
+
+PKG="wake-on-lan-manager"
+SERVICE="wol-host-service"
+UNIT="/lib/systemd/system/$SERVICE.service"
+
+case "$1" in
+    configure)
+        # Desktop database + icon cache are best-effort niceties.
+        update-desktop-database -q /usr/share/applications 2>/dev/null || true
+        gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+            # enable --now is idempotent: upgrades restart an old instance.
+            if systemctl enable --now "$SERVICE"; then
+                echo "$PKG: $SERVICE enabled and started (TCP 8765)."
+            else
+                echo "$PKG: WARNING - could not start $SERVICE." >&2
+                echo "         Check with: systemctl status $SERVICE" >&2
+            fi
+        else
+            echo "$PKG: no systemd detected - $SERVICE not started." >&2
+            echo "         Run it manually: $SERVICE --run" >&2
+        fi
+
+        # ufw rule for the service port (only when ufw is installed/active).
+        if command -v ufw >/dev/null 2>&1; then
+            if ufw status 2>/dev/null | grep -qi active; then
+                ufw allow 8765/tcp >/dev/null 2>&1 \
+                    || echo "$PKG: WARNING - could not open TCP 8765 in ufw." >&2
+            fi
+        fi
+
+        cat <<'NOTE'
+
+  Wake-on-LAN Manager installed.
+
+    * App:          GNOME app grid -> 'Wake-on-LAN Manager'
+                    (or run 'wake-on-lan-manager')
+    * Host Service: wol-host-service --status | --start | --stop
+                    Remote script execution stays disabled; enable it per
+                    machine with:  sudo wol-host-service --enable-batch
+
+NOTE
+        ;;
+esac
+
+exit 0

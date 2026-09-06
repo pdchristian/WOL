@@ -1,0 +1,28 @@
+Package: @PKG_NAME@
+Version: @VERSION@
+Architecture: all
+Maintainer: pdchristian <cpopp@hotmail.com>
+Installed-Size: @INSTALL_SIZE@
+Depends: python3 (>= 3.10), python3-pyqt6, python3-cryptography (>= 41.0),
+ python3-psutil, python3-pamela, libpam0g, iputils-ping, iproute2
+Recommends: freerdp2-x11, avahi-daemon
+Section: utils
+Priority: optional
+Homepage: https://github.com/pdchristian/WOL-Ubuntu
+Description: Wake-on-LAN manager with remote shutdown and live dashboards
+ Modern "Control Center" desktop application for sending Wake-on-LAN magic
+ packets to devices on the local network.
+ .
+ Features device management (card/list views), parallel wake-up, ping based
+ status monitoring, network scanning, schedules with remote shutdown, an
+ activity log with CSV export, remote desktop via FreeRDP and per-device
+ dashboards showing live CPU/RAM/GPU/VRAM metrics, watched-process status
+ chips (incl. llama.cpp model detection) plus remote script execution.
+ .
+ The package also installs the WOL Host Service ("wol-host-service"), a
+ systemd service listening on TCP port 8765 that lets other Wake-on-LAN
+ Manager clients (Windows, Ubuntu, Android) shut down or reboot this machine
+ and read its metrics. Credential checks run through PAM; batch execution is
+ disabled by default and must be enabled explicitly with
+ "sudo wol-host-service --enable-batch". GPU/VRAM metrics additionally use
+ nvidia-smi when an NVIDIA driver is present.

@@ -1,0 +1,23 @@
+[Unit]
+Description=WOL Host Service - remote shutdown/metrics for the Wake-on-LAN Manager
+Documentation=https://github.com/pdchristian/WOL-Ubuntu
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 @APP_DIR@/wol_host_service.py --run
+Restart=on-failure
+RestartSec=5
+
+# The service must be able to power off / reboot the machine, so it runs as
+# root. Everything that does not need those privileges is still restricted.
+User=root
+WorkingDirectory=/
+NoNewPrivileges=false
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

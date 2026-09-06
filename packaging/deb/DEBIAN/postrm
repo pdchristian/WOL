@@ -1,0 +1,46 @@
+#!/bin/sh
+# postrm: disable + drop the systemd unit, refresh the desktop/icon caches.
+set -u
+
+PKG="wake-on-lan-manager"
+SERVICE="wol-host-service"
+UNIT="/lib/systemd/system/$SERVICE.service"
+
+case "$1" in
+    remove|disappear)
+        if [ -d /run/systemd/system ]; then
+            systemctl disable "$SERVICE" 2>/dev/null || true
+            systemctl reset-failed "$SERVICE" 2>/dev/null || true
+        fi
+        if command -v ufw >/dev/null 2>&1; then
+            if ufw status 2>/dev/null | grep -qi active; then
+                ufw delete allow 8765/tcp >/dev/null 2>&1 || true
+            fi
+        fi
+        ;;
+    purge)
+        if [ -d /run/systemd/system ]; then
+            systemctl disable "$SERVICE" 2>/dev/null || true
+            systemctl reset-failed "$SERVICE" 2>/dev/null || true
+        fi
+        if command -v ufw >/dev/null 2>&1; then
+            if ufw status 2>/dev/null | grep -qi active; then
+                ufw delete allow 8765/tcp >/dev/null 2>&1 || true
+            fi
+        fi
+        # Per-user config/keys are intentionally kept (same behaviour as the
+        # Windows installer); remove them manually if desired:
+        #   rm -rf ~/.wol_app
+        echo "$PKG: user data kept (~/.wol_app). Remove manually to purge."
+        ;;
+esac
+
+# The unit file itself is removed by dpkg; reload so systemd forgets it.
+if [ -d /run/systemd/system ] && [ ! -e "$UNIT" ]; then
+    systemctl daemon-reload 2>/dev/null || true
+fi
+
+update-desktop-database -q /usr/share/applications 2>/dev/null || true
+gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+
+exit 0

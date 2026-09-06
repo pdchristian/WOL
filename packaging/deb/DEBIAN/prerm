@@ -1,0 +1,15 @@
+#!/bin/sh
+# prerm: stop the service before the package files disappear.
+set -u
+
+SERVICE="wol-host-service"
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        if [ -d /run/systemd/system ]; then
+            systemctl stop "$SERVICE" 2>/dev/null || true
+        fi
+        ;;
+esac
+
+exit 0

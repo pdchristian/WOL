@@ -1,0 +1,8 @@
+# Keep shell scripts and Debian maintainer scripts LF-only (they break with CRLF on Linux).
+*.sh text eol=lf
+packaging/deb/DEBIAN/postinst text eol=lf
+packaging/deb/DEBIAN/prerm text eol=lf
+packaging/deb/DEBIAN/postrm text eol=lf
+packaging/deb/*.service text eol=lf
+wol_host_service_linux.py text eol=lf
+install.sh text eol=lf
