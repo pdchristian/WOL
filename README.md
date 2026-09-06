@@ -1,9 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 2.2.1 - Service Watch Edition**
+**Version 2.2.2 - Service Watch Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.2.2:** **Ubuntu / Linux support** — the app now runs natively on Ubuntu (Modern UI) with a `.deb` package, a systemd-based **Linux Host Service** (protocol v4: metrics, watched processes, llama.cpp models — PAM-authenticated), and `xfreerdp`-based Remote Desktop with the same fast-exit retry. Also: cross-platform ping reply detection (case-insensitive TTL) and a fixed UI font stack so emoji icons and text render correctly on Qt 6.4.
 > **New in 2.2.1:** **Remote Desktop auto-retry for xrdp/Ubuntu hosts** — if a session with a stored password closes within 10 seconds (black screen, window vanishes), the app offers to reconnect **without the stored password** so it can be typed directly into the Remote Desktop prompt.
 > **New in 2.2.0:** **Watched processes / service status** on the dashboard — watch named processes (e.g. `llama-server.exe`) on the target and see live status chips, PID, uptime, RAM/CPU, API-port reachability and the loaded llama.cpp model. Configured per device directly in the device dialog. Requires **WOL Host Service protocol v3** (older hosts simply hide the panel).
 > **New in 2.1.0:** a per-device **Dashboard** — live **CPU / RAM / GPU / VRAM** gauges with rolling sparklines plus **remote batch execution** (per-device script library, console output, exit code & duration). Opened via the 📊 tile on each device (no sidebar entry). Requires the updated **WOL Host Service** (protocol v2); batch runs need a double opt-in (per-device checkbox + `--enable-batch` on the target).

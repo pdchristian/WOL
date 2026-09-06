@@ -13,7 +13,7 @@
       python3-pamela, libpam0g, iputils-ping, iproute2. `Recommends`: freerdp2-x11,
       avahi-daemon.
     - `/usr/bin/{wake-on-lan-manager,wol-host-service}` Launcher.
-    - Version aus `wol_app/__init__.py` (=2.2.1). hicolor-Icons.
+    - Version aus `wol_app/__init__.py` (=2.2.2). hicolor-Icons.
 4.3 `control.in` Description auf 2.2.x-Features aktualisieren (watched processes).
 4.4 `install.sh` (Dev-Pfad) beibehalten; README-Tabelle prüfen.
 4.5 Optional `.github/workflows/release.yml`: ubuntu-latest → `build_deb.sh` →
@@ -28,7 +28,7 @@
 5.3 Host-Service: `wol-host-service --status`, `systemctl status wol-host-service`,
     Port 8765 offen, `--enable-batch` Opt-in, ufw-Regel 8765.
 5.4 `QT_QPA_PLATFORM=offscreen pytest -q` (alle Tests).
-5.5 Version final 2.2.1; CHANGELOG + README aktualisieren; GitHub Release mit
+5.5 Version final 2.2.2; CHANGELOG + README aktualisieren; GitHub Release mit
     `.deb`-Asset.
 
 ## Abnahmekriterium P4+P5

@@ -29,7 +29,8 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
         (r"\*Version (\d+\.\d+\.\d+)([^\n]*)\*", r"*Version {version}\2*"),
     ],
     "KNOWLEDGE.md": [
-        (r"\| \*\*version\*\*\s+\| (\d+\.\d+\.\d+) \|", r"| **version**         | {version} |"),
+        # Keep the column padding: only the version digits are replaced.
+        (r"(\| \*\*version\*\*\s+\| )\d+\.\d+\.\d+", r"\g<1>{version}"),
     ],
     "SECURITY.md": [
         (r"- \*\*Version:\*\* (\d+\.\d+\.\d+)", r"- **Version:** {version}"),

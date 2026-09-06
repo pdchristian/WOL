@@ -33,7 +33,7 @@ Zusätzlich zur Windows-Version wird der Wake-on-LAN Manager als Ubuntu-Debian-P
 ## Entscheidungen
 - Monorepo, **geteilte Codebasis** mit Plattform-Shims (kein Fork).
   Basis = `c:\Python\WOL` (Windows, v2.2.1, Source of Truth).
-- Version: auf **2.2.1** angleichen (Windows + Ubuntu synchron).
+- Version: auf **2.2.2** angleichen (Windows + Ubuntu synchron).
 - Build/Test: **echte Ubuntu-VM/Host** (Repo liefert Skripte + Anleitung).
 - Distribution: **lokales `.deb` + GitHub Release** (kein PPA/apt-Repo).
 - RDP: **analoger Retry für xfreerdp** (nicht überspringen).

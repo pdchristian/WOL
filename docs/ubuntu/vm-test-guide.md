@@ -21,12 +21,12 @@ bash packaging/build_deb.sh
 ls -l dist/wake-on-lan-manager_*.deb
 ```
 
-Expected: `dist/wake-on-lan-manager_2.2.1-1_all.deb`.
+Expected: `dist/wake-on-lan-manager_2.2.2-1_all.deb`.
 
 ## 3. Install
 
 ```bash
-sudo apt install ./dist/wake-on-lan-manager_2.2.1-1_all.deb
+sudo apt install ./dist/wake-on-lan-manager_2.2.2-1_all.deb
 ```
 
 ## 4. Smoke checks
@@ -70,6 +70,6 @@ All tests must pass (headless/offscreen).
 
 ## 7. Release
 
-- Tag `v2.2.1`, build the `.deb`, attach it to the GitHub Release.
+- Tag `v2.2.2`, build the `.deb`, attach it to the GitHub Release.
 - Install command in the release notes:
-  `sudo apt install ./wake-on-lan-manager_2.2.1-1_all.deb`
+  `sudo apt install ./wake-on-lan-manager_2.2.2-1_all.deb`

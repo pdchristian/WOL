@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.2.1                                                                 |
+| **version**         | 2.2.2                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -767,7 +767,10 @@ Application starts
 ## 10. Version History (Selected Milestones)
 
 | Version | Date       | Edition                    | Key Changes                                    |
-|---------|------------|----------------------------|-------------------------------------------------|| 2.2.1   | 2026-09-05 | Service Watch Edition      | Remote Desktop fast-exit retry: `mstsc` process is monitored; an exit within 10 s with a stored password (xrdp/Ubuntu black-screen pattern) prompts the user and reconnects without the stored password (`TERMSRV/<host>` deleted first, `prompt for password:i:1`), logged as `RDP/WARNING`; all `.rdp` files set `use redirection server name:i:1` (required by xrdp) || 2.2.0   | 2026-09-04 | Service Watch Edition      | Watched processes on the dashboard (up to 8 per device): live status chips (green/amber/grey), services panel with PID/uptime/RAM/CPU + llama.cpp model, `:port` loopback probing, "⚡ Inference active" GPU heuristic, device-dialog field `watch_processes`; host service protocol v3 (`metrics` + `watch` → `processes` map, back-compatible) |
+|---------|------------|----------------------------|-------------------------------------------------|
+| 2.2.2   | 2026-09-06 | Ubuntu Port Edition        | Native Ubuntu/Linux support: `.deb` package (`packaging/`), systemd/PAM Linux Host Service (protocol v4: metrics, watched processes, llama.cpp models), `xfreerdp` Remote Desktop with fast-exit retry; platform shims for crypto (file master key), theme (gsettings) and RDP dispatch; cross-platform ping reply detection (case-insensitive `ttl=`); fixed UI font stack (color emoji + text) for Qt 6.4 |
+| 2.2.1   | 2026-09-05 | Service Watch Edition      | Remote Desktop fast-exit retry: `mstsc` process is monitored; an exit within 10 s with a stored password (xrdp/Ubuntu black-screen pattern) prompts the user and reconnects without the stored password (`TERMSRV/<host>` deleted first, `prompt for password:i:1`), logged as `RDP/WARNING`; all `.rdp` files set `use redirection server name:i:1` (required by xrdp) |
+| 2.2.0   | 2026-09-04 | Service Watch Edition      | Watched processes on the dashboard (up to 8 per device): live status chips (green/amber/grey), services panel with PID/uptime/RAM/CPU + llama.cpp model, `:port` loopback probing, "⚡ Inference active" GPU heuristic, device-dialog field `watch_processes`; host service protocol v3 (`metrics` + `watch` → `processes` map, back-compatible) |
 | 2.1.0   | 2026-09-03 | Dashboard Edition          | Per-device dashboard (CPU/RAM/GPU/VRAM ring gauges + sparklines, 2–10 s polling, NVIDIA-only GPU via nvidia-smi), remote batch execution with per-device library + console, host service protocol v2 (`metrics`/`run_batch`, double opt-in gating via `--enable-batch`), 📊 tile in devices view (no sidebar entry), cancellable socket workers |
 | 2.0.0   | 2026-09-01 | Modern UI Edition          | Modern "Dark Control Center" sidebar layout (Devices/Manage/Schedule/Logs/Settings/About screens), installer UI-mode choice, display mode (dark/light/auto), Devices screen with card/list dual view and sort drop-down |
 | 1.10.0  | 2026-08-22 | Search & Remote Desktop Edition | Remote Desktop sessions (fullscreen/window), device search in main window/device manager/scanner/schedules |

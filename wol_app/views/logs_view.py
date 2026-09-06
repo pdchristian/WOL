@@ -43,6 +43,13 @@ ROW_HEIGHT = 48
 _ERROR_STATUSES = {"ERROR", "FAILED", "OFFLINE"}
 _INFO_STATUSES = {"SUCCESS", "ONLINE", "TRIGGERED", "WAKE", "SHUTDOWN"}
 
+# Representative output of format_timestamp() used to size the time column.
+# The width is MEASURED, not hardcoded: #logTime requests Consolas, which only
+# exists on Windows — Linux falls back to a wider mono font (DejaVu Sans Mono),
+# so a pixel constant tuned on one OS clips the timestamp on the other.
+_TIME_SAMPLE = "08.09. 17:25"
+_TIME_PAD = 4
+
 
 def log_level(status: str) -> str:
     """Map a log status onto a prototype level: info | warn | error."""
@@ -62,10 +69,26 @@ def format_timestamp(raw: str) -> str:
         return raw or ""
 
 
+def measure_time_width(text: str = _TIME_SAMPLE) -> int:
+    """Pixel width the ``#logTime`` column needs for ``text``.
+
+    Polishes a throw-away label so the measurement uses the real stylesheet
+    font (size and family), then returns the advance width plus a little
+    padding. Called once per list rebuild and passed to every :class:`LogRow`.
+    """
+    probe = QLabel()
+    probe.setObjectName("logTime")
+    probe.ensurePolished()
+    fm = probe.fontMetrics()
+    width = max(fm.horizontalAdvance(text), fm.horizontalAdvance(_TIME_SAMPLE))
+    probe.setParent(None)
+    return width + _TIME_PAD
+
+
 class LogRow(QWidget):
     """One log entry: level badge · time · device · message."""
 
-    def __init__(self, entry: dict, parent=None) -> None:
+    def __init__(self, entry: dict, parent=None, time_width: int | None = None) -> None:
         super().__init__(parent)
         self.entry = entry
         self.setObjectName("logRow")
@@ -90,7 +113,11 @@ class LogRow(QWidget):
         # Mono timestamp, fixed width so messages align vertically
         self.time_label = QLabel(format_timestamp(entry.get("timestamp", "")))
         self.time_label.setObjectName("logTime")
-        self.time_label.setFixedWidth(84)
+        # Never a hardcoded pixel width: the mono font differs per OS (see
+        # measure_time_width), so a fixed 84 px clipped the time on Linux.
+        self.time_label.setFixedWidth(
+            time_width if time_width is not None
+            else measure_time_width(self.time_label.text()))
         layout.addWidget(self.time_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Dim device prefix (only when a device name is present)
@@ -238,8 +265,11 @@ class LogsView(QWidget):
                 w.deleteLater()
 
         entries = self._filtered_logs()
+        # Measure the time column once, then give every row the same width so
+        # timestamps and messages stay aligned down the list.
+        time_width = measure_time_width() if entries else 0
         for idx, entry in enumerate(entries):
-            self.list_layout.addWidget(LogRow(entry))
+            self.list_layout.addWidget(LogRow(entry, time_width=time_width))
             if idx < len(entries) - 1:
                 sep = QWidget()
                 sep.setObjectName("rowSeparator")

@@ -1,8 +1,10 @@
 """Wake-on-LAN Engine - Magic packet sending, ping checks, scheduling."""
 
+import re
 import socket
 import subprocess
 import threading
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -18,6 +20,12 @@ from wol_app.utils import (
 
 # Max concurrent magic packets when waking all devices (network-friendly)
 MAX_CONCURRENT_WAKE = 8
+
+# A successful ping reply always echoes a TTL, but the field name's case is
+# platform-specific: Windows "TTL=128", Linux/BusyBox "ttl=64". Matching the
+# case-insensitive "ttl=<digits>" token detects a real reply on every OS while
+# still rejecting "request timed out" / "100% packet loss" (no TTL present).
+_PING_REPLY_RE = re.compile(r"\bttl[=:] ?\d+", re.IGNORECASE)
 
 # Weekday abbreviations (English) used as the canonical stored format in
 # schedule configs (see views/schedule_edit_dialog.DAYS). Index matches
@@ -205,9 +213,12 @@ class WOLEngine(QObject):
                     **kwargs,
                 )
                 # Check actual ping output, not just exit code
-                # Windows may return 0 even when host is unreachable (router replies)
+                # Windows may return 0 even when host is unreachable (router replies).
+                # A real reply always carries a TTL, but the case differs per
+                # platform: Windows prints "TTL=64", Linux/BusyBox "ttl=64".
+                # Match case-insensitively so online hosts are detected on both.
                 output = result.stdout.decode("utf-8", errors="replace")
-                if "TTL=" in output:
+                if _PING_REPLY_RE.search(output):
                     status = "online"
                     message = f"{name} is responding."
                 else:
