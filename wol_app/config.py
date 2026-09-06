@@ -142,7 +142,7 @@ DEFAULT_REMOTE_DESKTOP_RESOLUTION = "1920x1080"
 # fits without scrolling.
 REMOTE_DESKTOP_RESOLUTION_AUTO = "auto"
 # Fraction of the screen size used by the auto resolution (window mode).
-REMOTE_DESKTOP_AUTO_FRACTION = 0.88
+REMOTE_DESKTOP_AUTO_FRACTION = 0.84
 # Minimum auto-resolution size (width, height) to keep the window usable.
 REMOTE_DESKTOP_AUTO_MIN = (1280, 720)
 
