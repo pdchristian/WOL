@@ -33,7 +33,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wol_app.device_io import export_devices, import_devices
-from wol_app.main_window import HEADLESS_MODE, StatusWorker
+from wol_app.app_core import HEADLESS_MODE, StatusWorker
 from wol_app.network_scanner import (
     get_dns_servers_for_interface,
     get_local_interfaces,

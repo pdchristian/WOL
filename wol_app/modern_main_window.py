@@ -38,7 +38,7 @@ from wol_app.config import (
     SIDEBAR_WIDTH_MAX,
     SIDEBAR_WIDTH_MIN,
 )
-from wol_app.main_window import HEADLESS_MODE
+from wol_app.app_core import HEADLESS_MODE
 from wol_app.modern_theme import DARK, LIGHT, app_icon_pixmap, apply_modern_theme
 from wol_app.schedule_runner import dispatch_schedule_action
 from wol_app.translations import Translations

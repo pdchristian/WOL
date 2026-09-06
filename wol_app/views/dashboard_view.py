@@ -51,7 +51,7 @@ from wol_app.config import (
     DEFAULT_BATCH_TIMEOUT_S,
     ConfigManager,
 )
-from wol_app.main_window import HEADLESS_MODE
+from wol_app.app_core import HEADLESS_MODE
 from wol_app.metrics_worker import BatchWorker, MetricsWorker
 from wol_app.modern_theme import current_tokens
 from wol_app.translations import Translations

@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wol_app import __version__
-from wol_app.main_window import HEADLESS_MODE
+from wol_app.app_core import HEADLESS_MODE
 from wol_app.modern_theme import app_icon_pixmap
 from wol_app.translations import Translations
 from wol_app.update_dialog import UpdateAvailableDialog

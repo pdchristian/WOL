@@ -36,7 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wol_app.config import DEVICES_VIEW_GRID, DEVICES_VIEW_LIST
-from wol_app.main_window import HEADLESS_MODE, StatusWorker
+from wol_app.app_core import HEADLESS_MODE, StatusWorker
 from wol_app.network_scanner import get_local_ips
 from wol_app.remote_desktop import start_remote_desktop
 from wol_app.shutdown_flow import execute_shutdown

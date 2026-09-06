@@ -3,3 +3,11 @@
 .vscode
 .venv
 *graphify*
+
+# Build artifacts (Windows + Ubuntu packaging)
+/dist
+/dist_onefile
+/build
+*.deb
+__pycache__/
+*.pyc
