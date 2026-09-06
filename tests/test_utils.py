@@ -146,17 +146,17 @@ class TestGetIPKey(unittest.TestCase):
 
 class TestAutoRdpResolution(unittest.TestCase):
     def test_2560x1440_default_fraction(self):
-        # Height-first with REMOTE_DESKTOP_AUTO_FRACTION = 0.88.
-        # height = round(1440*0.88)=1267, width = round(1267*16/9)=2252.
-        self.assertEqual(auto_rdp_resolution(2560, 1440), (2252, 1267))
+        # Height-first with REMOTE_DESKTOP_AUTO_FRACTION = 0.84.
+        # height = round(1440*0.84)=1210, width = round(1210*16/9)=2151.
+        self.assertEqual(auto_rdp_resolution(2560, 1440), (2151, 1210))
 
     def test_1920x1080_default_fraction(self):
-        # height = round(1080*0.88)=950, width = round(950*16/9)=1689.
-        self.assertEqual(auto_rdp_resolution(1920, 1080), (1689, 950))
+        # height = round(1080*0.84)=907, width = round(907*16/9)=1612.
+        self.assertEqual(auto_rdp_resolution(1920, 1080), (1612, 907))
 
     def test_ultrawide_3440x1440_not_taller_than_screen(self):
         # 21:9 monitor: height-driven size must not exceed the screen height.
-        self.assertEqual(auto_rdp_resolution(3440, 1440), (2252, 1267))
+        self.assertEqual(auto_rdp_resolution(3440, 1440), (2151, 1210))
 
     def test_ultrawide_clamped_to_screen_width(self):
         # When the height-derived width would exceed the screen width, the
