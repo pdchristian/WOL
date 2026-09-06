@@ -19,6 +19,7 @@ Usage (main_window.main)::
 
 import faulthandler
 import os
+import sys
 import threading
 import time
 from datetime import datetime
@@ -27,7 +28,10 @@ from pathlib import Path
 DEFAULT_TIMEOUT_S = 5.0
 BEAT_INTERVAL_MS = 1000
 
-_LOG_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "WakeOnLAN"
+if sys.platform == "win32":
+    _LOG_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "WakeOnLAN"
+else:
+    _LOG_DIR = Path.home() / ".wol_app"
 LOG_FILE = _LOG_DIR / "wol_watchdog.log"
 
 

@@ -1,8 +1,14 @@
-"""Password encryption using AES-256-GCM with Windows DPAPI key protection."""
+"""Password encryption using AES-256-GCM with a platform-protected master key.
+
+On Windows the master key is wrapped by DPAPI (per-user, see
+:func:`_get_dpapi_protected_key`). On Linux there is no DPAPI, so the key
+lives in ``~/.wol_app/master_key.dat`` protected by restrictive file
+permissions (0600, owner-only, see :func:`_get_file_protected_key`).
+"""
 
 import base64
-import ctypes
 import os
+import sys
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -11,13 +17,14 @@ _master_key: bytes | None = None
 
 
 def _get_dpapi_protected_key() -> bytes:
-    """
-    Derive a persistent 256-bit master key protected by Windows DPAPI.
+    """Derive a persistent 256-bit master key protected by Windows DPAPI.
 
     DPAPI encrypts/decrypts data per-user, so only the current Windows user
     can decrypt the stored key. We store the encrypted blob in
-    ~/.wol_app/master_key.dat alongside config.json.
+    ~/.wol_app/master_key.dat alongside config.json. Windows-only: the
+    ctypes/wintypes imports are lazy so this module loads on Linux too.
     """
+    import ctypes
     import ctypes.wintypes as wintypes
     from pathlib import Path
 
@@ -102,11 +109,52 @@ def _get_dpapi_protected_key() -> bytes:
     return plaintext_key
 
 
+def _get_file_protected_key() -> bytes:
+    """Linux: load (or create) the persistent 256-bit master key.
+
+    The key is stored raw in ``~/.wol_app/master_key.dat`` with owner-only
+    permissions — the Linux equivalent of the Windows DPAPI-protected blob.
+    A corrupted or wrong-sized file triggers regeneration (the same behaviour
+    as a DPAPI unwrap failure on Windows).
+    """
+    from pathlib import Path
+
+    key_path = Path.home() / ".wol_app" / "master_key.dat"
+
+    if key_path.exists():
+        try:
+            key = key_path.read_bytes()
+            if len(key) == 32:
+                try:
+                    os.chmod(key_path, 0o600)
+                except OSError:
+                    pass
+                return key
+        except OSError:
+            pass
+
+    # Generate a new random 256-bit key and persist it owner-only.
+    plaintext_key = os.urandom(32)
+    from wol_app.utils import ensure_user_data_dir
+
+    ensure_user_data_dir(key_path.parent)
+    fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(plaintext_key)
+    return plaintext_key
+
+
 def get_master_key() -> bytes:
-    """Return the cached master key, loading it from DPAPI if necessary."""
+    """Return the cached master key, loading it via the platform path.
+
+    Windows: DPAPI-wrapped blob. Linux/other: owner-only key file.
+    """
     global _master_key
     if _master_key is None:
-        _master_key = _get_dpapi_protected_key()
+        if sys.platform == "win32":
+            _master_key = _get_dpapi_protected_key()
+        else:
+            _master_key = _get_file_protected_key()
     return _master_key
 
 

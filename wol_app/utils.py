@@ -7,7 +7,9 @@ utility functions used across multiple modules.
 import base64
 import os
 import re
+import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -609,7 +611,7 @@ def _write_rdp_and_start_mstsc(
     return str(rdp_path), process
 
 
-def launch_remote_desktop(
+def _launch_remote_desktop_windows(
     ip: str,
     username: str = "",
     password: str = "",
@@ -702,7 +704,7 @@ def launch_remote_desktop(
     return rdp_path
 
 
-def retry_remote_desktop_without_password(
+def _retry_remote_desktop_windows(
     ip: str,
     username: str = "",
     fullscreen: bool = True,
@@ -756,6 +758,179 @@ def retry_remote_desktop_without_password(
         ip, content, fullscreen, width, height, device_name, cleanup_delay
     )
     return rdp_path
+
+
+# ── Remote Desktop: Linux (FreeRDP / xfreerdp) ──────────────────────────────
+
+def xfreerdp_available() -> bool:
+    """Return True when the FreeRDP client ``xfreerdp`` is on PATH."""
+    return shutil.which("xfreerdp") is not None
+
+
+def build_xfreerdp_args(
+    ip: str,
+    username: str = "",
+    password: str = "",
+    fullscreen: bool = True,
+    width: int = 1920,
+    height: int = 1080,
+) -> list[str]:
+    """Build the ``xfreerdp`` command line for *ip*.
+
+    ``/v:`` takes the host, ``/u:``/``/p:`` the credentials (only when set),
+    ``/f`` full-screen and ``/geometry:WxH`` a windowed session.
+    ``+auto-reconnect`` mirrors the convenience of the Windows client.
+    """
+    args = ["xfreerdp", f"/v:{ip}"]
+    if username:
+        args.append(f"/u:{username}")
+    if password:
+        args.append(f"/p:{password}")
+    if fullscreen:
+        args.append("/f")
+    else:
+        args.append(f"/geometry:{int(width)}x{int(height)}")
+    args.append("+auto-reconnect")
+    return args
+
+
+def _launch_remote_desktop_linux(
+    ip: str,
+    username: str = "",
+    password: str = "",
+    fullscreen: bool = True,
+    width: int = 1920,
+    height: int = 1080,
+    device_name: str = "",
+    on_fast_exit=None,
+    fast_exit_window: float = 10.0,
+    **_ignored,
+) -> None:
+    """Launch a FreeRDP (``xfreerdp``) Remote Desktop session to *ip*.
+
+    Same fast-exit contract as the Windows path: when a *password* is set and
+    *on_fast_exit* is given, the xfreerdp process is watched in a daemon
+    thread and *on_fast_exit* fires if it dies within *fast_exit_window*
+    seconds — the xrdp/Ubuntu wrong-password signature (a session that opens
+    and vanishes immediately). The callback runs on that background thread and
+    must marshal any UI work to the GUI thread (see ``remote_desktop``).
+
+    Raises:
+        ValueError: if *ip* is empty.
+        RuntimeError: if ``xfreerdp`` is not installed.
+        OSError: if xfreerdp cannot be started.
+    """
+    if not ip:
+        raise ValueError("IP address is empty")
+    if not xfreerdp_available():
+        raise RuntimeError(
+            "xfreerdp not found. Install it with: sudo apt install freerdp2-x11"
+        )
+
+    cmd = build_xfreerdp_args(
+        ip, username, password, fullscreen=fullscreen, width=width, height=height
+    )
+    # Take the timestamp before launching so the monitor measures the full
+    # process lifetime (Popen setup included). shell=False: no command injection.
+    started_at = time.monotonic()
+    process = subprocess.Popen(cmd)
+
+    if password and on_fast_exit is not None and fast_exit_window > 0:
+        threading.Thread(
+            target=_monitor_mstsc_fast_exit,
+            args=(process, started_at, float(fast_exit_window), on_fast_exit),
+            daemon=True,
+        ).start()
+
+
+def _retry_remote_desktop_linux(
+    ip: str,
+    username: str = "",
+    fullscreen: bool = True,
+    width: int = 1920,
+    height: int = 1080,
+    device_name: str = "",
+    **_ignored,
+) -> None:
+    """Second connection attempt in which the user types the password.
+
+    Used after :func:`_launch_remote_desktop_linux` detected a fast xfreerdp
+    exit — the signature of a rejected password on an xrdp/Linux host. xfreerdp
+    is started with the username but **without** ``/p:`` so it prompts for the
+    password directly. The password stored in the device record is not
+    modified. No fast-exit monitoring is armed for this attempt.
+
+    Raises:
+        ValueError: if *ip* is empty.
+        RuntimeError: if ``xfreerdp`` is not installed.
+        OSError: if xfreerdp cannot be started.
+    """
+    if not ip:
+        raise ValueError("IP address is empty")
+    if not xfreerdp_available():
+        raise RuntimeError(
+            "xfreerdp not found. Install it with: sudo apt install freerdp2-x11"
+        )
+    cmd = build_xfreerdp_args(
+        ip, username, "", fullscreen=fullscreen, width=width, height=height
+    )
+    subprocess.Popen(cmd)
+
+
+def launch_remote_desktop(
+    ip: str,
+    username: str = "",
+    password: str = "",
+    fullscreen: bool = True,
+    width: int = 1920,
+    height: int = 1080,
+    cleanup_delay: float = 5.0,
+    device_name: str = "",
+    on_fast_exit=None,
+    fast_exit_window: float = 10.0,
+):
+    """Launch a Remote Desktop session to *ip* (mstsc on Windows, xfreerdp on Linux).
+
+    Platform dispatch over the shared fast-exit contract: both backends watch
+    the process when a *password* is set and invoke *on_fast_exit* (from a
+    background thread) when the session dies within *fast_exit_window* seconds.
+    Returns the ``.rdp`` file path on Windows, ``None`` on Linux.
+    """
+    if sys.platform == "win32":
+        return _launch_remote_desktop_windows(
+            ip, username, password, fullscreen, width, height,
+            cleanup_delay, device_name, on_fast_exit, fast_exit_window,
+        )
+    return _launch_remote_desktop_linux(
+        ip, username, password, fullscreen, width, height,
+        device_name, on_fast_exit, fast_exit_window,
+    )
+
+
+def retry_remote_desktop_without_password(
+    ip: str,
+    username: str = "",
+    fullscreen: bool = True,
+    width: int = 1920,
+    height: int = 1080,
+    device_name: str = "",
+    cleanup_delay: float = 30.0,
+):
+    """Second connection attempt where the user types the password.
+
+    Windows: deletes the ``TERMSRV/<host>`` Credential Manager entry and
+    re-launches mstsc without a password. Linux: re-launches xfreerdp without
+    ``/p:`` so it prompts. Returns the ``.rdp`` path on Windows, ``None`` on
+    Linux.
+    """
+    if sys.platform == "win32":
+        return _retry_remote_desktop_windows(
+            ip, username, fullscreen, width, height, device_name, cleanup_delay,
+        )
+    return _retry_remote_desktop_linux(
+        ip, username, fullscreen, width, height, device_name,
+    )
+
 
 # ── Sorting helpers ────────────────────────────────────────────────────────
 
