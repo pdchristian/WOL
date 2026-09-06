@@ -4,7 +4,7 @@ Architecture: all
 Maintainer: pdchristian <cpopp@hotmail.com>
 Installed-Size: @INSTALL_SIZE@
 Depends: python3 (>= 3.10), python3-pyqt6, python3-cryptography (>= 41.0),
- python3-psutil, python3-pamela, libpam0g, iputils-ping, iproute2
+ python3-psutil, python3-pamela, libpam0g, iputils-ping, iproute2, libqt6svg6
 Recommends: freerdp2-x11, avahi-daemon
 Section: utils
 Priority: optional

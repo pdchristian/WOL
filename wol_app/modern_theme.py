@@ -21,6 +21,31 @@ from wol_app.utils import get_resource_path
 
 _ARROW_DIR = os.path.join(tempfile.gettempdir(), "wol_modern_arrows")
 
+# UI font stack used by the global ``QWidget`` rule (see below).
+#
+# Two things have to hold at the same time, and the ORDER of the families is
+# what makes both work:
+#
+# 1. Color emoji. The modern UI draws several glyphs as emoji (device tiles
+#    🖥️ 🪟 📊, edit/delete ✏️ 🗑️, sidebar 💻 🔧 🕒 📋). Qt >= 6.7
+#    resolves those to a color-emoji font automatically, but Qt 6.4 (the distro
+#    PyQt6 the .deb runs against) leaves them monochrome when the requested
+#    family has no color glyph — so the tiles render black-and-white on Ubuntu.
+#    Listing the color-emoji fonts explicitly fixes them on both generations.
+#
+# 2. Normal text must NOT come from an emoji font. Qt picks the FIRST family
+#    that contains a glyph for a code point, and the color-emoji fonts DO
+#    contain digits and letters. On Ubuntu "Segoe UI" is not installed, so an
+#    emoji font listed directly after it becomes the primary font and every
+#    digit/letter renders in the (wide, monospaced-looking) emoji face.
+#    Therefore the concrete text families come first and the emoji fonts only
+#    after them; "sans-serif" stays last as the platform fallback.
+_UI_FONT_STACK = (
+    '"Segoe UI", "Noto Sans", "Ubuntu", '
+    '"Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", '
+    'sans-serif'
+)
+
 
 def app_icon_pixmap(size: int) -> QPixmap | None:
     """Load the app logo scaled to ``size``×``size`` (or None).
@@ -215,7 +240,7 @@ def modern_stylesheet(t: dict) -> str:
     return f"""
 /* ── Window base ─────────────────────────────────────────────────────── */
 QMainWindow, #modernCentral {{ background: {t['bg']}; }}
-QWidget {{ color: {t['text']}; font-family: "Segoe UI", sans-serif; font-size: 13px; }}
+QWidget {{ color: {t['text']}; font-family: {_UI_FONT_STACK}; font-size: 13px; }}
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
 #sidebar {{
     background: {t['surface']};
