@@ -65,7 +65,6 @@ done
     --exclude='wol_app/log_dialog.py' \
     --exclude='wol_app/network_scan_dialog.py' \
     --exclude='wol_app/schedule_dialog.py' \
-    --exclude='wol_app/update_dialog.py' \
     --exclude='wol_app/graphify-out' \
     -cf - wol_app ) \
     | ( cd "$STAGE/$APP_DIR" && tar -xf - )

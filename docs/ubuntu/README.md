@@ -7,12 +7,21 @@ Zusätzlich zur Windows-Version wird der Wake-on-LAN Manager als Ubuntu-Debian-P
 ## Status
 | Phase | Inhalt | Status |
 |---|---|---|
-| P0 | Vorbereitung (Branch, Referenz, Doku) | 🔄 läuft |
-| P1 | Merge in Monorepo (geteilte Codebasis) | ⬜ offen |
-| P2 | Plattform-Shims (win/linux) | ⬜ offen |
-| P3 | Feature-Parität 2.2.0 + 2.2.1 | ⬜ offen |
-| P4 | `.deb`-Packaging | ⬜ offen |
-| P5 | VM-Verifikation + GitHub Release | ⬜ offen |
+| P0 | Vorbereitung (Branch `Ubuntu-Version`, Doku, `.gitignore`) | ✅ fertig |
+| P1 | Merge in Monorepo (`app_core.py`, plattformverzweigter `run.py`) | ✅ fertig |
+| P2 | Plattform-Shims (crypto/theme/watchdog/utils-RDP, PEP-508) | ✅ fertig |
+| P3 | Feature-Parität 2.2.0 + 2.2.1 (`wol_host_service_linux.py` v4, xfreerdp-Retry) | ✅ fertig |
+| P4 | `.deb`-Packaging (`packaging/`, Modern-only, LF-Skripte) | ✅ fertig |
+| P5 | VM-Verifikation + GitHub Release | 🔄 wartet auf echte Ubuntu-VM (Guide: `vm-test-guide.md`) |
+
+## Bekannte Linux-Eigenheiten
+- Der „Jetzt aktualisieren"-Knopf im Update-Dialog lädt die Windows-`.exe`
+  herunter; auf Linux schlägt das Starten fehl (no-op, kein Crash). Empfehlung:
+  Release-Seite via Changelog-Link nutzen (funktioniert wie bei Android/Port).
+- `settings_dialog.py` wird mitgeliefert, weil `settings_view.py` dessen
+  reine Validatoren importiert; der Dialog selbst wird auf Linux nie geöffnet.
+- `test_sidebar.py`-Fehler/`0xC0000409` beim pytest-Teardown auf Windows sind
+  vorbestehende Flakiness (Qt-Shutdown-Race), unabhängig von diesem Port.
 
 ## Dateien
 - `00-architecture.md` – Shim-Architektur, Monorepo-Layout, Divergenz-Matrix
