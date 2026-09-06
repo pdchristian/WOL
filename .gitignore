@@ -5,9 +5,9 @@
 *graphify*
 
 # Build artifacts (Windows + Ubuntu packaging)
-/dist
-/dist_onefile
-/build
+dist/
+dist_onefile/
+build/
 *.deb
 __pycache__/
 *.pyc
