@@ -683,6 +683,7 @@
    'PYMODULE'),
   ('wol_app', 'C:\\Python\\WOL\\wol_app\\__init__.py', 'PYMODULE'),
   ('wol_app.__init__', 'C:\\Python\\WOL\\wol_app\\__init__.py', 'PYMODULE'),
+  ('wol_app.app_core', 'C:\\Python\\WOL\\wol_app\\app_core.py', 'PYMODULE'),
   ('wol_app.config', 'C:\\Python\\WOL\\wol_app\\config.py', 'PYMODULE'),
   ('wol_app.crypto', 'C:\\Python\\WOL\\wol_app\\crypto.py', 'PYMODULE'),
   ('wol_app.device_dialog',
