@@ -1034,8 +1034,8 @@ function svcLine(d, entry) {
 
 /* ══════════════════════════ Batches (Dashboard) ═══════════════════════════ */
 const BATCH_OUT = {
-  "nvidia-smi": ["$ nvidia-smi","| GPU  Name      Bus-Id  Vol Unc Corr |","|  0  RTX 4090   01:00.0    0    0 |","| Memory 18.2 / 24.0 GiB   GPU  64 % |"],
-  "backup.bat": ["$ backup.bat","Sichere D:\\Dokumente …","Fehler: Datenträger nicht gefunden.","backup: exit 2"],
+  "nvidia-smi": ["| GPU  Name      Bus-Id  Vol Unc Corr |","|  0  RTX 4090   01:00.0    0    0 |","| Memory 18.2 / 24.0 GiB   GPU  64 % |"],
+  "backup.bat": ["Sichere D:\\Dokumente …","Fehler: Datenträger nicht gefunden.","backup: exit 2"],
 };
 function currentBatches() { return state.batches.filter(b => b.devId === state.ui.dashDeviceId); }
 function selBatchObj() { return state.batches.find(b => b.id === state.ui.selBatch); }
@@ -1339,7 +1339,7 @@ function renderDash() {
     </div>`;
   $("#s-dash").innerHTML = `
     <div class="toolbar" style="align-items:center">
-      <button class="btn small" data-act="nav-devices">‹ ${esc(t("dash.back"))}</button>
+      <button class="btn small" data-act="nav-devices">${esc(t("dash.back"))}</button>
       <span class="spacer"></span>
       <span class="mono" style="font-size:11px">${esc(t("dash.interval"))}</span>
       <select class="sel" data-act="dash-int" style="padding:6px 8px">

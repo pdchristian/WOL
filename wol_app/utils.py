@@ -8,6 +8,7 @@ import base64
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -59,6 +60,31 @@ def validate_ip_or_hostname(value: str) -> bool:
         # Looks like an IPv4 address but failed validate_ip().
         return False
     return True
+
+
+def resolve_ipv4_all(value: str) -> list[str]:
+    """Return every IPv4 address *value* resolves to (deduplicated, in order).
+
+    A DNS name may carry several A records (e.g. a Fritz!Box listing a stale
+    DHCP lease next to the current one). Callers that probe reachability
+    should try all candidates instead of trusting the first one, because the
+    resolver order is not deterministic on Windows.
+    """
+    value = (value or "").strip()
+    if not value:
+        return []
+    if validate_ip(value):
+        return [value]
+    try:
+        infos = socket.getaddrinfo(value, None, socket.AF_INET, socket.SOCK_STREAM)
+    except (OSError, UnicodeError):
+        return []
+    ips: list[str] = []
+    for family, _, _, _, sockaddr in infos:
+        ip = sockaddr[0] if family == socket.AF_INET else ""
+        if ip and ip not in ips:
+            ips.append(ip)
+    return ips
 
 
 def validate_mac(mac: str) -> bool:

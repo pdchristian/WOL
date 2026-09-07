@@ -1,22 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Magic Packet über UDP-Broadcast -->
+    <!-- Magic Packet über UDP-Broadcast + Host-Service (TCP) -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- UDP-Broadcast im WLAN nötig (akquire MulticastLock) -->
+    <!-- UDP-Broadcast im WLAN nötig (acquire MulticastLock) -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
-        android:allowBackup="true"
-        android:label="Wake-on-LAN"
+        android:name=".WolApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.WolManager">
+        android:theme="@style/Theme.WolManager"
+        tools:targetApi="34">
 
         <activity
             android:name=".MainActivity"
+            android:configChanges="uiMode|locale|layoutDirection"
             android:exported="true"
-            android:label="Wake-on-LAN"
+            android:label="@string/app_name"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

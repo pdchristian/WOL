@@ -3,6 +3,7 @@
 import locale
 import unittest
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 from wol_app.wol_engine import WOLEngine, day_in_schedule, _DAYS_EN
 
@@ -124,6 +125,91 @@ class TestDayInSchedule(unittest.TestCase):
                 self.assertNotEqual(self.MON.strftime("%a"), _DAYS_EN[self.MON.weekday()])
         finally:
             locale.setlocale(locale.LC_TIME, original)
+
+
+class TestCheckDeviceStatusHostname(unittest.TestCase):
+    """Regression: host names must be resolved to IPv4 before pinging.
+
+    Two real-world failure modes are covered:
+
+    * Windows ``ping`` prefers the AAAA record when the DNS server (e.g. a
+      Fritz!Box) also publishes IPv6. Windows IPv6 replies contain no
+      ``TTL=`` token, so the reply detector reported online hosts offline.
+    * A name may resolve to several A records (a stale DHCP lease next to
+      the current one) and the resolver order is not deterministic, so a
+      single unreachable candidate must not decide the status.
+    """
+
+    def _engine(self, device: dict) -> WOLEngine:
+        config = MagicMock()
+        config.get_device_by_id.return_value = device
+        engine = WOLEngine(config)
+        return engine
+
+    @staticmethod
+    def _completed(text: str):
+        res = MagicMock()
+        res.stdout = text.encode("utf-8")
+        return res
+
+    def test_hostname_is_resolved_and_ping_forced_to_ipv4(self):
+        engine = self._engine(
+            {"id": "d1", "name": "blade-18", "ip": "blade-18.fritz.box"})
+        with patch("wol_app.wol_engine.resolve_ipv4_all",
+                   return_value=["192.168.2.150"]) as resolve, \
+             patch("wol_app.wol_engine.run_subprocess_safe",
+                   return_value=self._completed(
+                       "Antwort von 192.168.2.150: Bytes=32 Zeit=1ms TTL=128")) as run:
+            status, _msg = engine.check_device_status("d1")
+        resolve.assert_called_once_with("blade-18.fritz.box")
+        self.assertEqual(status, "online")
+        cmd = run.call_args.args[0]
+        # The resolved IPv4 is pinged, and IPv4 is enforced via "-4"
+        self.assertEqual(cmd[-1], "192.168.2.150")
+        self.assertIn("-4", cmd)
+
+    def test_second_address_rescues_stale_first_record(self):
+        engine = self._engine(
+            {"id": "d1", "name": "blade-18", "ip": "blade-18"})
+        outputs = [
+            self._completed("Antwort von 192.168.2.62: Zielhost nicht erreichbar."),
+            self._completed("Antwort von 192.168.2.150: Bytes=32 Zeit=1ms TTL=128"),
+        ]
+        with patch("wol_app.wol_engine.resolve_ipv4_all",
+                   return_value=["192.168.2.172", "192.168.2.150"]), \
+             patch("wol_app.wol_engine.run_subprocess_safe",
+                   side_effect=outputs) as run:
+            status, _msg = engine.check_device_status("d1")
+        self.assertEqual(status, "online")
+        self.assertEqual(run.call_count, 2)
+
+    def test_offline_when_no_address_answers(self):
+        engine = self._engine({"id": "d1", "name": "nas", "ip": "nas01"})
+        with patch("wol_app.wol_engine.resolve_ipv4_all",
+                   return_value=["192.168.2.9"]), \
+             patch("wol_app.wol_engine.run_subprocess_safe",
+                   return_value=self._completed("Zeitueberschreitung")):
+            status, _msg = engine.check_device_status("d1")
+        self.assertEqual(status, "offline")
+
+    def test_unresolvable_name_reports_unknown(self):
+        engine = self._engine({"id": "d1", "name": "ghost", "ip": "ghost.invalid"})
+        with patch("wol_app.wol_engine.resolve_ipv4_all", return_value=[]), \
+             patch("wol_app.wol_engine.run_subprocess_safe") as run:
+            status, msg = engine.check_device_status("d1")
+        self.assertEqual(status, "unknown")
+        self.assertIn("resolve", msg)
+        run.assert_not_called()
+
+    def test_ipv4_literal_still_pinged_directly(self):
+        engine = self._engine({"id": "d1", "name": "pc", "ip": "192.168.2.50"})
+        with patch("wol_app.wol_engine.resolve_ipv4_all",
+                   return_value=["192.168.2.50"]), \
+             patch("wol_app.wol_engine.run_subprocess_safe",
+                   return_value=self._completed("TTL=64")) as run:
+            status, _msg = engine.check_device_status("d1")
+        self.assertEqual(status, "online")
+        self.assertEqual(run.call_args.args[0][-1], "192.168.2.50")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from wol_app.network_scanner import find_interface_for_device
 from wol_app.utils import (
+    resolve_ipv4_all,
     run_subprocess_safe,
     validate_ip,
     validate_ip_or_hostname,
@@ -87,9 +88,16 @@ class WOLEngine(QObject):
         network = self.config.get_network_settings()
         broadcast_port = network["broadcast_port"]
 
-        # Determine the correct interface and broadcast address for this device
-        target_ip = device.get("ip", "")
-        iface = find_interface_for_device(target_ip) if target_ip else None
+        # Determine the correct interface and broadcast address for this device.
+        # A stored host name is resolved to IPv4 first so interface selection
+        # (which NIC/subnet to broadcast from) also works for named devices;
+        # with several A records, the first candidate that matches a local
+        # subnet wins.
+        iface = None
+        for candidate in resolve_ipv4_all(device.get("ip", "")):
+            iface = find_interface_for_device(candidate)
+            if iface:
+                break
 
         if iface:
             broadcast_ip = iface["broadcast_ip"]
@@ -191,7 +199,7 @@ class WOLEngine(QObject):
 
         name = device["name"]
 
-        # Check if device has an optional IP stored
+        # Check if device has an optional IP stored (IPv4 or host name)
         ip = device.get("ip", "")
         if not ip:
             status = "unknown"
@@ -200,36 +208,60 @@ class WOLEngine(QObject):
             status = "unknown"
             message = f"Invalid IP configured for {name}."
         else:
-            try:
-                # Use platform-appropriate ping
+            # Resolve host names (e.g. "blade-18.fritz.box") to IPv4 before
+            # pinging. Two reasons this is required:
+            # 1. Windows ping prefers AAAA records when the DNS server
+            #    (e.g. a Fritz!Box) publishes IPv6 for the device — IPv6
+            #    replies carry no "TTL=" token, so the reply detector below
+            #    would falsely report online hosts as offline.
+            # 2. A name can have several A records (a Fritz!Box may list a
+            #    stale DHCP lease next to the current one) and the resolver
+            #    order is not deterministic; probing every candidate keeps a
+            #    single stale entry from masking an online device.
+            candidates = resolve_ipv4_all(ip)
+            if not candidates:
+                status = "unknown"
+                message = (
+                    f"Could not resolve {name} ({ip}) to an IPv4 address. "
+                    "Check the host name or enter an IP address."
+                )
+            else:
                 param = "-n" if subprocess.os.name == "nt" else "-c"
                 # Suppress console window on Windows
                 kwargs = {}
                 if subprocess.os.name == "nt":
                     kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-                result = run_subprocess_safe(
-                    ["ping", param, "1", ip],
-                    timeout=5,
-                    **kwargs,
-                )
-                # Check actual ping output, not just exit code
-                # Windows may return 0 even when host is unreachable (router replies).
-                # A real reply always carries a TTL, but the case differs per
-                # platform: Windows prints "TTL=64", Linux/BusyBox "ttl=64".
-                # Match case-insensitively so online hosts are detected on both.
-                output = result.stdout.decode("utf-8", errors="replace")
-                if _PING_REPLY_RE.search(output):
-                    status = "online"
-                    message = f"{name} is responding."
-                else:
-                    status = "offline"
-                    message = f"{name} did not respond. May be off or sleeping."
-            except subprocess.TimeoutExpired:
                 status = "offline"
-                message = f"Ping to {name} ({ip}) timed out."
-            except Exception as e:
-                status = "unknown"
-                message = f"Error pinging {name}: {e}"
+                message = f"{name} did not respond. May be off or sleeping."
+                for candidate in candidates:
+                    try:
+                        # Forced to IPv4 (-4) so a broken IPv6 route can
+                        # never mask the IPv4 reply
+                        result = run_subprocess_safe(
+                            ["ping", "-4", param, "1", candidate],
+                            timeout=5,
+                            **kwargs,
+                        )
+                        # Check actual ping output, not just exit code
+                        # Windows may return 0 even when host is unreachable
+                        # (router replies). A real reply always carries a TTL,
+                        # but the case differs per platform: Windows prints
+                        # "TTL=64", Linux/BusyBox "ttl=64". Match
+                        # case-insensitively so online hosts are detected on both.
+                        output = result.stdout.decode("utf-8", errors="replace")
+                        if _PING_REPLY_RE.search(output):
+                            status = "online"
+                            message = f"{name} is responding."
+                            break
+                    except TimeoutError:
+                        # run_subprocess_safe converts subprocess timeouts
+                        # into builtin TimeoutError — treat as no reply and
+                        # try the next resolved address
+                        continue
+                    except Exception as e:
+                        status = "unknown"
+                        message = f"Error pinging {name}: {e}"
+                        break
 
         self._device_status[device_id] = status
         return status, message
