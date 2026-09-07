@@ -820,11 +820,16 @@ class DevicesView(QWidget):
     def _relayout_grid(self) -> None:
         """Place the cards into the grid, computing the column count from width."""
         cols = self._grid_columns()
-        # Not laid out yet: stack in one column, keep the 0 sentinel so the
-        # first real resize (or the deferred showEvent pass) reflows properly.
-        placeholder = cols == 0
-        cols = cols or 1
-        if not placeholder:
+        # Not measured (hidden view or no width yet): stack in one column and
+        # RESET the sentinel to 0, so the next showEvent/resize reflows with
+        # the real width. Without the reset, a rebuild while the view is
+        # hidden (e.g. device edited on "Verwalten" -> refresh_devices) would
+        # leave a 1-column placeholder that showEvent skips, because
+        # _grid_cols still holds the old (correct-looking) column count.
+        if cols == 0:
+            self._grid_cols = 0
+            cols = 1
+        else:
             self._grid_cols = cols
 
         while self.grid.count():

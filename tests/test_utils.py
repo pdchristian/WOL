@@ -147,16 +147,33 @@ class TestGetIPKey(unittest.TestCase):
 class TestAutoRdpResolution(unittest.TestCase):
     def test_2560x1440_default_fraction(self):
         # Height-first with REMOTE_DESKTOP_AUTO_FRACTION = 0.84.
-        # height = round(1440*0.84)=1210, width = round(1210*16/9)=2151.
-        self.assertEqual(auto_rdp_resolution(2560, 1440), (2151, 1210))
+        # height = round(1440*0.84)=1210, width = round(1210*16/9)=2151 ->
+        # rounded down to even (gnome-remote-desktop rejects odd sizes).
+        self.assertEqual(auto_rdp_resolution(2560, 1440), (2150, 1210))
 
     def test_1920x1080_default_fraction(self):
-        # height = round(1080*0.84)=907, width = round(907*16/9)=1612.
-        self.assertEqual(auto_rdp_resolution(1920, 1080), (1612, 907))
+        # height = round(1080*0.84)=907 -> 906, width = round(907*16/9)=1612.
+        self.assertEqual(auto_rdp_resolution(1920, 1080), (1612, 906))
 
     def test_ultrawide_3440x1440_not_taller_than_screen(self):
         # 21:9 monitor: height-driven size must not exceed the screen height.
-        self.assertEqual(auto_rdp_resolution(3440, 1440), (2151, 1210))
+        self.assertEqual(auto_rdp_resolution(3440, 1440), (2150, 1210))
+
+    def test_result_is_always_even(self):
+        # gnome-remote-desktop (Ubuntu) drops sessions whose width or height
+        # is odd (mstsc shows "critical error, code 5"). Screens at
+        # fractional DPI scaling (150 % on 2560x1440 -> 1707x960 etc.)
+        # routinely produce odd intermediate values — none may survive.
+        for w, h in [
+            (2502, 1408),  # 2560x1440 at 125 % scaling (real-world case)
+            (1707, 960),   # 2560x1440 at 150 % scaling
+            (1921, 1081),
+            (1367, 769),
+            (2561, 1441),
+        ]:
+            width, height = auto_rdp_resolution(w, h)
+            self.assertEqual(width % 2, 0, f"width odd for screen {w}x{h}")
+            self.assertEqual(height % 2, 0, f"height odd for screen {w}x{h}")
 
     def test_ultrawide_clamped_to_screen_width(self):
         # When the height-derived width would exceed the screen width, the
@@ -164,7 +181,8 @@ class TestAutoRdpResolution(unittest.TestCase):
         self.assertEqual(auto_rdp_resolution(1280, 1024), (1280, 720))
 
     def test_explicit_fraction_0_9(self):
-        # Legacy behavior preserved when fraction is passed explicitly.
+        # Legacy behavior preserved when fraction is passed explicitly
+        # (these values are even already).
         self.assertEqual(auto_rdp_resolution(2560, 1440, fraction=0.9), (2304, 1296))
         self.assertEqual(auto_rdp_resolution(1920, 1080, fraction=0.9), (1728, 972))
 
@@ -199,6 +217,17 @@ class TestBuildRdpContent(unittest.TestCase):
     def test_fullscreen_has_no_position_line(self):
         content = _build_rdp_content("10.0.0.5", "", "", True, 2560, 1440)
         self.assertNotIn("winposstr", content)
+
+    def test_windowed_mode_forces_even_dimensions(self):
+        # gnome-remote-desktop (Ubuntu) rejects odd session dimensions with
+        # mstsc's "critical error (code 5)" dialog — every geometry key must
+        # carry even values, and winposstr must match the adjusted size.
+        content = _build_rdp_content("10.0.0.5", "", "", False, 2103, 1183)
+        self.assertIn("desktopwidth:i:2102", content)
+        self.assertIn("desktopheight:i:1182", content)
+        self.assertIn("winposstr:s:0,1,10,10,2112,1192", content)
+        self.assertNotIn("2103", content)
+        self.assertNotIn("1183", content)
 
     def test_password_is_base64_utf16le(self):
         content = _build_rdp_content("10.0.0.5", "", "pw", True, 1920, 1080)

@@ -238,6 +238,34 @@ class TestGridColumnCount:
         view.cancel_workers()
         view.deleteLater()
 
+    def test_refresh_while_hidden_restores_columns_on_show(self, qapp, config_with_devices, monkeypatch):
+        """Hidden rebuild (device edited on "Verwalten") must not keep a 1-col placeholder.
+
+        Regression: refresh_devices() while the view is hidden lays out with
+        the cols=1 placeholder but left _grid_cols at the old column count,
+        so showEvent's `if _grid_cols == 0` guard skipped the reflow and the
+        cards stayed one-per-row very wide after switching back to "Geräte".
+        """
+        view = DevicesView(config_with_devices)
+        monkeypatch.setattr(view, "refresh_statuses", lambda: None)
+        view.resize(1020, 700)
+        view.show()
+        qapp.processEvents()
+        assert view._grid_cols == 3
+
+        # Simulate leaving the view, editing a device there, coming back.
+        view.hide()
+        qapp.processEvents()
+        view.refresh_devices()  # fires while hidden → placeholder layout
+        assert view._grid_cols == 0  # sentinel reset, not stale 3
+        view.show()
+        qapp.processEvents()
+        assert view._grid_cols == 3
+        positions = [view.grid.getItemPosition(i) for i in range(3)]
+        assert sorted(p[1] for p in positions) == [0, 1, 2]
+        view.cancel_workers()
+        view.deleteLater()
+
 
 class TestGridRightEdgeFlush:
     """The right edge of the last card is flush with the search field.

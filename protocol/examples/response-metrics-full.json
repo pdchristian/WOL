@@ -1,0 +1,29 @@
+{
+  "status": "ok",
+  "protocol": 4,
+  "hostname": "FRACTAL",
+  "cpu": 63.4,
+  "cpu_count": 16,
+  "ram_used": 13214287872,
+  "ram_total": 34359738368,
+  "uptime": 274320,
+  "gpu": 64,
+  "vram_used": 19327352832,
+  "vram_total": 25769803776,
+  "gpu_name": "NVIDIA GeForce RTX 4090",
+  "processes": {
+    "llama-server.exe:8080": {
+      "running": true,
+      "count": 1,
+      "pid": 12044,
+      "cpu": 12.5,
+      "ram": 8589934592,
+      "uptime": 10024,
+      "model": "Qwen3.8-Flash-256k-62",
+      "api_port": 8080,
+      "api_port_open": true,
+      "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"]
+    },
+    "backup-sync.exe": { "running": false }
+  }
+}

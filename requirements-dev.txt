@@ -2,5 +2,8 @@
 -r requirements.txt
 pytest>=7.0
 pytest-qt>=4.0
+# Protocol contract tests (tests/test_protocol_schema.py validates the
+# host service wire protocol against protocol/schema/)
+jsonschema>=4.18
 # Build (used by build.ps1 via `python -m PyInstaller`)
 pyinstaller>=6.20

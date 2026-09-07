@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "protocol": 2,
+  "hostname": "A4-TV",
+  "cpu": 8.2,
+  "cpu_count": 4,
+  "ram_used": 2147483648,
+  "ram_total": 8589934592,
+  "uptime": 53100,
+  "gpu": null,
+  "vram_used": null,
+  "vram_total": null,
+  "gpu_name": null
+}

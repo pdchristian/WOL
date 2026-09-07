@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wol-host-protocol/response-metrics.json",
+  "title": "Response to {command: metrics} (authenticated, protocol v4)",
+  "description": "Sizes are bytes, percentages 0-100. null = not measurable (psutil/nvidia-smi unavailable). See protocol/SPEC.md §4.2.",
+  "allOf": [{ "$ref": "response-core.json" }],
+  "type": "object",
+  "required": ["status", "protocol", "hostname", "cpu", "cpu_count",
+               "ram_used", "ram_total", "uptime", "gpu", "vram_used",
+               "vram_total", "gpu_name"],
+  "properties": {
+    "status": { "const": "ok" },
+    "protocol": { "type": "integer", "minimum": 1, "maximum": 4 },
+    "hostname": { "type": "string" },
+    "cpu": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+    "cpu_count": { "type": ["integer", "null"], "minimum": 1 },
+    "ram_used": { "type": ["integer", "null"], "minimum": 0 },
+    "ram_total": { "type": ["integer", "null"], "minimum": 0 },
+    "uptime": { "type": ["integer", "null"], "minimum": 0 },
+    "gpu": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+    "vram_used": { "type": ["integer", "null"], "minimum": 0 },
+    "vram_total": { "type": ["integer", "null"], "minimum": 0 },
+    "gpu_name": { "type": ["string", "null"] },
+    "processes": {
+      "type": "object",
+      "maxProperties": 8,
+      "additionalProperties": { "$ref": "#/$defs/watchEntry" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "watchEntry": {
+      "type": "object",
+      "required": ["running"],
+      "properties": {
+        "running": { "type": "boolean" },
+        "count": { "type": "integer", "minimum": 1 },
+        "pid": { "type": "integer", "minimum": 1 },
+        "cpu": { "type": "number", "minimum": 0 },
+        "ram": { "type": "integer", "minimum": 0 },
+        "uptime": { "type": "integer", "minimum": 0 },
+        "model": { "type": "string", "maxLength": 64 },
+        "api_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "api_port_open": { "type": "boolean" },
+        "models": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "type": "string", "maxLength": 64 }
+        }
+      },
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": { "properties": { "running": { "const": false } } },
+          "then": { "maxProperties": 1 }
+        }
+      ]
+    }
+  }
+}

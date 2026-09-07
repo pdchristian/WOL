@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wol-host-protocol/response-core.json",
+  "title": "Common response core (every command)",
+  "description": "Only 'status' is guaranteed on every response. 'message' is present on ack/error responses but NOT on the data responses (metrics, run_batch) - see protocol/SPEC.md §3. Additional fields are explicitly allowed (additive protocol evolution).",
+  "type": "object",
+  "required": ["status"],
+  "properties": {
+    "status": { "type": "string", "enum": ["ok", "error"] },
+    "message": { "type": "string" }
+  },
+  "additionalProperties": true
+}

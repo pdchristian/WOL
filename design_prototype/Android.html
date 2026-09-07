@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WOL Android – Interaktiver Prototyp</title>
+<!--
+  ============================================================================
+  WOL Manager Android – INTERAKTIVER Prototyp (Simulation, kein Build nötig)
+  ----------------------------------------------------------------------------
+  • Datenmodell + simulierte Netzwerkzugriffe (Latenz, Fehler, Wake-Dauer)
+  • Geräte-CRUD, Wake/Alle wecken, Status-Refresh, Netzwerk-Scan
+  • Dashboard: Live-Metriken (2s-Tick wie ui.dashboard_interval_ms), Service-
+    chips, geladene llama.cpp-Modelle, ⚡-Inferenz-Badge, Batch-Konsole
+  • Zeitplan-CRUD, Aktivitäts-Protokoll mit CSV-Export
+  • Einstellungen: Theme (Dark/Light, Tokens = modern_theme.py DARK/LIGHT),
+    Sprache de/en/fr/es (live), Simulations-Fehlerrate, Geräte-Sync (v5)
+  • Fehlerzustände simulierbar: keine Credentials, Host nicht erreichbar,
+    Host-Service zu alt (Protokoll v2 → Services-Panel ausgeblendet)
+  Öffnen: direkt im Browser (F12 → Handy-Emulation empfohlen).
+  ============================================================================
+-->
+<style>
+  :root{
+    --bg:#0f1115; --surface:#1a1d24; --surface-hover:#232733; --border:#2c303a;
+    --text:#e6e8ee; --text-dim:#9aa0ab; --accent:#00b8a9; --accent-dark:#006b63;
+    --accent-text:#032019;
+    --online:#22c55e; --offline:#ef4444; --unknown:#f59e0b; --danger:#e0485a;
+    --svc:#f97316; --blue:#60a5fa;
+    --gauge-cpu:#00b8a9; --gauge-ram:#60a5fa; --gauge-gpu:#a78bfa; --gauge-vram:#f59e0b;
+    --console-bg:#12141a;
+  }
+  .phone[data-theme="light"]{
+    --bg:#f3f4f7; --surface:#ffffff; --surface-hover:#eef0f4; --border:#d8dbe2;
+    --text:#1b1e24; --text-dim:#5b6270; --accent:#009688; --accent-dark:#00695f;
+    --accent-text:#ffffff;
+    --online:#16a34a; --offline:#dc2626; --unknown:#d97706; --danger:#dc2637;
+    --svc:#ea580c; --blue:#2563eb;
+    --gauge-cpu:#009688; --gauge-ram:#2563eb; --gauge-gpu:#7c3aed; --gauge-vram:#d97706;
+    --console-bg:#f7f8fa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"Segoe UI",system-ui,sans-serif}
+  body{background:#000;display:flex;align-items:center;justify-content:center;
+    min-height:100vh;padding:16px;overflow:auto}
+  .phone{position:relative;width:392px;height:820px;background:var(--bg);color:var(--text);
+    display:flex;flex-direction:column;overflow:hidden;border:2px solid #333;border-radius:36px}
+  .statusbar{display:flex;justify-content:space-between;padding:10px 22px 4px;
+    font-size:12px;color:var(--text-dim)}
+  .screen{flex:1;overflow-y:auto;padding:14px 18px 90px;display:none;animation:fade .18s}
+  .screen.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+  h1{font-size:22px;font-weight:600} .sub{color:var(--text-dim);font-size:13px;margin-top:2px}
+  .toprow{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:8px}
+  .search{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:10px 14px;color:var(--text);font-size:14px;margin-bottom:12px;display:flex;gap:8px;align-items:center}
+  .search input{background:none;border:none;outline:none;color:var(--text);flex:1;font-size:14px}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px;align-items:center}
+  .toolbar select{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    color:var(--text);padding:8px 10px;font-size:12px;flex:1}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid.list{grid-template-columns:1fr}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+    padding:14px;position:relative;transition:border-color .15s}
+  .card.disabled{opacity:.55}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .on{background:var(--online);box-shadow:0 0 8px var(--online)}
+  .off{background:var(--offline)} .unk{background:var(--unknown)}
+  .waking{background:var(--unknown);animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.3}}
+  .name{font-weight:600;font-size:15px;margin:8px 0 2px}
+  .meta{color:var(--text-dim);font-size:11px;font-family:Consolas,monospace}
+  .wake{width:100%;margin-top:12px;border:none;border-radius:12px;padding:12px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+    color:var(--accent-text);font-weight:700;font-size:14px;cursor:pointer}
+  .wake:disabled{background:var(--surface-hover);color:var(--text-dim)}
+  .icobtn{position:absolute;top:10px;background:none;border:none;font-size:15px;cursor:pointer;opacity:.75}
+  .icobtn.dash{right:10px} .icobtn.menu{right:36px}
+  .btnrow{display:flex;gap:10px;margin:14px 0}
+  .btn{flex:1;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:13px;
+    font-weight:600;background:var(--surface);color:var(--text);cursor:pointer;text-align:center}
+  .btn:disabled{opacity:.5}
+  .btn.danger{background:rgba(224,72,90,.12);color:var(--danger);border-color:rgba(224,72,90,.4)}
+  .btn.primary{background:var(--accent);color:var(--accent-text);border:none}
+  .btn.small{flex:0;padding:7px 12px;font-size:12px;border-radius:10px}
+  .btn.ghost{background:var(--surface-hover);color:var(--text-dim);border-color:var(--border)}
+  .btn.ghost:hover{color:var(--text)}
+  .bottomnav{display:flex;background:var(--surface);border-top:1px solid var(--border);
+    padding:8px 4px 18px;z-index:20}
+  .nav{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;
+    border:none;color:var(--text-dim);font-size:9.5px;cursor:pointer;padding:6px 0}
+  .nav .i{font-size:19px}
+  .nav.active{color:var(--accent);font-weight:700}
+  /* ── Dashboard ─────────────────────────────────────────────── */
+  .chip{display:inline-flex;gap:6px;align-items:center;border-radius:999px;padding:4px 10px;
+    font-size:11px;font-weight:600;margin:3px 4px 3px 0}
+  .chip.run{background:rgba(34,197,94,.14);color:var(--online)}
+  .chip.probe{background:rgba(249,115,22,.14);color:var(--svc)}
+  .chip.off{background:var(--surface-hover);color:var(--text-dim)}
+  .model{font-size:12px;color:var(--text-dim);margin-top:6px}
+  .inf{color:var(--svc);font-weight:700}
+  .gauges{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+  .gwrap{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:12px;text-align:center}
+  .gauge{--v:0;--c:var(--gauge-cpu);width:92px;height:92px;border-radius:50%;margin:0 auto;
+    background:conic-gradient(var(--c) calc(var(--v)*1%),var(--surface-hover) 0)}
+  .gauge .in{width:72px;height:72px;border-radius:50%;background:var(--surface);margin:10px;
+    display:flex;align-items:center;justify-content:center;flex-direction:column}
+  .gauge b{font-size:19px} .gauge span{font-size:10px;color:var(--text-dim)}
+  .spark{margin-top:6px}
+  .console{background:var(--console-bg);border:1px solid var(--border);border-radius:12px;
+    font-family:Consolas,monospace;font-size:11px;color:#8ef0c8;padding:10px;margin-top:10px;
+    max-height:150px;overflow-y:auto;white-space:pre-wrap}
+  .console .err{color:#ff8d8d} .console .dim{color:var(--text-dim)}
+  .mono{font-family:Consolas,monospace;font-size:11px;color:var(--text-dim);margin-top:4px}
+  .warnbox{border-radius:12px;padding:12px;font-size:12.5px;margin:12px 0;line-height:1.45}
+  .warnbox.warn{background:rgba(245,158,11,.12);color:var(--unknown);border:1px solid rgba(245,158,11,.4)}
+  .warnbox.err{background:rgba(224,72,90,.12);color:var(--danger);border:1px solid rgba(224,72,90,.4)}
+  .sec{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin:16px 0 8px}
+  /* ── Zeitplan / Settings ───────────────────────────────────── */
+  .daychip{display:inline-block;width:30px;text-align:center;font-size:11px;padding:4px 0;
+    border-radius:8px;background:var(--surface-hover);color:var(--text-dim);margin-right:4px;cursor:pointer}
+  .daychip.on{background:rgba(0,184,169,.16);color:var(--accent);font-weight:700}
+  .toggle{width:44px;height:26px;border-radius:999px;background:var(--surface-hover);position:relative;
+    cursor:pointer;flex-shrink:0;transition:background .15s}
+  .toggle::after{content:"";position:absolute;width:20px;height:20px;border-radius:50%;
+    background:#fff;top:3px;right:21px;transition:right .15s}
+  .toggle.on{background:var(--accent)} .toggle.on::after{right:3px}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 0;
+    border-bottom:1px solid var(--border);font-size:14px}
+  .row small{display:block;color:var(--text-dim);font-size:11px;margin-top:2px}
+  .row .val{color:var(--text-dim);font-size:13px;text-align:right}
+  select.plain{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    color:var(--text);padding:6px 8px;font-size:12px}
+  input.plain{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    color:var(--text);padding:6px 8px;font-size:12px;outline:none}
+  /* ── Logs ──────────────────────────────────────────────────── */
+  .logrow{display:flex;gap:8px;font-size:11.5px;padding:8px 0;border-bottom:1px solid var(--border);align-items:center}
+  .logrow .t{color:var(--text-dim);font-family:Consolas,monospace;flex-shrink:0}
+  .logrow .a{font-weight:600;flex-shrink:0}
+  .logrow .d{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill{font-size:10px;border-radius:999px;padding:2px 8px;font-weight:700;flex-shrink:0}
+  .pill.ok{background:rgba(34,197,94,.14);color:var(--online)}
+  .pill.err{background:rgba(224,72,90,.14);color:var(--danger)}
+  .filterchip{border:1px solid var(--border);background:var(--surface);color:var(--text-dim);
+    border-radius:999px;padding:5px 12px;font-size:11.5px;cursor:pointer}
+  .filterchip.on{background:rgba(0,184,169,.16);color:var(--accent);border-color:var(--accent)}
+  /* ── Bottom-Sheet / Dialoge ────────────────────────────────── */
+  .overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);display:none;z-index:40}
+  .overlay.open{display:block}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);
+    border-radius:24px 24px 0 0;padding:18px 18px 26px;max-height:78%;overflow-y:auto;
+    transform:translateY(105%);transition:transform .22s ease;z-index:50;border-top:1px solid var(--border)}
+  .sheet.open{transform:translateY(0)}
+  .sheet h2{font-size:17px;margin-bottom:14px}
+  .grab{width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 14px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:5px}
+  .field input[type=text],.field input[type=password],.field input[type=time],.field select{
+    width:100%;background:var(--bg);border:1px solid var(--border);border-radius:10px;
+    padding:11px 12px;color:var(--text);font-size:14px;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--accent)}
+  .field .hint{font-size:10.5px;color:var(--text-dim);margin-top:4px}
+  .field .ferr{font-size:11px;color:var(--danger);margin-top:4px;display:none}
+  .field.invalid input{border-color:var(--danger)}
+  .field.invalid .ferr{display:block}
+  .pwwrap{position:relative}
+  .pwwrap .eye{position:absolute;right:10px;top:9px;background:none;border:none;cursor:pointer;font-size:14px}
+  .sheetbtns{display:flex;gap:10px;margin-top:16px}
+  /* ── Toast / Spinner ───────────────────────────────────────── */
+  .toast{position:absolute;left:16px;right:16px;bottom:100px;background:var(--surface-hover);
+    color:var(--text);border:1px solid var(--border);border-radius:12px;padding:12px 14px;
+    font-size:13px;z-index:60;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:1}
+  .toast.err{border-color:var(--danger)}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.35);
+    border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .scanrow{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+  .scanrow .mono{margin:0}
+  .badge{font-size:10px;border-radius:999px;padding:2px 8px;font-weight:700}
+  .badge.new{background:rgba(0,184,169,.16);color:var(--accent)}
+  .badge.known{background:var(--surface-hover);color:var(--text-dim)}
+  .empty{text-align:center;color:var(--text-dim);padding:40px 10px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="phone" id="phone" data-theme="dark">
+  <div class="statusbar"><span id="clock">09:41</span><span>📶 &nbsp;🔋 86 %</span></div>
+
+  <div class="screen active" id="s-devices"></div>
+  <div class="screen" id="s-dash"></div>
+  <div class="screen" id="s-sched"></div>
+  <div class="screen" id="s-logs"></div>
+  <div class="screen" id="s-set"></div>
+
+  <div class="bottomnav">
+    <button class="nav active" data-nav="devices"><span class="i">⚡</span><span data-t="nav.devices">Geräte</span></button>
+    <button class="nav" data-nav="dash"><span class="i">📊</span><span data-t="nav.dash">Dashboard</span></button>
+    <button class="nav" data-nav="sched"><span class="i">⏰</span><span data-t="nav.sched">Zeitplan</span></button>
+    <button class="nav" data-nav="logs"><span class="i">📄</span><span data-t="nav.logs">Protokoll</span></button>
+    <button class="nav" data-nav="set"><span class="i">⚙️</span><span data-t="nav.set">Setup</span></button>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <div class="sheet" id="sheet"></div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════ i18n (Keys analog translations.py) ═════════ */
+const I18N = {
+de:{
+ "nav.devices":"Geräte","nav.dash":"Dashboard","nav.sched":"Zeitplan","nav.logs":"Protokoll","nav.set":"Setup",
+ "devices.subtitle":"{n} von {m} online","devices.search":"Gerät suchen …",
+ "devices.wake":"⚡ Aufwecken","devices.on":"Eingeschaltet","devices.waking":"Wacht auf …",
+ "devices.wake_all":"⚡ Alle wecken","devices.scan":"📡 Scan","devices.refresh":"↻",
+ "devices.empty":"Keine Geräte. Tippe auf ＋.","devices.disabled":"deaktiviert",
+ "devices.sort.name":"Sortierung: Name","devices.sort.ip":"Sortierung: IP","devices.sort.status":"Sortierung: Status",
+ "dev.title.add":"Gerät hinzufügen","dev.title.edit":"Gerät bearbeiten",
+ "dev.name":"Name","dev.mac":"MAC-Adresse","dev.ip":"IP-Adresse oder Hostname",
+ "dev.user":"Benutzer (Host Service)","dev.pass":"Passwort",
+ "dev.watch":"Beobachtete Prozesse","dev.watch.hint":"z. B. llama-server.exe:8080, kommagetrennt, max. 8",
+ "dev.enabled":"Gerät aktiviert","dev.save":"Speichern","dev.cancel":"Abbrechen","dev.delete":"Löschen",
+ "dev.err.name":"Bitte einen Namen eingeben.","dev.err.mac":"Ungültige MAC-Adresse (z. B. AA:BB:CC:DD:EE:FF).",
+ "dev.err.ip":"Ungültige IP oder Hostname.","dev.err.watch":"Maximal 8 Einträge (je ≤ 128 Zeichen).",
+ "dev.saved":"Gerät gespeichert.","dev.deleted":"Gerät gelöscht.","dev.confirm.del":"Wirklich löschen?",
+ "wol.sent":"Magic Packet an {name} gesendet.","wol.all":"Wake-Pakete an {n} Geräte gesendet.",
+ "wol.online":"{name} ist online.","scan.title":"Netzwerk-Scan","scan.start":"📡 Scan starten",
+ "scan.running":"Scanne Subnetze …","scan.results":"{n} Geräte gefunden",
+ "scan.known":"bekannt","scan.new":"neu","scan.takeover":"Übernehmen ({n})",
+ "dash.title":"Dashboard","dash.back":"←","dash.select":"Bitte zuerst ein Gerät öffnen (📊).",
+ "dash.svc.title":"Dienste","dash.svc.none":"Keine beobachteten Prozesse konfiguriert.",
+ "dash.model":"🧠 {m}","dash.inferenz":"⚡ Inferenz aktiv","dash.hostv":"Host Service v{v}",
+ "dash.cpu":"CPU","dash.ram":"RAM","dash.gpu":"GPU","dash.vram":"VRAM",
+ "dash.uptime":"Uptime: {u}","dash.batch.title":"Batch ausführen",
+ "dash.batch.run":"▶ Ausführen","dash.batch.cancel":"■ Abbrechen",
+ "dash.batch.done":"Exit-Code {c} · {d} s",
+ "dash.batch.disabled":"Batches sind für dieses Gerät nicht freigegeben (Gerät bearbeiten → Batches erlaubt).",
+ "dash.creds":"Für dieses Gerät sind keine Benutzerdaten hinterlegt. Dashboard-Metriken benötigen die Host-Service-Anmeldung.",
+ "dash.unreach":"Host Service nicht erreichbar ({ip}:8765). Läuft der Dienst?",
+ "dash.oldproto":"Host Service zu alt (v{v}) – Dienste/Modelle nicht verfügbar.",
+ "dash.shutdown":"⏻ Ausschalten","dash.reboot":"↻ Neustart",
+ "dash.confirm.shutdown":"{name} wirklich ausschalten?","dash.confirm.reboot":"{name} wirklich neu starten?",
+ "cmd.shutdown.ok":"{name} wird ausgeschaltet.","cmd.reboot.ok":"{name} startet neu.",
+ "sched.title":"Zeitplan","sched.subtitle":"{n} aktive Zeitpläne","sched.empty":"Kein Zeitplan vorhanden.",
+ "sched.add":"Zeitplan hinzufügen","sched.edit":"Zeitplan bearbeiten",
+ "sched.device":"Gerät","sched.action":"Aktion","act.wake":"Aufwecken","act.shutdown":"Ausschalten","act.reboot":"Neustart",
+ "sched.time":"Uhrzeit","sched.days":"Wochentage","sched.enabled":"Aktiviert",
+ "sched.next":"Nächste Ausführung: {r}","sched.deleted":"Zeitplan gelöscht.",
+ "day.mon":"Mo","day.tue":"Di","day.wed":"Mi","day.thu":"Do","day.fri":"Fr","day.sat":"Sa","day.sun":"So",
+ "logs.title":"Aktivitätsprotokoll","logs.filter.all":"Alle","logs.filter.wake":"Wake","logs.filter.shutdown":"Shutdown","logs.filter.error":"Fehler",
+ "logs.export":"⬇ CSV","logs.clear":"Leeren","logs.cleared":"Protokoll geleert.","logs.empty":"Keine Einträge.",
+ "set.title":"Einstellungen","set.design":"Design","set.design.sub":"Dunkel · Hell · System",
+ "set.dark":"🌙 Dunkel","set.light":"☀️ Hell","set.system":"🖥 System",
+ "set.lang":"Sprache","set.lang.sub":"Deutsch · English · Français · Español",
+ "set.port":"Wake-Port","set.broadcast":"Broadcast-IP","set.interval":"Dashboard-Intervall",
+ "set.sync":"Geräteliste synchronisieren","set.sync.sub":"Lädt Geräte per Host Service (Protokoll v5, simuliert)",
+ "set.sync.done":"{n} Geräte synchronisiert.","set.sync.syncing":"Synchronisiere …",
+ "set.sim":"Simulation","set.sim.fail":"Netzwerkfehler-Rate","set.sim.sub":"Zufällige Übertragungsfehler für Tests",
+ "set.about":"Über diese App","set.version":"Version {v} (Android)","set.protocol":"Host-Protokoll v4 · TCP 8765",
+ "toast.offline":"{name}: {err}","err.timeout":"Zeitüberschreitung","err.refused":"Verbindung abgelehnt",
+ "confirm.title":"Bestätigen","yes":"Ja","no":"Nein"
+},
+en:{
+ "nav.devices":"Devices","nav.dash":"Dashboard","nav.sched":"Schedule","nav.logs":"Logs","nav.set":"Setup",
+ "devices.subtitle":"{n} of {m} online","devices.search":"Search device …",
+ "devices.wake":"⚡ Wake","devices.on":"Powered on","devices.waking":"Waking …",
+ "devices.wake_all":"⚡ Wake all","devices.scan":"📡 Scan","devices.refresh":"↻",
+ "devices.empty":"No devices. Tap ＋.","devices.disabled":"disabled",
+ "devices.sort.name":"Sort: Name","devices.sort.ip":"Sort: IP","devices.sort.status":"Sort: Status",
+ "dev.title.add":"Add device","dev.title.edit":"Edit device",
+ "dev.name":"Name","dev.mac":"MAC address","dev.ip":"IP address or hostname",
+ "dev.user":"Username (host service)","dev.pass":"Password",
+ "dev.watch":"Watched processes","dev.watch.hint":"e.g. llama-server.exe:8080, comma-separated, max 8",
+ "dev.enabled":"Device enabled","dev.save":"Save","dev.cancel":"Cancel","dev.delete":"Delete",
+ "dev.err.name":"Please enter a name.","dev.err.mac":"Invalid MAC address (e.g. AA:BB:CC:DD:EE:FF).",
+ "dev.err.ip":"Invalid IP or hostname.","dev.err.watch":"Max 8 entries (≤ 128 chars each).",
+ "dev.saved":"Device saved.","dev.deleted":"Device deleted.","dev.confirm.del":"Really delete?",
+ "wol.sent":"Magic packet sent to {name}.","wol.all":"Wake packets sent to {n} devices.",
+ "wol.online":"{name} is online.","scan.title":"Network scan","scan.start":"📡 Start scan",
+ "scan.running":"Scanning subnets …","scan.results":"{n} devices found",
+ "scan.known":"known","scan.new":"new","scan.takeover":"Add ({n})",
+ "dash.title":"Dashboard","dash.back":"←","dash.select":"Open a device first (📊).",
+ "dash.svc.title":"Services","dash.svc.none":"No watched processes configured.",
+ "dash.model":"🧠 {m}","dash.inferenz":"⚡ Inference active","dash.hostv":"Host Service v{v}",
+ "dash.cpu":"CPU","dash.ram":"RAM","dash.gpu":"GPU","dash.vram":"VRAM",
+ "dash.uptime":"Uptime: {u}","dash.batch.title":"Run batch",
+ "dash.batch.run":"▶ Run","dash.batch.cancel":"■ Cancel",
+ "dash.batch.done":"Exit code {c} · {d} s",
+ "dash.batch.disabled":"Batches are not enabled for this device (edit device → batches allowed).",
+ "dash.creds":"No credentials stored for this device. Dashboard metrics require host service sign-in.",
+ "dash.unreach":"Host service unreachable ({ip}:8765). Is the service running?",
+ "dash.oldproto":"Host service too old (v{v}) – services/models unavailable.",
+ "dash.shutdown":"⏻ Shut down","dash.reboot":"↻ Restart",
+ "dash.confirm.shutdown":"Really shut down {name}?","dash.confirm.reboot":"Really restart {name}?",
+ "cmd.shutdown.ok":"{name} is shutting down.","cmd.reboot.ok":"{name} is restarting.",
+ "sched.title":"Schedule","sched.subtitle":"{n} active schedules","sched.empty":"No schedules.",
+ "sched.add":"Add schedule","sched.edit":"Edit schedule",
+ "sched.device":"Device","sched.action":"Action","act.wake":"Wake","act.shutdown":"Shut down","act.reboot":"Restart",
+ "sched.time":"Time","sched.days":"Days of week","sched.enabled":"Enabled",
+ "sched.next":"Next run: {r}","sched.deleted":"Schedule deleted.",
+ "day.mon":"Mon","day.tue":"Tue","day.wed":"Wed","day.thu":"Thu","day.fri":"Fri","day.sat":"Sat","day.sun":"Sun",
+ "logs.title":"Activity log","logs.filter.all":"All","logs.filter.wake":"Wake","logs.filter.shutdown":"Shutdown","logs.filter.error":"Errors",
+ "logs.export":"⬇ CSV","logs.clear":"Clear","logs.cleared":"Log cleared.","logs.empty":"No entries.",
+ "set.title":"Settings","set.design":"Design","set.design.sub":"Dark · Light · System",
+ "set.dark":"🌙 Dark","set.light":"☀️ Light","set.system":"🖥 System",
+ "set.lang":"Language","set.lang.sub":"Deutsch · English · Français · Español",
+ "set.port":"Wake port","set.broadcast":"Broadcast IP","set.interval":"Dashboard interval",
+ "set.sync":"Sync device list","set.sync.sub":"Loads devices via host service (protocol v5, simulated)",
+ "set.sync.done":"{n} devices synced.","set.sync.syncing":"Syncing …",
+ "set.sim":"Simulation","set.sim.fail":"Network failure rate","set.sim.sub":"Random transport errors for testing",
+ "set.about":"About this app","set.version":"Version {v} (Android)","set.protocol":"Host protocol v4 · TCP 8765",
+ "toast.offline":"{name}: {err}","err.timeout":"Timed out","err.refused":"Connection refused",
+ "confirm.title":"Confirm","yes":"Yes","no":"No"
+},
+fr:{
+ "nav.devices":"Appareils","nav.dash":"Tableau de bord","nav.sched":"Planification","nav.logs":"Journal","nav.set":"Réglages",
+ "devices.subtitle":"{n} sur {m} en ligne","devices.search":"Rechercher …",
+ "devices.wake":"⚡ Réveiller","devices.on":"Sous tension","devices.waking":"Réveil …",
+ "devices.wake_all":"⚡ Tout réveiller","devices.scan":"📡 Scan","devices.refresh":"↻",
+ "devices.empty":"Aucun appareil. Touchez ＋.","devices.disabled":"désactivé",
+ "devices.sort.name":"Tri : nom","devices.sort.ip":"Tri : IP","devices.sort.status":"Tri : statut",
+ "dev.title.add":"Ajouter un appareil","dev.title.edit":"Modifier l'appareil",
+ "dev.name":"Nom","dev.mac":"Adresse MAC","dev.ip":"Adresse IP ou nom d'hôte",
+ "dev.user":"Utilisateur (service hôte)","dev.pass":"Mot de passe",
+ "dev.watch":"Processus surveillés","dev.watch.hint":"ex. llama-server.exe:8080, séparés par virgules, max 8",
+ "dev.enabled":"Appareil activé","dev.save":"Enregistrer","dev.cancel":"Annuler","dev.delete":"Supprimer",
+ "dev.err.name":"Veuillez saisir un nom.","dev.err.mac":"Adresse MAC invalide (ex. AA:BB:CC:DD:EE:FF).",
+ "dev.err.ip":"IP ou nom d'hôte invalide.","dev.err.watch":"Max 8 entrées (≤ 128 caractères).",
+ "dev.saved":"Appareil enregistré.","dev.deleted":"Appareil supprimé.","dev.confirm.del":"Vraiment supprimer ?",
+ "wol.sent":"Magic packet envoyé à {name}.","wol.all":"Wake-packets envoyés à {n} appareils.",
+ "wol.online":"{name} est en ligne.","scan.title":"Analyse réseau","scan.start":"📡 Démarrer",
+ "scan.running":"Analyse des sous-réseaux …","scan.results":"{n} appareils trouvés",
+ "scan.known":"connu","scan.new":"nouveau","scan.takeover":"Ajouter ({n})",
+ "dash.title":"Tableau de bord","dash.back":"←","dash.select":"Ouvrir d'abord un appareil (📊).",
+ "dash.svc.title":"Services","dash.svc.none":"Aucun processus surveillé.",
+ "dash.model":"🧠 {m}","dash.inferenz":"⚡ Inférence active","dash.hostv":"Service hôte v{v}",
+ "dash.cpu":"CPU","dash.ram":"RAM","dash.gpu":"GPU","dash.vram":"VRAM",
+ "dash.uptime":"Uptime : {u}","dash.batch.title":"Exécuter un lot",
+ "dash.batch.run":"▶ Exécuter","dash.batch.cancel":"■ Annuler",
+ "dash.batch.done":"Code retour {c} · {d} s",
+ "dash.batch.disabled":"Lots non autorisés pour cet appareil (modifier → lots activés).",
+ "dash.creds":"Aucun identifiant enregistré. Les métriques nécessitent la connexion au service hôte.",
+ "dash.unreach":"Service hôte injoignable ({ip}:8765). Le service tourne-t-il ?",
+ "dash.oldproto":"Service hôte trop ancien (v{v}) – services/modèles indisponibles.",
+ "dash.shutdown":"⏻ Éteindre","dash.reboot":"↻ Redémarrer",
+ "dash.confirm.shutdown":"Voulez-vous éteindre {name} ?","dash.confirm.reboot":"Voulez-vous redémarrer {name} ?",
+ "cmd.shutdown.ok":"{name} s'éteint.","cmd.reboot.ok":"{name} redémarre.",
+ "sched.title":"Planification","sched.subtitle":"{n} plans actifs","sched.empty":"Aucun plan.",
+ "sched.add":"Ajouter un plan","sched.edit":"Modifier le plan",
+ "sched.device":"Appareil","sched.action":"Action","act.wake":"Réveiller","act.shutdown":"Éteindre","act.reboot":"Redémarrer",
+ "sched.time":"Heure","sched.days":"Jours","sched.enabled":"Activé",
+ "sched.next":"Prochaine exécution : {r}","sched.deleted":"Plan supprimé.",
+ "day.mon":"Lu","day.tue":"Ma","day.wed":"Me","day.thu":"Je","day.fri":"Ve","day.sat":"Sa","day.sun":"Di",
+ "logs.title":"Journal d'activité","logs.filter.all":"Tous","logs.filter.wake":"Wake","logs.filter.shutdown":"Extinction","logs.filter.error":"Erreurs",
+ "logs.export":"⬇ CSV","logs.clear":"Vider","logs.cleared":"Journal vidé.","logs.empty":"Aucune entrée.",
+ "set.title":"Réglages","set.design":"Thème","set.design.sub":"Sombre · Clair · Système",
+ "set.dark":"🌙 Sombre","set.light":"☀️ Clair","set.system":"🖥 Système",
+ "set.lang":"Langue","set.lang.sub":"Deutsch · English · Français · Español",
+ "set.port":"Port Wake","set.broadcast":"IP de diffusion","set.interval":"Intervalle du tableau de bord",
+ "set.sync":"Synchroniser les appareils","set.sync.sub":"Charge via le service hôte (protocole v5, simulé)",
+ "set.sync.done":"{n} appareils synchronisés.","set.sync.syncing":"Synchronisation …",
+ "set.sim":"Simulation","set.sim.fail":"Taux d'erreurs réseau","set.sim.sub":"Erreurs de transport aléatoires",
+ "set.about":"À propos","set.version":"Version {v} (Android)","set.protocol":"Protocole hôte v4 · TCP 8765",
+ "toast.offline":"{name} : {err}","err.timeout":"Délai dépassé","err.refused":"Connexion refusée",
+ "confirm.title":"Confirmer","yes":"Oui","no":"Non"
+},
+es:{
+ "nav.devices":"Dispositivos","nav.dash":"Panel","nav.sched":"Planificación","nav.logs":"Registro","nav.set":"Ajustes",
+ "devices.subtitle":"{n} de {m} en línea","devices.search":"Buscar dispositivo …",
+ "devices.wake":"⚡ Encender","devices.on":"Encendido","devices.waking":"Encendiendo …",
+ "devices.wake_all":"⚡ Encender todos","devices.scan":"📡 Escanear","devices.refresh":"↻",
+ "devices.empty":"Sin dispositivos. Toca ＋.","devices.disabled":"desactivado",
+ "devices.sort.name":"Orden: nombre","devices.sort.ip":"Orden: IP","devices.sort.status":"Orden: estado",
+ "dev.title.add":"Añadir dispositivo","dev.title.edit":"Editar dispositivo",
+ "dev.name":"Nombre","dev.mac":"Dirección MAC","dev.ip":"Dirección IP o nombre de host",
+ "dev.user":"Usuario (servicio host)","dev.pass":"Contraseña",
+ "dev.watch":"Procesos observados","dev.watch.hint":"p. ej. llama-server.exe:8080, separados por comas, máx. 8",
+ "dev.enabled":"Dispositivo activado","dev.save":"Guardar","dev.cancel":"Cancelar","dev.delete":"Eliminar",
+ "dev.err.name":"Introduce un nombre.","dev.err.mac":"MAC no válida (p. ej. AA:BB:CC:DD:EE:FF).",
+ "dev.err.ip":"IP o host no válido.","dev.err.watch":"Máx. 8 entradas (≤ 128 caracteres).",
+ "dev.saved":"Dispositivo guardado.","dev.deleted":"Dispositivo eliminado.","dev.confirm.del":"¿Eliminar?",
+ "wol.sent":"Magic packet enviado a {name}.","wol.all":"Wake-packets enviados a {n} dispositivos.",
+ "wol.online":"{name} está en línea.","scan.title":"Escaneo de red","scan.start":"📡 Iniciar escaneo",
+ "scan.running":"Escaneando subredes …","scan.results":"{n} dispositivos encontrados",
+ "scan.known":"conocido","scan.new":"nuevo","scan.takeover":"Añadir ({n})",
+ "dash.title":"Panel","dash.back":"←","dash.select":"Abre primero un dispositivo (📊).",
+ "dash.svc.title":"Servicios","dash.svc.none":"Sin procesos observados.",
+ "dash.model":"🧠 {m}","dash.inferenz":"⚡ Inferencia activa","dash.hostv":"Servicio host v{v}",
+ "dash.cpu":"CPU","dash.ram":"RAM","dash.gpu":"GPU","dash.vram":"VRAM",
+ "dash.uptime":"Tiempo activo: {u}","dash.batch.title":"Ejecutar lote",
+ "dash.batch.run":"▶ Ejecutar","dash.batch.cancel":"■ Cancelar",
+ "dash.batch.done":"Código de salida {c} · {d} s",
+ "dash.batch.disabled":"Lotes no permitidos para este dispositivo (editar → lotes permitidos).",
+ "dash.creds":"Sin credenciales para este dispositivo. Las métricas requieren inicio de sesión del servicio host.",
+ "dash.unreach":"Servicio host inaccesible ({ip}:8765). ¿Está en ejecución?",
+ "dash.oldproto":"Servicio host demasiado antiguo (v{v}) – servicios/modelos no disponibles.",
+ "dash.shutdown":"⏻ Apagar","dash.reboot":"↻ Reiniciar",
+ "dash.confirm.shutdown":"¿Seguro que quieres apagar {name}?","dash.confirm.reboot":"¿Seguro que quieres reiniciar {name}?",
+ "cmd.shutdown.ok":"{name} se está apagando.","cmd.reboot.ok":"{name} se está reiniciando.",
+ "sched.title":"Planificación","sched.subtitle":"{n} planes activos","sched.empty":"Sin planes.",
+ "sched.add":"Añadir plan","sched.edit":"Editar plan",
+ "sched.device":"Dispositivo","sched.action":"Acción","act.wake":"Encender","act.shutdown":"Apagar","act.reboot":"Reiniciar",
+ "sched.time":"Hora","sched.days":"Días de la semana","sched.enabled":"Activado",
+ "sched.next":"Próxima ejecución: {r}","sched.deleted":"Plan eliminado.",
+ "day.mon":"Lu","day.tue":"Ma","day.wed":"Mi","day.thu":"Ju","day.fri":"Vi","day.sat":"Sá","day.sun":"Do",
+ "logs.title":"Registro de actividad","logs.filter.all":"Todos","logs.filter.wake":"Wake","logs.filter.shutdown":"Apagado","logs.filter.error":"Errores",
+ "logs.export":"⬇ CSV","logs.clear":"Vaciar","logs.cleared":"Registro vaciado.","logs.empty":"Sin entradas.",
+ "set.title":"Ajustes","set.design":"Tema","set.design.sub":"Oscuro · Claro · Sistema",
+ "set.dark":"🌙 Oscuro","set.light":"☀️ Claro","set.system":"🖥 Sistema",
+ "set.lang":"Idioma","set.lang.sub":"Deutsch · English · Français · Español",
+ "set.port":"Puerto Wake","set.broadcast":"IP de difusión","set.interval":"Intervalo del panel",
+ "set.sync":"Sincronizar dispositivos","set.sync.sub":"Carga vía servicio host (protocolo v5, simulado)",
+ "set.sync.done":"{n} dispositivos sincronizados.","set.sync.syncing":"Sincronizando …",
+ "set.sim":"Simulation","set.sim.fail":"Tasa de errores de red","set.sim.sub":"Errores de transporte aleatorios",
+ "set.about":"Acerca de","set.version":"Versión {v} (Android)","set.protocol":"Protocolo host v4 · TCP 8765",
+ "toast.offline":"{name}: {err}","err.timeout":"Tiempo de espera agotado","err.refused":"Conexión rechazada",
+ "confirm.title":"Confirmar","yes":"Sí","no":"No"
+}};
+
+/* ═══════════════════════════ State / Datenmodell ════════════════════════
+   device = { id, name, mac, ip, username, password, enabled, allow_batch, watch[],
+              status: on|off|unknown|waking, sim:{proto,host,reachable},
+              metrics|null, spark{cpu[],ram[],gpu[]}, gpuHigh, upSeconds } */
+let SEQ = 1;
+const state = {
+  lang: "de", theme: "dark", syncing: false,
+  settings: { port: 9, broadcast: "255.255.255.255", intervalMs: 3000, failRate: 0 },
+  ui: { screen: "devices", deviceView: "grid", sort: "name", search: "",
+        dashDeviceId: "d1", logFilter: "all", editing: null, sheetMode: null },
+  devices: [
+    { id:"d"+(SEQ++), name:"Fractal", mac:"50:EB:F6:B7:8B:0C", ip:"192.168.2.62",
+      username:"fractal", password:"demo1234", enabled:true, allow_batch:true,
+      watch:["llama-server.exe:8080","backup-sync.exe"],
+      status:"on", sim:{proto:4, host:true, reachable:true}, upSeconds:274320,
+      metrics:null, spark:{cpu:[],ram:[],gpu:[]}, gpuHigh:0 },
+    { id:"d"+(SEQ++), name:"A4-H20", mac:"60:CF:84:84:31:29", ip:"192.168.2.50",
+      username:"", password:"", enabled:true, allow_batch:false, watch:[],
+      status:"off", sim:{proto:4, host:true, reachable:true}, upSeconds:0,
+      metrics:null, spark:{cpu:[],ram:[],gpu:[]}, gpuHigh:0 },
+    { id:"d"+(SEQ++), name:"A4-TV", mac:"A0:AD:9F:1C:09:FF", ip:"192.168.2.111",
+      username:"tv", password:"wohnzimmer", enabled:true, allow_batch:false, watch:[],
+      status:"unknown", sim:{proto:2, host:true, reachable:true}, upSeconds:53100,
+      metrics:null, spark:{cpu:[],ram:[],gpu:[]}, gpuHigh:0 },
+  ],
+  schedules: [
+    { id:"s1", deviceId:"d1", action:"wake", time:"07:30", days:["Mon","Tue","Wed","Thu","Fri"], enabled:true },
+    { id:"s2", deviceId:"d2", action:"shutdown", time:"23:00", days:["Mon","Wed","Fri"], enabled:false },
+  ],
+  logs: [
+    { ts: Date.now()-3600e3*2, device:"Fractal", action:"wake", ok:true, msg:"Magic packet (port 9)" },
+    { ts: Date.now()-3600e3*5, device:"A4-TV", action:"shutdown", ok:false, msg:"authentication failed" },
+  ],
+  scan: { running:false, results:[] },
+  batch: { running:false, lines:[], exit:null, dur:null, timer:null, devId:null },
+};
+
+/* ═══════════════════════════ Helpers ════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const t = (k, vars) => {
+  let s = (I18N[state.lang] && I18N[state.lang][k]) ?? I18N.de[k] ?? k;
+  if (I18N[state.lang] && !(k in I18N[state.lang])) console.warn("i18n missing:", k);
+  for (const [v, r] of Object.entries(vars || {})) s = s.replaceAll("{"+v+"}", r);
+  return s;
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const byId = id => state.devices.find(d => d.id === id);
+const DAY_KEYS = ["day.mon","day.tue","day.wed","day.thu","day.fri","day.sat","day.sun"];
+const DAY_CODES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+// Validierung analog wol_app/utils.py (validate_mac / validate_ip_or_hostname, ≤253)
+const RE_MAC = /^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/;
+const RE_HOST = /^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$/;
+const isReachable = d => d.sim.reachable !== false;
+function rollFail() { return Math.random() * 100 < state.settings.failRate; }
+function fmtUptime(s) {
+  const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+  return (d ? d+"d " : "") + String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
+}
+function logIt(device, action, ok, msg) {
+  state.logs.unshift({ ts: Date.now(), device, action, ok, msg });
+  if (state.logs.length > 300) state.logs.pop();
+  if (state.ui.screen === "logs") renderLogs();
+}
+function toast(msg, isErr) {
+  const el = $("#toast"); el.textContent = msg;
+  el.classList.toggle("err", !!isErr); el.classList.add("show");
+  clearTimeout(el._tm); el._tm = setTimeout(() => el.classList.remove("show"), 2600);
+}
+function nextRunText(sc) {
+  if (!sc.enabled || !sc.days.length) return "—";
+  const [H, M] = sc.time.split(":").map(Number);
+  for (let i = 0; i < 8; i++) {
+    const d = new Date(Date.now() + i * 864e5);
+    const wd = d.getDay() === 0 ? 6 : d.getDay() - 1; // Mo=0 .. So=6
+    if (!sc.days.includes(DAY_CODES[wd])) continue;
+    d.setHours(H, M, 0, 0);
+    const diff = d - Date.now();
+    if (diff > 0) {
+      const h = Math.floor(diff/36e5), m = Math.round(diff%36e5/6e4);
+      return (i ? i + "d " : "") + h + " h " + m + " min";
+    }
+  }
+  return "—";
+}
+
+/* ═══════════════════ Simulierte Host-Service-Protokollschicht ═══════════
+   Analog host_service_client._request: Latenz + Fehler + Protokollversion */
+function hostRequest(d, cmd) {
+  return new Promise((resolve, reject) => {
+    const lat = rnd(350, 900);
+    setTimeout(() => {
+      if (!d.sim.host) return reject("refused");
+      if (!isReachable(d) || rollFail()) return reject("timeout");
+      if (cmd === "metrics" && !d.username) return reject("no_credentials");
+      resolve({ protocol: d.sim.proto });
+    }, lat);
+  });
+}
+
+/* ═══════════════════ Metrik-Tick (2 s, analog ui.dashboard_interval_ms) ══ */
+function walk(prev, min, max, vol) {
+  if (prev == null) return clamp(rnd(min, max), min, max);
+  return clamp(prev + rnd(-vol, vol), min, max);
+}
+function seedMetrics(d) {
+  d.metrics = { cpu: Math.round(walk(null,15,70,0)), ram: Math.round(walk(null,30,75,0)),
+    gpu: Math.round(walk(null,5,90,0)), vram: Math.round(walk(null,10,80,0)),
+    models: ["Qwen3.8-Flash-256k-62","DeepSeek-R1-Distill-32B"] };
+  d.spark = { cpu:[], ram:[], gpu:[] };
+}
+function tickMetrics() {
+  for (const d of state.devices) {
+    if (d.status !== "on" || !d.sim.host || !isReachable(d) || !d.username) continue;
+    if (!d.metrics) seedMetrics(d);
+    const m = d.metrics;
+    m.cpu = Math.round(walk(m.cpu, 2, 98, 9));
+    m.ram = Math.round(walk(m.ram, 20, 95, 3));
+    m.gpu = Math.round(walk(m.gpu, 0, 99, 14));
+    m.vram = Math.round(walk(m.vram, 5, 96, 6));
+    d.upSeconds += 2;
+    for (const k of ["cpu","ram","gpu"]) {
+      d.spark[k].push(m[k]);
+      if (d.spark[k].length > 60) d.spark[k].shift();
+    }
+    // Inferenz-Heuristik wie dashboard_view: GPU ≥ 60 % über 2 Ticks + Service bereit
+    if (m.gpu >= 60) d.gpuHigh++; else d.gpuHigh = 0;
+  }
+  // Kein Voll-Render im 2s-Tick (würde Klicks/Fokus schlucken) → gezielte Updates
+  if (state.ui.screen === "dash") {
+    const d = byId(state.ui.dashDeviceId);
+    if (d && d.metrics) updateDashLive(d); else renderDash();
+  }
+}
+setInterval(tickMetrics, 2000);
+
+/* Aktualisiert nur die dynamischen Dashboard-Teile (Ringe, Sparklines, Uptime,
+   Inferenz-Badge). Fehlt ein Knoten (z. B. Offline-View), bricht es ab. */
+function updateDashLive(d) {
+  const m = d.metrics; if (!m) return;
+  for (const k of ["cpu", "ram", "gpu", "vram"]) {
+    const g = document.querySelector(`[data-g="${k}"]`);
+    if (!g) return; // Voll-Render nötig (Statuswechsel, Batch-Lauf …)
+    g.style.setProperty("--v", m[k]);
+    const b = document.querySelector(`[data-gv="${k}"]`);
+    if (b) b.textContent = m[k] + "%";
+  }
+  for (const k of ["cpu", "ram", "gpu"]) {
+    const sp = document.querySelector(`[data-spark="${k}"]`);
+    if (sp) sp.innerHTML = sparkSvg(d.spark[k] || [], sp.dataset.spc);
+  }
+  const up = $("#uptimeLine");
+  if (up) up.textContent = t("dash.uptime", { u: fmtUptime(d.upSeconds) });
+  const inf = $("#infBadge");
+  if (inf) inf.style.display = d.gpuHigh >= 2 ? "inline" : "none";
+}
+
+/* Service-Zustände je Watch-Eintrag (deterministisch: Port → run, backup → probe) */
+function serviceState(d, entry) {
+  if (d.status !== "on") return "off";
+  const hasPort = entry.includes(":");
+  return hasPort ? "run" : (entry.toLowerCase().startsWith("backup") ? "probe" : "run");
+}
+function svcInfo(d, entry) {
+  const st = serviceState(d, entry);
+  const seed = entry.length * 7;
+  return { state: st,
+    pid: st === "off" ? null : 1000 + seed % 8000,
+    cpu: st === "run" ? Math.round(rnd(1, 40)) : 0,
+    ram: st === "off" ? 0 : (seed % 900) + 40 };
+}
+
+/* ═══════════════════════════ Aktionen ════════════════════════════════════ */
+function wakeDevice(d) {
+  if (d.status === "on" || d.status === "waking" || !d.enabled) return;
+  d.status = "waking"; renderDevices();
+  setTimeout(() => {
+    if (rollFail()) {
+      d.status = "off";
+      logIt(d.name, "wake", false, t("err.refused"));
+      toast(t("toast.offline", { name: d.name, err: t("err.refused") }), true);
+    } else {
+      d.status = "on"; d.upSeconds = 45; d.metrics = null;
+      logIt(d.name, "wake", true, "magic packet (port " + state.settings.port + ")");
+      toast(t("wol.online", { name: d.name }));
+    }
+    renderDevices(); if (state.ui.screen === "dash") renderDash();
+  }, rnd(3500, 6000));
+  toast(t("wol.sent", { name: d.name }));
+}
+function refreshStatus() {
+  for (const d of state.devices) {
+    if (d.status === "waking") continue;
+    if (rollFail() && d.status === "on") d.status = "unknown";
+  }
+  renderDevices();
+}
+setInterval(() => { if (state.ui.screen === "devices") refreshStatus(); }, 30000);
+
+function hostCommand(d, cmd) {
+  hostRequest(d, cmd).then(() => {
+    if (cmd === "shutdown") {
+      toast(t("cmd.shutdown.ok", { name: d.name }));
+      logIt(d.name, "shutdown", true, "host service: shutdown");
+      setTimeout(() => { d.status = "off"; d.metrics = null; renderDevices(); renderDash(); }, 3000);
+    } else if (cmd === "reboot") {
+      toast(t("cmd.reboot.ok", { name: d.name }));
+      logIt(d.name, "reboot", true, "host service: reboot");
+      d.status = "waking"; renderDevices();
+      setTimeout(() => { d.status = "on"; d.upSeconds = 40; d.metrics = null; renderDevices(); renderDash(); }, 8000);
+    }
+  }).catch(err => {
+    if (err === "no_credentials") toast(t("dash.creds"), true);
+    else toast(t("toast.offline", { name: d.name, err: t("err." + err) || err }), true);
+    logIt(d.name, cmd, false, err);
+  });
+}
+
+/* Batch-Konsole (simulierte Zeilenausgabe, Abbruch möglich) */
+const BATCH_SCRIPTS = {
+  uptime: ["$ uptime"," 09:41:02 up 3 days, 4:12, 2 users, load average: 1.24, 0.98, 0.87"],
+  "nvidia-smi": ["$ nvidia-smi","| GPU  Name         Bus-Id   Vol Unc Corr |","|  0  RTX 4090    01:00.0     0    0 |","| Memory  18.2 / 24.0 GiB   GPU  64 % |"],
+  ipconfig: ["$ ipconfig","Wireless LAN adapter Wi-Fi:","   IPv4-Adresse  . . . : 192.168.2.62","   Standardgateway . . . : 192.168.2.1"],
+  models: ["$ curl -s localhost:8080/v1/models",'{"data":[{"id":"Qwen3.8-Flash-256k-62","status":{"value":"loaded"}},',' {"id":"DeepSeek-R1-Distill-32B","status":{"value":"sleeping"}}]}'],
+  fail: ["$ backup.bat","Fehler: Datenträger nicht gefunden.","backup: exit 2"] };
+function runBatch(d) {
+  const sel = $("#batchScript"); if (!sel) return;
+  const name = sel.value;
+  state.batch = { running: true, lines: [], exit: null, dur: null, timer: null, devId: d.id };
+  const lines = BATCH_SCRIPTS[name] || ["$ " + name, "OK"];
+  let i = 0; const t0 = Date.now();
+  const step = () => {
+    if (!state.batch.running) return;
+    if (i < lines.length) {
+      state.batch.lines.push(lines[i++]);
+      renderDash();
+      state.batch.timer = setTimeout(step, rnd(250, 650));
+    } else {
+      state.batch.running = false;
+      state.batch.exit = name === "fail" ? 2 : 0;
+      state.batch.dur = ((Date.now() - t0) / 1000).toFixed(1);
+      logIt(d.name, "run_batch", state.batch.exit === 0, name + " -> exit " + state.batch.exit);
+      renderDash();
+    }
+  };
+  step();
+}
+function cancelBatch() {
+  if (!state.batch.running) return;
+  clearTimeout(state.batch.timer);
+  state.batch.running = false; state.batch.exit = 130;
+  state.batch.dur = "—"; state.batch.lines.push("^C aborted");
+  renderDash();
+}
+
+/* ═══════════════════════════ Scan ════════════════════════════════════════ */
+const SCAN_POOL = [
+  { ip:"192.168.2.1",   mac:"AA:BB:CC:00:11:22", host:"fritz.box", known:true },
+  { ip:"192.168.2.33",  mac:"DC:A6:32:9F:11:0A", host:"nas01.lan", known:false },
+  { ip:"192.168.2.50",  mac:"60:CF:84:84:31:29", host:"a4-h20", known:true },
+  { ip:"192.168.2.77",  mac:"B8:27:EB:44:C0:FE", host:"raspberry-lb", known:false },
+  { ip:"192.168.2.111", mac:"A0:AD:9F:1C:09:FF", host:"a4-tv", known:true },
+];
+function startScan() {
+  state.scan = { running: true, results: [] };
+  renderDevices();
+  setTimeout(() => {
+    state.scan.running = false;
+    const knownMacs = new Set(state.devices.map(d => d.mac.toUpperCase()));
+    state.scan.results = SCAN_POOL.map(r => ({ ...r, known: knownMacs.has(r.mac), picked: !knownMacs.has(r.mac) }));
+    logIt("—", "scan", true, state.scan.results.length + " hosts found");
+    openScanSheet();
+  }, 1600);
+}
+function openScanSheet() {
+  const n = state.scan.results.filter(r => r.picked).length;
+  openSheet(`
+    <div class="grab"></div><h2>${esc(t("scan.results", { n: state.scan.results.length }))}</h2>
+    ${state.scan.results.map((r, i) => `
+      <div class="scanrow">
+        <input type="checkbox" ${r.picked ? "checked" : ""} data-act="scan-pick" data-i="${i}">
+        <span class="mono" style="flex:1">${esc(r.ip)}<br>${esc(r.mac)}</span>
+        <span style="flex:1">${esc(r.host)}</span>
+        <span class="badge ${r.known ? "known" : "new"}">${esc(t(r.known ? "scan.known" : "scan.new"))}</span>
+      </div>`).join("")}
+    <div class="sheetbtns">
+      <button class="btn" data-act="sheet-close">${esc(t("dev.cancel"))}</button>
+      <button class="btn primary" data-act="scan-add">${esc(t("scan.takeover", { n }))}</button>
+    </div>`);
+}
+function scanAdd() {
+  let n = 0;
+  for (const r of state.scan.results) {
+    if (!r.picked || state.devices.some(d => d.mac.toUpperCase() === r.mac)) continue;
+    state.devices.push({ id:"d"+(SEQ++), name:r.host, mac:r.mac, ip:r.ip, username:"", password:"",
+      enabled:true, allow_batch:false, watch:[], status:"on", sim:{proto:4,host:true,reachable:true},
+      upSeconds:600, metrics:null, spark:{cpu:[],ram:[],gpu:[]}, gpuHigh:0 });
+    n++;
+  }
+  closeSheet(); renderDevices();
+  toast(t("dev.saved") + " (+" + n + ")");
+}
+
+/* ═══════════════════════════ Geräte-Dialog (Bottom-Sheet) ════════════════ */
+function openDeviceSheet(id) {
+  const d = id ? byId(id) : null;
+  state.ui.editing = d ? { ...d, watch: [...d.watch], sim: { ...d.sim } } : {
+    id: null, name:"", mac:"", ip:"", username:"", password:"", enabled:true,
+    allow_batch:false, watch:[], sim:{proto:4,host:true,reachable:true} };
+  const e = state.ui.editing;
+  openSheet(`
+    <div class="grab"></div><h2>${esc(t(d ? "dev.title.edit" : "dev.title.add"))}</h2>
+    <div class="field" id="f-name"><label>${esc(t("dev.name"))}</label>
+      <input type="text" id="i-name" value="${esc(e.name)}" maxlength="60">
+      <div class="ferr">${esc(t("dev.err.name"))}</div></div>
+    <div class="field" id="f-mac"><label>${esc(t("dev.mac"))}</label>
+      <input type="text" id="i-mac" value="${esc(e.mac)}" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17">
+      <div class="ferr">${esc(t("dev.err.mac"))}</div></div>
+    <div class="field" id="f-ip"><label>${esc(t("dev.ip"))}</label>
+      <input type="text" id="i-ip" value="${esc(e.ip)}" placeholder="192.168.2.10 / nas01.lan" maxlength="253">
+      <div class="ferr">${esc(t("dev.err.ip"))}</div></div>
+    <div class="field"><label>${esc(t("dev.user"))}</label>
+      <input type="text" id="i-user" value="${esc(e.username)}" autocomplete="off"></div>
+    <div class="field"><label>${esc(t("dev.pass"))}</label>
+      <div class="pwwrap"><input type="password" id="i-pass" value="${esc(e.password)}" autocomplete="new-password">
+      <button class="eye" data-act="eye">👁</button></div></div>
+    <div class="field" id="f-watch"><label>${esc(t("dev.watch"))}</label>
+      <input type="text" id="i-watch" value="${esc(e.watch.join(", "))}">
+      <div class="hint">${esc(t("dev.watch.hint"))}</div>
+      <div class="ferr">${esc(t("dev.err.watch"))}</div></div>
+    <div class="row"><div>${esc(t("dev.enabled"))}</div>
+      <div class="toggle ${e.enabled ? "on" : ""}" data-act="edit-toggle" data-key="enabled"></div></div>
+    <div class="row"><div>Batches erlaubt <small>Host-Service --enable-batch</small></div>
+      <div class="toggle ${e.allow_batch ? "on" : ""}" data-act="edit-toggle" data-key="allow_batch"></div></div>
+    <div class="row"><div>Host-Service simuliert <small>aus → „nicht erreichbar“</small></div>
+      <div class="toggle ${e.sim.host ? "on" : ""}" data-act="edit-toggle" data-key="sim_host"></div></div>
+    <div class="sheetbtns">
+      ${d ? `<button class="btn danger" data-act="dev-delete">${esc(t("dev.delete"))}</button>` : ""}
+      <button class="btn" data-act="sheet-close">${esc(t("dev.cancel"))}</button>
+      <button class="btn primary" data-act="dev-save">${esc(t("dev.save"))}</button>
+    </div>`);
+}
+function saveDeviceFromSheet() {
+  const e = state.ui.editing;
+  const name = $("#i-name").value.trim();
+  const mac = $("#i-mac").value.trim();
+  const ip = $("#i-ip").value.trim();
+  const watch = $("#i-watch").value.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  let bad = false;
+  const mark = (id, ok) => { $("#" + id).classList.toggle("invalid", !ok); if (!ok) bad = true; };
+  mark("f-name", !!name);
+  mark("f-mac", RE_MAC.test(mac));
+  mark("f-ip", !ip || (RE_HOST.test(ip) && ip.length <= 253));
+  mark("f-watch", watch.length <= 8 && watch.every(w => w.length <= 128));
+  if (bad) return;
+  const target = e.id ? byId(e.id) : { id: "d" + (SEQ++), status: "off", upSeconds: 0,
+    metrics: null, spark: {cpu:[],ram:[],gpu:[]}, gpuHigh: 0, sim: { proto: 4, host: true, reachable: true } };
+  Object.assign(target, { name, mac: mac.toUpperCase(), ip,
+    username: $("#i-user").value.trim(), password: $("#i-pass").value,
+    enabled: e.enabled, allow_batch: e.allow_batch, watch });
+  target.sim.host = e.sim.host;
+  if (!e.id) state.devices.push(target);
+  closeSheet(); renderDevices(); toast(t("dev.saved"));
+}
+function deleteDevice(id) {
+  openConfirm(t("dev.confirm.del"), () => {
+    state.devices = state.devices.filter(d => d.id !== id);
+    if (state.ui.dashDeviceId === id) state.ui.dashDeviceId = null;
+    closeSheet(); renderDevices(); renderSched(); toast(t("dev.deleted"));
+  });
+}
+
+/* ═══════════════════════════ Zeitplan-Dialog ═════════════════════════════ */
+function openSchedSheet(id) {
+  const sc = id ? state.schedules.find(s => s.id === id) : null;
+  state.ui.editing = sc ? { ...sc, days: [...sc.days] } :
+    { id: null, deviceId: state.devices[0]?.id, action: "wake", time: "07:30",
+      days: ["Mon","Tue","Wed","Thu","Fri"], enabled: true };
+  const e = state.ui.editing;
+  openSheet(`
+    <div class="grab"></div><h2>${esc(t(sc ? "sched.edit" : "sched.add"))}</h2>
+    <div class="field"><label>${esc(t("sched.device"))}</label>
+      <select id="sc-dev">${state.devices.map(d =>
+        `<option value="${d.id}" ${d.id === e.deviceId ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></div>
+    <div class="field"><label>${esc(t("sched.action"))}</label>
+      <select id="sc-act">${["wake","shutdown","reboot"].map(a =>
+        `<option value="${a}" ${a === e.action ? "selected" : ""}>${esc(t("act." + a))}</option>`).join("")}</select></div>
+    <div class="field"><label>${esc(t("sched.time"))}</label>
+      <input type="time" id="sc-time" value="${e.time}"></div>
+    <div class="field"><label>${esc(t("sched.days"))}</label>
+      <div>${DAY_CODES.map((c, i) => `<span class="daychip ${e.days.includes(c) ? "on" : ""}"
+        data-act="sc-day" data-day="${c}">${esc(t(DAY_KEYS[i]))}</span>`).join("")}</div></div>
+    <div class="row"><div>${esc(t("sched.enabled"))}</div>
+      <div class="toggle ${e.enabled ? "on" : ""}" data-act="edit-toggle" data-key="enabled"></div></div>
+    <div class="sheetbtns">
+      ${sc ? `<button class="btn danger" data-act="sc-delete">${esc(t("dev.delete"))}</button>` : ""}
+      <button class="btn" data-act="sheet-close">${esc(t("dev.cancel"))}</button>
+      <button class="btn primary" data-act="sc-save">${esc(t("dev.save"))}</button>
+    </div>`);
+}
+function saveSchedFromSheet() {
+  const e = state.ui.editing;
+  e.deviceId = $("#sc-dev").value; e.action = $("#sc-act").value; e.time = $("#sc-time").value;
+  if (e.id) Object.assign(state.schedules.find(s => s.id === e.id), e);
+  else { e.id = "s" + Date.now(); state.schedules.push(e); }
+  closeSheet(); renderSched(); toast(t("dev.saved"));
+}
+
+/* ═══════════════════════════ Sheet / Confirm ═════════════════════════════ */
+function openSheet(html) { $("#sheet").innerHTML = html; $("#sheet").classList.add("open"); $("#overlay").classList.add("open"); }
+function closeSheet() { $("#sheet").classList.remove("open"); $("#overlay").classList.remove("open"); state.ui.editing = null; }
+function openConfirm(msg, onYes) {
+  state.ui.sheetMode = onYes;
+  openSheet(`<div class="grab"></div><h2>${esc(t("confirm.title"))}</h2>
+    <p style="font-size:14px;line-height:1.5">${esc(msg)}</p>
+    <div class="sheetbtns"><button class="btn" data-act="sheet-close">${esc(t("no"))}</button>
+    <button class="btn primary" data-act="confirm-yes">${esc(t("yes"))}</button></div>`);
+}
+
+/* ═══════════════════════════ Rendering ═══════════════════════════════════ */
+function sparkSvg(vals, color) {
+  if (!vals.length) return `<svg width="100%" height="34" viewBox="0 0 140 34"></svg>`;
+  const pts = vals.map((v, i) => `${((i / Math.max(1, vals.length - 1)) * 140).toFixed(1)},${(34 - (v / 100) * 32 - 1).toFixed(1)}`).join(" ");
+  return `<svg width="100%" height="34" viewBox="0 0 140 34" preserveAspectRatio="none">
+    <polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/></svg>`;
+}
+function gaugeHtml(label, val, colorVar, sparkKey, d) {
+  const key = sparkKey || colorVar.replace("--gauge-", "");
+  return `<div class="gwrap"><div class="gauge" data-g="${key}" style="--v:${val ?? 0};--c:var(${colorVar})">
+      <div class="in"><b data-gv="${key}">${val ?? "–"}%</b><span>${esc(label)}</span></div></div>
+    ${sparkKey && d ? `<div class="spark" data-spark="${key}" data-spc="var(${colorVar})">${sparkSvg(d.spark[sparkKey], `var(${colorVar})`)}</div>` : ""}
+  </div>`;
+}
+
+function renderDevices() {
+  const on = state.devices.filter(d => d.status === "on").length;
+  let devs = [...state.devices];
+  const q = state.ui.search.toLowerCase();
+  if (q) devs = devs.filter(d => (d.name + d.ip + d.mac).toLowerCase().includes(q));
+  const rank = { on: 0, waking: 1, unknown: 2, off: 3 };
+  devs.sort((a, b) => state.ui.sort === "name" ? a.name.localeCompare(b.name)
+    : state.ui.sort === "ip" ? a.ip.localeCompare(b.ip, undefined, { numeric: true })
+    : rank[a.status] - rank[b.status]);
+  $("#s-devices").innerHTML = `
+    <div class="toprow"><div><h1>${esc(t("nav.devices"))}</h1>
+      <p class="sub">${esc(t("devices.subtitle", { n: on, m: state.devices.length }))}</p></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn small ghost" data-act="add-device" title="${esc(t("dev.title.add"))}">＋</button>
+        <button class="btn small" data-act="refresh">${esc(t("devices.refresh"))}</button>
+      </div>
+    </div>
+    <div class="search">🔍<input placeholder="${esc(t("devices.search"))}" value="${esc(state.ui.search)}" data-act="search">
+      ${state.scan.running ? '<span class="spin"></span>' : `<button class="btn small" data-act="scan">${esc(t("devices.scan"))}</button>`}
+    </div>
+    <div class="toolbar">
+      <select data-act="sort">
+        ${["name","ip","status"].map(s => `<option value="${s}" ${state.ui.sort===s?"selected":""}>${esc(t("devices.sort."+s))}</option>`).join("")}
+      </select>
+      <button class="btn small" data-act="view" title="Grid/List">${state.ui.deviceView === "grid" ? "☰" : "▦"}</button>
+    </div>
+    ${devs.length === 0 ? `<div class="empty">${esc(t("devices.empty"))}</div>` :
+    `<div class="grid ${state.ui.deviceView === "list" ? "list" : ""}">
+      ${devs.map(d => `
+      <div class="card ${d.enabled ? "" : "disabled"}" data-id="${d.id}">
+        <span class="dot ${d.status === "on" ? "on" : d.status === "off" ? "off" : d.status === "waking" ? "waking" : "unk"}"></span>
+        ${d.sim.host ? "" : '<span title="kein Host-Service" style="font-size:11px">🚫</span>'}
+        ${d.enabled ? "" : `<span style="font-size:10px;color:var(--text-dim)"> (${esc(t("devices.disabled"))})</span>`}
+        <button class="icobtn menu" data-act="dev-menu" data-id="${d.id}">⋮</button>
+        <button class="icobtn dash" data-act="open-dash" data-id="${d.id}">📊</button>
+        <div class="name">${esc(d.name)}</div>
+        <div class="meta">${esc(d.ip || "—")}</div>
+        <div class="meta">${esc(d.mac)}</div>
+        ${d.watch.length ? `<div style="margin-top:4px">${d.watch.map(w =>
+          `<span class="chip ${serviceState(d, w)}" style="margin:2px 3px 0 0;font-size:9px;padding:2px 8px">${w.toLowerCase().includes("llama") ? "🦙 " : ""}${esc(w.split(":")[0])}</span>`).join("")}</div>` : ""}
+        <button class="wake" data-act="wake" data-id="${d.id}"
+          ${d.status === "on" || d.status === "waking" || !d.enabled ? "disabled" : ""}>
+          ${d.status === "on" ? esc(t("devices.on")) : d.status === "waking" ? esc(t("devices.waking")) : esc(t("devices.wake"))}</button>
+      </div>`).join("")}</div>`}
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn primary" data-act="wake-all">${esc(t("devices.wake_all"))}</button>
+    </div>`;
+}
+
+function renderDash() {
+  const d = byId(state.ui.dashDeviceId);
+  if (!d) { $("#s-dash").innerHTML = `<div class="toprow"><h1>${esc(t("dash.title"))}</h1></div>
+    <div class="empty">${esc(t("dash.select"))}</div>`; return; }
+  const m = d.status === "on" ? d.metrics : null;
+  const b = state.batch.devId === d.id ? state.batch : null;
+  let body = "";
+  // ── Fehler-/Hinweiszustände (bewusst simulierbar, s. Geräte-Dialog + Fehlerrate) ──
+  if (!d.sim.host || d.status === "off") {
+    body = `<div class="warnbox err">${esc(t("dash.unreach", { ip: d.ip }))}</div>`;
+  } else if (d.status !== "on") {
+    body = `<div class="warnbox warn">${esc(t("devices.waking"))}</div>`;
+  } else if (!d.username) {
+    body = `<div class="warnbox warn">${esc(t("dash.creds"))}</div>`;
+  }
+  const showMetrics = d.status === "on" && d.username && d.sim.host && isReachable(d);
+  const svc = d.watch.map(w => ({ w, i: svcInfo(d, w) }));
+  const anyReady = svc.some(s => s.i.state === "run" && s.w.includes(":"));
+  const models = (d.metrics?.models || []).slice(0, 3);
+  $("#s-dash").innerHTML = `
+    <div class="toprow"><div style="display:flex;gap:10px;align-items:center">
+      <button class="btn small" data-act="nav-devices" style="flex:0">${esc(t("dash.back"))}</button>
+      <div><h1 style="font-size:19px">${esc(d.name)}</h1>
+        <div class="mono">${esc(d.ip || "—")} · ${esc(d.mac)} ·
+          ${d.sim.host ? esc(t("dash.hostv", { v: d.sim.proto })) : "—"}</div></div>
+    </div></div>
+    ${body}
+    ${d.sim.proto < 4 ? `<div class="warnbox warn">${esc(t("dash.oldproto", { v: d.sim.proto }))}</div>` : ""}
+    ${showMetrics ? `
+      <div style="margin:6px 0">
+        ${d.watch.length ? `<div class="sec">${esc(t("dash.svc.title"))}</div>` + svc.map(s =>
+          `<span class="chip ${s.i.state}">
+            ${s.w.toLowerCase().includes("llama") ? "🦙" : "⚙️"} ${esc(s.w)} ·
+            ${s.i.state === "run" ? "PID " + s.i.pid + " · " + s.i.ram + " MB" : s.i.state === "probe" ? "…" : "✕"}</span>`).join("") +
+          (models.length && anyReady ? `<div class="model">${esc(t("dash.model", { m: models[0] }))}${models.length > 1 ? ` +${models.length - 1}` : ""}
+            &nbsp;<span class="inf" id="infBadge" style="display:${d.gpuHigh >= 2 ? "inline" : "none"}">${esc(t("dash.inferenz"))}</span></div>` : "")
+        : `<div class="sec">${esc(t("dash.svc.title"))}</div><div class="sub">${esc(t("dash.svc.none"))}</div>`}
+      </div>
+      ${m ? `<div class="mono" id="uptimeLine">${esc(t("dash.uptime", { u: fmtUptime(d.upSeconds) }))}</div>
+      <div class="gauges">
+        ${gaugeHtml(t("dash.cpu"), m.cpu, "--gauge-cpu", "cpu", d)}
+        ${gaugeHtml(t("dash.ram"), m.ram, "--gauge-ram", "ram", d)}
+        ${gaugeHtml(t("dash.gpu"), m.gpu, "--gauge-gpu", "gpu", d)}
+        ${gaugeHtml(t("dash.vram"), m.vram, "--gauge-vram", null, d)}
+      </div>` : ""}
+      <div class="sec">${esc(t("dash.batch.title"))}</div>
+      ${d.allow_batch ? `
+        <div class="toolbar"><select id="batchScript" data-act="batch-script">
+          ${Object.keys(BATCH_SCRIPTS).map(s => `<option ${state.batch.script === s ? "selected" : ""}>${s}</option>`).join("")}</select>
+          ${b && b.running
+            ? `<button class="btn small danger" data-act="batch-cancel">${esc(t("dash.batch.cancel"))}</button>`
+            : `<button class="btn small primary" data-act="batch-run">${esc(t("dash.batch.run"))}</button>`}
+        </div>
+        ${b && (b.lines.length || b.running) ? `<div class="console">${b.lines.map(l =>
+          `<div class="${/fehler|error/i.test(l) ? "err" : ""}">${esc(l)}</div>`).join("")}
+          ${b.exit != null ? `<div class="dim">${esc(t("dash.batch.done", { c: b.exit, d: b.dur }))}</div>` : ""}</div>` : ""}
+      ` : `<div class="sub" style="margin-bottom:8px">${esc(t("dash.batch.disabled"))}</div>`}
+      <div class="btnrow">
+        <button class="btn danger" data-act="host-cmd" data-cmd="shutdown" data-id="${d.id}">${esc(t("dash.shutdown"))}</button>
+        <button class="btn" data-act="host-cmd" data-cmd="reboot" data-id="${d.id}">${esc(t("dash.reboot"))}</button>
+      </div>` : ""}`;
+}
+
+function renderSched() {
+  const act = state.schedules.filter(s => s.enabled).length;
+  $("#s-sched").innerHTML = `
+    <div class="toprow"><div><h1>${esc(t("sched.title"))}</h1>
+      <p class="sub">${esc(t("sched.subtitle", { n: act }))}</p></div>
+      <button class="btn small ghost" data-act="add-sched" title="${esc(t("sched.add"))}">＋</button></div>
+    ${state.schedules.length === 0 ? `<div class="empty">${esc(t("sched.empty"))}</div>` :
+    state.schedules.map(sc => {
+      const d = byId(sc.deviceId);
+      return `<div class="card" style="margin-bottom:12px" data-id="${sc.id}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <b style="cursor:pointer" data-act="sc-edit" data-id="${sc.id}">${esc(d ? d.name : "?")} · ${esc(t("act." + sc.action))}</b>
+          <div class="toggle ${sc.enabled ? "on" : ""}" data-act="sc-toggle" data-id="${sc.id}"></div></div>
+        <div style="margin:10px 0 6px;font-size:17px;font-weight:600">${esc(sc.time)}</div>
+        <div>${DAY_CODES.map((c, i) => `<span class="daychip ${sc.days.includes(c) ? "on" : ""}">${esc(t(DAY_KEYS[i]))}</span>`).join("")}</div>
+        <div class="sub" style="margin-top:8px">${esc(t("sched.next", { r: nextRunText(sc) }))}</div>
+      </div>`;
+    }).join("")}`;
+}
+
+function renderLogs() {
+  const f = state.ui.logFilter;
+  const rows = state.logs.filter(l =>
+    f === "all" ? true : f === "error" ? !l.ok : l.action === f || (f === "shutdown" && (l.action === "reboot" || l.action === "shutdown")));
+  $("#s-logs").innerHTML = `
+    <div class="toprow"><h1>${esc(t("logs.title"))}</h1>
+      <div style="display:flex;gap:6px">
+        <button class="btn small" data-act="log-export">${esc(t("logs.export"))}</button>
+        <button class="btn small" data-act="log-clear">${esc(t("logs.clear"))}</button></div></div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      ${["all","wake","shutdown","error"].map(x =>
+        `<button class="filterchip ${f === x ? "on" : ""}" data-act="log-filter" data-f="${x}">${esc(t("logs.filter." + x))}</button>`).join("")}
+    </div>
+    ${rows.length === 0 ? `<div class="empty">${esc(t("logs.empty"))}</div>` :
+    rows.map(l => `<div class="logrow">
+      <span class="t">${new Date(l.ts).toLocaleString([], { day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit" })}</span>
+      <span class="a">${esc(l.action)}</span><span class="d">${esc(l.device)} — ${esc(l.msg)}</span>
+      <span class="pill ${l.ok ? "ok" : "err"}">${l.ok ? "OK" : "ERR"}</span></div>`).join("")}`;
+}
+
+function renderSettings() {
+  const s = state.settings;
+  $("#s-set").innerHTML = `
+    <div class="toprow"><h1>${esc(t("set.title"))}</h1></div>
+    <div class="row"><div>${esc(t("set.design"))}<small>${esc(t("set.design.sub"))}</small></div>
+      <select class="plain" data-act="set-theme">
+        <option value="dark" ${state.theme==="dark"?"selected":""}>${esc(t("set.dark"))}</option>
+        <option value="light" ${state.theme==="light"?"selected":""}>${esc(t("set.light"))}</option>
+        <option value="system" ${state.theme==="system"?"selected":""}>${esc(t("set.system"))}</option>
+      </select></div>
+    <div class="row"><div>${esc(t("set.lang"))}<small>${esc(t("set.lang.sub"))}</small></div>
+      <select class="plain" data-act="set-lang">
+        <option value="de" ${state.lang==="de"?"selected":""}>Deutsch</option>
+        <option value="en" ${state.lang==="en"?"selected":""}>English</option>
+        <option value="fr" ${state.lang==="fr"?"selected":""}>Français</option>
+        <option value="es" ${state.lang==="es"?"selected":""}>Español</option>
+      </select></div>
+    <div class="row"><div>${esc(t("set.port"))}</div>
+      <input class="plain" type="text" style="width:60px" value="${s.port}" data-act="set-port"></div>
+    <div class="row"><div>${esc(t("set.broadcast"))}</div>
+      <input class="plain" type="text" style="width:130px" value="${esc(s.broadcast)}" data-act="set-broadcast"></div>
+    <div class="row"><div>${esc(t("set.interval"))}<small>ui.dashboard_interval_ms</small></div>
+      <select class="plain" data-act="set-interval">
+        ${[2000,3000,5000,10000].map(v => `<option value="${v}" ${s.intervalMs===v?"selected":""}>${v/1000} s</option>`).join("")}
+      </select></div>
+    <div class="row" style="cursor:pointer" data-act="sync">
+      <div>${esc(t("set.sync"))}<small>${esc(t("set.sync.sub"))}</small></div>
+      <div class="val" id="syncval">${state.syncing ? '<span class="spin"></span>' : "🔄"}</div></div>
+    <div class="sec">${esc(t("set.sim"))}</div>
+    <div class="row"><div>${esc(t("set.sim.fail"))}<small>${esc(t("set.sim.sub"))}</small></div>
+      <select class="plain" data-act="set-fail">
+        ${[0,10,30,60].map(v => `<option value="${v}" ${s.failRate===v?"selected":""}>${v} %</option>`).join("")}
+      </select></div>
+    <div class="row" style="cursor:pointer" data-act="about">
+      <div>${esc(t("set.about"))}<small>${esc(t("set.version", { v: "2.3.0" }))}</small></div><div class="val">›</div></div>`;
+}
+
+function applyTheme() {
+  const eff = state.theme === "system"
+    ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : state.theme;
+  $("#phone").dataset.theme = eff;
+}
+matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", () => { if (state.theme === "system") applyTheme(); });
+
+function renderAll() {
+  applyTheme();
+  document.querySelectorAll("[data-t]").forEach(el => el.textContent = t(el.dataset.t));
+  renderDevices(); renderDash(); renderSched(); renderLogs(); renderSettings();
+}
+
+/* ═══════════════════════════ Event-Delegation ═══════════════════════════ */
+function go(screen) {
+  state.ui.screen = screen;
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  $("#s-" + screen).classList.add("active");
+  document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.nav === screen));
+  if (screen === "dash") renderDash();
+}
+$("#phone").addEventListener("click", ev => {
+  const nav = ev.target.closest("[data-nav]");
+  if (nav) return go(nav.dataset.nav);
+  const el = ev.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act, id = el.dataset.id;
+  switch (act) {
+    case "add-device": openDeviceSheet(null); break;
+    case "add-sched": openSchedSheet(null); break;
+    case "wake": wakeDevice(byId(id)); break;
+    case "wake-all": {
+      const targets = state.devices.filter(d => d.status !== "on" && d.status !== "waking" && d.enabled);
+      targets.forEach((d, i) => setTimeout(() => wakeDevice(d), i * 400));
+      if (targets.length) toast(t("wol.all", { n: targets.length }));
+      break; }
+    case "refresh": refreshStatus(); break;
+    case "view": state.ui.deviceView = state.ui.deviceView === "grid" ? "list" : "grid"; renderDevices(); break;
+    case "open-dash": state.ui.dashDeviceId = id; go("dash"); break;
+    case "nav-devices": go("devices"); break;
+    case "dev-menu": openDeviceSheet(id); break;
+    case "dev-save": saveDeviceFromSheet(); break;
+    case "dev-delete": deleteDevice(state.ui.editing?.id || id); break;
+    case "sheet-close": closeSheet(); break;
+    case "confirm-yes": { const fn = state.ui.sheetMode; state.ui.sheetMode = null; closeSheet(); fn && fn(); break; }
+    case "eye": { const inp = $("#i-pass"); inp.type = inp.type === "password" ? "text" : "password"; break; }
+    case "edit-toggle": {
+      const key = el.dataset.key, e = state.ui.editing;
+      if (key === "sim_host") e.sim.host = !e.sim.host;
+      else e[key] = !e[key];
+      el.classList.toggle("on");
+      break; }
+    case "scan": startScan(); break;
+    case "scan-pick": state.scan.results[+el.dataset.i].picked = el.checked;
+      { const n = state.scan.results.filter(r => r.picked).length;
+        const btn = document.querySelector('[data-act="scan-add"]'); if (btn) btn.textContent = t("scan.takeover", { n }); } break;
+    case "scan-add": scanAdd(); break;
+    case "batch-run": runBatch(byId(state.ui.dashDeviceId)); break;
+    case "batch-cancel": cancelBatch(); break;
+    case "host-cmd": {
+      const d = byId(id);
+      openConfirm(t(el.dataset.cmd === "shutdown" ? "dash.confirm.shutdown" : "dash.confirm.reboot", { name: d.name }),
+        () => hostCommand(d, el.dataset.cmd));
+      break; }
+    case "sc-toggle": { const sc = state.schedules.find(s => s.id === id); sc.enabled = !sc.enabled; renderSched(); break; }
+    case "sc-edit": openSchedSheet(id); break;
+    case "sc-save": saveSchedFromSheet(); break;
+    case "sc-delete": openConfirm(t("dev.confirm.del"), () => {
+        const del = state.ui.editing?.id;
+        state.schedules = state.schedules.filter(s => s.id !== del);
+        closeSheet(); renderSched(); toast(t("sched.deleted")); }); break;
+    case "sc-day": {
+      const e = state.ui.editing, day = el.dataset.day;
+      e.days = e.days.includes(day) ? e.days.filter(x => x !== day) : [...e.days, day];
+      el.classList.toggle("on"); break; }
+    case "log-filter": state.ui.logFilter = el.dataset.f; renderLogs(); break;
+    case "log-clear": state.logs = []; renderLogs(); toast(t("logs.cleared")); break;
+    case "log-export": {
+      const csv = "Zeit;Gerät;Aktion;Status;Nachricht\n" + state.logs.map(l =>
+        [new Date(l.ts).toLocaleString(), l.device, l.action, l.ok ? "OK" : "ERR", (l.msg || "").replaceAll(";", ",")].join(";")).join("\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv" }));
+      a.download = "wol_activity_log.csv"; a.click(); URL.revokeObjectURL(a.href);
+      break; }
+    case "sync": {
+      state.syncing = true; $("#syncval").innerHTML = '<span class="spin"></span>';
+      setTimeout(() => {
+        state.syncing = false;
+        let n = 0;
+        if (!state.devices.some(d => d.name === "NAS-01")) {
+          state.devices.push({ id:"d"+(SEQ++), name:"NAS-01", mac:"DC:A6:32:9F:11:0A", ip:"nas01.lan",
+            username:"", password:"", enabled:true, allow_batch:false, watch:[], status:"on",
+            sim:{proto:5,host:true,reachable:true}, upSeconds:91200, metrics:null, spark:{cpu:[],ram:[],gpu:[]}, gpuHigh:0 });
+          n = 1;
+        }
+        $("#syncval").textContent = "🔄";
+        toast(t("set.sync.done", { n })); renderDevices();
+      }, 1200);
+      break; }
+    case "about": openSheet(`<div class="grab"></div><h2>Wake-on-LAN Manager</h2>
+      <p style="font-size:13px;line-height:1.7;color:var(--text-dim)">
+        ${esc(t("set.version", { v: "2.3.0" }))}<br>${esc(t("set.protocol"))}<br>
+        Dark Control Center · Material 3<br>Simulations-Prototyp ${new Date().getFullYear()}</p>
+      <div class="sheetbtns"><button class="btn primary" data-act="sheet-close">${esc(t("dev.cancel"))}</button></div>`); break;
+  }
+});
+$("#phone").addEventListener("change", ev => {
+  const el = ev.target.closest("[data-act]"); if (!el) return;
+  switch (el.dataset.act) {
+    case "sort": state.ui.sort = el.value; renderDevices(); break;
+    case "set-theme": state.theme = el.value; applyTheme(); break;
+    case "set-lang": state.lang = el.value; renderAll(); break;
+    case "set-interval": state.settings.intervalMs = +el.value; break;
+    case "set-fail": state.settings.failRate = +el.value; toast(t("set.sim.fail") + ": " + el.value + " %"); break;
+    case "batch-script": state.batch.script = el.value; break;
+  }
+});
+$("#phone").addEventListener("input", ev => {
+  const el = ev.target.closest("[data-act]"); if (!el) return;
+  if (el.dataset.act === "search") {
+    state.ui.search = el.value;
+    const pos = el.selectionStart;
+    renderDevices();
+    const n = document.querySelector('[data-act="search"]');
+    if (n) { n.focus(); n.setSelectionRange(pos, pos); }
+  }
+  if (el.dataset.act === "set-port") state.settings.port = +el.value || 9;
+  if (el.dataset.act === "set-broadcast") state.settings.broadcast = el.value;
+});
+$("#overlay").addEventListener("click", closeSheet);
+
+/* Uhr in der Statusbar */
+setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }, 1000);
+
+renderAll();
+</script>
+</body>
+</html>

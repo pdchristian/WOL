@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wol-host-protocol/response-status.json",
+  "title": "Response to {command: status} (no auth)",
+  "allOf": [{ "$ref": "response-core.json" }],
+  "properties": {
+    "status": { "const": "ok" },
+    "message": { "const": "online" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,8 @@
+{
+  "status": "ok",
+  "exit_code": 0,
+  "stdout": "hello from batch\r\n",
+  "stderr": "",
+  "duration_ms": 152,
+  "truncated": false
+}

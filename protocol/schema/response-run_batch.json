@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wol-host-protocol/response-run_batch.json",
+  "title": "Response to {command: run_batch} (authenticated + --enable-batch)",
+  "description": "See protocol/SPEC.md §4.4. stdout/stderr are each capped at 64000 chars (truncated=true when cut).",
+  "allOf": [{ "$ref": "response-core.json" }],
+  "if": { "properties": { "status": { "const": "ok" } } },
+  "then": {
+    "required": ["exit_code", "stdout", "stderr", "duration_ms", "truncated"],
+    "properties": {
+      "exit_code": { "type": "integer" },
+      "stdout": { "type": "string", "maxLength": 64000 },
+      "stderr": { "type": "string", "maxLength": 64000 },
+      "duration_ms": { "type": "integer", "minimum": 0 },
+      "truncated": { "type": "boolean" }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,6 @@
+{
+  "command": "metrics",
+  "username": "fractal\\admin",
+  "password": "demo1234",
+  "watch": ["llama-server.exe:8080", "backup-sync.exe"]
+}

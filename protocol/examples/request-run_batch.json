@@ -1,0 +1,7 @@
+{
+  "command": "run_batch",
+  "username": "fractal\\admin",
+  "password": "demo1234",
+  "script": "@echo off\r\necho hello from batch\r\n",
+  "timeout": 60
+}

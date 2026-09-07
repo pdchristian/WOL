@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wake-on-LAN Android v2 – Prototyp (Windows-Parität)</title>
+<!--
+  ============================================================================
+  WOL Manager Android v2 – INTERAKTIVER Prototyp
+  ----------------------------------------------------------------------------
+  Überarbeitet nach den Vorgaben:
+  1) Icon-Leiste: Geräte · Verwalten · Zeitplan · Protokolle · Einstellungen
+  2) Inhalte prinzipiell identisch zur Windows-Version (Modern UI), nur auf
+     mobile Dimensionen/Bedienung angepasst (Bottom-Nav statt Sidebar,
+     Bottom-Sheets statt Dialogen, 1-Spalten-Formular statt 2-Spalten-Grid)
+     Vorbilder: wol_app/views/{devices,manage,schedule,logs,settings}_view.py
+  3) „Info“ hängt am Ende der Einstellungen; „Beenden“ gibt es auf Android nicht
+  Farb-Tokens = wol_app/modern_theme.py (DARK/LIGHT).
+  Öffnen: direkt im Browser (F12 → Handy-Emulation empfohlen).
+  ============================================================================
+-->
+<style>
+  :root{
+    --bg:#0f1115; --surface:#1a1d24; --surface-hover:#232733; --border:#2c303a;
+    --text:#e6e8ee; --text-dim:#9aa0ab; --accent:#00b8a9; --accent-dark:#006b63;
+    --accent-text:#032019; --online:#22c55e; --offline:#ef4444; --unknown:#f59e0b;
+    --danger:#e0485a; --blue:#60a5fa;
+  }
+  .phone[data-theme="light"]{
+    --bg:#f3f4f7; --surface:#ffffff; --surface-hover:#eef0f4; --border:#d8dbe2;
+    --text:#1b1e24; --text-dim:#5b6270; --accent:#009688; --accent-dark:#00695f;
+    --accent-text:#ffffff; --online:#16a34a; --offline:#dc2626; --unknown:#d97706;
+    --danger:#dc2637; --blue:#2563eb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"Segoe UI",system-ui,sans-serif}
+  body{background:#000;display:flex;align-items:center;justify-content:center;
+    min-height:100vh;padding:16px;overflow:auto}
+  .phone{position:relative;width:392px;height:830px;background:var(--bg);color:var(--text);
+    display:flex;flex-direction:column;overflow:hidden;border:2px solid #333;border-radius:36px}
+  .statusbar{display:flex;justify-content:space-between;padding:10px 22px 4px;
+    font-size:12px;color:var(--text-dim);flex-shrink:0}
+  .screen{flex:1;overflow-y:auto;padding:14px 16px 20px;display:none;animation:fade .18s}
+  .screen.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+
+  /* ── Kopfzeile (Windows: .page-header) ─────────────────────── */
+  h1{font-size:21px;font-weight:600}
+  .sub{color:var(--text-dim);font-size:12.5px;margin-top:3px}
+  .phead{margin-bottom:14px}
+  .toprow{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px}
+  .sectitle{font-size:13px;font-weight:600;color:var(--text-dim);margin:20px 0 10px;
+    text-transform:uppercase;letter-spacing:.6px}
+
+  /* ── Bottom-Nav: 5 Bereiche (Windows: Sidebar-Bereiche) ────── */
+  .bottomnav{display:flex;background:var(--surface);border-top:1px solid var(--border);
+    padding:6px 2px 16px;z-index:20;flex-shrink:0}
+  .nav{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;
+    border:none;color:var(--text-dim);font-size:9px;cursor:pointer;padding:6px 1px;
+    border-radius:12px;transition:color .15s}
+  .nav .i{font-size:19px;line-height:1}
+  .nav.active{color:var(--accent);font-weight:700}
+  .nav.active .i{filter:drop-shadow(0 0 6px rgba(0,184,169,.5))}
+
+  /* ── Buttons / Suche ──────────────────────────────────────── */
+  .btn{border:1px solid var(--border);border-radius:11px;padding:10px 14px;font-size:13px;
+    font-weight:600;background:var(--surface);color:var(--text);cursor:pointer;text-align:center}
+  .btn:hover{background:var(--surface-hover)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn.primary{background:var(--accent);color:var(--accent-text);border:none}
+  .btn.danger{background:rgba(224,72,90,.12);color:var(--danger);border-color:rgba(224,72,90,.4)}
+  .btn.small{padding:7px 11px;font-size:12px;border-radius:9px}
+  .btn.icon{padding:8px 10px;min-width:36px}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
+  .toolbar .grow{flex:1}
+  .search{background:var(--surface);border:1px solid var(--border);border-radius:11px;
+    padding:9px 12px;color:var(--text);display:flex;gap:8px;align-items:center;width:100%}
+  .search input{background:none;border:none;outline:none;color:var(--text);flex:1;font-size:13.5px}
+  select.plain,input.plain{background:var(--surface);border:1px solid var(--border);border-radius:9px;
+    color:var(--text);padding:8px 9px;font-size:12.5px;outline:none}
+  select.plain:focus,input.plain:focus{border-color:var(--accent)}
+
+  /* ── Geräte-Karten (Windows: DeviceCard) ──────────────────── */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid.list{grid-template-columns:1fr}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:15px;
+    padding:13px;position:relative;transition:border-color .15s}
+  .card:hover{border-color:var(--accent)}
+  .card.disabled{opacity:.55}
+  .card .ctop{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px}
+  .card h3{font-size:14.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0}
+  .on{background:var(--online);box-shadow:0 0 8px var(--online)}
+  .off{background:var(--offline)} .unk{background:var(--unknown)}
+  .meta{color:var(--text-dim);font-size:11px;font-family:Consolas,monospace;line-height:1.55;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .crow{display:flex;gap:6px;align-items:center;margin-top:11px}
+  .tile{width:32px;height:32px;border-radius:9px;border:1px solid var(--border);
+    background:var(--surface-hover);color:var(--text-dim);font-size:14px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0}
+  .tile:hover{color:var(--text);border-color:var(--accent)}
+  .tile.danger:hover{color:var(--danger);border-color:var(--danger)}
+  .tile:disabled{opacity:.4;cursor:default}
+  /* Power-Kachel (Ein/Aus) */
+  .tile.pwr{color:var(--text-dim)}
+  .tile.pwr svg{width:15px;height:15px}
+  .tile.pwr.lit{color:var(--online);border-color:rgba(34,197,94,.45)}
+  .tile.pwr.lit:hover{color:var(--danger);border-color:var(--danger)}
+  .tile.pwr:not(.lit):hover{color:var(--accent);border-color:var(--accent)}
+  .ichip{display:inline-block;font-size:9px;padding:1px 6px;border-radius:999px;
+    background:var(--surface-hover);color:var(--text-dim);margin-right:3px}
+
+  /* ── Panel-Zeilen (Windows: #panel + #deviceRow/#scheduleRow/#logRow) ── */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:15px;overflow:hidden}
+  .lrow{display:flex;align-items:center;gap:12px;padding:11px 14px;
+    border-bottom:1px solid var(--border);min-height:60px}
+  .lrow:last-child{border-bottom:none}
+  .lrow:hover{background:var(--surface-hover)}
+  .lrow .info{flex:1;min-width:0}
+  .lrow .t{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lrow .t.dis{color:var(--text-dim);font-weight:400}
+  .lrow .mono{color:var(--text-dim);font-size:11px;font-family:Consolas,monospace;margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .badge{font-size:10px;border-radius:999px;padding:2px 8px;font-weight:700;flex-shrink:0}
+  .badge.on{background:rgba(34,197,94,.15);color:var(--online)}
+  .badge.off{background:rgba(239,68,68,.15);color:var(--offline)}
+  .badge.unk{background:rgba(245,158,11,.15);color:var(--unknown)}
+  .badge.new{background:rgba(0,184,169,.16);color:var(--accent)}
+
+  /* ── Toggle (Windows: ToggleSwitch 40×22) ─────────────────── */
+  .toggle{width:42px;height:23px;border-radius:999px;background:var(--surface-hover);
+    border:1px solid var(--border);position:relative;cursor:pointer;flex-shrink:0;transition:background .15s}
+  .toggle::after{content:"";position:absolute;width:17px;height:17px;border-radius:50%;
+    background:#fff;top:2px;left:3px;transition:left .18s}
+  .toggle.on{background:var(--accent);border-color:var(--accent)}
+  .toggle.on::after{left:21px}
+
+  /* ── Netzwerk-Scan ────────────────────────────────────────── */
+  .iface{display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13px;
+    border-bottom:1px solid var(--border)}
+  .iface:last-child{border-bottom:none}
+  .iface .mono{color:var(--text-dim);font-size:11px;font-family:Consolas,monospace}
+  .cb{appearance:none;width:17px;height:17px;border-radius:5px;border:1px solid var(--border);
+    background:var(--surface);cursor:pointer;flex-shrink:0;margin:0}
+  .cb:checked{background:var(--accent);border-color:var(--accent);
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.5 L5 9 L9.5 3.5" fill="none" stroke="%23032019" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    background-size:12px 12px;background-position:center;background-repeat:no-repeat}
+  .progress{height:6px;background:var(--surface-hover);border-radius:3px;overflow:hidden;margin:10px 0 4px}
+  .progress>i{display:block;height:100%;background:var(--accent);width:0%;transition:width .2s}
+  .pinfo{font-size:11px;color:var(--text-dim);margin-bottom:8px}
+
+  /* ── Protokolle (Windows: LogsView) ───────────────────────── */
+  .logrow{display:flex;gap:9px;align-items:center;padding:9px 14px;font-size:12px;
+    border-bottom:1px solid var(--border)}
+  .logrow:last-child{border-bottom:none}
+  .level{padding:2px 7px;border-radius:6px;font-size:9.5px;font-weight:700;flex-shrink:0;
+    min-width:46px;text-align:center}
+  .level.info{background:rgba(96,165,250,.15);color:var(--blue)}
+  .level.warn{background:rgba(245,158,11,.15);color:var(--unknown)}
+  .level.error{background:rgba(239,68,68,.15);color:var(--offline)}
+  .logtime{color:var(--text-dim);font-family:Consolas,monospace;font-size:11px;
+    flex-shrink:0;width:74px}
+  .logdev{color:var(--text-dim);flex-shrink:0;font-size:11.5px}
+  .logmsg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .filterchip{border:1px solid var(--border);background:var(--surface);color:var(--text-dim);
+    border-radius:999px;padding:5px 11px;font-size:11.5px;cursor:pointer;font-weight:600}
+  .filterchip.on{background:rgba(0,184,169,.16);color:var(--accent);border-color:var(--accent)}
+
+  /* ── Einstellungen (Windows: SettingsView) ────────────────── */
+  .field{margin-bottom:14px}
+  .field>label{display:block;font-size:11.5px;color:var(--text-dim);margin-bottom:5px}
+  .field input[type=text],.field input[type=password],.field input[type=number],.field input[type=time],
+  .field select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:11px;
+    padding:11px 12px;color:var(--text);font-size:14px;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--accent)}
+  .field .hint{font-size:10.5px;color:var(--text-dim);margin-top:4px}
+  .field .ferr{font-size:11px;color:var(--danger);margin-top:4px;display:none}
+  .field.invalid input{border-color:var(--danger)}
+  .field.invalid .ferr{display:block}
+  .frow{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:11px 0;border-bottom:1px solid var(--border);font-size:14px}
+  .frow:last-of-type{border-bottom:none}
+  .frow small{display:block;color:var(--text-dim);font-size:10.5px;margin-top:2px}
+  .infotext{font-size:11.5px;color:var(--text-dim);line-height:1.6;margin:14px 0 4px}
+  .infocard{background:var(--surface);border:1px solid var(--border);border-radius:15px;
+    padding:18px 16px;margin-top:18px;text-align:center}
+  .aboutlogo{width:64px;height:64px;border-radius:18px;margin:0 auto 12px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+    display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff}
+  .infocard h2{font-size:17px;margin-bottom:4px}
+  .infocard .ver{color:var(--text-dim);font-size:12px;margin-bottom:10px}
+  .infocard p{color:var(--text-dim);font-size:11.5px;line-height:1.65}
+  .infocard .kv{display:flex;justify-content:space-between;font-size:11.5px;
+    padding:7px 0;border-bottom:1px solid var(--border);text-align:left}
+  .infocard .kv:last-child{border-bottom:none}
+  .infocard .kv b{color:var(--text-dim);font-weight:400}
+
+  .footer{margin-top:20px;padding-top:12px;border-top:1px solid var(--border);
+    color:var(--text-dim);font-size:10.5px;display:flex;justify-content:space-between}
+  .empty{text-align:center;color:var(--text-dim);padding:34px 12px;font-size:13px;line-height:1.6}
+
+  /* ── Bottom-Sheet (Android-Äquivalent zum Windows-Dialog) ─── */
+  .overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);display:none;z-index:40}
+  .overlay.open{display:block}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);
+    border-radius:24px 24px 0 0;padding:16px 16px 24px;max-height:82%;overflow-y:auto;
+    transform:translateY(105%);transition:transform .22s ease;z-index:50;border-top:1px solid var(--border)}
+  .sheet.open{transform:translateY(0)}
+  .sheet h2{font-size:17px;margin-bottom:14px}
+  .grab{width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 14px}
+  .sheetbtns{display:flex;gap:10px;margin-top:18px}
+  .sheetbtns .btn{flex:1}
+  .pwwrap{position:relative}
+  .pwwrap .eye{position:absolute;right:10px;top:10px;background:none;border:none;
+    cursor:pointer;font-size:14px;color:var(--text-dim)}
+  .days{display:flex;gap:6px;flex-wrap:wrap}
+  .daychip{min-width:34px;text-align:center;font-size:11.5px;padding:6px 0;border-radius:9px;
+    background:var(--surface-hover);color:var(--text-dim);cursor:pointer;border:1px solid transparent}
+  .daychip.on{background:rgba(0,184,169,.16);color:var(--accent);border-color:var(--accent);font-weight:700}
+
+  .toast{position:absolute;left:14px;right:14px;bottom:92px;background:var(--surface-hover);
+    color:var(--text);border:1px solid var(--border);border-radius:12px;padding:11px 13px;
+    font-size:12.5px;z-index:60;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:1}
+  .toast.err{border-color:var(--danger)}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(160,160,160,.35);
+    border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="phone" id="phone" data-theme="dark">
+  <div class="statusbar"><span id="clock">09:41</span><span>📶 &nbsp;🔋 86 %</span></div>
+
+  <div class="screen active" id="s-devices"></div>
+  <div class="screen" id="s-manage"></div>
+  <div class="screen" id="s-sched"></div>
+  <div class="screen" id="s-logs"></div>
+  <div class="screen" id="s-set"></div>
+
+  <!-- 1) Icon-Leiste: Geräte · Verwalten · Zeitplan · Protokolle · Einstellungen -->
+  <div class="bottomnav">
+    <button class="nav active" data-nav="devices"><span class="i">💻</span><span data-t="nav.devices">Geräte</span></button>
+    <button class="nav" data-nav="manage"><span class="i">🔧</span><span data-t="nav.manage">Verwalten</span></button>
+    <button class="nav" data-nav="sched"><span class="i">🕒</span><span data-t="nav.schedule">Zeitplan</span></button>
+    <button class="nav" data-nav="logs"><span class="i">📋</span><span data-t="nav.logs">Protokolle</span></button>
+    <button class="nav" data-nav="set"><span class="i">⚙️</span><span data-t="nav.settings">Einstellungen</span></button>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <div class="sheet" id="sheet"></div>
+  <div class="toast" id="toast"></div>
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
+</div>
+
+<script>
+"use strict";
+/* ══════════════════ i18n — Keys analog wol_app/locales/*.json ══════════ */
+const I18N = {
+de:{
+ "nav.devices":"Geräte","nav.manage":"Verwalten","nav.schedule":"Zeitplan","nav.logs":"Protokolle","nav.settings":"Einstellungen",
+ "devices.title":"Geräte","devices.summary":"{total} Geräte · {online} online",
+ "devices.empty":"Noch keine Geräte vorhanden. Fügen Sie Geräte im Bereich Verwalten hinzu.",
+ "devices.wake":"Aufwecken","devices.shutdown":"Herunterfahren","devices.wakeall":"⚡ Alle aufwecken",
+ "devices.refresh":"Status aktualisieren","devices.viewlist":"Zur Listenansicht wechseln",
+ "devices.viewgrid":"Zur Kachelansicht wechseln","devices.search":"Geräte suchen (Name, MAC, IP)",
+ "devices.autorefresh":"Bereit · Autorefresh alle 30 s","devices.disabled":"deaktiviert",
+ "devices.remote.full":"Remote-Desktop (Vollbild)","devices.remote.win":"Remote-Desktop (Fenster)",
+ "sort.name":"Name","sort.ip":"IP-Adresse","sort.mac":"MAC-Adresse","sort.status":"Status",
+ "manage.title":"Verwalten","manage.subtitle":"Geräte-Verwaltung & Netzwerk-Scan",
+ "manage.section.devices":"Geräte-Verwaltung","manage.section.scan":"Netzwerk-Scan",
+ "manage.add":"+ Gerät hinzufügen","manage.import":"Importieren","manage.export":"Exportieren",
+ "manage.search":"Suchen…","manage.ifaces":"Netzwerk-Interfaces","manage.scanstart":"Scan starten",
+ "manage.scanrunning":"Scanne {n} …","manage.scanresults":"{n} Hosts gefunden","manage.scanempty":"Noch kein Scan durchgeführt.",
+ "manage.scanadd":"Hinzufügen","manage.scanknown":"bekannt","manage.scanprog":"{p} % · {n} Adressen geprüft",
+ "sched.title":"Zeitplan","sched.subtitle":"Geräte zeitgesteuert ein- oder ausschalten",
+ "sched.add":"+ Zeitplan erstellen","sched.search":"Zeitpläne suchen…","sched.empty":"Noch keine Zeitpläne vorhanden.",
+ "sched.action":"Aktion","sched.hour":"Stunde","sched.minute":"Minute","sched.days":"Wochentage",
+ "sched.action.wake":"Aufwecken","sched.action.shutdown":"Herunterfahren",
+ "sched.days.every":"Täglich","sched.days.weekdays":"Wochentags","sched.next":"Nächster Lauf: {r}",
+ "sched.delete.title":"Zeitplan löschen","sched.delete.msg":"Möchten Sie den Zeitplan für „{name}“ wirklich löschen?",
+ "logs.title":"Protokolle","logs.subtitle":"Alle Ereignisse der Applikation",
+ "logs.search":"Nachricht oder Gerät suchen…","logs.export":"CSV exportieren","logs.empty":"Keine Protokolleinträge vorhanden.",
+ "logs.filter.all":"Alle Level","logs.level.info":"INFO","logs.level.warn":"WARN","logs.level.error":"FEHLER",
+ "set.title":"Einstellungen","set.subtitle":"Applikation & Netzwerk konfigurieren",
+ "set.group.network":"Netzwerk","set.group.appearance":"Darstellung","set.group.updates":"Updates",
+ "set.group.logs":"Protokoll","set.group.remote":"Remote & Leistung",
+ "set.broadcast_ip":"Broadcast-IP","set.broadcast_port":"Broadcast-Port","set.language":"Sprache",
+ "set.display_mode":"Anzeigemodus","set.auto_update":"Automatisch nach Updates suchen",
+ "set.interval":"Prüfintervall","set.max_logs":"Maximale Protokolleinträge",
+ "set.rdp_res":"Auflösung","set.rdp_auto":"Optimiert 16:9",
+ "set.dm.auto":"Auto","set.dm.light":"Hell","set.dm.dark":"Dunkel",
+ "set.iv.daily":"Jeden Tag","set.iv.weekly":"Jede Woche","set.iv.monthly":"Jeden Monat",
+ "set.info":"Wake-on-LAN funktioniert durch das Senden eines speziellen „Magic Packet“ an die MAC-Adresse des Zielgeräts im lokalen Netzwerk. Dazu muss das Gerät Wake-on-LAN unterstützen und es im BIOS/UEFI und in den Systemeinstellungen aktivieren.",
+ "set.reset":"Zurücksetzen","set.save":"Speichern","set.saved":"Einstellungen gespeichert.",
+ "set.reset.title":"Einstellungen zurücksetzen","set.reset.msg":"Alle Einstellungen auf Werkswerte setzen? Geräte, Zeitpläne und Protokolle bleiben erhalten.",
+ "set.reset.done":"Einstellungen zurückgesetzt.","set.err.ip":"Ungültige Broadcast-IP.","set.err.port":"Port muss zwischen 1 und 65535 liegen.",
+ "info.title":"Info","info.app":"Wake-on-LAN Manager","info.version":"Version {v} (Android-Port)",
+ "info.protocol":"Host-Service-Protokoll v4 · TCP 8765","info.desc":"Geräte im Netzwerk per Wake-on-LAN steuern, per Zeitplan ein-/ausschalten und den Online-Status im Blick behalten.",
+ "info.devices":"{n} Geräte verwaltet","info.sched":"{n} Zeitpläne","info.logs":"{n} Protokolleinträge",
+ "dev.title.add":"Gerät hinzufügen","dev.title.edit":"Gerät bearbeiten",
+ "dev.name":"Gerätename","dev.mac":"MAC-Adresse","dev.ip":"IP-Adresse (optional)",
+ "dev.user":"Benutzer (optional)","dev.pass":"Passwort (optional)",
+ "dev.watch":"Beobachtete Prozesse","dev.watch.hint":"z. B. llama-server.exe:8080, kommagetrennt, max. 8",
+ "dev.enabled":"Gerät ist aktiviert","dev.delete":"Löschen","dev.cancel":"Abbrechen",
+ "dev.err.name":"Bitte einen Gerätenamen eingeben.","dev.err.mac":"Ungültige MAC-Adresse (z. B. AA:BB:CC:DD:EE:FF).",
+ "dev.err.ip":"Ungültige IP-Adresse.","dev.err.watch":"Maximal 8 Einträge (je ≤ 128 Zeichen).",
+ "confirm.shutdown.title":"Herunterfahren bestätigen","confirm.shutdown.msg":"Wollen Sie „{name}“ wirklich herunterfahren?",
+ "yes":"Ja","no":"Nein",
+ "toast.wake":"Magic Packet an {name} gesendet.","toast.wakeall":"Wake-Pakete an {n} Geräte gesendet.",
+ "toast.shutdown":"{name} wird heruntergefahren.","toast.saved":"Gerät gespeichert.","toast.deleted":"Gerät gelöscht.",
+ "toast.added":"„{name}“ hinzugefügt.","toast.exported":"devices.json exportiert.","toast.imported":"{n} Geräte importiert.",
+ "toast.exported_sched":"Zeitpläne exportiert.","toast.remote":"Remote-Desktop auf Android: RDP-Client wird geöffnet.",
+ "toast.scanadd":"{n} Geräte hinzugefügt.","toast.schedsaved":"Zeitplan gespeichert.","toast.scheddeleted":"Zeitplan gelöscht.",
+ "toast.logs":"Keine Einträge zum Exportieren."
+},
+en:{
+ "nav.devices":"Devices","nav.manage":"Manage","nav.schedule":"Schedule","nav.logs":"Logs","nav.settings":"Settings",
+ "devices.title":"Devices","devices.summary":"{total} devices · {online} online",
+ "devices.empty":"No devices yet. Add devices in the Manage area.",
+ "devices.wake":"Wake up","devices.shutdown":"Shut down","devices.wakeall":"⚡ Wake all",
+ "devices.refresh":"Refresh status","devices.viewlist":"Switch to list view",
+ "devices.viewgrid":"Switch to grid view","devices.search":"Search devices (name, MAC, IP)",
+ "devices.autorefresh":"Ready · auto-refresh every 30 s","devices.disabled":"disabled",
+ "devices.remote.full":"Remote desktop (fullscreen)","devices.remote.win":"Remote desktop (window)",
+ "sort.name":"Name","sort.ip":"IP address","sort.mac":"MAC address","sort.status":"Status",
+ "manage.title":"Manage","manage.subtitle":"Device management & network scan",
+ "manage.section.devices":"Device management","manage.section.scan":"Network scan",
+ "manage.add":"+ Add device","manage.import":"Import","manage.export":"Export",
+ "manage.search":"Search…","manage.ifaces":"Network interfaces","manage.scanstart":"Start scan",
+ "manage.scanrunning":"Scanning {n} …","manage.scanresults":"{n} hosts found","manage.scanempty":"No scan yet.",
+ "manage.scanadd":"Add","manage.scanknown":"known","manage.scanprog":"{p} % · {n} addresses checked",
+ "sched.title":"Schedule","sched.subtitle":"Turn devices on or off on a timer",
+ "sched.add":"+ Create schedule","sched.search":"Search schedules…","sched.empty":"No schedules yet.",
+ "sched.action":"Action","sched.hour":"Hour","sched.minute":"Minute","sched.days":"Days of week",
+ "sched.action.wake":"Wake up","sched.action.shutdown":"Shut down",
+ "sched.days.every":"Every day","sched.days.weekdays":"Weekdays","sched.next":"Next run: {r}",
+ "sched.delete.title":"Delete schedule","sched.delete.msg":"Really delete the schedule for “{name}”?",
+ "logs.title":"Logs","logs.subtitle":"All application events",
+ "logs.search":"Search message or device…","logs.export":"Export CSV","logs.empty":"No log entries.",
+ "logs.filter.all":"All levels","logs.level.info":"INFO","logs.level.warn":"WARN","logs.level.error":"ERROR",
+ "set.title":"Settings","set.subtitle":"Configure application & network",
+ "set.group.network":"Network","set.group.appearance":"Appearance","set.group.updates":"Updates",
+ "set.group.logs":"Log","set.group.remote":"Remote & performance",
+ "set.broadcast_ip":"Broadcast IP","set.broadcast_port":"Broadcast port","set.language":"Language",
+ "set.display_mode":"Display mode","set.auto_update":"Check for updates automatically",
+ "set.interval":"Check interval","set.max_logs":"Maximum log entries",
+ "set.rdp_res":"Resolution","set.rdp_auto":"Optimized 16:9",
+ "set.dm.auto":"Auto","set.dm.light":"Light","set.dm.dark":"Dark",
+ "set.iv.daily":"Daily","set.iv.weekly":"Weekly","set.iv.monthly":"Monthly",
+ "set.info":"Wake-on-LAN works by sending a special magic packet to the MAC address of the target device on the local network. The device must support Wake-on-LAN and have it enabled in BIOS/UEFI and system settings.",
+ "set.reset":"Reset","set.save":"Save","set.saved":"Settings saved.",
+ "set.reset.title":"Reset settings","set.reset.msg":"Reset all settings to factory values? Devices, schedules and logs are kept.",
+ "set.reset.done":"Settings reset.","set.err.ip":"Invalid broadcast IP.","set.err.port":"Port must be between 1 and 65535.",
+ "info.title":"Info","info.app":"Wake-on-LAN Manager","info.version":"Version {v} (Android port)",
+ "info.protocol":"Host service protocol v4 · TCP 8765","info.desc":"Control devices on the network via Wake-on-LAN, switch them on/off on a schedule and keep track of their online status.",
+ "info.devices":"{n} devices managed","info.sched":"{n} schedules","info.logs":"{n} log entries",
+ "dev.title.add":"Add device","dev.title.edit":"Edit device",
+ "dev.name":"Device name","dev.mac":"MAC address","dev.ip":"IP address (optional)",
+ "dev.user":"Username (optional)","dev.pass":"Password (optional)",
+ "dev.watch":"Watched processes","dev.watch.hint":"e.g. llama-server.exe:8080, comma-separated, max 8",
+ "dev.enabled":"Device is enabled","dev.delete":"Delete","dev.cancel":"Cancel",
+ "dev.err.name":"Please enter a device name.","dev.err.mac":"Invalid MAC address (e.g. AA:BB:CC:DD:EE:FF).",
+ "dev.err.ip":"Invalid IP address.","dev.err.watch":"Maximum 8 entries (≤ 128 characters each).",
+ "confirm.shutdown.title":"Confirm shutdown","confirm.shutdown.msg":"Really shut down “{name}”?",
+ "yes":"Yes","no":"No",
+ "toast.wake":"Magic packet sent to {name}.","toast.wakeall":"Wake packets sent to {n} devices.",
+ "toast.shutdown":"{name} is shutting down.","toast.saved":"Device saved.","toast.deleted":"Device deleted.",
+ "toast.added":"Added “{name}”.","toast.exported":"devices.json exported.","toast.imported":"{n} devices imported.",
+ "toast.exported_sched":"Schedules exported.","toast.remote":"Remote desktop on Android: opening RDP client.",
+ "toast.scanadd":"{n} devices added.","toast.schedsaved":"Schedule saved.","toast.scheddeleted":"Schedule deleted.",
+ "toast.logs":"No entries to export."
+},
+fr:{
+ "nav.devices":"Appareils","nav.manage":"Gérer","nav.schedule":"Planification","nav.logs":"Journaux","nav.settings":"Réglages",
+ "devices.title":"Appareils","devices.summary":"{total} appareils · {online} en ligne",
+ "devices.empty":"Aucun appareil. Ajoutez-en dans la section Gérer.",
+ "devices.wake":"Réveiller","devices.shutdown":"Éteindre","devices.wakeall":"⚡ Tout réveiller",
+ "devices.refresh":"Actualiser le statut","devices.viewlist":"Passer à la vue liste",
+ "devices.viewgrid":"Passer à la vue grille","devices.search":"Rechercher (nom, MAC, IP)",
+ "devices.autorefresh":"Prêt · actualisation auto toutes les 30 s","devices.disabled":"désactivé",
+ "devices.remote.full":"Bureau à distance (plein écran)","devices.remote.win":"Bureau à distance (fenêtre)",
+ "sort.name":"Nom","sort.ip":"Adresse IP","sort.mac":"Adresse MAC","sort.status":"Statut",
+ "manage.title":"Gérer","manage.subtitle":"Gestion des appareils & analyse réseau",
+ "manage.section.devices":"Gestion des appareils","manage.section.scan":"Analyse réseau",
+ "manage.add":"+ Ajouter un appareil","manage.import":"Importer","manage.export":"Exporter",
+ "manage.search":"Rechercher…","manage.ifaces":"Interfaces réseau","manage.scanstart":"Lancer l'analyse",
+ "manage.scanrunning":"Analyse de {n} …","manage.scanresults":"{n} hôtes trouvés","manage.scanempty":"Aucune analyse.",
+ "manage.scanadd":"Ajouter","manage.scanknown":"connu","manage.scanprog":"{p} % · {n} adresses vérifiées",
+ "sched.title":"Planification","sched.subtitle":"Allumer ou éteindre les appareils à heure fixe",
+ "sched.add":"+ Créer une planification","sched.search":"Rechercher…","sched.empty":"Aucune planification.",
+ "sched.action":"Action","sched.hour":"Heure","sched.minute":"Minute","sched.days":"Jours",
+ "sched.action.wake":"Réveiller","sched.action.shutdown":"Éteindre",
+ "sched.days.every":"Chaque jour","sched.days.weekdays":"Jours ouvrés","sched.next":"Prochaine exécution : {r}",
+ "sched.delete.title":"Supprimer la planification","sched.delete.msg":"Vraiment supprimer la planification de « {name} » ?",
+ "logs.title":"Journaux","logs.subtitle":"Tous les événements de l'application",
+ "logs.search":"Rechercher un message ou un appareil…","logs.export":"Exporter CSV","logs.empty":"Aucune entrée.",
+ "logs.filter.all":"Tous les niveaux","logs.level.info":"INFO","logs.level.warn":"WARN","logs.level.error":"ERREUR",
+ "set.title":"Réglages","set.subtitle":"Configurer l'application et le réseau",
+ "set.group.network":"Réseau","set.group.appearance":"Apparence","set.group.updates":"Mises à jour",
+ "set.group.logs":"Journal","set.group.remote":"Distant & performances",
+ "set.broadcast_ip":"IP de diffusion","set.broadcast_port":"Port de diffusion","set.language":"Langue",
+ "set.display_mode":"Mode d'affichage","set.auto_update":"Rechercher les mises à jour automatiquement",
+ "set.interval":"Intervalle de vérification","set.max_logs":"Entrées de journal maximales",
+ "set.rdp_res":"Résolution","set.rdp_auto":"Optimisé 16:9",
+ "set.dm.auto":"Auto","set.dm.light":"Clair","set.dm.dark":"Sombre",
+ "set.iv.daily":"Chaque jour","set.iv.weekly":"Chaque semaine","set.iv.monthly":"Chaque mois",
+ "set.info":"Wake-on-LAN fonctionne en envoyant un « magic packet » à l'adresse MAC de l'appareil cible sur le réseau local. L'appareil doit prendre en charge Wake-on-LAN et l'avoir activé dans le BIOS/UEFI et les paramètres système.",
+ "set.reset":"Réinitialiser","set.save":"Enregistrer","set.saved":"Réglages enregistrés.",
+ "set.reset.title":"Réinitialiser les réglages","set.reset.msg":"Réinitialiser tous les réglages ? Appareils, planifications et journaux sont conservés.",
+ "set.reset.done":"Réglages réinitialisés.","set.err.ip":"IP de diffusion invalide.","set.err.port":"Le port doit être compris entre 1 et 65535.",
+ "info.title":"À propos","info.app":"Wake-on-LAN Manager","info.version":"Version {v} (port Android)",
+ "info.protocol":"Protocole service hôte v4 · TCP 8765","info.desc":"Contrôlez les appareils du réseau via Wake-on-LAN, planifiez leur allumage/extinction et gardez un œil sur leur statut.",
+ "info.devices":"{n} appareils gérés","info.sched":"{n} planifications","info.logs":"{n} entrées de journal",
+ "dev.title.add":"Ajouter un appareil","dev.title.edit":"Modifier l'appareil",
+ "dev.name":"Nom de l'appareil","dev.mac":"Adresse MAC","dev.ip":"Adresse IP (facultatif)",
+ "dev.user":"Utilisateur (facultatif)","dev.pass":"Mot de passe (facultatif)",
+ "dev.watch":"Processus surveillés","dev.watch.hint":"ex. llama-server.exe:8080, séparés par virgules, max 8",
+ "dev.enabled":"L'appareil est activé","dev.delete":"Supprimer","dev.cancel":"Annuler",
+ "dev.err.name":"Veuillez saisir un nom d'appareil.","dev.err.mac":"Adresse MAC invalide (ex. AA:BB:CC:DD:EE:FF).",
+ "dev.err.ip":"Adresse IP invalide.","dev.err.watch":"Maximum 8 entrées (≤ 128 caractères chacune).",
+ "confirm.shutdown.title":"Confirmer l'extinction","confirm.shutdown.msg":"Vraiment éteindre « {name} » ?",
+ "yes":"Oui","no":"Non",
+ "toast.wake":"Magic packet envoyé à {name}.","toast.wakeall":"Wake-packets envoyés à {n} appareils.",
+ "toast.shutdown":"{name} s'éteint.","toast.saved":"Appareil enregistré.","toast.deleted":"Appareil supprimé.",
+ "toast.added":"« {name} » ajouté.","toast.exported":"devices.json exporté.","toast.imported":"{n} appareils importés.",
+ "toast.exported_sched":"Planifications exportées.","toast.remote":"Bureau à distance sur Android : ouverture du client RDP.",
+ "toast.scanadd":"{n} appareils ajoutés.","toast.schedsaved":"Planification enregistrée.","toast.scheddeleted":"Planification supprimée.",
+ "toast.logs":"Aucune entrée à exporter."
+},
+es:{
+ "nav.devices":"Dispositivos","nav.manage":"Gestionar","nav.schedule":"Planificación","nav.logs":"Registro","nav.settings":"Ajustes",
+ "devices.title":"Dispositivos","devices.summary":"{total} dispositivos · {online} en línea",
+ "devices.empty":"Aún no hay dispositivos. Añádalos en el área Gestionar.",
+ "devices.wake":"Encender","devices.shutdown":"Apagar","devices.wakeall":"⚡ Encender todos",
+ "devices.refresh":"Actualizar estado","devices.viewlist":"Cambiar a vista de lista",
+ "devices.viewgrid":"Cambiar a vista de mosaico","devices.search":"Buscar (nombre, MAC, IP)",
+ "devices.autorefresh":"Listo · auto-refresco cada 30 s","devices.disabled":"desactivado",
+ "devices.remote.full":"Escritorio remoto (pantalla completa)","devices.remote.win":"Escritorio remoto (ventana)",
+ "sort.name":"Nombre","sort.ip":"Dirección IP","sort.mac":"Dirección MAC","sort.status":"Estado",
+ "manage.title":"Gestionar","manage.subtitle":"Gestión de dispositivos y escaneo de red",
+ "manage.section.devices":"Gestión de dispositivos","manage.section.scan":"Escaneo de red",
+ "manage.add":"+ Añadir dispositivo","manage.import":"Importar","manage.export":"Exportar",
+ "manage.search":"Buscar…","manage.ifaces":"Interfaces de red","manage.scanstart":"Iniciar escaneo",
+ "manage.scanrunning":"Escaneando {n} …","manage.scanresults":"{n} anfitriones encontrados","manage.scanempty":"Aún no hay escaneo.",
+ "manage.scanadd":"Añadir","manage.scanknown":"conocido","manage.scanprog":"{p} % · {n} direcciones comprobadas",
+ "sched.title":"Planificación","sched.subtitle":"Encender o apagar dispositivos programados",
+ "sched.add":"+ Crear planificación","sched.search":"Buscar planes…","sched.empty":"Aún no hay planes.",
+ "sched.action":"Acción","sched.hour":"Hora","sched.minute":"Minuto","sched.days":"Días de la semana",
+ "sched.action.wake":"Encender","sched.action.shutdown":"Apagar",
+ "sched.days.every":"Cada día","sched.days.weekdays":"Días laborables","sched.next":"Próxima ejecución: {r}",
+ "sched.delete.title":"Eliminar planificación","sched.delete.msg":"¿Seguro que quiere eliminar el plan de “{name}”?",
+ "logs.title":"Registro","logs.subtitle":"Todos los eventos de la aplicación",
+ "logs.search":"Buscar mensaje o dispositivo…","logs.export":"Exportar CSV","logs.empty":"Sin entradas.",
+ "logs.filter.all":"Todos los niveles","logs.level.info":"INFO","logs.level.warn":"WARN","logs.level.error":"ERROR",
+ "set.title":"Ajustes","set.subtitle":"Configurar aplicación y red",
+ "set.group.network":"Red","set.group.appearance":"Apariencia","set.group.updates":"Actualizaciones",
+ "set.group.logs":"Registro","set.group.remote":"Remoto y rendimiento",
+ "set.broadcast_ip":"IP de difusión","set.broadcast_port":"Puerto de difusión","set.language":"Idioma",
+ "set.display_mode":"Modo de pantalla","set.auto_update":"Buscar actualizaciones automáticamente",
+ "set.interval":"Intervalo de comprobación","set.max_logs":"Entradas máximas del registro",
+ "set.rdp_res":"Resolución","set.rdp_auto":"Optimizado 16:9",
+ "set.dm.auto":"Auto","set.dm.light":"Claro","set.dm.dark":"Oscuro",
+ "set.iv.daily":"Cada día","set.iv.weekly":"Cada semana","set.iv.monthly":"Cada mes",
+ "set.info":"Wake-on-LAN funciona enviando un «magic packet» a la dirección MAC del dispositivo destino en la red local. El dispositivo debe admitir Wake-on-LAN y tenerlo activado en la BIOS/UEFI y en la configuración del sistema.",
+ "set.reset":"Restablecer","set.save":"Guardar","set.saved":"Ajustes guardados.",
+ "set.reset.title":"Restablecer ajustes","set.reset.msg":"¿Restablecer todos los ajustes? Los dispositivos, planes y registros se conservan.",
+ "set.reset.done":"Ajustes restablecidos.","set.err.ip":"IP de difusión no válida.","set.err.port":"El puerto debe estar entre 1 y 65535.",
+ "info.title":"Información","info.app":"Wake-on-LAN Manager","info.version":"Versión {v} (port de Android)",
+ "info.protocol":"Protocolo host-service v4 · TCP 8765","info.desc":"Controle dispositivos de la red mediante Wake-on-LAN, enciéndalos/apáguelos programados y vigile su estado.",
+ "info.devices":"{n} dispositivos gestionados","info.sched":"{n} planes","info.logs":"{n} entradas de registro",
+ "dev.title.add":"Añadir dispositivo","dev.title.edit":"Editar dispositivo",
+ "dev.name":"Nombre del dispositivo","dev.mac":"Dirección MAC","dev.ip":"Dirección IP (opcional)",
+ "dev.user":"Usuario (opcional)","dev.pass":"Contraseña (opcional)",
+ "dev.watch":"Procesos observados","dev.watch.hint":"p. ej. llama-server.exe:8080, separados por comas, máx. 8",
+ "dev.enabled":"El dispositivo está activado","dev.delete":"Eliminar","dev.cancel":"Cancelar",
+ "dev.err.name":"Introduzca un nombre de dispositivo.","dev.err.mac":"MAC no válida (p. ej. AA:BB:CC:DD:EE:FF).",
+ "dev.err.ip":"Dirección IP no válida.","dev.err.watch":"Máximo 8 entradas (≤ 128 caracteres cada una).",
+ "confirm.shutdown.title":"Confirmar apagado","confirm.shutdown.msg":"¿Seguro que quiere apagar “{name}”?",
+ "yes":"Sí","no":"No",
+ "toast.wake":"Magic packet enviado a {name}.","toast.wakeall":"Wake-packets enviados a {n} dispositivos.",
+ "toast.shutdown":"{name} se está apagando.","toast.saved":"Dispositivo guardado.","toast.deleted":"Dispositivo eliminado.",
+ "toast.added":"«{name}» añadido.","toast.exported":"devices.json exportado.","toast.imported":"{n} dispositivos importados.",
+ "toast.exported_sched":"Planes exportados.","toast.remote":"Escritorio remoto en Android: abriendo cliente RDP.",
+ "toast.scanadd":"{n} dispositivos añadidos.","toast.schedsaved":"Plan guardado.","toast.scheddeleted":"Plan eliminado.",
+ "toast.logs":"Sin entradas para exportar."
+}};
+/* ═══════════════════════════ State / Datenmodell ═══════════════════════
+   device = { id, name, mac, ip, username, password, enabled, method, watch[],
+              status: on|off|unknown|waking }
+   schedule = { id, deviceId, action: wake|shutdown, hour, minute, days[], enabled }
+   log = { ts, device, status, msg }   — Status analog wol_engine (WAKE/SUCCESS/…) */
+let SEQ = 1;
+const state = {
+  lang: "de", theme: "dark",
+  settings: {
+    broadcast_ip: "255.255.255.255", broadcast_port: 9, language: "de",
+    display_mode: "dark", auto_update: true, interval: 24, max_logs: 100,
+    rdp_res: "auto", method: "host_service",
+  },
+  ui: {
+    screen: "devices", deviceView: "grid", sort: "name", search: "",
+    manageSearch: "", schedSearch: "", logFilter: "all", logSearch: "",
+    editing: null, sheetConfirm: null,
+  },
+  devices: [
+    { id: "d" + (SEQ++), name: "Fractal", mac: "50:EB:F6:B7:8B:0C", ip: "192.168.2.62",
+      username: "fractal", password: "demo1234", enabled: true, method: "host_service",
+      watch: ["llama-server.exe:8080", "backup-sync.exe"], status: "on" },
+    { id: "d" + (SEQ++), name: "A4-H20", mac: "60:CF:84:84:31:29", ip: "192.168.2.50",
+      username: "", password: "", enabled: true, method: "host_service",
+      watch: [], status: "off" },
+    { id: "d" + (SEQ++), name: "A4-TV", mac: "A0:AD:9F:1C:09:FF", ip: "192.168.2.111",
+      username: "tv", password: "wohnzimmer", enabled: true, method: "smb",
+      watch: [], status: "unknown" },
+  ],
+  schedules: [
+    { id: "s1", deviceId: "d1", action: "wake", hour: 7, minute: 30,
+      days: ["Mon", "Tue", "Wed", "Thu", "Fri"], enabled: true },
+    { id: "s2", deviceId: "d1", action: "shutdown", hour: 23, minute: 0,
+      days: ["Mon", "Wed", "Fri"], enabled: false },
+    { id: "s3", deviceId: "d3", action: "wake", hour: 9, minute: 0,
+      days: ["Sat", "Sun"], enabled: true },
+  ],
+  logs: [
+    { ts: Date.now() - 3600e3 * 2, device: "Fractal", status: "WAKE", msg: "Magic Packet an 192.168.2.62:9 gesendet" },
+    { ts: Date.now() - 3600e3 * 3, device: "A4-TV", status: "ERROR", msg: "Host-Service nicht erreichbar auf 192.168.2.111:8765" },
+    { ts: Date.now() - 3600e3 * 5, device: "—", status: "SUCCESS", msg: "Status-Aktualisierung abgeschlossen: 1 Gerät online" },
+    { ts: Date.now() - 3600e3 * 8, device: "A4-H20", status: "WARN", msg: "Gerät konnte nicht erreicht werden (Timeout)" },
+  ],
+  scan: { running: false, progress: 0, checked: 0, results: [], ifaces: [] },
+};
+
+/* ═══════════════════════════ Helpers ════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const t = (k, vars) => {
+  let s = (I18N[state.lang] && I18N[state.lang][k]) ?? I18N.de[k] ?? k;
+  for (const [v, r] of Object.entries(vars || {})) s = s.replaceAll("{" + v + "}", r);
+  return s;
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const byId = id => state.devices.find(d => d.id === id);
+const DAY_CODES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_KEYS = { Mon: "day.Mon", Tue: "day.Tue", Wed: "day.Wed", Thu: "day.Thu",
+  Fri: "day.Fri", Sat: "day.Sat", Sun: "day.Sun" };
+const DAY_SHORT = { de: { Mon:"Mo",Tue:"Di",Wed:"Mi",Thu:"Do",Fri:"Fr",Sat:"Sa",Sun:"So" },
+  en: { Mon:"Mon",Tue:"Tue",Wed:"Wed",Thu:"Thu",Fri:"Fri",Sat:"Sat",Sun:"Sun" },
+  fr: { Mon:"Lu",Tue:"Ma",Wed:"Me",Thu:"Je",Fri:"Ve",Sat:"Sa",Sun:"Di" },
+  es: { Mon:"Lu",Tue:"Ma",Wed:"Mi",Thu:"Ju",Fri:"Vi",Sat:"Sá",Sun:"Do" } };
+const dshort = c => (DAY_SHORT[state.lang] || DAY_SHORT.de)[c];
+// Validierung analog wol_app/utils.py
+const RE_MAC = /^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/;
+const RE_IPV4 = /^(\d{1,3}\.){3}\d{1,3}$/;
+const validIp = v => RE_IPV4.test(v) && v.split(".").every(p => +p >= 0 && +p <= 255);
+
+/* format_days() — analog schedule_view.format_days */
+function formatDays(days) {
+  if (!days || !days.length || days.length >= 7) return t("sched.days.every");
+  if (["Mon", "Tue", "Wed", "Thu", "Fri"].every(d => days.includes(d)) && days.length === 5)
+    return t("sched.days.weekdays");
+  return DAY_CODES.filter(d => days.includes(d)).map(d => dshort(d)).join(" · ");
+}
+/* log_level() — analog logs_view.log_level */
+const ERR_ST = new Set(["ERROR", "FAILED", "OFFLINE"]);
+const INFO_ST = new Set(["SUCCESS", "ONLINE", "TRIGGERED", "WAKE", "SHUTDOWN"]);
+function logLevel(status) {
+  const s = (status || "").toUpperCase();
+  if (ERR_ST.has(s)) return "error";
+  if (INFO_ST.has(s)) return "info";
+  return "warn";
+}
+function fmtLogTime(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, "0");
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}. ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function logIt(device, status, msg) {
+  state.logs.unshift({ ts: Date.now(), device, status, msg });
+  const max = state.settings.max_logs;
+  if (state.logs.length > max) state.logs.length = max;
+  if (state.ui.screen === "logs") renderLogs();
+}
+function toast(msg, isErr) {
+  const el = $("#toast"); el.textContent = msg;
+  el.classList.toggle("err", !!isErr); el.classList.add("show");
+  clearTimeout(el._tm); el._tm = setTimeout(() => el.classList.remove("show"), 2600);
+}
+function nextRunText(sc) {
+  if (!sc.enabled || !sc.days.length) return "—";
+  for (let i = 0; i < 8; i++) {
+    const d = new Date(Date.now() + i * 864e5);
+    const wd = d.getDay() === 0 ? 6 : d.getDay() - 1;   // Mo=0 .. So=6
+    if (!sc.days.includes(DAY_CODES[wd])) continue;
+    d.setHours(sc.hour, sc.minute, 0, 0);
+    const diff = d - Date.now();
+    if (diff > 0) {
+      const h = Math.floor(diff / 36e5), m = Math.round(diff % 36e5 / 6e4);
+      return (i ? i + "d " : "") + h + " h " + m + " min";
+    }
+  }
+  return "—";
+}
+function download(name, text, mime) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + text], { type: mime || "text/plain" }));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ═══════════════════════════ Aktionen ════════════════════════════════════
+   Wake/Shutdown folgen wol_engine.py bzw. shutdown_flow.py (Bestätigungsdialog) */
+function wakeDevice(d) {
+  if (d.status === "on" || d.status === "waking" || !d.enabled) return;
+  d.status = "waking"; renderDevices();
+  setTimeout(() => {
+    d.status = "on";
+    logIt(d.name, "SUCCESS", `Magic Packet an ${d.ip || d.mac}:${state.settings.broadcast_port} gesendet`);
+    toast(t("toast.wake", { name: d.name }));
+    renderDevices();
+  }, 1400);
+  logIt(d.name, "WAKE", `Magic Packet an ${d.ip || d.mac}:${state.settings.broadcast_port} gesendet`);
+}
+function wakeAll() {
+  const targets = state.devices.filter(d => d.status !== "on" && d.status !== "waking" && d.enabled);
+  if (!targets.length) return;
+  targets.forEach((d, i) => setTimeout(() => wakeDevice(d), i * 350));
+  toast(t("toast.wakeall", { n: targets.length }));
+}
+function refreshStatus() {
+  // Simulierter Statuslauf (Windows: StatusWorker/Ping)
+  state.devices.forEach(d => { if (d.status === "waking") return; });
+  renderDevices();
+}
+setInterval(() => { if (state.ui.screen === "devices") refreshStatus(); }, 30000);
+
+function confirmShutdown(d) {
+  openSheet(`<div class="grab"></div><h2>${esc(t("confirm.shutdown.title"))}</h2>
+    <p style="font-size:14px;line-height:1.5">${esc(t("confirm.shutdown.msg", { name: d.name }))}</p>
+    <div class="sheetbtns"><button class="btn" data-act="sheet-close">${esc(t("no"))}</button>
+    <button class="btn primary" data-act="do-shutdown" data-id="${d.id}">${esc(t("yes"))}</button></div>`);
+}
+function doShutdown(id) {
+  const d = byId(id); closeSheet();
+  if (!d) return;
+  logIt(d.name, "SHUTDOWN", "Herunterfahren über Host-Service angefordert");
+  toast(t("toast.shutdown", { name: d.name }));
+  setTimeout(() => { d.status = "off"; renderDevices(); }, 2600);
+}
+
+/* ── Netzwerk-Scan (Windows: ManageView-Scanabschnitt + ScanWorker) ────── */
+const IFACES = [
+  { name: "Wi-Fi", ip: "192.168.2.40", cidr: "192.168.2.0/24", on: true },
+  { name: "Ethernet", ip: "10.8.0.5", cidr: "10.8.0.0/24", on: false },
+];
+const SCAN_POOL = [
+  { ip: "192.168.2.1", mac: "AA:BB:CC:00:11:22", host: "fritz.box" },
+  { ip: "192.168.2.33", mac: "DC:A6:32:9F:11:0A", host: "nas01.lan" },
+  { ip: "192.168.2.50", mac: "60:CF:84:84:31:29", host: "a4-h20" },
+  { ip: "192.168.2.77", mac: "B8:27:EB:44:C0:FE", host: "raspberry-lb" },
+  { ip: "192.168.2.111", mac: "A0:AD:9F:1C:09:FF", host: "a4-tv" },
+];
+function startScan() {
+  const sel = IFACES.filter(i => i.on);
+  if (!sel.length) { toast(t("manage.ifaces") + " ?", true); return; }
+  const total = sel.length * 254;
+  state.scan = { running: true, progress: 0, checked: 0, results: [], ifaces: sel.map(i => i.cidr) };
+  renderManage();
+  let done = 0;
+  const step = () => {
+    if (!state.scan.running) return;
+    done += 18;
+    state.scan.checked = Math.min(done, total);
+    state.scan.progress = Math.round(state.scan.checked / total * 100);
+    const bar = $("#scanBar"), info = $("#scanInfo");
+    if (bar) bar.style.width = state.scan.progress + "%";
+    if (info) info.textContent = t("manage.scanprog", { p: state.scan.progress, n: state.scan.checked });
+    if (state.scan.checked < total) { setTimeout(step, 120); return; }
+    const known = new Set(state.devices.map(d => d.mac.toUpperCase()));
+    state.scan.running = false;
+    state.scan.results = SCAN_POOL.map(r => ({ ...r, known: known.has(r.mac) }));
+    logIt("—", "SUCCESS", t("manage.scanresults", { n: state.scan.results.length }));
+    renderManage();
+  };
+  setTimeout(step, 120);
+}
+function scanAdd(i) {
+  const r = state.scan.results[i];
+  if (!r || r.known || state.devices.some(d => d.mac.toUpperCase() === r.mac)) return;
+  state.devices.push({ id: "d" + (SEQ++), name: r.host, mac: r.mac, ip: r.ip,
+    username: "", password: "", enabled: true, method: "host_service", watch: [], status: "on" });
+  r.known = true;
+  logIt(r.host, "SUCCESS", t("toast.scanadd", { n: 1 }));
+  toast(t("toast.scanadd", { n: 1 }));
+  renderManage(); renderDevices();
+}
+
+/* ── Geräte-Dialog als Bottom-Sheet (Windows: ModernDeviceDialog) ──────── */
+function openDeviceSheet(id) {
+  const d = id ? byId(id) : null;
+  state.ui.editing = d ? { ...d, watch: [...d.watch] } : {
+    id: null, name: "", mac: "", ip: "", username: "", password: "",
+    enabled: true, method: state.settings.method, watch: [] };
+  const e = state.ui.editing;
+  openSheet(`
+    <div class="grab"></div><h2>${esc(t(d ? "dev.title.edit" : "dev.title.add"))}</h2>
+    <div class="field" id="f-name"><label>${esc(t("dev.name"))}</label>
+      <input type="text" id="i-name" value="${esc(e.name)}" maxlength="60">
+      <div class="ferr">${esc(t("dev.err.name"))}</div></div>
+    <div class="field" id="f-mac"><label>${esc(t("dev.mac"))}</label>
+      <input type="text" id="i-mac" value="${esc(e.mac)}" placeholder="AA:BB:CC:DD:EE:FF" maxlength="17">
+      <div class="ferr">${esc(t("dev.err.mac"))}</div></div>
+    <div class="field" id="f-ip"><label>${esc(t("dev.ip"))}</label>
+      <input type="text" id="i-ip" value="${esc(e.ip)}" placeholder="192.168.2.10">
+      <div class="ferr">${esc(t("dev.err.ip"))}</div></div>
+    <div class="field"><label>${esc(t("dev.user"))}</label>
+      <input type="text" id="i-user" value="${esc(e.username)}" autocomplete="off"></div>
+    <div class="field"><label>${esc(t("dev.pass"))}</label>
+      <div class="pwwrap"><input type="password" id="i-pass" value="${esc(e.password)}" autocomplete="new-password">
+      <button class="eye" data-act="eye">👁</button></div></div>
+    <div class="field" id="f-watch"><label>${esc(t("dev.watch"))}</label>
+      <input type="text" id="i-watch" value="${esc(e.watch.join(", "))}">
+      <div class="hint">${esc(t("dev.watch.hint"))}</div>
+      <div class="ferr">${esc(t("dev.err.watch"))}</div></div>
+    <div class="frow"><div>${esc(t("dev.enabled"))}</div>
+      <div class="toggle ${e.enabled ? "on" : ""}" data-act="edit-toggle" data-key="enabled"></div></div>
+    <div class="sheetbtns">
+      ${d ? `<button class="btn danger" data-act="dev-delete">${esc(t("dev.delete"))}</button>` : ""}
+      <button class="btn" data-act="sheet-close">${esc(t("dev.cancel"))}</button>
+      <button class="btn primary" data-act="dev-save">${esc(t("set.save"))}</button>
+    </div>`);
+}
+function saveDeviceFromSheet() {
+  const e = state.ui.editing;
+  const name = $("#i-name").value.trim();
+  const mac = $("#i-mac").value.trim();
+  const ip = $("#i-ip").value.trim();
+  const watch = $("#i-watch").value.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  let bad = false;
+  const mark = (id, ok) => { $("#" + id).classList.toggle("invalid", !ok); if (!ok) bad = true; };
+  mark("f-name", !!name);
+  mark("f-mac", RE_MAC.test(mac));
+  mark("f-ip", !ip || validIp(ip));
+  mark("f-watch", watch.length <= 8 && watch.every(w => w.length <= 128));
+  if (bad) return;
+  const patch = { name, mac: mac.toUpperCase(), ip,
+    username: $("#i-user").value.trim(), password: $("#i-pass").value,
+    method: "host_service", enabled: e.enabled, watch };
+  if (e.id) Object.assign(byId(e.id), patch);
+  else state.devices.push({ id: "d" + (SEQ++), status: "off", ...patch });
+  closeSheet(); renderDevices(); renderManage(); toast(t("toast.saved"));
+}
+function deleteDevice(id) {
+  const d = byId(id);
+  state.devices = state.devices.filter(x => x.id !== id);
+  state.schedules = state.schedules.filter(s => s.deviceId !== id);
+  closeSheet(); renderDevices(); renderManage(); renderSched();
+  toast(t("toast.deleted"));
+}
+
+/* ── Import / Export (Windows: device_io.py) ─────────────────────────── */
+function exportDevices() {
+  const out = state.devices.map(d => ({
+    name: d.name, mac: d.mac, ip: d.ip, username: d.username,
+    password: d.password, enabled: d.enabled }));
+  download("devices.json", JSON.stringify(out, null, 2), "application/json");
+  toast(t("toast.exported"));
+}
+function importDevices(file) {
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const arr = JSON.parse(fr.result);
+      if (!Array.isArray(arr)) throw 0;
+      let n = 0;
+      for (const o of arr) {
+        const mac = String(o.mac || "").trim();
+        if (!mac || !RE_MAC.test(mac)) continue;
+        const exists = state.devices.some(d => d.mac.toUpperCase() === mac.toUpperCase());
+        if (exists) continue;
+        state.devices.push({ id: "d" + (SEQ++), name: String(o.name || mac), mac: mac.toUpperCase(),
+          ip: String(o.ip || ""), username: String(o.username || ""), password: String(o.password || ""),
+          enabled: o.enabled !== false, method: state.settings.method, watch: [], status: "unknown" });
+        n++;
+      }
+      renderDevices(); renderManage(); toast(t("toast.imported", { n }));
+    } catch { toast("JSON?", true); }
+  };
+  fr.readAsText(file);
+}
+
+/* ── Zeitplan-Dialog (Windows: ModernScheduleEditDialog) ─────────────── */
+function openSchedSheet(id) {
+  if (!state.devices.length) { toast(t("sched.empty"), true); return; }
+  const sc = id ? state.schedules.find(s => s.id === id) : null;
+  state.ui.editing = sc ? { ...sc, days: [...sc.days] } : {
+    id: null, deviceId: state.devices[0].id, action: "wake", hour: 7, minute: 30,
+    days: ["Mon", "Tue", "Wed", "Thu", "Fri"], enabled: true };
+  const e = state.ui.editing;
+  openSheet(`
+    <div class="grab"></div><h2>${esc(t(sc ? "dev.title.edit" : "sched.add"))}</h2>
+    <div class="field"><label>${esc(t("devices.title"))}</label>
+      <select id="sc-dev">${state.devices.map(d =>
+        `<option value="${d.id}" ${d.id === e.deviceId ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></div>
+    <div class="field"><label>${esc(t("sched.action"))}</label>
+      <select id="sc-act">${["wake", "shutdown"].map(a =>
+        `<option value="${a}" ${a === e.action ? "selected" : ""}>${esc(t("sched.action." + a))}</option>`).join("")}</select></div>
+    <div style="display:flex;gap:10px">
+      <div class="field" style="flex:1"><label>${esc(t("sched.hour"))}</label>
+        <input type="number" id="sc-hour" min="0" max="23" value="${e.hour}"></div>
+      <div class="field" style="flex:1"><label>${esc(t("sched.minute"))}</label>
+        <input type="number" id="sc-min" min="0" max="59" value="${e.minute}"></div>
+    </div>
+    <div class="field"><label>${esc(t("sched.days"))}</label>
+      <div class="days">${DAY_CODES.map(c => `<span class="daychip ${e.days.includes(c) ? "on" : ""}"
+        data-act="sc-day" data-day="${c}">${esc(dshort(c))}</span>`).join("")}</div></div>
+    <div class="frow"><div>${esc(t("dev.enabled"))}</div>
+      <div class="toggle ${e.enabled ? "on" : ""}" data-act="edit-toggle" data-key="enabled"></div></div>
+    <div class="sheetbtns">
+      ${sc ? `<button class="btn danger" data-act="sc-delete">${esc(t("dev.delete"))}</button>` : ""}
+      <button class="btn" data-act="sheet-close">${esc(t("dev.cancel"))}</button>
+      <button class="btn primary" data-act="sc-save">${esc(t("set.save"))}</button>
+    </div>`);
+}
+function saveSchedFromSheet() {
+  const e = state.ui.editing;
+  e.deviceId = $("#sc-dev").value; e.action = $("#sc-act").value;
+  e.hour = Math.max(0, Math.min(23, +$("#sc-hour").value || 0));
+  e.minute = Math.max(0, Math.min(59, +$("#sc-min").value || 0));
+  if (e.id) Object.assign(state.schedules.find(s => s.id === e.id), e);
+  else { e.id = "s" + Date.now(); state.schedules.push(e); }
+  closeSheet(); renderSched(); toast(t("toast.schedsaved"));
+}
+
+/* ── Sheet / Navigation ─────────────────────────────────────────────── */
+function openSheet(html) {
+  $("#sheet").innerHTML = html; $("#sheet").classList.add("open");
+  $("#overlay").classList.add("open"); $("#sheet").scrollTop = 0;
+}
+function closeSheet() {
+  $("#sheet").classList.remove("open"); $("#overlay").classList.remove("open");
+  state.ui.editing = null;
+}
+function go(screen) {
+  state.ui.screen = screen;
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  $("#s-" + screen).classList.add("active");
+  document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.nav === screen));
+  if (screen === "devices") renderDevices();
+  if (screen === "manage") renderManage();
+  if (screen === "sched") renderSched();
+  if (screen === "logs") renderLogs();
+  if (screen === "set") renderSettings();
+  $("#s-" + screen).scrollTop = 0;
+}
+function applyTheme() {
+  const eff = state.theme === "system"
+    ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : state.theme;
+  $("#phone").dataset.theme = eff;
+}
+function renderAll() {
+  applyTheme();
+  document.querySelectorAll("[data-t]").forEach(el => el.textContent = t(el.dataset.t));
+  renderDevices(); renderManage(); renderSched(); renderLogs(); renderSettings();
+}
+/* ═══════════════════════════ Rendering ═══════════════════════════════════ */
+
+/* ── GERÄTE (devices_view.py: Karten-Grid + Listenansicht) ────────────── */
+function sortDevices(devs) {
+  const s = state.ui.sort;
+  const rank = { on: 0, waking: 1, unknown: 2, off: 3 };
+  return [...devs].sort((a, b) =>
+    s === "name" ? a.name.localeCompare(b.name)
+    : s === "mac" ? a.mac.localeCompare(b.mac)
+    : s === "ip" ? a.ip.localeCompare(b.ip, undefined, { numeric: true })
+    : (rank[a.status] - rank[b.status]) || a.name.localeCompare(b.name));
+}
+function statusDot(d) {
+  const c = d.status === "on" ? "on" : d.status === "off" ? "off"
+    : d.status === "waking" ? "unk" : "unk";
+  return `<span class="dot ${c}"></span>`;
+}
+/* Power-Symbol: Kreis mit vertikaler Linie oben (Ein/Aus) */
+const PWR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 2.5v7.5"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>`;
+function actionBtn(d) {
+  if (d.status === "on") {
+    return `<button class="tile pwr lit" data-act="shutdown" data-id="${d.id}" title="${esc(t("devices.shutdown"))}">${PWR}</button>`;
+  }
+  const dis = d.status === "waking" || !d.enabled;
+  return `<button class="tile pwr" data-act="wake" data-id="${d.id}" ${dis ? "disabled" : ""} title="${esc(t("devices.wake"))}">${PWR}</button>`;
+}
+function renderDevices() {
+  const on = state.devices.filter(d => d.status === "on").length;
+  let devs = state.devices;
+  const q = state.ui.search.toLowerCase();
+  if (q) devs = devs.filter(d => (d.name + d.ip + d.mac).toLowerCase().includes(q));
+  devs = sortDevices(devs);
+  const listMode = state.ui.deviceView === "list";
+  const cards = devs.map(d => `
+    <div class="card ${d.enabled ? "" : "disabled"}">
+      <div class="ctop"><h3>${esc(d.name)}</h3>${statusDot(d)}</div>
+      <div class="meta">${esc(d.ip || "—")}</div>
+      <div class="meta">${esc(d.mac)}</div>
+      ${d.watch.length ? `<div style="margin-top:6px">${d.watch.map(w =>
+        `<span class="ichip">${esc(w.split(":")[0])}</span>`).join("")}</div>` : ""}
+      <div class="crow">
+        <button class="tile" data-act="remote" data-id="${d.id}" data-mode="full" title="${esc(t("devices.remote.full"))}">🖥️</button>
+        <button class="tile" data-act="remote" data-id="${d.id}" data-mode="win" title="${esc(t("devices.remote.win"))}">🪟</button>
+        ${actionBtn(d)}
+      </div>
+    </div>`).join("");
+  const rows = devs.map(d => `
+    <div class="lrow">${statusDot(d)}
+      <div class="info"><div class="t ${d.enabled ? "" : "dis"}">${esc(d.name)}</div>
+        <div class="mono">${esc((d.ip ? d.ip + " · " : "") + d.mac)}</div></div>
+      <button class="tile" data-act="remote" data-id="${d.id}" data-mode="full" title="${esc(t("devices.remote.full"))}">🖥️</button>
+      ${actionBtn(d)}
+    </div>`).join("");
+  $("#s-devices").innerHTML = `
+    <div class="toprow"><div><h1>${esc(t("devices.title"))}</h1>
+      <p class="sub">${esc(t("devices.summary", { total: state.devices.length, online: on }))}</p></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn small icon" data-act="view" title="${esc(t(listMode ? "devices.viewgrid" : "devices.viewlist"))}">${listMode ? "▦" : "☰"}</button>
+        <button class="btn small icon" data-act="refresh" title="${esc(t("devices.refresh"))}">↻</button>
+      </div></div>
+    <div class="search">🔍<input placeholder="${esc(t("devices.search"))}" value="${esc(state.ui.search)}" data-act="search"></div>
+    <div class="toolbar" style="margin-top:10px">
+      <select class="plain grow" data-act="sort">
+        ${["name","ip","mac","status"].map(s => `<option value="${s}" ${state.ui.sort===s?"selected":""}>${esc(t("sort."+s))}</option>`).join("")}
+      </select>
+    </div>
+    ${devs.length === 0 ? `<div class="empty">${esc(t("devices.empty"))}</div>`
+      : listMode ? `<div class="panel">${rows}</div>` : `<div class="grid">${cards}</div>`}
+    <div class="toolbar" style="margin-top:14px">
+      <button class="btn primary" style="flex:1" data-act="wake-all">${esc(t("devices.wakeall"))}</button>
+    </div>
+    <div class="footer"><span>${esc(t("devices.autorefresh"))}</span><span>v2.2.2</span></div>`;
+}
+
+/* ── VERWALTEN (manage_view.py: Geräte-Verwaltung + Netzwerk-Scan) ────── */
+function renderManage() {
+  let devs = state.devices;
+  const q = state.ui.manageSearch.toLowerCase();
+  if (q) devs = devs.filter(d => (d.name + d.ip + d.mac).toLowerCase().includes(q));
+  devs = sortDevices(devs);
+  const rows = devs.map(d => `
+    <div class="lrow">${statusDot(d)}
+      <div class="info"><div class="t ${d.enabled ? "" : "dis"}">${esc(d.name)}</div>
+        <div class="mono">${esc((d.ip ? d.ip + " · " : "") + d.mac)}</div></div>
+      <button class="tile" data-act="edit-dev" data-id="${d.id}" title="${esc(t("dev.title.edit"))}">✏️</button>
+      <button class="tile danger" data-act="del-dev" data-id="${d.id}" title="${esc(t("dev.delete"))}">🗑️</button>
+    </div>`).join("");
+  const sc = state.scan;
+  const scanBody = sc.running
+    ? `<div class="progress"><i id="scanBar" style="width:${sc.progress}%"></i></div>
+       <div class="pinfo" id="scanInfo">${esc(t("manage.scanprog", { p: sc.progress, n: sc.checked }))}</div>`
+    : sc.results.length
+      ? `<div class="pinfo">${esc(t("manage.scanresults", { n: sc.results.length }))}</div>
+      <div class="panel">${sc.results.map((r, i) => `
+        <div class="lrow"><span class="dot on"></span>
+          <div class="info"><div class="t">${esc(r.host)}</div>
+            <div class="mono">${esc(r.ip)} · ${esc(r.mac)}</div></div>
+          ${r.known
+            ? `<span class="badge" style="background:var(--surface-hover);color:var(--text-dim)">${esc(t("manage.scanknown"))}</span>`
+            : `<button class="btn small" style="border-color:var(--accent);color:var(--accent)" data-act="scan-add" data-i="${i}">${esc(t("manage.scanadd"))}</button>`}
+        </div>`).join("")}</div>`
+      : `<div class="empty" style="padding:20px">${esc(t("manage.scanempty"))}</div>`;
+  $("#s-manage").innerHTML = `
+    <div class="phead"><h1>${esc(t("manage.title"))}</h1>
+      <p class="sub">${esc(t("manage.subtitle"))}</p></div>
+    <div class="sectitle">${esc(t("manage.section.devices"))}</div>
+    <div class="toolbar">
+      <button class="btn primary icon" data-act="add-dev" title="${esc(t("manage.add"))}">＋</button>
+      <button class="btn" data-act="import">${esc(t("manage.import"))}</button>
+      <button class="btn" data-act="export">${esc(t("manage.export"))}</button>
+    </div>
+    <div class="search" style="margin-bottom:10px">🔍<input placeholder="${esc(t("manage.search"))}" value="${esc(state.ui.manageSearch)}" data-act="manage-search"></div>
+    ${devs.length ? `<div class="panel">${rows}</div>` : `<div class="empty">${esc(t("devices.empty"))}</div>`}
+    <div class="sectitle">${esc(t("manage.section.scan"))}</div>
+    <div class="panel" style="padding:4px 14px;margin-bottom:12px">
+      <div style="font-size:11px;color:var(--text-dim);padding:8px 0">${esc(t("manage.ifaces"))}</div>
+      ${IFACES.map((f, i) => `<label class="iface"><input type="checkbox" class="cb" ${f.on ? "checked" : ""} data-act="iface" data-i="${i}">
+        <span style="flex:1">${esc(f.name)}<span class="mono"> · ${esc(f.cidr)}</span></span></label>`).join("")}
+    </div>
+    <div class="toolbar">
+      <button class="btn primary" style="flex:1" data-act="scan" ${sc.running ? "disabled" : ""}>${
+        sc.running ? '<span class="spin"></span>' : esc(t("manage.scanstart"))}</button>
+    </div>
+    ${scanBody}`;
+}
+
+/* ── ZEITPLAN (schedule_view.py: panel rows mit toggle) ──────────────── */
+function renderSched() {
+  let list = state.schedules;
+  const q = state.ui.schedSearch.toLowerCase();
+  if (q) list = list.filter(s => { const d = byId(s.deviceId); return (d ? d.name : "").toLowerCase().includes(q); });
+  const rows = list.map(sc => {
+    const d = byId(sc.deviceId);
+    const time = `${String(sc.hour).padStart(2, "0")}:${String(sc.minute).padStart(2, "0")}`;
+    const mono = `${formatDays(sc.days)} · ${time} · ${t("sched.action." + sc.action)}`;
+    return `<div class="lrow">
+      <div class="toggle ${sc.enabled ? "on" : ""}" data-act="sc-toggle" data-id="${sc.id}"></div>
+      <div class="info"><div class="t ${sc.enabled ? "" : "dis"}">${esc(d ? d.name : "?")}</div>
+        <div class="mono">${esc(mono)}</div></div>
+      <button class="tile" data-act="sc-edit" data-id="${sc.id}">✏️</button>
+      <button class="tile danger" data-act="sc-del" data-id="${sc.id}">🗑️</button>
+    </div>`;
+  }).join("");
+  $("#s-sched").innerHTML = `
+    <div class="phead"><h1>${esc(t("sched.title"))}</h1>
+      <p class="sub">${esc(t("sched.subtitle"))}</p></div>
+    <div class="toolbar"><button class="btn primary" data-act="add-sched">${esc(t("sched.add"))}</button></div>
+    <div class="search" style="margin-bottom:10px">🔍<input placeholder="${esc(t("sched.search"))}" value="${esc(state.ui.schedSearch)}" data-act="sched-search"></div>
+    ${list.length ? `<div class="panel">${rows}</div>` : `<div class="empty">${esc(t("sched.empty"))}</div>`}`;
+}
+
+/* ── PROTOKOLLE (logs_view.py: level badge · zeit · gerät · nachricht) ── */
+function renderLogs() {
+  const f = state.ui.logFilter, q = state.ui.logSearch.toLowerCase();
+  let rows = state.logs.filter(l => {
+    if (f !== "all" && logLevel(l.status) !== f) return false;
+    if (q && !((l.msg || "") + (l.device || "")).toLowerCase().includes(q)) return false;
+    return true;
+  });
+  $("#s-logs").innerHTML = `
+    <div class="phead"><h1>${esc(t("logs.title"))}</h1>
+      <p class="sub">${esc(t("logs.subtitle"))}</p></div>
+    <div class="search" style="margin-bottom:10px">🔍<input placeholder="${esc(t("logs.search"))}" value="${esc(state.ui.logSearch)}" data-act="log-search"></div>
+    <div class="toolbar">
+      ${["all","info","warn","error"].map(x =>
+        `<button class="filterchip ${f === x ? "on" : ""}" data-act="log-filter" data-f="${x}">${
+          x === "all" ? esc(t("logs.filter.all")) : esc(t("logs.level." + x))}</button>`).join("")}
+      <div style="flex:1"></div>
+      <button class="btn small" data-act="log-export">${esc(t("logs.export"))}</button>
+    </div>
+    ${rows.length ? `<div class="panel">${rows.map(l => {
+      const lv = logLevel(l.status);
+      return `<div class="logrow"><span class="level ${lv}">${esc(t("logs.level." + lv))}</span>
+        <span class="logtime">${esc(fmtLogTime(l.ts))}</span>
+        ${l.device && l.device !== "—" ? `<span class="logdev">${esc(l.device)} ·</span>` : ""}
+        <span class="logmsg">${esc(l.msg)}</span></div>`;
+    }).join("")}</div>` : `<div class="empty">${esc(t("logs.empty"))}</div>`}`;
+}
+
+/* ── EINSTELLUNGEN (settings_view.py) + Info am Ende ─────────────────── */
+function renderSettings() {
+  const s = state.settings;
+  const opt = (v, cur, label) => `<option value="${v}" ${String(cur) === String(v) ? "selected" : ""}>${esc(label)}</option>`;
+  $("#s-set").innerHTML = `
+    <div class="phead"><h1>${esc(t("set.title"))}</h1>
+      <p class="sub">${esc(t("set.subtitle"))}</p></div>
+
+    <div class="sectitle">${esc(t("set.group.network"))}</div>
+    <div class="field" id="sf-ip"><label>${esc(t("set.broadcast_ip"))}</label>
+      <input type="text" id="s-ip" value="${esc(s.broadcast_ip)}">
+      <div class="ferr">${esc(t("set.err.ip"))}</div></div>
+    <div class="field" id="sf-port"><label>${esc(t("set.broadcast_port"))}</label>
+      <input type="number" id="s-port" min="1" max="65535" value="${s.broadcast_port}">
+      <div class="ferr">${esc(t("set.err.port"))}</div></div>
+
+    <div class="sectitle">${esc(t("set.group.appearance"))}</div>
+    <div class="field"><label>${esc(t("set.language"))}</label>
+      <select id="s-lang">
+        ${opt("de", s.language, "Deutsch")}${opt("en", s.language, "English")}${opt("fr", s.language, "Français")}${opt("es", s.language, "Español")}
+      </select></div>
+    <div class="field"><label>${esc(t("set.display_mode"))}</label>
+      <select id="s-dm">
+        ${opt("auto", s.display_mode, t("set.dm.auto"))}${opt("light", s.display_mode, t("set.dm.light"))}${opt("dark", s.display_mode, t("set.dm.dark"))}
+      </select></div>
+
+    <div class="sectitle">${esc(t("set.group.updates"))}</div>
+    <div class="frow"><div>${esc(t("set.auto_update"))}</div>
+      <div class="toggle ${s.auto_update ? "on" : ""}" data-act="set-toggle" data-key="auto_update"></div></div>
+    <div class="field" style="margin-top:12px"><label>${esc(t("set.interval"))}</label>
+      <select id="s-iv">
+        ${opt(24, s.interval, t("set.iv.daily"))}${opt(168, s.interval, t("set.iv.weekly"))}${opt(720, s.interval, t("set.iv.monthly"))}
+      </select></div>
+
+    <div class="sectitle">${esc(t("set.group.logs"))}</div>
+    <div class="field"><label>${esc(t("set.max_logs"))}</label>
+      <input type="number" id="s-maxlogs" min="10" max="10000" step="50" value="${s.max_logs}"></div>
+
+    <div class="sectitle">${esc(t("set.group.remote"))}</div>
+    <div class="field"><label>${esc(t("set.rdp_res"))}</label>
+      <select id="s-rdp">
+        ${opt("auto", s.rdp_res, t("set.rdp_auto"))}${["1280x720","1600x900","1920x1080","2560x1440"].map(r => opt(r, s.rdp_res, r.replaceAll("x", " × "))).join("")}
+      </select></div>
+
+    <div class="infotext">${esc(t("set.info"))}</div>
+    <div class="toolbar" style="margin-top:14px">
+      <button class="btn" data-act="set-reset">${esc(t("set.reset"))}</button>
+      <div style="flex:1"></div>
+      <button class="btn primary" data-act="set-save">${esc(t("set.save"))}</button>
+    </div>
+
+    <div class="infocard">
+      <div class="aboutlogo">W</div>
+      <h2>${esc(t("info.app"))}</h2>
+      <div class="ver">${esc(t("info.version", { v: "2.2.2" }))}</div>
+      <p style="margin-bottom:12px">${esc(t("info.desc"))}</p>
+      <div class="kv"><b>${esc(t("info.protocol"))}</b></div>
+      <div class="kv"><b>${esc(t("info.devices", { n: state.devices.length }))}</b><span>${state.devices.filter(d => d.status === "on").length} online</span></div>
+      <div class="kv"><b>${esc(t("info.sched", { n: state.schedules.length }))}</b></div>
+      <div class="kv"><b>${esc(t("info.logs", { n: state.logs.length }))}</b></div>
+    </div>`;
+}
+function saveSettings() {
+  const ip = $("#s-ip").value.trim();
+  const port = +$("#s-port").value;
+  let bad = false;
+  $("#sf-ip").classList.toggle("invalid", !validIp(ip)); if (!validIp(ip)) bad = true;
+  const portOk = Number.isInteger(port) && port >= 1 && port <= 65535;
+  $("#sf-port").classList.toggle("invalid", !portOk); if (!portOk) bad = true;
+  if (bad) return;
+  state.settings.broadcast_ip = ip;
+  state.settings.broadcast_port = port;
+  state.settings.language = $("#s-lang").value;
+  state.settings.display_mode = $("#s-dm").value;
+  state.settings.interval = +$("#s-iv").value;
+  state.settings.max_logs = Math.max(10, Math.min(10000, +$("#s-maxlogs").value || 100));
+  state.settings.rdp_res = $("#s-rdp").value;
+  if (state.settings.language !== state.lang) { state.lang = state.settings.language; renderAll(); }
+  toast(t("set.saved"));
+  renderSettings();
+}
+function resetSettings() {
+  state.settings = {
+    broadcast_ip: "255.255.255.255", broadcast_port: 9, language: state.lang,
+    display_mode: "dark", auto_update: true, interval: 24, max_logs: 100,
+    rdp_res: "auto", method: "host_service",
+  };
+  renderSettings(); toast(t("set.reset.done"));
+}
+
+/* ═══════════════════════════ Event-Delegation ═══════════════════════════ */
+$("#phone").addEventListener("click", ev => {
+  const nav = ev.target.closest("[data-nav]");
+  if (nav) return go(nav.dataset.nav);
+  const el = ev.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act, id = el.dataset.id;
+  switch (act) {
+    case "view": state.ui.deviceView = state.ui.deviceView === "grid" ? "list" : "grid"; renderDevices(); break;
+    case "refresh": refreshStatus(); toast(t("devices.refresh")); break;
+    case "wake": wakeDevice(byId(id)); break;
+    case "wake-all": wakeAll(); break;
+    case "shutdown": confirmShutdown(byId(id)); break;
+    case "do-shutdown": doShutdown(id); break;
+    case "remote": toast(t("toast.remote")); break;
+    case "add-dev": openDeviceSheet(null); break;
+    case "edit-dev": openDeviceSheet(id); break;
+    case "del-dev": { const d = byId(id); if (d) deleteDevice(id); break; }
+    case "export": exportDevices(); break;
+    case "import": $("#importFile").click(); break;
+    case "scan": startScan(); break;
+    case "scan-add": scanAdd(+el.dataset.i); break;
+    case "iface": { IFACES[+el.dataset.i].on = el.checked; break; }
+    case "add-sched": openSchedSheet(null); break;
+    case "sc-edit": openSchedSheet(id); break;
+    case "sc-toggle": { const sc = state.schedules.find(s => s.id === id); sc.enabled = !sc.enabled; renderSched(); break; }
+    case "sc-del": {
+      const sc = state.schedules.find(s => s.id === id);
+      const d = sc ? byId(sc.deviceId) : null;
+      state.schedules = state.schedules.filter(s => s.id !== id);
+      renderSched(); toast(t("toast.scheddeleted")); break; }
+    case "sc-save": saveSchedFromSheet(); break;
+    case "sc-day": {
+      const e = state.ui.editing, day = el.dataset.day;
+      e.days = e.days.includes(day) ? e.days.filter(x => x !== day) : [...e.days, day];
+      el.classList.toggle("on"); break; }
+    case "log-filter": state.ui.logFilter = el.dataset.f; renderLogs(); break;
+    case "log-export": {
+      if (!state.logs.length) { toast(t("toast.logs"), true); break; }
+      const csv = "Zeit;Gerät;Level;Nachricht\n" + state.logs.map(l =>
+        [new Date(l.ts).toLocaleString(), l.device, l.status, (l.msg || "").replaceAll(";", ",")].join(";")).join("\n");
+      download("wol_log.csv", csv, "text/csv"); toast(t("logs.export")); break; }
+    case "set-toggle": { state.settings[el.dataset.key] = !state.settings[el.dataset.key]; el.classList.toggle("on"); break; }
+    case "set-save": saveSettings(); break;
+    case "set-reset": resetSettings(); break;
+    case "edit-toggle": { const e = state.ui.editing; e[el.dataset.key] = !e[el.dataset.key]; el.classList.toggle("on"); break; }
+    case "dev-save": saveDeviceFromSheet(); break;
+    case "dev-delete": deleteDevice(state.ui.editing?.id || id); break;
+    case "eye": { const inp = $("#i-pass"); inp.type = inp.type === "password" ? "text" : "password"; break; }
+    case "sheet-close": closeSheet(); break;
+  }
+});
+$("#phone").addEventListener("change", ev => {
+  const el = ev.target.closest("[data-act]"); if (!el) return;
+  if (el.dataset.act === "sort") { state.ui.sort = el.value; renderDevices(); }
+  if (el.dataset.act === "iface") { IFACES[+el.dataset.i].on = el.checked; }
+});
+$("#phone").addEventListener("input", ev => {
+  const el = ev.target.closest("[data-act]"); if (!el) return;
+  const act = el.dataset.act;
+  if (act === "search" || act === "manage-search" || act === "sched-search" || act === "log-search") {
+    const key = { search: "search", "manage-search": "manageSearch", "sched-search": "schedSearch", "log-search": "logSearch" }[act];
+    state.ui[key] = el.value;
+    const pos = el.selectionStart;
+    if (act === "search") renderDevices();
+    else if (act === "manage-search") renderManage();
+    else if (act === "sched-search") renderSched();
+    else renderLogs();
+    const sel = { search: '[data-act="search"]', "manage-search": '[data-act="manage-search"]',
+      "sched-search": '[data-act="sched-search"]', "log-search": '[data-act="log-search"]' }[act];
+    const n = document.querySelector(sel);
+    if (n) { n.focus(); n.setSelectionRange(pos, pos); }
+  }
+});
+$("#importFile").addEventListener("change", ev => { if (ev.target.files[0]) importDevices(ev.target.files[0]); ev.target.value = ""; });
+$("#overlay").addEventListener("click", closeSheet);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+
+/* Uhr in der Statusbar */
+setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }, 1000);
+
+renderAll();
+</script>
+</body>
+</html>

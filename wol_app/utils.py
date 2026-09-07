@@ -183,16 +183,35 @@ def _build_rdp_content(
     if fullscreen:
         lines.append("fullscreen:i:1")
     else:
+        # gnome-remote-desktop (Ubuntu) rejects odd session dimensions — see
+        # _even_size — so the geometry keys always carry even pixel values.
+        w, h = _even_size(width), _even_size(height)
         lines.append("fullscreen:i:0")
-        lines.append(f"desktopwidth:i:{int(width)}")
-        lines.append(f"desktopheight:i:{int(height)}")
+        lines.append(f"desktopwidth:i:{w}")
+        lines.append(f"desktopheight:i:{h}")
         # Do not span the window over multiple monitors.
         lines.append("use multimon:i:0")
         # Position the window at 10,10 (winposstr = left,top,right,bottom).
         lines.append(
-            f"winposstr:s:0,1,10,10,{int(width) + 10},{int(height) + 10}"
+            f"winposstr:s:0,1,10,10,{w + 10},{h + 10}"
         )
     return "\r\n".join(lines) + "\r\n"
+
+
+def _even_size(value: int) -> int:
+    """Round *value* down to the nearest even number (never below 0).
+
+    gnome-remote-desktop hosts (Ubuntu 22.04+, the built-in RDP server) run
+    their H.264/AVC encoder over the session framebuffer, which requires
+    **even** width and height. A session requested with an odd dimension is
+    dropped by the server immediately, and mstsc surfaces this as the
+    misleading "Critical error (error code: 5) — not enough virtual memory"
+    dialog. Every session geometry the app generates (desktopwidth/height,
+    /w:/h:, winposstr) is therefore forced to even values so windowed
+    sessions also work against gnome-remote-desktop hosts.
+    """
+    v = max(0, int(value))
+    return v - (v % 2)
 
 
 def _cleanup_rdp_file(path: str, delay: float) -> None:
@@ -422,7 +441,11 @@ def auto_rdp_resolution(
         minimum: Lower clamp (width, height); keeps the window usable.
 
     Returns:
-        A (width, height) 16:9 pair that fits the given screen.
+        A (width, height) 16:9 pair that fits the given screen. Both values
+        are always **even**: gnome-remote-desktop hosts (Ubuntu) reject odd
+        session dimensions (see :func:`_even_size`), and raw screen sizes at
+        fractional DPI scaling multiplied by a fraction routinely produce
+        odd pixel counts.
     """
     if screen_width <= 0 or screen_height <= 0:
         return minimum
@@ -448,7 +471,9 @@ def auto_rdp_resolution(
         target_height = int(round(min_w * 9 / 16))
     if target_height < min_h:
         target_height = min_h
-    return (target_width, target_height)
+    # gnome-remote-desktop (Ubuntu) drops sessions with odd dimensions with
+    # mstsc's "critical error (code 5)" dialog — never hand it odd numbers.
+    return (_even_size(target_width), _even_size(target_height))
 
 
 def _register_rdp_credentials(host: str, username: str, password: str) -> bool:
@@ -583,14 +608,16 @@ def _write_rdp_and_start_mstsc(
 
     # Force the geometry on the command line (reliable) and let the .rdp
     # file supply the credentials. The .rdp path is always the last argument.
+    # Even values only: gnome-remote-desktop rejects odd session dimensions
+    # (see _even_size), and the CLI arguments override the .rdp file keys.
     if fullscreen:
         cmd = ["mstsc", f"/v:{ip}", "/f", rdp_path]
     else:
         cmd = [
             "mstsc",
             f"/v:{ip}",
-            f"/w:{int(width)}",
-            f"/h:{int(height)}",
+            f"/w:{_even_size(width)}",
+            f"/h:{_even_size(height)}",
             rdp_path,
         ]
     try:

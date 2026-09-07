@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wol-host-protocol/request.json",
+  "title": "WOL Host Service request (single JSON line)",
+  "description": "One JSON object per TCP connection, terminated by LF. See protocol/SPEC.md §2.",
+  "type": "object",
+  "required": ["command"],
+  "properties": {
+    "command": {
+      "type": "string",
+      "enum": ["status", "metrics", "shutdown", "reboot", "run_batch"]
+    },
+    "username": { "type": "string" },
+    "password": { "type": "string" },
+    "watch": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    },
+    "script": { "type": "string", "maxLength": 32000 },
+    "timeout": { "type": "number", "minimum": 5, "maximum": 3600 }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": { "properties": { "command": { "const": "metrics" } } },
+      "then": { "required": ["username", "password"] }
+    },
+    {
+      "if": { "properties": { "command": { "enum": ["shutdown", "reboot"] } } },
+      "then": { "required": ["username", "password"] }
+    },
+    {
+      "if": { "properties": { "command": { "const": "run_batch" } } },
+      "then": { "required": ["username", "password", "script"] }
+    }
+  ]
+}

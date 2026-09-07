@@ -13,7 +13,16 @@ metrics and (opt-in) remote script execution.
 
 from __future__ import annotations
 
+import os
 import sys
+
+# A leftover QT_QPA_PLATFORM=offscreen (e.g. exported in the shell for the
+# headless test suite) would make the app start without fonts ("QFontDatabase:
+# Cannot find font directory ...") and break window sizing
+# ("This plugin does not support propagateSizeHints()"). Interactive runs
+# always use the native platform unless the variable is cleared on purpose.
+if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+    del os.environ["QT_QPA_PLATFORM"]
 
 
 def _main_linux():

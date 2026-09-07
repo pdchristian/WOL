@@ -1,0 +1,16 @@
+package de.wolmanager
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import de.wolmanager.ui.WolApp
+
+class MainActivity : ComponentActivity() {
+    private val vm: WolViewModel by viewModels { WolVmFactory(application) }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { WolApp(vm) }
+    }
+}
