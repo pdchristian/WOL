@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.2.2                                                                 |
+| **version**         | 2.2.3                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -768,6 +768,7 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
+| 2.2.3   | 2026-09-08 | Hostname Fix Edition       | Status ping resolves host names to IPv4 first (`resolve_ipv4_all` in `utils.py`, `ping -4`): Windows preferred AAAA records (IPv6 replies lack `TTL=` → false offline) and a Fritz!Box may return several A records (stale DHCP lease + current) in nondeterministic order — every candidate is now probed until one replies; unresolvable names report `unknown` with a resolve hint; `send_wake_packet` interface selection also resolves names |
 | 2.2.2   | 2026-09-06 | Ubuntu Port Edition        | Native Ubuntu/Linux support: `.deb` package (`packaging/`), systemd/PAM Linux Host Service (protocol v4: metrics, watched processes, llama.cpp models), `xfreerdp` Remote Desktop with fast-exit retry; platform shims for crypto (file master key), theme (gsettings) and RDP dispatch; cross-platform ping reply detection (case-insensitive `ttl=`); fixed UI font stack (color emoji + text) for Qt 6.4 |
 | 2.2.1   | 2026-09-05 | Service Watch Edition      | Remote Desktop fast-exit retry: `mstsc` process is monitored; an exit within 10 s with a stored password (xrdp/Ubuntu black-screen pattern) prompts the user and reconnects without the stored password (`TERMSRV/<host>` deleted first, `prompt for password:i:1`), logged as `RDP/WARNING`; all `.rdp` files set `use redirection server name:i:1` (required by xrdp) |
 | 2.2.0   | 2026-09-04 | Service Watch Edition      | Watched processes on the dashboard (up to 8 per device): live status chips (green/amber/grey), services panel with PID/uptime/RAM/CPU + llama.cpp model, `:port` loopback probing, "⚡ Inference active" GPU heuristic, device-dialog field `watch_processes`; host service protocol v3 (`metrics` + `watch` → `processes` map, back-compatible) |

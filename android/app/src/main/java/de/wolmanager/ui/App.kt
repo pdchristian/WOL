@@ -148,37 +148,40 @@ fun AppRoot(viewModel: AppViewModel, snackbar: SnackbarHostState) {
         else -> 0
     }
 
-    Scaffold(
-        containerColor = tokens.bg,
-        snackbarHost = {
-            SnackbarHost(snackbar) { data ->
-                Snackbar(
-                    snackbarData = data,
-                    containerColor = tokens.surfaceHover,
-                    contentColor = tokens.text,
-                    shape = RoundedCornerShape(10.dp),
-                )
-            }
-        },
-        topBar = {
-            if (screen != Screen.DASHBOARD) {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = tokens.text)
-                            if (subtitleRes != 0) {
-                                Text(stringResource(subtitleRes), fontSize = 12.sp, color = tokens.textDim)
+    // Wichtig: Der Provider muss den GESAMTEN Scaffold umschließen — topBar/bottomBar
+    // werden in eigenen Slots komponiert und sehen einen Provider innerhalb des
+    // Content-Lambda nicht (Crash "AppViewModel not provided" in WolBottomBar).
+    CompositionLocalProvider(LocalViewModel provides viewModel) {
+        Scaffold(
+            containerColor = tokens.bg,
+            snackbarHost = {
+                SnackbarHost(snackbar) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        containerColor = tokens.surfaceHover,
+                        contentColor = tokens.text,
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                }
+            },
+            topBar = {
+                if (screen != Screen.DASHBOARD) {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = tokens.text)
+                                if (subtitleRes != 0) {
+                                    Text(stringResource(subtitleRes), fontSize = 12.sp, color = tokens.textDim)
+                                }
                             }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = tokens.bg),
-                )
-            }
-        },
-        bottomBar = { WolBottomBar() },
-    ) { inner ->
-        Box(Modifier.padding(inner).fillMaxSize()) {
-            CompositionLocalProvider(LocalViewModel provides viewModel) {
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = tokens.bg),
+                    )
+                }
+            },
+            bottomBar = { WolBottomBar() },
+        ) { inner ->
+            Box(Modifier.padding(inner).fillMaxSize()) {
                 when (screen) {
                     Screen.DEVICES -> DevicesScreen(snapshot.devices, runtime, toast)
                     Screen.MANAGE -> ManageScreen(snapshot.devices, toast)
