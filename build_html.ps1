@@ -26,7 +26,11 @@ try {
     $apk = Join-Path $proj 'app\build\outputs\apk\debug\app-debug.apk'
     if (-not (Test-Path $apk)) { throw "APK nicht gefunden: $apk" }
     New-Item -ItemType Directory -Force $distDir | Out-Null
-    $out = Join-Path $distDir 'wolmanager-android-html-2.3.0-debug.apk'
+    # Versionsname aus build.gradle.kts lesen, damit der Dateiname immer stimmt
+    $gradleFile = Join-Path $proj 'app\build.gradle.kts'
+    $ver = (Select-String -Path $gradleFile -Pattern 'versionName\s*=\s*"([0-9.]+)"').Matches[0].Groups[1].Value
+    Get-ChildItem $distDir -Filter 'wolmanager-android-html-*-debug.apk' | Remove-Item -Force
+    $out = Join-Path $distDir "wolmanager-android-html-$ver-debug.apk"
     Copy-Item $apk $out -Force
     Get-Item $out | Select-Object Name, Length, LastWriteTime
     Write-Host "OK: $out" -ForegroundColor Green

@@ -68,18 +68,21 @@ final class HostServiceClient {
                       "script": script, "timeout": timeoutSec],
             timeoutMs: timeoutSec * 1000 + 5000, maxBytes: Self.maxBatch)
         guard case let .ok(body) = res else { return (res, nil) }
-        // Wire: exit_code, stdout, stderr, duration_ms (String→Int!), truncated (String→strictBool)
+        return (.ok(body: body), Self.parseBatch(body))
+    }
+
+    /// Wire-Konvertierung: duration_ms darf String sein ("1234"), truncated ebenso ("true").
+    static func parseBatch(_ body: [String: Any]) -> BatchResult {
         let exitCode = (body["exit_code"] as? Int) ?? Int((body["exit_code"] as? String) ?? "") ?? -1
         let stdout = (body["stdout"] as? String) ?? ""
         let stderr = (body["stderr"] as? String) ?? ""
         let durationMs = Int64((body["duration_ms"] as? String) ?? "")
-            ?? Int64((body["duration_ms"] as? Int) ?? 0) ?? 0
+            ?? Int64((body["duration_ms"] as? Int).map(String.init)) ?? 0
         let truncated: Bool
         if let s = body["truncated"] as? String { truncated = (s == "true") }
         else { truncated = (body["truncated"] as? Bool) ?? false }
-        let br = BatchResult(exitCode: exitCode, stdout: stdout, stderr: stderr,
-                             durationMs: durationMs, truncated: truncated)
-        return (.ok(body: body), br)
+        return BatchResult(exitCode: exitCode, stdout: stdout, stderr: stderr,
+                           durationMs: durationMs, truncated: truncated)
     }
 
     /// Schneller TCP-Erreichbarkeitstest (Ping-Ersatz, kein ICMP auf iOS).

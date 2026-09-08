@@ -277,6 +277,7 @@ final class Bridge: NSObject, WKScriptMessageHandler {
         let watch = (p["watch"] as? [String]) ?? existing?.watchProcesses ?? []
 
         return Device(
+            id: id,
             name: pStr(p, "name"),
             mac: pStr(p, "mac"),
             ip: pStr(p, "ip"),
@@ -285,7 +286,6 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             enabled: pBool(p, "enabled") ?? true,
             batches: batches ?? existing?.batches ?? [],
             allowBatch: pBool(p, "allow_batch") ?? existing?.allowBatch ?? false,
-            id: id,
             shutdownMethod: "host_service",
             watchProcesses: watch
         )

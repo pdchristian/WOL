@@ -1,0 +1,511 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA00000000000000000005101 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F101 /* AppDelegate.swift */; };
+		AA00000000000000000005102 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F102 /* SceneDelegate.swift */; };
+		AA00000000000000000005103 /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F103 /* AppContainer.swift */; };
+		AA00000000000000000005104 /* Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F104 /* Bridge.swift */; };
+		AA00000000000000000005105 /* WebViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F105 /* WebViewController.swift */; };
+		AA00000000000000000005106 /* DocumentPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F106 /* DocumentPicker.swift */; };
+		AA00000000000000000005107 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F107 /* Models.swift */; };
+		AA00000000000000000005108 /* Repo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F108 /* Repo.swift */; };
+		AA00000000000000000005109 /* SecureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F109 /* SecureStore.swift */; };
+		AA00000000000000000005110 /* MagicPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F110 /* MagicPacket.swift */; };
+		AA00000000000000000005111 /* HostServiceClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F111 /* HostServiceClient.swift */; };
+		AA00000000000000000005112 /* NetworkScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F112 /* NetworkScanner.swift */; };
+		AA00000000000000000005113 /* ScheduleEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F113 /* ScheduleEngine.swift */; };
+		AA00000000000000000005114 /* ScheduleScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F114 /* ScheduleScheduler.swift */; };
+		AA00000000000000000005115 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F115 /* Validation.swift */; };
+		AA00000000000000000005116 /* Csv.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F116 /* Csv.swift */; };
+		AA00000000000000000005117 /* UpdateCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F117 /* UpdateCheck.swift */; };
+		AA00000000000000000005118 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F118 /* Haptics.swift */; };
+		AA00000000000000000005119 /* RemoteDesktop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F119 /* RemoteDesktop.swift */; };
+		AA00000000000000000005120 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F120 /* Assets.xcassets */; };
+		AA00000000000000000005130 /* WebApp in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F130 /* WebApp */; };
+		AA00000000000000000007101 /* MagicPacketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E101 /* MagicPacketTests.swift */; };
+		AA00000000000000000007102 /* ValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E102 /* ValidationTests.swift */; };
+		AA00000000000000000007103 /* ScheduleEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E103 /* ScheduleEngineTests.swift */; };
+		AA00000000000000000007104 /* CsvTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E104 /* CsvTests.swift */; };
+		AA00000000000000000007105 /* HostServiceProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E105 /* HostServiceProtocolTests.swift */; };
+		AA00000000000000000007106 /* RepoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E106 /* RepoTests.swift */; };
+		AA00000000000000000007107 /* UpdateCheckTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E107 /* UpdateCheckTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000090 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA00000000000000000000A0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA00000000000000000000B0;
+			remoteInfo = WolManager;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		AA00000000000000000000B1 /* Wake-on-LAN Manager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wake-on-LAN Manager.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA00000000000000000000C1 /* WolManagerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WolManagerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000F101 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F102 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F103 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F104 /* Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F105 /* WebViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewController.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F106 /* DocumentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPicker.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F107 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F108 /* Repo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repo.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F109 /* SecureStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureStore.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F110 /* MagicPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagicPacket.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F111 /* HostServiceClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostServiceClient.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F112 /* NetworkScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkScanner.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F113 /* ScheduleEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleEngine.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F114 /* ScheduleScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleScheduler.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F115 /* Validation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Validation.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F116 /* Csv.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Csv.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F117 /* UpdateCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheck.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F118 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F119 /* RemoteDesktop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktop.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F120 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA0000000000000000000F121 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA0000000000000000000F130 /* WebApp */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WebApp; sourceTree = "<group>"; };
+		AA0000000000000000000E101 /* MagicPacketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagicPacketTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000E102 /* ValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ValidationTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000E103 /* ScheduleEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleEngineTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000E104 /* CsvTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CsvTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000E105 /* HostServiceProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostServiceProtocolTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000E106 /* RepoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepoTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000E107 /* UpdateCheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA00000000000000000000E1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA00000000000000000000E4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA00000000000000000000A1 = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000601 /* WolManager */,
+				AA0000000000000000000F130 /* WebApp */,
+				AA0000000000000000000608 /* WolManagerTests */,
+				AA00000000000000000000A2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA00000000000000000000A2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA00000000000000000000B1 /* Wake-on-LAN Manager.app */,
+				AA00000000000000000000C1 /* WolManagerTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000601 /* WolManager */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000F101 /* AppDelegate.swift */,
+				AA0000000000000000000F102 /* SceneDelegate.swift */,
+				AA0000000000000000000F103 /* AppContainer.swift */,
+				AA0000000000000000000F121 /* Info.plist */,
+				AA0000000000000000000F120 /* Assets.xcassets */,
+				AA0000000000000000000602 /* WebView */,
+				AA0000000000000000000603 /* Model */,
+				AA0000000000000000000604 /* Net */,
+				AA0000000000000000000605 /* Sched */,
+				AA0000000000000000000606 /* Util */,
+			);
+			path = WolManager;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000602 /* WebView */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000F104 /* Bridge.swift */,
+				AA0000000000000000000F105 /* WebViewController.swift */,
+				AA0000000000000000000F106 /* DocumentPicker.swift */,
+			);
+			path = WebView;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000603 /* Model */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000F107 /* Models.swift */,
+				AA0000000000000000000F108 /* Repo.swift */,
+				AA0000000000000000000F109 /* SecureStore.swift */,
+			);
+			path = Model;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000604 /* Net */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000F110 /* MagicPacket.swift */,
+				AA0000000000000000000F111 /* HostServiceClient.swift */,
+				AA0000000000000000000F112 /* NetworkScanner.swift */,
+			);
+			path = Net;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000605 /* Sched */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000F113 /* ScheduleEngine.swift */,
+				AA0000000000000000000F114 /* ScheduleScheduler.swift */,
+			);
+			path = Sched;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000606 /* Util */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000F115 /* Validation.swift */,
+				AA0000000000000000000F116 /* Csv.swift */,
+				AA0000000000000000000F117 /* UpdateCheck.swift */,
+				AA0000000000000000000F118 /* Haptics.swift */,
+				AA0000000000000000000F119 /* RemoteDesktop.swift */,
+			);
+			path = Util;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000608 /* WolManagerTests */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000E101 /* MagicPacketTests.swift */,
+				AA0000000000000000000E102 /* ValidationTests.swift */,
+				AA0000000000000000000E103 /* ScheduleEngineTests.swift */,
+				AA0000000000000000000E104 /* CsvTests.swift */,
+				AA0000000000000000000E105 /* HostServiceProtocolTests.swift */,
+				AA0000000000000000000E106 /* RepoTests.swift */,
+				AA0000000000000000000E107 /* UpdateCheckTests.swift */,
+			);
+			path = WolManagerTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA00000000000000000000B0 /* WolManager */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA00000000000000000000D1 /* Build configuration list for PBXNativeTarget "WolManager" */;
+			buildPhases = (
+				AA00000000000000000000E0 /* Sources */,
+				AA00000000000000000000E1 /* Frameworks */,
+				AA00000000000000000000E2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WolManager;
+			productName = WolManager;
+			productReference = AA00000000000000000000B1 /* Wake-on-LAN Manager.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AA00000000000000000000C0 /* WolManagerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA00000000000000000000D2 /* Build configuration list for PBXNativeTarget "WolManagerTests" */;
+			buildPhases = (
+				AA00000000000000000000E3 /* Sources */,
+				AA00000000000000000000E4 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000000000000000000091 /* PBXTargetDependency */,
+			);
+			name = WolManagerTests;
+			productName = WolManagerTests;
+			productReference = AA00000000000000000000C1 /* WolManagerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA00000000000000000000A0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					AA00000000000000000000B0 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					AA00000000000000000000C0 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = AA00000000000000000000B0;
+					};
+				};
+			};
+			buildConfigurationList = AA00000000000000000000D0 /* Build configuration list for PBXProject "WolManager" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = de;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				de,
+				en,
+				Base,
+			);
+			mainGroup = AA00000000000000000000A1;
+			productRefGroup = AA00000000000000000000A2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA00000000000000000000B0 /* WolManager */,
+				AA00000000000000000000C0 /* WolManagerTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA00000000000000000000E2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA00000000000000000005120 /* Assets.xcassets in Resources */,
+				AA00000000000000000005130 /* WebApp in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA00000000000000000000E0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA00000000000000000005101 /* AppDelegate.swift in Sources */,
+				AA00000000000000000005102 /* SceneDelegate.swift in Sources */,
+				AA00000000000000000005103 /* AppContainer.swift in Sources */,
+				AA00000000000000000005104 /* Bridge.swift in Sources */,
+				AA00000000000000000005105 /* WebViewController.swift in Sources */,
+				AA00000000000000000005106 /* DocumentPicker.swift in Sources */,
+				AA00000000000000000005107 /* Models.swift in Sources */,
+				AA00000000000000000005108 /* Repo.swift in Sources */,
+				AA00000000000000000005109 /* SecureStore.swift in Sources */,
+				AA00000000000000000005110 /* MagicPacket.swift in Sources */,
+				AA00000000000000000005111 /* HostServiceClient.swift in Sources */,
+				AA00000000000000000005112 /* NetworkScanner.swift in Sources */,
+				AA00000000000000000005113 /* ScheduleEngine.swift in Sources */,
+				AA00000000000000000005114 /* ScheduleScheduler.swift in Sources */,
+				AA00000000000000000005115 /* Validation.swift in Sources */,
+				AA00000000000000000005116 /* Csv.swift in Sources */,
+				AA00000000000000000005117 /* UpdateCheck.swift in Sources */,
+				AA00000000000000000005118 /* Haptics.swift in Sources */,
+				AA00000000000000000005119 /* RemoteDesktop.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA00000000000000000000E3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA00000000000000000007101 /* MagicPacketTests.swift in Sources */,
+				AA00000000000000000007102 /* ValidationTests.swift in Sources */,
+				AA00000000000000000007103 /* ScheduleEngineTests.swift in Sources */,
+				AA00000000000000000007104 /* CsvTests.swift in Sources */,
+				AA00000000000000000007105 /* HostServiceProtocolTests.swift in Sources */,
+				AA00000000000000000007106 /* RepoTests.swift in Sources */,
+				AA00000000000000000007107 /* UpdateCheckTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000091 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA00000000000000000000B0 /* WolManager */;
+			targetProxy = AA0000000000000000000090 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AA00000000000000000000D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA00000000000000000000D4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AA00000000000000000000D5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WolManager/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
+				PRODUCT_MODULE_NAME = WolManager;
+				PRODUCT_NAME = "Wake-on-LAN Manager";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		AA00000000000000000000D6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WolManager/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
+				PRODUCT_MODULE_NAME = WolManager;
+				PRODUCT_NAME = "Wake-on-LAN Manager";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		AA00000000000000000000D7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wake-on-LAN Manager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Wake-on-LAN Manager";
+			};
+			name = Debug;
+		};
+		AA00000000000000000000D8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wake-on-LAN Manager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Wake-on-LAN Manager";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA00000000000000000000D0 /* Build configuration list for PBXProject "WolManager" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000000000000000000D3 /* Debug */,
+				AA00000000000000000000D4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA00000000000000000000D1 /* Build configuration list for PBXNativeTarget "WolManager" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000000000000000000D5 /* Debug */,
+				AA00000000000000000000D6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA00000000000000000000D2 /* Build configuration list for PBXNativeTarget "WolManagerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000000000000000000D7 /* Debug */,
+				AA00000000000000000000D8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AA00000000000000000000A0 /* Project object */;
+}

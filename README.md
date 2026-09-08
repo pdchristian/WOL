@@ -119,6 +119,9 @@ the bridge protocol and a browser demo mode.
 
 #### �📱 Android HTML app (`android_html/`)
 - New companion Android client based on the *Android 5.0* prototype: fullscreen WebView (dark/light theme, DE/EN/FR/ES), Kotlin shell + `@JavascriptInterface` bridge, real Host Service v4 dashboard (CPU/RAM/GPU/VRAM, uptime, watched llama.cpp services), batch console, network scanner, schedules, CSV/JSON log export and update check. Device import/export matches the Windows `devices.json` format. Debug APK via `.\build_html.ps1`
+- **Fixed (2.3.1): host names as device addresses** — status checks and ping now resolve the name to IPv4 explicitly and try every A record (the Host Service listens on IPv4 only, so a dual-stack AAAA preference or a stale DHCP lease no longer marks devices like `blade-18.fritz.box` offline). The Ping action reports what failed (DNS vs. port) directly in the message
+- **Fixed (2.3.2): blank screen after startup** — a stray brace broke the JS language packs, leaving the WebView empty; also bumped so the installed build is identifiable (2.3.1 shipped that regression)
+- The native Compose app under `android/` has been removed; `android_html/` is the Android client
 
 #### 🔄 Remote Desktop: automatic second attempt without password
 - **Fast-exit detection for xrdp/Ubuntu hosts:** when a stored password is used and `mstsc` closes again within 10 seconds (black screen, window vanishes — the typical response of an xrdp host to a wrong password), the app now asks whether to reconnect **without the stored password**. Confirming deletes the `TERMSRV/<host>` entry from the Windows Credential Manager and reopens `mstsc` with the username pre-filled, so the password can be typed directly into the Remote Desktop prompt. The password stored in the device record stays untouched, and a `RDP/WARNING` entry is written to the log

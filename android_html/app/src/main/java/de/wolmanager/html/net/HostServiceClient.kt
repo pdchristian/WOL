@@ -18,6 +18,7 @@ import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.charset.StandardCharsets
@@ -43,8 +44,11 @@ class HostServiceClient(private val port: Int = DEFAULT_PORT) {
         maxBytes: Int,
     ): HostResult = withContext(Dispatchers.IO) {
         try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(host, port), timeoutMs)
+            // Resolve to IPv4 and try every A record — a host name must not
+            // connect via AAAA against the IPv4-only service (see Ipv4Resolver).
+            val connected = connectIpv4(host, port, timeoutMs)
+                ?: return@withContext HostResult.Error(ERR_NO_RESPONSE)
+            connected.use { socket ->
                 socket.soTimeout = timeoutMs
                 val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))
                 writer.write(json.encodeToString(JsonObject.serializer(), payload))
@@ -163,12 +167,72 @@ class HostServiceClient(private val port: Int = DEFAULT_PORT) {
     suspend fun ping(host: String, testPort: Int = DEFAULT_PORT, timeoutMs: Int = 2000): Long? =
         withContext(Dispatchers.IO) {
             val start = System.currentTimeMillis()
+            val socket = connectIpv4(host, testPort, timeoutMs) ?: return@withContext null
+            runCatching { socket.close() }
+            System.currentTimeMillis() - start
+        }
+
+    /**
+     * Connects to the first IPv4 address [host] resolves to. Host names are
+     * resolved to IPv4 explicitly and every A record is tried with a fresh
+     * socket (a failed connect closes its socket, so it cannot be reused),
+     * so a device that also publishes IPv6 (AAAA) or has a stale A record
+     * still connects to the IPv4-only host service. Returns the connected
+     * socket or null when no candidate answered.
+     */
+    private fun connectIpv4(host: String, port: Int, timeoutMs: Int): Socket? {
+        for (ip in Ipv4Resolver.resolveAll(host)) {
             try {
-                Socket().use { s -> s.connect(InetSocketAddress(host, testPort), timeoutMs) }
-                System.currentTimeMillis() - start
+                val s = Socket()
+                s.connect(InetSocketAddress(InetAddress.getByName(ip), port), timeoutMs)
+                return s
             } catch (_: Exception) {
-                null
+                // try the next resolved IPv4 address
             }
+        }
+        return null
+    }
+
+    /**
+     * Diagnose für die UI: DNS-Auflösung + TCP-Erreichbarkeit pro IPv4-Kandidat.
+     * Zeigt, WARUM ein Gerät offline ist (Name nicht auflösbar vs. Dienst antwortet nicht).
+     */
+    data class CandidateResult(val address: String, val ok: Boolean, val rttMs: Long, val error: String)
+    data class HostDiagnosis(
+        val host: String,
+        val resolved: Boolean,
+        val candidates: List<CandidateResult>,
+        val resolveError: String,
+    )
+
+    suspend fun diagnose(host: String, timeoutMs: Int = 2000): HostDiagnosis =
+        withContext(Dispatchers.IO) {
+            if (host.isBlank()) {
+                return@withContext HostDiagnosis(host, false, emptyList(), "no_ip")
+            }
+            val ips = try {
+                Ipv4Resolver.resolveAll(host)
+            } catch (e: Exception) {
+                return@withContext HostDiagnosis(host, false, emptyList(), e.message ?: "resolve_failed")
+            }
+            if (ips.isEmpty()) {
+                return@withContext HostDiagnosis(host, false, emptyList(), "no_ipv4_record")
+            }
+            val results = ips.map { ip ->
+                val start = System.currentTimeMillis()
+                try {
+                    val s = Socket()
+                    s.connect(InetSocketAddress(InetAddress.getByName(ip), port), timeoutMs)
+                    runCatching { s.close() }
+                    CandidateResult(ip, true, System.currentTimeMillis() - start, "")
+                } catch (e: Exception) {
+                    CandidateResult(
+                        ip, false, System.currentTimeMillis() - start,
+                        "${e.javaClass.simpleName}: ${e.message ?: ""}",
+                    )
+                }
+            }
+            HostDiagnosis(host, true, results, "")
         }
 
     companion object {

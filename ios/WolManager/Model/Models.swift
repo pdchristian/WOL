@@ -217,6 +217,32 @@ struct MetricsSnapshot: Codable, Equatable {
         case gpuName = "gpu_name"
         case processes
     }
+
+    init(protocolVersion: Int = 0, hostname: String = "", cpu: Double? = nil, cpuCount: Int? = nil,
+         ramUsed: Double? = nil, ramTotal: Double? = nil, uptime: Double? = nil, gpu: Double? = nil,
+         vramUsed: Double? = nil, vramTotal: Double? = nil, gpuName: String? = nil,
+         processes: [String: WatchInfo] = [:]) {
+        self.protocolVersion = protocolVersion; self.hostname = hostname; self.cpu = cpu
+        self.cpuCount = cpuCount; self.ramUsed = ramUsed; self.ramTotal = ramTotal
+        self.uptime = uptime; self.gpu = gpu; self.vramUsed = vramUsed; self.vramTotal = vramTotal
+        self.gpuName = gpuName; self.processes = processes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        protocolVersion = try c.decodeIfPresent(Int.self, forKey: .protocolVersion) ?? 0
+        hostname = try c.decodeIfPresent(String.self, forKey: .hostname) ?? ""
+        cpu = try c.decodeIfPresent(Double.self, forKey: .cpu)
+        cpuCount = try c.decodeIfPresent(Int.self, forKey: .cpuCount)
+        ramUsed = try c.decodeIfPresent(Double.self, forKey: .ramUsed)
+        ramTotal = try c.decodeIfPresent(Double.self, forKey: .ramTotal)
+        uptime = try c.decodeIfPresent(Double.self, forKey: .uptime)
+        gpu = try c.decodeIfPresent(Double.self, forKey: .gpu)
+        vramUsed = try c.decodeIfPresent(Double.self, forKey: .vramUsed)
+        vramTotal = try c.decodeIfPresent(Double.self, forKey: .vramTotal)
+        gpuName = try c.decodeIfPresent(String.self, forKey: .gpuName)
+        processes = try c.decodeIfPresent([String: WatchInfo].self, forKey: .processes) ?? [:]
+    }
 }
 
 /// Ein Eintrag aus metrics.processes.

@@ -16,7 +16,7 @@ de:{
  "wakeall.done":"Magic Packets erfolgreich an {count} Gerät(e) gesendet.",
  "wol.sent":"Magic Packet an {name} gesendet.","wol.online":"{name} ist online.","wol.fail":"{count} Gerät(e) haben das Paket nicht erhalten.",
  "wol.failone":"Wake-Vorgang für {name} fehlgeschlagen.",
- "ping.ok":"Ping an {ip}: Antwort in {ms} ms","ping.fail":"Ping an {ip}: Ziel nicht erreichbar",
+ "ping.ok":"Ping an {ip}: Antwort in {ms} ms","ping.fail":"Ping an {ip}: Ziel nicht erreichbar","ping.diag.none":"{ip}: kein IPv4-DNS-Eintrag – Smartphone-DNS prüfen (Privates DNS aus?)","ping.diag.fail":"{ip}: Port nicht erreichbar –",
  "remote.demo":"{mode}: verbindungsaufbau zu {name} (Demo)",
  "remote.soon":"Remote-Desktop folgt – bitte die Windows App / Microsoft Remote Desktop verwenden.",
  /* Verwalten */
@@ -131,7 +131,7 @@ en:{
  "wakeall.done":"Magic packets successfully sent to {count} device(s).",
  "wol.sent":"Magic packet sent to {name}.","wol.online":"{name} is online.","wol.fail":"{count} device(s) did not receive the packet.",
  "wol.failone":"Wake failed for {name}.",
- "ping.ok":"Ping to {ip}: reply in {ms} ms","ping.fail":"Ping to {ip}: destination unreachable",
+ "ping.ok":"Ping to {ip}: reply in {ms} ms","ping.fail":"Ping to {ip}: destination unreachable","ping.diag.none":"{ip}: no IPv4 DNS entry – check the phone's DNS (Private DNS off?)","ping.diag.fail":"{ip}: port unreachable –",
  "remote.demo":"{mode}: connecting to {name} (demo)",
  "remote.soon":"Remote desktop coming soon – please use the Windows App / Microsoft Remote Desktop.",
  "manage.subtitle":"Device management & network scan",
@@ -239,7 +239,7 @@ fr:{
  "wakeall.done":"Magic packets envoyés avec succès à {count} appareil(s).",
  "wol.sent":"Magic packet envoyé à {name}.","wol.online":"{name} est en ligne.","wol.fail":"{count} appareil(s) n'ont pas reçu le paquet.",
  "wol.failone":"Échec du réveil de {name}.",
- "ping.ok":"Ping vers {ip} : réponse en {ms} ms","ping.fail":"Ping vers {ip} : destination injoignable",
+ "ping.ok":"Ping vers {ip} : réponse en {ms} ms","ping.fail":"Ping vers {ip} : destination injoignable","ping.diag.none":"{ip} : aucune entrée DNS IPv4 – vérifier le DNS du smartphone (DNS privé désactivé ?)","ping.diag.fail":"{ip} : port inaccessible –",
  "remote.demo":"{mode} : connexion à {name} (démo)",
  "remote.soon":"Bureau à distance bientôt disponible – veuillez utiliser Windows App / Microsoft Remote Desktop.",
  "manage.subtitle":"Gestion des appareils & analyse réseau",
@@ -347,7 +347,7 @@ es:{
  "wakeall.done":"Paquetes mágicos enviados con éxito a {count} dispositivo(s).",
  "wol.sent":"Paquete mágico enviado a {name}.","wol.online":"{name} está en línea.","wol.fail":"{count} dispositivo(s) no recibieron el paquete.",
  "wol.failone":"Fallo al encender {name}.",
- "ping.ok":"Ping a {ip}: respuesta en {ms} ms","ping.fail":"Ping a {ip}: destino inaccesible",
+ "ping.ok":"Ping a {ip}: respuesta en {ms} ms","ping.fail":"Ping a {ip}: destino inaccesible","ping.diag.none":"{ip}: sin entrada DNS IPv4 – compruebe el DNS del smartphone (¿DNS privado desactivado?)","ping.diag.fail":"{ip}: puerto inaccesible –",
  "remote.demo":"{mode}: conectando a {name} (demo)",
  "remote.soon":"Escritorio remoto próximamente – use Windows App / Microsoft Remote Desktop.",
  "manage.subtitle":"Gestión de dispositivos y escaneo de red",
@@ -588,8 +588,14 @@ setInterval(() => { if (state.ui.screen === "devices") refreshStatus(); }, 30000
 
 function pingDevice(d) {
   Native.call("ping", { id: d.id }).then(res => {
-    if (res.ok) toast(t("ping.ok", { ip: d.ip, ms: res.data }));
-    else toast(t("ping.fail", { ip: d.ip }), true);
+    if (!res.ok) { toast(String(res.error || "error"), true); return; }
+    const dg = res.data || {};
+    const cands = dg.candidates || [];
+    const first = cands.find(c => c.ok);
+    if (first) { toast(t("ping.ok", { ip: dg.host || d.ip, ms: first.rttMs })); return; }
+    if (!dg.resolved) { toast(t("ping.diag.none", { ip: dg.host || d.ip }), true); return; }
+    const detail = cands.map(c => "✗ " + c.address + " – " + (c.error || "?")).join("  ");
+    toast(t("ping.diag.fail", { ip: dg.host || d.ip }) + (detail ? " " + detail : ""), true);
   });
 }
 

@@ -23,11 +23,12 @@ enum MagicPacket {
             .uppercased()
             .replacingOccurrences(of: "-", with: ":")
             .replacingOccurrences(of: " ", with: ":")
-        let parts = norm.split(separator: ":")
+        let parts = norm.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 6 else { return nil }
         var out = [UInt8]()
         for p in parts {
-            guard p.count == 2, let b = UInt8(p, radix: 16) else { return nil }
+            // wie Kotlin toInt(16).toByte(): 1-2 Hex-Ziffern, leer/ungültig/>255 → nil
+            guard !p.isEmpty, p.count <= 2, let b = UInt8(p, radix: 16) else { return nil }
             out.append(b)
         }
         return out

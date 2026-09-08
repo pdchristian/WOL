@@ -722,9 +722,9 @@ PowerShell 5.1+ (for build.ps1)
 
 ### 8.3 Android HTML App (`android_html/`, new in 2.3.0)
 
-Separate Android client: fullscreen WebView (UI = HTML/CSS/JS from
-`design_prototype/Android_50.html`) inside a thin Kotlin shell — **not** the
-native Compose app in `android/`.
+The Android client: fullscreen WebView (UI = HTML/CSS/JS from
+`design_prototype/Android_50.html`) inside a thin Kotlin shell. (The earlier
+native Compose app in `android/` was removed in 2.3.1.)
 
 - **Build:** `.\build_html.ps1` (adds `-Tests` for unit tests) →
   `dist_onefile/wolmanager-android-html-<ver>-debug.apk`. Requires

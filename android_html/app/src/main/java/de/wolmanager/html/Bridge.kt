@@ -117,8 +117,19 @@ class Bridge(
         "status" -> JsonPrimitive(container.checkStatus(device(p.str("id"))))
         "ping" -> {
             val d = device(p.str("id"))
-            if (d.ip.isBlank()) fail("no_ip")
-            JsonPrimitive(container.hostClient.ping(d.ip) ?: fail("host_unreachable"))
+            val diag = container.hostClient.diagnose(d.ip.ifBlank { d.mac })
+            buildJsonObject {
+                put("host", diag.host)
+                put("resolved", diag.resolved)
+                put("resolveError", diag.resolveError)
+                put("ok", diag.candidates.any { it.ok })
+                put("candidates", JsonArray(diag.candidates.map { c ->
+                    buildJsonObject {
+                        put("address", c.address); put("ok", c.ok)
+                        put("rttMs", c.rttMs); put("error", c.error)
+                    }
+                }))
+            }
         }
         "metrics" -> metricsJson(p.str("id"))
         "runBatch" -> runBatchJson(p.str("id"), p.str("batchId"))

@@ -1,0 +1,95 @@
+# Wake-on-LAN Manager — iOS (Swift + WKWebView)
+
+Native iOS-App (Swift, UIKit) mit dem Web-Frontend aus `WebApp/` in einer
+`WKWebView` — gleiche Architektur wie `android_html/`, identische
+Funktionalität wie die Windows- und Android-App (Protokoll v4).
+
+Frontend-Referenz: `../design_prototype/iOS_50.html`
+
+## Aufbau
+
+```
+ios/
+├── project.yml                 # XcodeGen-Konfiguration (bevorzugt)
+├── WolManager.xcodeproj        # Mitgeführtes Fallback-Projekt
+├── WebApp/                     # HTML/CSS/JS-Frontend (in den Bundle kopiert)
+│   ├── index.html
+│   ├── app.css                 # iOS-Optik (Dark/Light, Safe-Area, SF-Fonts)
+│   ├── app.js
+│   └── bridge.js               # JS-Bridge (window.Android → native)
+├── WolManager/                 # Swift-Quellen
+│   ├── AppDelegate.swift / SceneDelegate.swift
+│   ├── AppContainer.swift      # Services + Scheduler-Ticker
+│   ├── Info.plist
+│   ├── Assets.xcassets         # AppIcon (1024), AccentColor, LaunchBackground
+│   ├── Model/                  # Models, Repo (JSON-Dateien), SecureStore (Keychain)
+│   ├── Net/                    # MagicPacket, HostServiceClient (TCP 8765), NetworkScanner
+│   ├── Sched/                  # ScheduleEngine + BGAppRefreshTask
+│   ├── Util/                   # Validation, Csv, UpdateCheck, Haptics, RemoteDesktop
+│   └── WebView/                # Bridge (27 Methoden), WebViewController, DocumentPicker
+└── WolManagerTests/            # XCTest-Suite (7 Klassen)
+```
+
+## Build auf dem Mac (Apple Silicon)
+
+Voraussetzungen: macOS mit **Xcode 15+** (iOS-Simulator 16+), optional Homebrew.
+
+### Variante A — XcodeGen (bevorzugt, Projekt aus `project.yml`)
+
+```bash
+brew install xcodegen
+cd ios
+xcodegen generate
+open WolManager.xcodeproj
+```
+
+Dann in Xcode: Target *WolManager* → *Signing & Capabilities* → eigenes
+Team wählen → ▶ (iPhone 15 Simulator).
+
+### Variante B — mitgeführtes `.xcodeproj` direkt öffnen
+
+```bash
+cd ios
+open WolManager.xcodeproj
+```
+
+Das Projekt ist bereits checkt; nur das Signing-Team eintragen.
+
+### Tests
+
+```bash
+cd ios
+xcodebuild -scheme WolManager -destination 'platform=iOS Simulator,name=iPhone 15' test
+```
+
+### Device-Build (Gratis-Apple-ID reicht zum Testen auf dem eigenen iPhone)
+
+Gerät anschließen, in Xcode Team + Bundle-ID `de.wolmanager` setzen,
+„Trust" auf dem Gerät bestätigen, ▶ drücken.
+
+## Berechtigungen / Hinweise
+
+- **Lokales Netzwerk**: Beim ersten Wake/Scan/Status fragt iOS
+  „Standortfreigabe für das lokale Netzwerk" — zwingend *Erlauben*,
+  sonst scheitern WOL, Scan und Host-Service (iOS 14+).
+- **Ping**: iOS erlaubt kein ICMP — die Ping-Funktion mißt die
+  TCP-Verbindungszeit zu Port 8765 (oder Geräte-Port).
+- **Remote-Desktop**: Öffnet die **Microsoft Remote Desktop / Windows App**
+  über `ms-rd://add/host/...` (Schema in `LSApplicationQueriesSchemes`).
+  App installiert? Sonst erscheint ein Hinweis-Toast.
+- **Passwörter** liegen im Keychain
+  (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`), `devices.json`
+  bleibt frei von Klartext — wie auf Android.
+- **Hintergrund**: Zeitpläne laufen best-effort weiter (Timer bei aktiver
+  App + `BGAppRefreshTask` `de.wolmanager.schedule-refresh` mit 20-Minuten-
+  Nachhol-Fenster). iOS kann Hintergrund-Timer jederzeit pausieren —
+  Wecker funktionieren zuverlässig, wenn die App regelmäßig geöffnet wird.
+- **Datenformat**: identisch zur Windows-App (`devices.json` als Array,
+  snake_case-Felder); Export/Import über den iOS-Datei-Picker.
+
+## Bridge-Vertrag (JS ↔ Swift)
+
+Identisch zu `android_html/`: `window.Android.call(callId, method, paramsJson)`
+→ `window.__nativeResult(callId, {ok, data|error})`, Events via
+`window.__nativeEvent({type, ...})`. iOS ergänzt `remote {id, mode}`
+(`ms-rd://`, Fehler `remote.notinstalled`). Details: `WolManager/WebView/Bridge.swift`.

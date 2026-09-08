@@ -6,11 +6,11 @@ import Security
  * devices.json bleibt dadurch frei von Klartext-Passwörtern.
  * Analog zu SecureStore.kt (Android: EncryptedSharedPreferences).
  */
-final class SecureStore {
+open class SecureStore {
 
     private let service = "de.wolmanager.device"
 
-    func getPassword(deviceId: String) -> String {
+    open func getPassword(deviceId: String) -> String {
         var query: [String: Any] = baseQuery(deviceId)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -21,7 +21,7 @@ final class SecureStore {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    func setPassword(deviceId: String, password: String) {
+    open func setPassword(deviceId: String, password: String) {
         if password.isEmpty {
             removePassword(deviceId: deviceId)
             return
@@ -36,7 +36,7 @@ final class SecureStore {
         }
     }
 
-    func removePassword(deviceId: String) {
+    open func removePassword(deviceId: String) {
         SecItemDelete(baseQuery(deviceId) as CFDictionary)
     }
 

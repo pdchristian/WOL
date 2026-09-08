@@ -2,8 +2,8 @@
 
 Eigenständige Android-Variante als **WebView-Shell**: Die komplette UI ist HTML/CSS/JS
 (abgeleitet vom Prototyp `design_prototype/Android_50.html`) und wird von einer dünnen
-Kotlin-Schicht mit nativen Fähigkeiten versorgt. Die native Compose-App unter `android/`
-bleibt unverändert als Referenz erhalten.
+Kotlin-Schicht mit nativen Fähigkeiten versorgt. (Eine frühere native Compose-Variante
+unter `android/` wurde mit 2.3.1 entfernt; diese App ist die Android-Version.)
 
 ## Build
 
@@ -14,7 +14,7 @@ Voraussetzungen (wie in `build_html.ps1` hinterlegt):
 - Android SDK: `C:\Users\cp\AppData\Local\Android\Sdk` (in `local.properties`)
 
 ```powershell
-# APK bauen (-> dist_onefile\wolmanager-android-html-2.3.0-debug.apk)
+# APK bauen (-> dist_onefile\wolmanager-android-html-<version>-debug.apk)
 .\build_html.ps1
 
 # inklusive Unit-Tests
@@ -22,9 +22,9 @@ Voraussetzungen (wie in `build_html.ps1` hinterlegt):
 ```
 
 Installation auf dem Gerät: APK kopieren und öffnen (Debug-Signatur), z. B.
-`adb install -r dist_onefile\wolmanager-android-html-2.3.0-debug.apk`.
+`adb install -r dist_onefile\wolmanager-android-html-2.3.1-debug.apk`.
 
-Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.0`,
+Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.1`,
 minSdk 26, compileSdk 34, AGP 8.5.2, Kotlin 2.0.21 – **kein Compose**.
 
 ## Architektur
