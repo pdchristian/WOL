@@ -70,6 +70,7 @@ fun DevicesScreen(devices: List<Device>, runtime: Map<String, ConnState>, toast:
     var confirmWakeAll by remember { mutableStateOf(false) }
     var confirmShutdown by remember { mutableStateOf<Device?>(null) }
     var confirmDelete by remember { mutableStateOf<Device?>(null) }
+    var diagnoseMsg by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val sortOptions = listOf(
         stringResource(R.string.sort_name),
@@ -88,6 +89,10 @@ fun DevicesScreen(devices: List<Device>, runtime: Map<String, ConnState>, toast:
     val savedMsg = stringResource(R.string.dev_saved)
     val remoteMsg = stringResource(R.string.remote_unavailable)
     val shutdownLabel = stringResource(R.string.devices_shutdown)
+    val diagHeadMsg = stringResource(R.string.diag_head)
+    val diagNoneMsg = stringResource(R.string.diag_none)
+    val diagOkMsg = stringResource(R.string.diag_ok)
+    val diagFailMsg = stringResource(R.string.diag_fail)
 
     val onlineCount = devices.count { runtime[it.id] == ConnState.ONLINE }
     val filtered = remember(devices, search, sortIdx, runtime) {
@@ -188,11 +193,19 @@ fun DevicesScreen(devices: List<Device>, runtime: Map<String, ConnState>, toast:
             onPing = {
                 menuDevice = null
                 scope.launch {
-                    val rtt = container.hostClient.ping(d.ip.ifBlank { d.mac })
-                    toast(
-                        if (rtt != null) String.format(pingOkMsg, d.ip, rtt.toString())
-                        else String.format(pingFailMsg, d.ip)
-                    )
+                    val target = d.ip.ifBlank { d.mac }
+                    val diag = container.hostClient.diagnose(target)
+                    val msg = if (!diag.resolved) {
+                        String.format(diagNoneMsg, target)
+                    } else {
+                        val head = String.format(diagHeadMsg, target, diag.candidates.size.toString())
+                        val lines = diag.candidates.joinToString("\n") { c ->
+                            if (c.ok) String.format(diagOkMsg, c.address, c.rttMs.toString())
+                            else String.format(diagFailMsg, c.address, c.error)
+                        }
+                        "$head\n$lines"
+                    }
+                    diagnoseMsg = d.name to msg
                 }
             },
             onEdit = { menuDevice = null; editDevice = d },
@@ -254,6 +267,17 @@ fun DevicesScreen(devices: List<Device>, runtime: Map<String, ConnState>, toast:
                 toast(deletedMsg)
             },
             onDismiss = { confirmDelete = null },
+        )
+    }
+
+    // ── Diagnose-Dialog (Ping/Erreichbarkeit) ──────────────────────────────
+    diagnoseMsg?.let { (name, msg) ->
+        WolConfirm(
+            title = String.format(stringResource(R.string.diag_title), name),
+            message = msg,
+            confirmLabel = stringResource(R.string.ok),
+            onConfirm = { diagnoseMsg = null },
+            onDismiss = { diagnoseMsg = null },
         )
     }
 

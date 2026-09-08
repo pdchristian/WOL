@@ -219,6 +219,12 @@ class SettingsView(QWidget):
             "settings.label.default_shutdown_method", self.default_method_combo)
         grid.addWidget(self.field_shutdown_method, 4, 1)
 
+        # Keep the app alive in the notification area when the window is
+        # closed (modern layout; ignored when no system tray is available).
+        self.close_to_tray_toggle = ToggleWithLabel(
+            Translations.tr("settings.label.close_to_tray"))
+        grid.addWidget(self.close_to_tray_toggle, 5, 1)
+
         layout.addLayout(grid)
 
         # ── Info label ──
@@ -282,6 +288,7 @@ class SettingsView(QWidget):
         self._select_combo_data(
             self.remote_desktop_resolution_combo,
             self.config.get_remote_desktop_resolution())
+        self.close_to_tray_toggle.setChecked(self.config.get_close_to_tray())
 
     def _save(self) -> None:
         ip: str = self.broadcast_ip_input.text().strip()
@@ -339,6 +346,9 @@ class SettingsView(QWidget):
         if selected_resolution:
             self.config.set_remote_desktop_resolution(selected_resolution)
 
+        # Applied live via settings_saved → _apply_tray_mode (no restart).
+        self.config.set_close_to_tray(self.close_to_tray_toggle.isChecked())
+
         QMessageBox.information(
             self, Translations.tr("dialog.saved.title"),
             Translations.tr("dialog.saved.message"))
@@ -372,6 +382,7 @@ class SettingsView(QWidget):
         ui["language"] = DEFAULT_CONFIG["ui"]["language"]
         ui["display_mode"] = "auto"
         ui["remote_desktop_resolution"] = DEFAULT_CONFIG["ui"]["remote_desktop_resolution"]
+        ui["close_to_tray"] = DEFAULT_CONFIG["ui"]["close_to_tray"]
         self.config.save()
 
         Translations.set_language(DEFAULT_CONFIG["ui"]["language"])
@@ -416,6 +427,8 @@ class SettingsView(QWidget):
             self.update_interval_combo.setItemText(idx, Translations.tr(key))
         self.auto_update_toggle.setText(
             Translations.tr("settings.check.auto_update"))
+        self.close_to_tray_toggle.setText(
+            Translations.tr("settings.label.close_to_tray"))
         self.remote_desktop_resolution_combo.setItemText(
             0, Translations.tr("settings.label.remote_desktop_resolution_auto"))
         for idx, key in enumerate(

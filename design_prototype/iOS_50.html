@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WOL Manager">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<title>WOL Manager iOS v5 – Interaktiver Prototyp</title>
+<!--
+  ============================================================================
+  WOL Manager iOS v5 – INTERAKTIVER Prototyp (Simulation, kein Build nötig)
+  ----------------------------------------------------------------------------
+  • Basis: Android_50.html – Inhalte, Struktur und Funktionen 1:1 übernommen
+  • Navigation (5 Tabs): Geräte · Verwalten · Zeitplan · Protokolle · Einstellungen
+    → spiegelt die Windows-Modern-UI-Sidebar (modern_main_window.py, NAV_DEFS)
+  • iOS-Plattform-Korrekturen: SF-Systemschrift, Statusbar mit Dynamic Island,
+    Home-Indicator, iOS-Schalter (51×31), „‹"-Zurück, iPhone-16-Frame (393×852)
+  • iOS-Optik: transluzente Tab-Bar (Blur), iOS-Eckenradien (13/12 px),
+    iOS-Systemfarbtöne (Hell/Dunkel); Akzentfarbe bleibt Teal wie Android
+  • „Info" (Über + Update-Prüfung) hängt unten an den Einstellungen
+  • „Beenden" gibt es unter iOS nicht (entfällt)
+  • Geräte-Dashboard wie Windows: 📊-Kachel öffnet Screen mit ‹ Geräte-Back,
+    Dienste, 4 Metrik-Ringen, Batches + Konsole
+  Öffnen: direkt im Browser (F12 → Handy-Emulation empfohlen).
+  ============================================================================
+-->
+<style>
+  /* iOS-Systemfarbtöne (Dark/HLS), Akzent bleibt Teal wie im Android-Prototyp */
+  :root{
+    --bg:#000000; --surface:#1c1c1e; --surface-hover:#2c2c2e; --border:#38383a;
+    --text:#ffffff; --text-dim:#98989f; --accent:#00b8a9; --accent-dark:#006b63;
+    --accent-text:#032019;
+    --online:#30d158; --offline:#ff453a; --unknown:#ff9f0a; --danger:#ff453a;
+    --svc:#ff9f0a; --blue:#0a84ff;
+    --gauge-cpu:#00b8a9; --gauge-ram:#0a84ff; --gauge-gpu:#bf5af2; --gauge-vram:#ff9f0a;
+    --console-bg:#0c0e13;
+    --sep:rgba(84,84,88,.6); --grab:rgba(120,120,128,.6); --toggle-off:#39393d;
+    --tabbar-bg:rgba(28,28,30,.78); --home-ind:rgba(235,235,245,.9);
+    --toast-bg:rgba(46,46,48,.94); --toast-fg:#ffffff;
+  }
+  .phone[data-theme="light"]{
+    --bg:#f2f2f7; --surface:#ffffff; --surface-hover:#e9e9eb; --border:#d1d1d6;
+    --text:#1c1c1e; --text-dim:#6c6c70; --accent:#009688; --accent-dark:#00695f;
+    --accent-text:#ffffff;
+    --online:#34c759; --offline:#ff3b30; --unknown:#ff9500; --danger:#ff3b30;
+    --svc:#ff9500; --blue:#007aff;
+    --gauge-cpu:#009688; --gauge-ram:#007aff; --gauge-gpu:#af52de; --gauge-vram:#ff9500;
+    --console-bg:#f7f8fa;
+    --sep:rgba(60,60,67,.29); --grab:rgba(60,60,67,.36); --toggle-off:#e9e9ea;
+    --tabbar-bg:rgba(249,249,249,.78); --home-ind:rgba(0,0,0,.85);
+    --toast-bg:rgba(30,30,32,.88); --toast-fg:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;
+    font-family:-apple-system,"SF Pro Text","SF Pro Display","Helvetica Neue",system-ui,sans-serif}
+  body{background:#000;display:flex;align-items:center;justify-content:center;
+    min-height:100vh;padding:16px;overflow:auto;-webkit-font-smoothing:antialiased}
+  .phone{position:relative;width:393px;height:852px;background:var(--bg);color:var(--text);
+    display:flex;flex-direction:column;overflow:hidden;border:2px solid #2a2a2e;border-radius:52px}
+  /* ── iOS-Statusbar mit Dynamic Island + Home-Indicator ─────────────────── */
+  .statusbar{position:relative;display:flex;align-items:center;justify-content:space-between;
+    height:54px;flex-shrink:0;padding:16px 32px 0;font-size:15px;font-weight:600;color:var(--text)}
+  .island{position:absolute;left:50%;top:11px;transform:translateX(-50%);width:122px;height:35px;
+    border-radius:20px;background:#000;box-shadow:0 0 0 1px rgba(255,255,255,.07);pointer-events:none}
+  .sb-right{display:flex;align-items:center;gap:6px}
+  .homebar{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);width:134px;height:5px;
+    border-radius:999px;background:var(--home-ind);z-index:35;pointer-events:none}
+  .screen{flex:1;overflow-y:auto;padding:14px 16px 96px;display:none;animation:fade .18s}
+  .screen.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+  /* ── Typografie wie modern_theme.py (pageTitle 21/600, subtitle 12 dim) ── */
+  .pageTitle{font-size:21px;font-weight:700;letter-spacing:-.3px}
+  .pageSub{color:var(--text-dim);font-size:12px;margin-top:2px}
+  .sectionHeading{font-size:14px;font-weight:600;color:var(--text-dim);margin:18px 0 8px}
+  .toprow{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:8px}
+  .toolbar{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--text-dim)}
+  /* ── Buttons (iOS: radius 10, primary=accent, destructive=danger) ─────── */
+  .btn{border:1px solid var(--border);border-radius:10px;padding:10px 13px;font-size:13px;
+    font-weight:600;background:var(--surface);color:var(--text);cursor:pointer;text-align:center}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn.primary{background:var(--accent);color:var(--accent-text);border:none}
+  .btn.primary:active{background:var(--accent-dark)}
+  .btn.danger{background:rgba(255,69,58,.12);color:var(--danger);border-color:rgba(255,69,58,.4)}
+  .btn.small{padding:7px 10px;font-size:12px;border-radius:10px}
+  .iconBtn{width:36px;height:36px;flex-shrink:0;border:1px solid var(--border);border-radius:10px;
+    background:var(--surface);color:var(--text);font-size:15px;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center}
+  .iconBtn:active{border-color:var(--accent);color:var(--accent)}
+  .spacer{flex:1}
+  /* Action-Kacheln 36×36 wie #tileButton / #tileDanger */
+  .tileBtn{width:36px;height:36px;border:1px solid var(--border);border-radius:10px;
+    background:var(--surface);font-size:15px;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;flex-shrink:0}
+  .tileBtn:active{background:var(--accent);border-color:var(--accent)}
+  .tileDanger:active{background:var(--danger);border-color:var(--danger)}
+  /* wake/shutdown outline buttons wie Windows-Kachel */
+  .wakeBtn{width:100%;border:1px solid var(--accent);color:var(--accent);background:transparent;
+    border-radius:10px;padding:9px;font-size:13px;font-weight:600;cursor:pointer}
+  .wakeBtn:active{background:var(--accent);color:var(--accent-text)}
+  .shutdownBtn{width:100%;border:1px solid var(--danger);color:var(--danger);background:transparent;
+    border-radius:10px;padding:9px;font-size:13px;font-weight:600;cursor:pointer}
+  .shutdownBtn:active{background:var(--danger);color:#fff}
+  /* ── Statuspunkte (10px, NUR Punkt wie Windows) ──────────────────────── */
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0}
+  .dotOnline{background:var(--online);box-shadow:0 0 8px var(--online)}
+  .dotOffline{background:var(--offline)}
+  .dotUnknown{background:var(--unknown)}
+  .dotWaking{background:var(--unknown);animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.3}}
+  /* ── Panels + Zeilen (iOS-In-Grouped: radius 12, ROW 64px, Separator-Inset) ── */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .row64{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 14px}
+  .sep{height:1px;background:var(--sep);margin-left:14px}
+  .rowTitle{font-size:14px;font-weight:600}
+  .rowTitle.dis{color:var(--text-dim)}
+  .rowInfo{flex:1;min-width:0}
+  .rowInfo .mono{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .tiles{display:flex;gap:6px;align-items:center}
+  /* ── Geräte-Kacheln (2 Spalten auf Mobil) ────────────────────────────── */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:13px;
+    padding:14px;position:relative}
+  .card.dis{opacity:.55}
+  .card .dot{position:absolute;top:14px;right:14px}
+  .card .name{font-size:14px;font-weight:600;padding-right:16px;word-break:break-word}
+  .card .mono{display:block;margin-top:2px}
+  .card .tiles{margin-top:12px}
+  .card .wakeBtn,.card .shutdownBtn{margin-top:10px}
+  /* ── Bottom-Nav: 5 Bereiche (iOS Tab-Bar mit Blur, Icons wie Windows-Sidebar) ── */
+  .bottomnav{display:flex;background:var(--tabbar-bg);backdrop-filter:blur(20px) saturate(180%);
+    -webkit-backdrop-filter:blur(20px) saturate(180%);border-top:1px solid var(--sep);
+    padding:8px 2px 26px;z-index:20}
+  .nav{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;
+    border:none;color:var(--text-dim);font-size:10px;cursor:pointer;padding:6px 0}
+  .nav .i{font-size:20px}
+  .nav.active{color:var(--accent);font-weight:600}
+  /* ── Suche / Selects ─────────────────────────────────────────────────── */
+  /* Hinweis iOS: echte WebView öffnet bei Feldern < 16 px die Tastatur mit Zoom.
+     Für eine produktive Umsetzung die Feldgrößen auf 16 px setzen (oder
+     javascriptCore / WKWebView-Zoom deaktivieren). */
+  .search{display:flex;gap:8px;align-items:center;background:var(--surface);
+    border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin-bottom:10px}
+  .search input{background:none;border:none;outline:none;color:var(--text);flex:1;font-size:13px}
+  select.sel{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    color:var(--text);padding:9px 10px;font-size:12px;outline:none}
+  input.inp{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    color:var(--text);padding:10px 12px;font-size:13px;outline:none;width:100%}
+  input.inp:focus,select.sel:focus{border-color:var(--accent)}
+  /* ── Toggle-Switch (iOS: 51×31, weisser Slider mit Schatten) ──────────── */
+  .toggle{width:51px;height:31px;border-radius:999px;background:var(--toggle-off);position:relative;
+    cursor:pointer;flex-shrink:0;transition:background .18s}
+  .toggle::after{content:"";position:absolute;width:27px;height:27px;border-radius:50%;
+    background:#fff;top:2px;right:22px;transition:right .18s;
+    box-shadow:0 2px 4px rgba(0,0,0,.2),0 0 2px rgba(0,0,0,.1)}
+  .toggle.on{background:var(--accent)} .toggle.on::after{right:2px}
+  .togRow{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:12px 14px;font-size:13.5px}
+  /* ── Badges (Logs radius 6 / Status-Pill) ────────────────────────────── */
+  .lvl{width:64px;height:18px;border-radius:6px;font-size:10px;font-weight:700;flex-shrink:0;
+    display:inline-flex;align-items:center;justify-content:center}
+  .badgeInfo{background:rgba(10,132,255,.15);color:var(--blue)}
+  .badgeWarn{background:rgba(255,159,10,.15);color:var(--unknown)}
+  .badgeError{background:rgba(255,69,58,.15);color:var(--offline)}
+  .pill{font-size:10px;font-weight:700;border-radius:999px;padding:3px 10px;flex-shrink:0}
+  .pillOnline{background:rgba(48,209,88,.15);color:var(--online)}
+  .pillOffline{background:rgba(255,69,58,.15);color:var(--offline)}
+  .pillUnknown{background:rgba(255,159,10,.15);color:var(--unknown)}
+  /* ── Einstellungen-Felder (label above, Windows #fieldLabel) ─────────── */
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:5px}
+  .field .hint{font-size:11px;color:var(--text-dim);margin-top:5px;line-height:1.4}
+  .infoBlock{color:var(--text-dim);font-size:12px;line-height:1.55;padding:12px 14px;
+    border:1px dashed var(--border);border-radius:10px;margin-top:14px}
+  /* ── Protokoll-Zeile (48px, Badge/Zeit/Gerät/Nachricht) ──────────────── */
+  .logrow{display:flex;align-items:center;gap:8px;min-height:48px;padding:8px 12px}
+  .logrow .t{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--text-dim);flex-shrink:0;width:76px}
+  .logrow .dv{font-size:11.5px;color:var(--text-dim);flex-shrink:0;max-width:80px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .logrow .m{font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* ── Scan ─────────────────────────────────────────────────────────────── */
+  .progress{height:6px;border-radius:8px;background:var(--surface-hover);overflow:hidden;margin:10px 0}
+  .progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
+  .badge{font-size:10px;border-radius:999px;padding:2px 8px;font-weight:700}
+  .badge.new{background:rgba(0,184,169,.16);color:var(--accent)}
+  .badge.known{background:var(--surface-hover);color:var(--text-dim)}
+  .empty{text-align:center;color:var(--text-dim);padding:40px 10px;font-size:13px}
+  /* ── Dashboard ───────────────────────────────────────────────────────── */
+  .chip{display:inline-flex;gap:6px;align-items:center;border-radius:999px;padding:4px 10px;
+    font-size:11px;font-weight:600;margin:3px 4px 3px 0}
+  .chip.run{background:rgba(48,209,88,.14);color:var(--online)}
+  .chip.probe{background:rgba(255,159,10,.14);color:var(--svc)}
+  .chip.off{background:var(--surface-hover);color:var(--text-dim)}
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+  .metricCard{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:12px}
+  .metricCard .mt{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:600;
+    letter-spacing:1px;color:var(--text-dim)}
+  .metricCard .mt i{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .gauge{--v:0;--c:var(--accent);width:84px;height:84px;border-radius:50%;margin:8px auto;
+    background:conic-gradient(var(--c) calc(var(--v)*1%),var(--surface-hover) 0)}
+  .gauge .in{width:66px;height:66px;border-radius:50%;background:var(--surface);margin:9px;
+    display:flex;align-items:center;justify-content:center;flex-direction:column}
+  .gauge b{font-size:17px}
+  .mdet{font-size:10.5px;color:var(--text-dim);text-align:center;margin-top:2px}
+  .console{background:var(--console-bg);border:1px solid var(--border);border-radius:10px;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#8ef0c8;padding:10px;margin-top:8px;
+    max-height:150px;overflow-y:auto;white-space:pre-wrap}
+  .console .err{color:#ff8d8d} .console .dim{color:var(--text-dim)}
+  textarea.code{width:100%;background:var(--console-bg);color:var(--text);border:1px solid var(--border);
+    border-radius:10px;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12px;padding:10px;min-height:76px;
+    outline:none;resize:vertical}
+  .batchItem{padding:10px 12px;font-size:13px;cursor:pointer}
+  .batchItem.sel{background:rgba(0,184,169,.14);color:var(--accent)}
+  .warnbox{border-radius:12px;padding:12px;font-size:12.5px;margin:12px 0;line-height:1.45}
+  .warnbox.warn{background:rgba(255,159,10,.12);color:var(--unknown);border:1px solid rgba(255,159,10,.4)}
+  .warnbox.err{background:rgba(255,69,58,.12);color:var(--danger);border:1px solid rgba(255,69,58,.4)}
+  /* ── Bottom-Sheet / Dialoge (iOS: 14px Radius, Grabber) ──────────────── */
+  .overlay{position:absolute;inset:0;background:rgba(0,0,0,.4);display:none;z-index:40}
+  .overlay.open{display:block}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);
+    border-radius:14px 14px 0 0;padding:10px 18px 34px;max-height:82%;overflow-y:auto;
+    transform:translateY(105%);transition:transform .28s cubic-bezier(.32,.72,0,1);z-index:50;border-top:1px solid var(--sep)}
+  .sheet.open{transform:translateY(0)}
+  .sheet h2{font-size:17px;font-weight:600;margin-bottom:14px}
+  .grab{width:36px;height:5px;border-radius:999px;background:var(--grab);margin:0 auto 14px}
+  .sheetbtns{display:flex;gap:10px;margin-top:16px}
+  .menuitem{display:flex;align-items:center;gap:10px;padding:13px 4px;font-size:14px;cursor:pointer;
+    border-bottom:1px solid var(--border)}
+  .menuitem:last-of-type{border-bottom:none}
+  .menuitem.dis{opacity:.4;pointer-events:none}
+  .powerIcon{width:64px;height:64px;margin:6px auto 12px;border:4px solid var(--danger);
+    border-radius:50%;border-top-color:transparent;position:relative;transform:rotate(-45deg)}
+  .powerIcon::after{content:"";position:absolute;left:50%;top:-26px;width:4px;height:32px;
+    background:var(--danger);transform:translateX(-50%)}
+  /* ── Toast / Spinner (iOS: dunkle HUD-Blur-Box) ──────────────────────── */
+  .toast{position:absolute;left:32px;right:32px;bottom:120px;background:var(--toast-bg);
+    color:var(--toast-fg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border:none;border-radius:14px;padding:14px 16px;
+    font-size:13px;text-align:center;z-index:60;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:1}
+  .toast.err{background:rgba(255,69,58,.92)}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.35);
+    border-top-color:currentColor;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  /* ── Info-Block (unten an Einstellungen) ─────────────────────────────── */
+  .aboutBlock{text-align:center;padding:22px 10px 8px}
+  .logoTile{width:84px;height:84px;border-radius:20px;margin:0 auto 12px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+    display:flex;align-items:center;justify-content:center;font-size:40px;color:var(--accent-text)}
+  .aboutTitle{font-size:22px;font-weight:600}
+  .aboutVer{color:var(--text-dim);font-size:12px;margin-top:3px}
+  .aboutText{color:var(--text-dim);font-size:12.5px;line-height:1.55;margin:10px auto 14px;max-width:300px}
+  .updStatus{font-size:12.5px;margin-top:10px;min-height:18px}
+</style>
+</head>
+<body>
+<div class="phone" id="phone" data-theme="dark">
+  <div class="statusbar">
+    <span id="clock">09:41</span>
+    <span class="island"></span>
+    <span class="sb-right">
+      <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="7" width="3" height="5" rx="1"/><rect x="5" y="4.5" width="3" height="7.5" rx="1"/><rect x="10" y="2" width="3" height="10" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 9.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM4.3 7.2a5.3 5.3 0 0 1 7.4 0l-1.4 1.4a3.3 3.3 0 0 0-4.6 0L4.3 7.2zM1.8 4.7a8.8 8.8 0 0 1 12.4 0l-1.4 1.4a6.8 6.8 0 0 0-9.6 0L1.8 4.7z"/></svg>
+      <svg width="27" height="13" viewBox="0 0 27 13" fill="none"><rect x=".5" y=".5" width="23" height="12" rx="3.5" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2" fill="currentColor"/><path d="M25 4.5c1.1.35 1.1 3.65 0 4v-4z" fill="currentColor" opacity=".4"/></svg>
+    </span>
+  </div>
+  <div class="homebar"></div>
+
+  <div class="screen active" id="s-devices"></div>
+  <div class="screen" id="s-manage"></div>
+  <div class="screen" id="s-sched"></div>
+  <div class="screen" id="s-logs"></div>
+  <div class="screen" id="s-set"></div>
+  <div class="screen" id="s-dash"></div>
+
+  <!-- 5 Bereiche: wie Windows-Sidebar NAV_DEFS + Einstellungen; „Beenden" entfällt -->
+  <div class="bottomnav">
+    <button class="nav active" data-nav="devices"><span class="i">💻</span><span data-t="nav.devices">Geräte</span></button>
+    <button class="nav" data-nav="manage"><span class="i">🔧</span><span data-t="nav.manage">Verwalten</span></button>
+    <button class="nav" data-nav="sched"><span class="i">🕒</span><span data-t="nav.schedule">Zeitplan</span></button>
+    <button class="nav" data-nav="logs"><span class="i">📋</span><span data-t="nav.logs">Protokolle</span></button>
+    <button class="nav" data-nav="set"><span class="i">⚙️</span><span data-t="nav.settings">Einstellungen</span></button>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <div class="sheet" id="sheet"></div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+"use strict";
+/* ══════════════════════════ i18n — Strings = de.json der Windows-App ═════ */
+const I18N = {
+de:{
+ "nav.devices":"Geräte","nav.manage":"Verwalten","nav.schedule":"Zeitplan","nav.logs":"Protokolle","nav.settings":"Einstellungen",
+ /* Geräte */
+ "devices.summary":"{total} Geräte · {online} online",
+ "devices.empty":"Noch keine Geräte vorhanden. Fügen Sie Geräte im Bereich Verwalten hinzu.",
+ "devices.wake":"Aufwecken","devices.shutdown":"Herunterfahren","devices.wake_all":"Alle starten",
+ "devices.refresh":"Aktualisieren","devices.viewList":"Zur Listenansicht wechseln","devices.viewGrid":"Zur Kachelansicht wechseln",
+ "devices.search":"Suche nach Name, MAC, IP oder Benutzer…",
+ "sort.name":"Name","sort.ip":"IP-Adresse","sort.mac":"MAC-Adresse","sort.status":"Status",
+ "status.online":"Online","status.offline":"Offline","status.unknown":"Unbekannt",
+ "device.me":"(ich)","device.disabled":"Deaktiviert",
+ "button.remote_fullscreen":"Remote Vollbild","button.remote_window":"Remote Fenster","button.dashboard":"Dashboard","button.ping":"Ping",
+ "shutdown.title":"Herunterfahren bestätigen","shutdown.message":"Wollen Sie das Gerät wirklich herunterfahren?",
+ "wakeall.title":"Alle Geräte aktivieren","wakeall.message":"Möchten Sie wirklich alle {count} Geräte aktivieren?",
+ "wakeall.done":"Magic Packets erfolgreich an {count} Gerät(e) gesendet.",
+ "wol.sent":"Magic Packet an {name} gesendet.","wol.online":"{name} ist online.","wol.fail":"{count} Gerät(e) haben das Paket nicht erhalten.",
+ "ping.ok":"Ping an {ip}: Antwort in {ms} ms","ping.fail":"Ping an {ip}: Ziel nicht erreichbar",
+ "remote.demo":"{mode}: verbindungsaufbau zu {name} (Demo)",
+ /* Verwalten */
+ "manage.subtitle":"Geräte-Verwaltung & Netzwerk-Scan",
+ "manage.sec.devices":"Geräte-Verwaltung","manage.sec.scan":"Netzwerk-Scan",
+ "manage.add":"+ Gerät hinzufügen","manage.import":"Importieren","manage.export":"Exportieren",
+ "manage.scan.start":"Scan starten","manage.add.btn":"Hinzufügen",
+ "manage.scan.initial":'Bitte wählen Sie ein Netzwerk aus und klicken Sie auf "Scannen".',
+ "manage.scan.running":"Scanne ausgewählte Netzwerke nach aktiven Geräten",
+ "manage.scan.done":"{count} Gerät(e) gefunden",
+ "manage.scan.none":"Kein Netzwerk ausgewählt","manage.scan.none.msg":"Bitte wählen Sie mindestens ein Netzwerk zum Scannen aus.",
+ "manage.dns":"  |  DNS: {dns}",
+ "edit.title":"Bearbeiten","edit.delete":"Löschen",
+ "del.title":"Löschung bestätigen","del.message":'Möchten Sie das Gerät "{name}" wirklich löschen?',
+ "imp.done":"{count} Gerät(e) importiert.","exp.done":"Geräte exportiert (wol_devices.json).",
+ "scan.known":"bekannt","scan.new":"neu",
+ /* Geräte-Dialog */
+ "dev.add":"Gerät hinzufügen","dev.edit":"Gerät bearbeiten",
+ "dev.name":"Gerätename:","dev.mac":"MAC-Adresse:","dev.ip":"IP-Adresse / Hostname:",
+ "dev.user":"Benutzer:","dev.pass":"Passwort:","dev.method":"Herunterfahr-Methode:",
+ "dev.watch":"Überwachte Prozesse (Dashboard):",
+ "ph.name":"Gerätenamen eingeben","ph.mac":"z.B., AA:BB:CC:DD:EE:FF","ph.ip":"z.B., 192.168.1.100 oder ubuntu-mercury",
+ "ph.user":"Benutzername (optional)","ph.pass":"Passwort (optional)","ph.watch":"z.B., llama-server.exe:8080",
+ "dev.method.host":"Host-Service (empfohlen)","dev.method.smb":"SMB (Windows-Freigabe)",
+ "dev.enabled":"Gerät ist aktiviert","dev.save":"Speichern","dev.update":"Aktualisieren","dev.cancel":"Abbrechen",
+ "err.name":"Bitte einen Namen eingeben.","err.mac":"Ungültige MAC-Adresse (z. B. AA:BB:CC:DD:EE:FF).",
+ "err.ip":"Ungültige IP oder Hostname.",
+ "dev.saved":"Gerät gespeichert.","dev.deleted":"Gerät gelöscht.",
+ "mac.unknown.title":"Unbekannte MAC-Adresse","mac.unknown.msg":"Gerät {host} ({ip}) hat eine unbekannte MAC-Adresse. Mit Platzhalter fortfahren?",
+ "mac.dup.title":"Gerät existiert bereits","mac.dup.msg":"Ein Gerät mit der MAC-Adresse {mac} existiert bereits.",
+ /* Zeitplan */
+ "sched.subtitle":"Geräte zeitgesteuert ein- oder ausschalten",
+ "sched.add":"+ Zeitplan erstellen","sched.search":"Zeitpläne suchen…",
+ "sched.empty":"Noch keine Zeitpläne vorhanden. Erstellen Sie Ihren ersten Zeitplan.",
+ "sched.wake":"Aufwecken","sched.shutdown":"Herunterfahren",
+ "sched.days.every":"Täglich","sched.days.weekdays":"Wochentags",
+ "sched.del.title":"Zeitplan löschen","sched.del.message":'Möchten Sie den Zeitplan für "{name}" wirklich löschen?',
+ "sched.no_dev.title":"Keine Geräte","sched.no_dev.msg":"Bitte fügen Sie zuerst ein Gerät hinzu, bevor Sie einen Zeitplan erstellen.",
+ "sc.add":"Neuer Zeitplan","sc.edit":"Zeitplan bearbeiten",
+ "sc.device":"Gerät:","sc.action":"Aktion:","sc.act.wake":"Einschalten","sc.act.shutdown":"Herunterfahren",
+ "sc.time":"Zeit:","sc.days":"Wochentage","sc.enabled":"Zeitplan ist aktiviert",
+ "sc.no_days.title":"Keine Tage","sc.no_days.msg":"Bitte wählen Sie mindestens einen Wochentag.",
+ "sc.unknown":"Unbekanntes Gerät","sc.saved":"Zeitplan gespeichert.",
+ "day.Mon":"Mo","day.Tue":"Di","day.Wed":"Mi","day.Thu":"Do","day.Fri":"Fr","day.Sat":"Sa","day.Sun":"So",
+ /* Protokolle */
+ "logs.subtitle":"Alle Ereignisse der Applikation",
+ "logs.search":"Nachricht oder Gerät suchen…","logs.level.all":"Alle Level",
+ "logs.export":"CSV exportieren","logs.empty":"Keine Protokolleinträge vorhanden.",
+ "logs.exported":"Protokoll exportiert nach {path}","logs.unknown":"Unbekannt",
+ /* Einstellungen */
+ "set.subtitle":"Applikation & Netzwerk konfigurieren",
+ "set.broadcast_ip":"Broadcast-IP","set.broadcast_port":"Broadcast-Port","set.language":"Sprache",
+ "set.display":"Anzeigemodus","set.design":"App-Design","set.design.hint":"Eine Änderung des Designs erfordert einen Neustart der App.",
+ "set.auto_update":"Automatisch nach Updates suchen","set.interval":"Prüfintervall",
+ "set.max_logs":"Maximale Protokolleinträge","set.resolution":"Auflösung","set.method":"Standard-Methode für neue Geräte",
+ "disp.auto":"Auto","disp.light":"Hell","disp.dark":"Dunkel",
+ "design.classic":"Klassische App","design.modern":"Moderne App",
+ "int.day":"Jeden Tag","int.week":"Jede Woche","int.month":"Jeden Monat",
+ "res.opt":"Optimiert 16:9",
+ "set.info":"Wake-on-LAN funktioniert durch das Senden eines speziellen 'Magic Packet' an die MAC-Adresse des Zielgeräts im lokalen Netzwerk. Dazu muss das Gerät Wake-on-LAN unterstützen und es im BIOS/UEFI und in den Systemeinstellungen aktivieren.",
+ "set.reset":"Zurücksetzen","set.save":"Speichern",
+ "set.saved.title":"Einstellungen gespeichert","set.saved.msg":"Einstellungen erfolgreich gespeichert.",
+ "set.reset.title":"Werkseinstellungen wiederherstellen",
+ "set.reset.msg":"Möchten Sie alle Einstellungen auf die Werkseinstellungen zurücksetzen?\n\nGeräte, Zeitpläne und Protokolle bleiben erhalten.",
+ "err.ip_missing":"IP-Adresse fehlt","err.ip_title":"Ungültige IP-Adresse",
+ "err.ip_msg":"Das IP-Adressformat ist ungültig. Verwenden Sie x.x.x.x (z. B. 192.168).",
+ "err.port_title":"Ungültiger Port","err.port_msg":"Die Portnummer muss zwischen 1 und 65535 liegen.",
+ /* Info (unten in Einstellungen) */
+ "about.name":"Wake-on-LAN Manager","about.version":"Version: {v}",
+ "about.desc":"Ein leistungsstärkes Tool zur Verwaltung von Geräten in Ihrem Netzwerk via Wake-on-LAN-Technologie.",
+ "upd.check":"🔄 Nach Updates suchen","upd.changelog":"Changelog",
+ "upd.checking":"Es wird nach Updates gesucht…","upd.ok":"✅ Sie verwenden die aktuellste Version.",
+ "upd.err":"⚠️ {msg}","upd.err.msg":"Die Aktualitätsprüfung konnte nicht durchgeführt werden.",
+ /* Dashboard */
+ "dash.back":"‹ Geräte","dash.interval":"Intervall",
+ "dash.svc":"Dienste","dash.svc.sub":"Überwachte Prozesse","dash.svc.none":"Keine überwachten Prozesse konfiguriert.",
+ "svc.running":"läuft · PID {pid}","svc.ready":"läuft · PID {pid} · API bereit :{port}","svc.unreach":"läuft (PID {pid}), aber Port {port} nicht erreichbar","svc.gone":"Prozess nicht gefunden",
+ "dash.inferenz":"⚡ Inferenz aktiv","dash.model":"🧠 {m}",
+ "m.cpu":"CPU-AUSLASTUNG","m.ram":"RAM-NUTZUNG","m.gpu":"GPU-AUSLASTUNG","m.vram":"VRAM-NUTZUNG",
+ "d.cores":"{n} Kerne","d.gb":"{used} / {total} GB","d.uptime":"Uptime {v}","d.na":"k/A",
+ "hostv":"Host Service v{v}",
+ "batch.title":"Batches","batch.new":"Neu","batch.dup":"Duplizieren","batch.del":"Löschen",
+ "batch.run":"Ausführen","batch.save":"Speichern","batch.clear":"Leeren","batch.out":"Ausgabe",
+ "batch.timeout":"Timeout (s)","batch.allow":"Batches auf diesem Gerät erlauben",
+ "batch.newname":"Neuer Batch","batch.running":"Batch läuft…","batch.exit":"Exit-Code: {c}","batch.dur":"Dauer: {s} s",
+ "batch.empty":"Noch keine Batches. „Neu\" erstellt einen neuen Batch.",
+ "batch.disabled":"Ausführung deaktiviert: „Batches erlauben\" aktivieren und den Host freigeben (WOL Host Service.exe --enable-batch).",
+ "dash.creds":"Für dieses Gerät sind keine Benutzerdaten hinterlegt. Dashboard-Metriken benötigen die Host-Service-Anmeldung.",
+ "dash.unreach":"Host Service nicht erreichbar ({ip}:8765). Läuft der Dienst?",
+ "yes":"Ja","no":"Nein","ok":"OK"
+},
+en:{
+ "nav.devices":"Devices","nav.manage":"Manage","nav.schedule":"Schedule","nav.logs":"Logs","nav.settings":"Settings",
+ "devices.summary":"{total} devices · {online} online",
+ "devices.empty":"No devices yet. Add devices in the Manage area.",
+ "devices.wake":"Wake","devices.shutdown":"Shut down","devices.wake_all":"Start all",
+ "devices.refresh":"Refresh","devices.viewList":"Switch to list view","devices.viewGrid":"Switch to grid view",
+ "devices.search":"Search by name, MAC, IP or user…",
+ "sort.name":"Name","sort.ip":"IP address","sort.mac":"MAC address","sort.status":"Status",
+ "status.online":"Online","status.offline":"Offline","status.unknown":"Unknown",
+ "device.me":"(me)","device.disabled":"Disabled",
+ "button.remote_fullscreen":"Remote fullscreen","button.remote_window":"Remote window","button.dashboard":"Dashboard","button.ping":"Ping",
+ "shutdown.title":"Confirm shutdown","shutdown.message":"Do you really want to shut down the device?",
+ "wakeall.title":"Wake all devices","wakeall.message":"Do you really want to wake all {count} devices?",
+ "wakeall.done":"Magic packets successfully sent to {count} device(s).",
+ "wol.sent":"Magic packet sent to {name}.","wol.online":"{name} is online.","wol.fail":"{count} device(s) did not receive the packet.",
+ "ping.ok":"Ping to {ip}: reply in {ms} ms","ping.fail":"Ping to {ip}: destination unreachable",
+ "remote.demo":"{mode}: connecting to {name} (demo)",
+ "manage.subtitle":"Device management & network scan",
+ "manage.sec.devices":"Device management","manage.sec.scan":"Network scan",
+ "manage.add":"+ Add device","manage.import":"Import","manage.export":"Export",
+ "manage.scan.start":"Start scan","manage.add.btn":"Add",
+ "manage.scan.initial":'Please select a network and click "Scan".',
+ "manage.scan.running":"Scanning selected networks for active devices",
+ "manage.scan.done":"{count} device(s) found",
+ "manage.scan.none":"No network selected","manage.scan.none.msg":"Please select at least one network to scan.",
+ "manage.dns":"  |  DNS: {dns}",
+ "edit.title":"Edit","edit.delete":"Delete",
+ "del.title":"Confirm deletion","del.message":'Do you really want to delete the device "{name}"?',
+ "scan.known":"known","scan.new":"new",
+ "imp.done":"{count} device(s) imported.","exp.done":"Devices exported (wol_devices.json).",
+ "dev.add":"Add device","dev.edit":"Edit device",
+ "dev.name":"Device name:","dev.mac":"MAC address:","dev.ip":"IP address / hostname:",
+ "dev.user":"Username:","dev.pass":"Password:","dev.method":"Shutdown method:",
+ "dev.watch":"Watched processes (Dashboard):",
+ "ph.name":"Enter device name","ph.mac":"e.g., AA:BB:CC:DD:EE:FF","ph.ip":"e.g., 192.168.1.100 or ubuntu-mercury",
+ "ph.user":"Username (optional)","ph.pass":"Password (optional)","ph.watch":"e.g., llama-server.exe:8080",
+ "dev.method.host":"Host service (recommended)","dev.method.smb":"SMB (Windows share)",
+ "dev.enabled":"Device is enabled","dev.save":"Save","dev.update":"Update","dev.cancel":"Cancel",
+ "err.name":"Please enter a name.","err.mac":"Invalid MAC address (e.g. AA:BB:CC:DD:EE:FF).",
+ "err.ip":"Invalid IP or hostname.",
+ "dev.saved":"Device saved.","dev.deleted":"Device deleted.",
+ "mac.unknown.title":"Unknown MAC address","mac.unknown.msg":"Device {host} ({ip}) has an unknown MAC address. Continue with placeholder?",
+ "mac.dup.title":"Device already exists","mac.dup.msg":"A device with MAC address {mac} already exists.",
+ "sched.subtitle":"Switch devices on or off on a schedule",
+ "sched.add":"+ Create schedule","sched.search":"Search schedules…",
+ "sched.empty":"No schedules yet. Create your first schedule.",
+ "sched.wake":"Wake","sched.shutdown":"Shut down",
+ "sched.days.every":"Daily","sched.days.weekdays":"Weekdays",
+ "sched.del.title":"Delete schedule","sched.del.message":'Do you really want to delete the schedule for "{name}"?',
+ "sched.no_dev.title":"No devices","sched.no_dev.msg":"Please add a device first before creating a schedule.",
+ "sc.add":"New schedule","sc.edit":"Edit schedule",
+ "sc.device":"Device:","sc.action":"Action:","sc.act.wake":"Power on","sc.act.shutdown":"Shut down",
+ "sc.time":"Time:","sc.days":"Days of week","sc.enabled":"Schedule is enabled",
+ "sc.no_days.title":"No days","sc.no_days.msg":"Please select at least one day of the week.",
+ "sc.unknown":"Unknown device","sc.saved":"Schedule saved.",
+ "day.Mon":"Mon","day.Tue":"Tue","day.Wed":"Wed","day.Thu":"Thu","day.Fri":"Fri","day.Sat":"Sat","day.Sun":"Sun",
+ "logs.subtitle":"All application events",
+ "logs.search":"Search message or device…","logs.level.all":"All levels",
+ "logs.export":"Export CSV","logs.empty":"No log entries.",
+ "logs.exported":"Log exported to {path}","logs.unknown":"Unknown",
+ "set.subtitle":"Configure application & network",
+ "set.broadcast_ip":"Broadcast IP","set.broadcast_port":"Broadcast port","set.language":"Language",
+ "set.display":"Display mode","set.design":"App design","set.design.hint":"Changing the design requires an app restart.",
+ "set.auto_update":"Automatically check for updates","set.interval":"Check interval",
+ "set.max_logs":"Maximum log entries","set.resolution":"Resolution","set.method":"Default method for new devices",
+ "disp.auto":"Auto","disp.light":"Light","disp.dark":"Dark",
+ "design.classic":"Classic app","design.modern":"Modern app",
+ "int.day":"Every day","int.week":"Every week","int.month":"Every month",
+ "res.opt":"Optimized 16:9",
+ "set.info":"Wake-on-LAN works by sending a special 'Magic Packet' to the MAC address of the target device on the local network. The device must support Wake-on-LAN and have it enabled in BIOS/UEFI and system settings.",
+ "set.reset":"Reset","set.save":"Save",
+ "set.saved.title":"Settings saved","set.saved.msg":"Settings saved successfully.",
+ "set.reset.title":"Restore factory settings",
+ "set.reset.msg":"Do you want to reset all settings to factory defaults?\n\nDevices, schedules and logs are kept.",
+ "err.ip_missing":"IP address missing","err.ip_title":"Invalid IP address",
+ "err.ip_msg":"The IP address format is invalid. Use x.x.x.x (e.g. 192.168).",
+ "err.port_title":"Invalid port","err.port_msg":"The port number must be between 1 and 65535.",
+ "about.name":"Wake-on-LAN Manager","about.version":"Version: {v}",
+ "about.desc":"A powerful tool for managing devices on your network via Wake-on-LAN technology.",
+ "upd.check":"🔄 Check for updates","upd.changelog":"Changelog",
+ "upd.checking":"Checking for updates…","upd.ok":"✅ You are using the latest version.",
+ "upd.err":"⚠️ {msg}","upd.err.msg":"The update check could not be performed.",
+ "dash.back":"‹ Devices","dash.interval":"Interval",
+ "dash.svc":"Services","dash.svc.sub":"Watched processes","dash.svc.none":"No watched processes configured.",
+ "svc.running":"running · PID {pid}","svc.ready":"running · PID {pid} · API ready :{port}","svc.unreach":"running (PID {pid}), but port {port} unreachable","svc.gone":"Process not found",
+ "dash.inferenz":"⚡ Inference active","dash.model":"🧠 {m}",
+ "m.cpu":"CPU LOAD","m.ram":"RAM USAGE","m.gpu":"GPU LOAD","m.vram":"VRAM USAGE",
+ "d.cores":"{n} cores","d.gb":"{used} / {total} GB","d.uptime":"Uptime {v}","d.na":"n/a",
+ "hostv":"Host Service v{v}",
+ "batch.title":"Batches","batch.new":"New","batch.dup":"Duplicate","batch.del":"Delete",
+ "batch.run":"Run","batch.save":"Save","batch.clear":"Clear","batch.out":"Output",
+ "batch.timeout":"Timeout (s)","batch.allow":"Allow batches on this device",
+ "batch.newname":"New batch","batch.running":"Batch running…","batch.exit":"Exit code: {c}","batch.dur":"Duration: {s} s",
+ "batch.empty":"No batches yet. \"New\" creates a new batch.",
+ "batch.disabled":"Execution disabled: enable \"Allow batches\" and release the host (WOL Host Service.exe --enable-batch).",
+ "dash.creds":"No credentials stored for this device. Dashboard metrics require host service sign-in.",
+ "dash.unreach":"Host Service unreachable ({ip}:8765). Is the service running?",
+ "yes":"Yes","no":"No","ok":"OK"
+},
+fr:{
+ "nav.devices":"Appareils","nav.manage":"Gérer","nav.schedule":"Planification","nav.logs":"Journaux","nav.settings":"Paramètres",
+ "devices.summary":"{total} appareils · {online} en ligne",
+ "devices.empty":"Aucun appareil. Ajoutez des appareils dans Gérer.",
+ "devices.wake":"Réveiller","devices.shutdown":"Éteindre","devices.wake_all":"Tout démarrer",
+ "devices.refresh":"Actualiser","devices.viewList":"Passer à la liste","devices.viewGrid":"Passer aux vignettes",
+ "devices.search":"Rechercher nom, MAC, IP ou utilisateur…",
+ "sort.name":"Nom","sort.ip":"Adresse IP","sort.mac":"Adresse MAC","sort.status":"Statut",
+ "status.online":"En ligne","status.offline":"Hors ligne","status.unknown":"Inconnu",
+ "device.me":"(moi)","device.disabled":"Désactivé",
+ "button.remote_fullscreen":"Plein écran","button.remote_window":"Fenêtre","button.dashboard":"Tableau de bord","button.ping":"Ping",
+ "shutdown.title":"Confirmer l'extinction","shutdown.message":"Voulez-vous vraiment éteindre l'appareil ?",
+ "wakeall.title":"Réveiller tous les appareils","wakeall.message":"Voulez-vous vraiment réveiller les {count} appareils ?",
+ "wakeall.done":"Magic packets envoyés avec succès à {count} appareil(s).",
+ "wol.sent":"Magic packet envoyé à {name}.","wol.online":"{name} est en ligne.","wol.fail":"{count} appareil(s) n'ont pas reçu le paquet.",
+ "ping.ok":"Ping vers {ip} : réponse en {ms} ms","ping.fail":"Ping vers {ip} : destination injoignable",
+ "remote.demo":"{mode} : connexion à {name} (démo)",
+ "manage.subtitle":"Gestion des appareils & analyse réseau",
+ "manage.sec.devices":"Gestion des appareils","manage.sec.scan":"Analyse réseau",
+ "manage.add":"+ Ajouter un appareil","manage.import":"Importer","manage.export":"Exporter",
+ "manage.scan.start":"Démarrer l'analyse","manage.add.btn":"Ajouter",
+ "manage.scan.initial":'Veuillez sélectionner un réseau et cliquer sur "Analyser".',
+ "manage.scan.running":"Analyse des réseaux sélectionnés",
+ "manage.scan.done":"{count} appareil(s) trouvé(s)",
+ "manage.scan.none":"Aucun réseau sélectionné","manage.scan.none.msg":"Veuillez sélectionner au moins un réseau à analyser.",
+ "manage.dns":"  |  DNS : {dns}",
+ "edit.title":"Modifier","edit.delete":"Supprimer",
+ "del.title":"Confirmer la suppression","del.message":'Voulez-vous vraiment supprimer l\'appareil "{name}" ?',
+ "scan.known":"connu","scan.new":"nouveau",
+ "imp.done":"{count} appareil(s) importé(s).","exp.done":"Appareils exportés (wol_devices.json).",
+ "dev.add":"Ajouter un appareil","dev.edit":"Modifier l'appareil",
+ "dev.name":"Nom de l'appareil :","dev.mac":"Adresse MAC :","dev.ip":"Adresse IP / nom d'hôte :",
+ "dev.user":"Utilisateur :","dev.pass":"Mot de passe :","dev.method":"Méthode d'extinction :",
+ "dev.watch":"Processus surveillés (Tableau de bord) :",
+ "ph.name":"Saisir le nom","ph.mac":"ex., AA:BB:CC:DD:EE:FF","ph.ip":"ex., 192.168.1.100 ou ubuntu-mercury",
+ "ph.user":"Utilisateur (facultatif)","ph.pass":"Mot de passe (facultatif)","ph.watch":"ex., llama-server.exe:8080",
+ "dev.method.host":"Service hôte (recommandé)","dev.method.smb":"SMB (partage Windows)",
+ "dev.enabled":"L'appareil est activé","dev.save":"Enregistrer","dev.update":"Actualiser","dev.cancel":"Annuler",
+ "err.name":"Veuillez saisir un nom.","err.mac":"Adresse MAC invalide (ex. AA:BB:CC:DD:EE:FF).",
+ "err.ip":"IP ou nom d'hôte invalide.",
+ "dev.saved":"Appareil enregistré.","dev.deleted":"Appareil supprimé.",
+ "mac.unknown.title":"Adresse MAC inconnue","mac.unknown.msg":"L'appareil {host} ({ip}) a une adresse MAC inconnue. Continuer avec un espace réservé ?",
+ "mac.dup.title":"L'appareil existe déjà","mac.dup.msg":"Un appareil avec la MAC {mac} existe déjà.",
+ "sched.subtitle":"Allumer ou éteindre les appareils à heure fixe",
+ "sched.add":"+ Créer une planification","sched.search":"Rechercher…",
+ "sched.empty":"Aucune planification. Créez votre première planification.",
+ "sched.wake":"Réveiller","sched.shutdown":"Éteindre",
+ "sched.days.every":"Quotidien","sched.days.weekdays":"Jours ouvrés",
+ "sched.del.title":"Supprimer la planification","sched.del.message":'Voulez-vous vraiment supprimer la planification de "{name}" ?',
+ "sched.no_dev.title":"Aucun appareil","sched.no_dev.msg":"Ajoutez d'abord un appareil avant de créer une planification.",
+ "sc.add":"Nouvelle planification","sc.edit":"Modifier la planification",
+ "sc.device":"Appareil :","sc.action":"Action :","sc.act.wake":"Allumer","sc.act.shutdown":"Éteindre",
+ "sc.time":"Heure :","sc.days":"Jours de la semaine","sc.enabled":"La planification est activée",
+ "sc.no_days.title":"Aucun jour","sc.no_days.msg":"Veuillez sélectionner au moins un jour.",
+ "sc.unknown":"Appareil inconnu","sc.saved":"Planification enregistrée.",
+ "day.Mon":"Lu","day.Tue":"Ma","day.Wed":"Me","day.Thu":"Je","day.Fri":"Ve","day.Sat":"Sa","day.Sun":"Di",
+ "logs.subtitle":"Tous les événements de l'application",
+ "logs.search":"Rechercher message ou appareil…","logs.level.all":"Tous les niveaux",
+ "logs.export":"Exporter CSV","logs.empty":"Aucune entrée de journal.",
+ "logs.exported":"Journal exporté vers {path}","logs.unknown":"Inconnu",
+ "set.subtitle":"Configurer l'application et le réseau",
+ "set.broadcast_ip":"IP de diffusion","set.broadcast_port":"Port de diffusion","set.language":"Langue",
+ "set.display":"Mode d'affichage","set.design":"Design de l'app","set.design.hint":"Un changement de design exige un redémarrage.",
+ "set.auto_update":"Rechercher les mises à jour","set.interval":"Intervalle",
+ "set.max_logs":"Entrées de journal max.","set.resolution":"Résolution","set.method":"Méthode par défaut",
+ "disp.auto":"Auto","disp.light":"Clair","disp.dark":"Sombre",
+ "design.classic":"App classique","design.modern":"App moderne",
+ "int.day":"Chaque jour","int.week":"Chaque semaine","int.month":"Chaque mois",
+ "res.opt":"Optimisé 16:9",
+ "set.info":"Le Wake-on-LAN envoie un 'Magic Packet' à l'adresse MAC de l'appareil cible sur le réseau local. L'appareil doit prendre en charge le WOL et l'avoir activé dans le BIOS/UEFI et les paramètres système.",
+ "set.reset":"Réinitialiser","set.save":"Enregistrer",
+ "set.saved.title":"Paramètres enregistrés","set.saved.msg":"Paramètres enregistrés avec succès.",
+ "set.reset.title":"Rétablir les paramètres d'usine",
+ "set.reset.msg":"Voulez-vous réinitialiser tous les paramètres ?\n\nAppareils, planifications et journaux sont conservés.",
+ "err.ip_missing":"Adresse IP manquante","err.ip_title":"Adresse IP invalide",
+ "err.ip_msg":"Le format est invalide. Utilisez x.x.x.x (ex. 192.168).",
+ "err.port_title":"Port invalide","err.port_msg":"Le port doit être compris entre 1 et 65535.",
+ "about.name":"Wake-on-LAN Manager","about.version":"Version : {v}",
+ "about.desc":"Un outil puissant pour gérer les appareils du réseau via la technologie Wake-on-LAN.",
+ "upd.check":"🔄 Rechercher les mises à jour","upd.changelog":"Changelog",
+ "upd.checking":"Recherche de mises à jour…","upd.ok":"✅ Vous utilisez la dernière version.",
+ "upd.err":"⚠️ {msg}","upd.err.msg":"La vérification a échoué.",
+ "dash.back":"‹ Appareils","dash.interval":"Intervalle",
+ "dash.svc":"Services","dash.svc.sub":"Processus surveillés","dash.svc.none":"Aucun processus surveillé.",
+ "svc.running":"actif · PID {pid}","svc.ready":"actif · PID {pid} · API prête :{port}","svc.unreach":"actif (PID {pid}), port {port} injoignable","svc.gone":"Processus introuvable",
+ "dash.inferenz":"⚡ Inférence active","dash.model":"🧠 {m}",
+ "m.cpu":"CHARGE CPU","m.ram":"UTILISATION RAM","m.gpu":"CHARGE GPU","m.vram":"UTILISATION VRAM",
+ "d.cores":"{n} cœurs","d.gb":"{used} / {total} Go","d.uptime":"Uptime {v}","d.na":"n/d",
+ "hostv":"Service hôte v{v}",
+ "batch.title":"Lots","batch.new":"Nouveau","batch.dup":"Dupliquer","batch.del":"Supprimer",
+ "batch.run":"Exécuter","batch.save":"Enregistrer","batch.clear":"Vider","batch.out":"Sortie",
+ "batch.timeout":"Timeout (s)","batch.allow":"Autoriser les lots sur cet appareil",
+ "batch.newname":"Nouveau lot","batch.running":"Lot en cours…","batch.exit":"Code retour : {c}","batch.dur":"Durée : {s} s",
+ "batch.empty":"Aucun lot. « Nouveau » crée un lot.",
+ "batch.disabled":"Exécution désactivée : activez « Autoriser les lots » et libérez l'hôte.",
+ "dash.creds":"Aucun identifiant enregistré. Les métriques exigent la connexion au service hôte.",
+ "dash.unreach":"Service hôte injoignable ({ip}:8765). Le service tourne-t-il ?",
+ "yes":"Oui","no":"Non","ok":"OK"
+},
+es:{
+ "nav.devices":"Dispositivos","nav.manage":"Administrar","nav.schedule":"Planificación","nav.logs":"Registros","nav.settings":"Ajustes",
+ "devices.summary":"{total} dispositivos · {online} en línea",
+ "devices.empty":"Aún no hay dispositivos. Añádalos en Administrar.",
+ "devices.wake":"Encender","devices.shutdown":"Apagar","devices.wake_all":"Iniciar todos",
+ "devices.refresh":"Actualizar","devices.viewList":"Cambiar a lista","devices.viewGrid":"Cambiar a mosaico",
+ "devices.search":"Buscar por nombre, MAC, IP o usuario…",
+ "sort.name":"Nombre","sort.ip":"Dirección IP","sort.mac":"Dirección MAC","sort.status":"Estado",
+ "status.online":"En línea","status.offline":"Fuera de línea","status.unknown":"Desconocido",
+ "device.me":"(yo)","device.disabled":"Deshabilitado",
+ "button.remote_fullscreen":"Remoto completo","button.remote_window":"Remoto en ventana","button.dashboard":"Panel","button.ping":"Ping",
+ "shutdown.title":"Confirmar apagado","shutdown.message":"¿Realmente quiere apagar el dispositivo?",
+ "wakeall.title":"Activar todos los dispositivos","wakeall.message":"¿Realmente quiere activar los {count} dispositivos?",
+ "wakeall.done":"Paquetes mágicos enviados con éxito a {count} dispositivo(s).",
+ "wol.sent":"Paquete mágico enviado a {name}.","wol.online":"{name} está en línea.","wol.fail":"{count} dispositivo(s) no recibieron el paquete.",
+ "ping.ok":"Ping a {ip}: respuesta en {ms} ms","ping.fail":"Ping a {ip}: destino inaccesible",
+ "remote.demo":"{mode}: conectando a {name} (demo)",
+ "manage.subtitle":"Gestión de dispositivos y escaneo de red",
+ "manage.sec.devices":"Gestión de dispositivos","manage.sec.scan":"Escaneo de red",
+ "manage.add":"+ Añadir dispositivo","manage.import":"Importar","manage.export":"Exportar",
+ "manage.scan.start":"Iniciar escaneo","manage.add.btn":"Añadir",
+ "manage.scan.initial":'Seleccione una red y haga clic en "Escanear".',
+ "manage.scan.running":"Escaneando las redes seleccionadas",
+ "manage.scan.done":"{count} dispositivo(s) encontrados",
+ "manage.scan.none":"Ninguna red seleccionada","manage.scan.none.msg":"Seleccione al menos una red para escanear.",
+ "manage.dns":"  |  DNS: {dns}",
+ "edit.title":"Editar","edit.delete":"Eliminar",
+ "del.title":"Confirmar eliminación","del.message":'¿Realmente quiere eliminar el dispositivo "{name}"?',
+ "scan.known":"conocido","scan.new":"nuevo",
+ "imp.done":"{count} dispositivo(s) importados.","exp.done":"Dispositivos exportados (wol_devices.json).",
+ "dev.add":"Añadir dispositivo","dev.edit":"Editar dispositivo",
+ "dev.name":"Nombre del dispositivo:","dev.mac":"Dirección MAC:","dev.ip":"Dirección IP / nombre de host:",
+ "dev.user":"Usuario:","dev.pass":"Contraseña:","dev.method":"Método de apagado:",
+ "dev.watch":"Procesos supervisados (Panel):",
+ "ph.name":"Introduzca el nombre","ph.mac":"p. ej., AA:BB:CC:DD:EE:FF","ph.ip":"p. ej., 192.168.1.100 o ubuntu-mercury",
+ "ph.user":"Usuario (opcional)","ph.pass":"Contraseña (opcional)","ph.watch":"p. ej., llama-server.exe:8080",
+ "dev.method.host":"Servicio host (recomendado)","dev.method.smb":"SMB (recurso compartido Windows)",
+ "dev.enabled":"El dispositivo está habilitado","dev.save":"Guardar","dev.update":"Actualizar","dev.cancel":"Cancelar",
+ "err.name":"Introduzca un nombre.","err.mac":"MAC no válida (p. ej. AA:BB:CC:DD:EE:FF).",
+ "err.ip":"IP o host no válido.",
+ "dev.saved":"Dispositivo guardado.","dev.deleted":"Dispositivo eliminado.",
+ "mac.unknown.title":"MAC desconocida","mac.unknown.msg":"El dispositivo {host} ({ip}) tiene una MAC desconocida. ¿Continuar con marcador?",
+ "mac.dup.title":"El dispositivo ya existe","mac.dup.msg":"Ya existe un dispositivo con la MAC {mac}.",
+ "sched.subtitle":"Encender o apagar dispositivos programados",
+ "sched.add":"+ Crear planificación","sched.search":"Buscar planificaciones…",
+ "sched.empty":"No hay planificaciones. Cree su primera planificación.",
+ "sched.wake":"Encender","sched.shutdown":"Apagar",
+ "sched.days.every":"Diario","sched.days.weekdays":"Lunes a viernes",
+ "sched.del.title":"Eliminar planificación","sched.del.message":'¿Realmente quiere eliminar la planificación de "{name}"?',
+ "sched.no_dev.title":"Sin dispositivos","sched.no_dev.msg":"Añada primero un dispositivo antes de crear una planificación.",
+ "sc.add":"Nueva planificación","sc.edit":"Editar planificación",
+ "sc.device":"Dispositivo:","sc.action":"Acción:","sc.act.wake":"Encender","sc.act.shutdown":"Apagar",
+ "sc.time":"Hora:","sc.days":"Días de la semana","sc.enabled":"La planificación está activada",
+ "sc.no_days.title":"Sin días","sc.no_days.msg":"Seleccione al menos un día.",
+ "sc.unknown":"Dispositivo desconocido","sc.saved":"Planificación guardada.",
+ "day.Mon":"Lu","day.Tue":"Ma","day.Wed":"Mi","day.Thu":"Ju","day.Fri":"Vi","day.Sat":"Sá","day.Sun":"Do",
+ "logs.subtitle":"Todos los eventos de la aplicación",
+ "logs.search":"Buscar mensaje o dispositivo…","logs.level.all":"Todos los niveles",
+ "logs.export":"Exportar CSV","logs.empty":"No hay entradas de registro.",
+ "logs.exported":"Registro exportado a {path}","logs.unknown":"Desconocido",
+ "set.subtitle":"Configurar aplicación y red",
+ "set.broadcast_ip":"IP de difusión","set.broadcast_port":"Puerto de difusión","set.language":"Idioma",
+ "set.display":"Modo de visualización","set.design":"Diseño de la app","set.design.hint":"Cambiar el diseño requiere reiniciar la app.",
+ "set.auto_update":"Buscar actualizaciones automáticamente","set.interval":"Intervalo",
+ "set.max_logs":"Entradas máx. del registro","set.resolution":"Resolución","set.method":"Método predeterminado",
+ "disp.auto":"Auto","disp.light":"Claro","disp.dark":"Oscuro",
+ "design.classic":"App clásica","design.modern":"App moderna",
+ "int.day":"Cada día","int.week":"Cada semana","int.month":"Cada mes",
+ "res.opt":"Optimizado 16:9",
+ "set.info":"Wake-on-LAN envía un 'Magic Packet' a la dirección MAC del dispositivo destino en la red local. El dispositivo debe admitir WOL y tenerlo activado en la BIOS/UEFI y la configuración del sistema.",
+ "set.reset":"Restablecer","set.save":"Guardar",
+ "set.saved.title":"Ajustes guardados","set.saved.msg":"Ajustes guardados correctamente.",
+ "set.reset.title":"Restaurar valores de fábrica",
+ "set.reset.msg":"¿Quiere restablecer todos los ajustes?\n\nLos dispositivos, planificaciones y registros se conservan.",
+ "err.ip_missing":"Falta la dirección IP","err.ip_title":"IP no válida",
+ "err.ip_msg":"El formato no es válido. Use x.x.x.x (p. ej. 192.168).",
+ "err.port_title":"Puerto no válido","err.port_msg":"El puerto debe estar entre 1 y 65535.",
+ "about.name":"Wake-on-LAN Manager","about.version":"Versión: {v}",
+ "about.desc":"Una herramienta potente para gestionar dispositivos en su red mediante Wake-on-LAN.",
+ "upd.check":"🔄 Buscar actualizaciones","upd.changelog":"Changelog",
+ "upd.checking":"Buscando actualizaciones…","upd.ok":"✅ Ya usa la última versión.",
+ "upd.err":"⚠️ {msg}","upd.err.msg":"No se pudo comprobar la actualización.",
+ "dash.back":"‹ Dispositivos","dash.interval":"Intervalo",
+ "dash.svc":"Servicios","dash.svc.sub":"Procesos supervisados","dash.svc.none":"Sin procesos supervisados.",
+ "svc.running":"activo · PID {pid}","svc.ready":"activo · PID {pid} · API lista :{port}","svc.unreach":"activo (PID {pid}), puerto {port} inaccesible","svc.gone":"Proceso no encontrado",
+ "dash.inferenz":"⚡ Inferencia activa","dash.model":"🧠 {m}",
+ "m.cpu":"CARGA DE CPU","m.ram":"USO DE RAM","m.gpu":"CARGA DE GPU","m.vram":"USO DE VRAM",
+ "d.cores":"{n} núcleos","d.gb":"{used} / {total} GB","d.uptime":"Tiempo activo {v}","d.na":"n/d",
+ "hostv":"Servicio host v{v}",
+ "batch.title":"Lotes","batch.new":"Nuevo","batch.dup":"Duplicar","batch.del":"Eliminar",
+ "batch.run":"Ejecutar","batch.save":"Guardar","batch.clear":"Vaciar","batch.out":"Salida",
+ "batch.timeout":"Tiempo máx. (s)","batch.allow":"Permitir lotes en este dispositivo",
+ "batch.newname":"Nuevo lote","batch.running":"Lote en ejecución…","batch.exit":"Código de salida: {c}","batch.dur":"Duración: {s} s",
+ "batch.empty":"No hay lotes. „Nuevo\" crea un lote.",
+ "batch.disabled":"Ejecución desactivada: active „Permitir lotes\" y libere el host.",
+ "dash.creds":"No hay credenciales para este dispositivo. Las métricas requieren inicio de sesión del servicio host.",
+ "dash.unreach":"Servicio host inaccesible ({ip}:8765). ¿Está en ejecución?",
+ "yes":"Sí","no":"No","ok":"OK"
+}};
+
+/* ══════════════════════════ State / Datenmodell ═══════════════════════════
+   device = { id, name, mac, ip, username, password, enabled, method, watch[],
+              status: online|offline|unknown|waking, local, sim:{proto,reachable},
+              upSeconds, metrics, spark, gpuHigh }                              */
+let SEQ = 1;
+const state = {
+  lang: "de", displayMode: "auto", theme: "dark",
+  settings: {
+    broadcastIp: "255.255.255.255", broadcastPort: 9, language: "de",
+    displayMode: "auto", design: "modern", autoUpdate: true, interval: "168",
+    maxLogs: 100, resolution: "opt", method: "host",
+  },
+  ui: { screen: "devices", deviceView: "grid", sort: "name", search: "",
+        manageSearch: "", schedSearch: "", logSearch: "", logLevel: "all",
+        dashDeviceId: null, dashInterval: 3000, editing: null, confirmFn: null,
+        selBatch: null, pressTimer: null },
+  devices: [
+    { id:"d"+(SEQ++), name:"Fractal", mac:"50:EB:F6:B7:8B:0C", ip:"192.168.2.62",
+      username:"fractal", password:"demo1234", enabled:true, method:"host",
+      watch:["llama-server.exe:8080","backup-sync.exe"], allow_batch:true,
+      status:"online", local:false, sim:{proto:5,reachable:true}, upSeconds:274320,
+      metrics:null, spark:{cpu:[],ram:[],gpu:[]}, gpuHigh:0 },
+    { id:"d"+(SEQ++), name:"A4-H20", mac:"60:CF:84:84:31:29", ip:"192.168.2.50",
+      username:"", password:"", enabled:true, method:"host",
+      watch:[], allow_batch:false,
+      status:"offline", local:false, sim:{proto:5,reachable:true}, upSeconds:0,
+      metrics:null, spark:{cpu:[],ram:[],gpu:[]}, gpuHigh:0 },
+    { id:"d"+(SEQ++), name:"A4-TV", mac:"A0:AD:9F:1C:09:FF", ip:"192.168.2.111",
+      username:"tv", password:"wohnzimmer", enabled:true, method:"smb",
+      watch:[], allow_batch:false,
+      status:"unknown", local:true, sim:{proto:2,reachable:true}, upSeconds:53100,
+      metrics:null, spark:{cpu:[],ram:[],gpu:[]}, gpuHigh:0 },
+  ],
+  schedules: [
+    { id:"s1", deviceId:"d1", action:"wake", time:"07:30", days:["Mon","Tue","Wed","Thu","Fri"], enabled:true },
+    { id:"s2", deviceId:"d2", action:"shutdown", time:"23:00", days:["Mon","Wed","Fri"], enabled:false },
+  ],
+  logs: [
+    { ts: Date.now()-3600e3*2, device:"Fractal", level:"info", msg:"Wake: Magic Packet (Port 9) gesendet" },
+    { ts: Date.now()-3600e3*5, device:"A4-TV", level:"error", msg:"Shutdown fehlgeschlagen: authentication failed" },
+    { ts: Date.now()-3600e3*26, device:"—", level:"warn", msg:"Host Service v2 erkannt – Update empfohlen" },
+  ],
+  scan: { running:false, results:[], shown:false,
+          ifaces:[{ip:"192.168.2.10", netmask:"255.255.255.0", dns:"192.168.2.1", checked:true},
+                  {ip:"10.8.0.5", netmask:"255.255.255.0", dns:"", checked:false}] },
+  batches: [
+    { id:"b1", devId:"d1", name:"GPU-Status", script:"nvidia-smi", timeout:120 },
+    { id:"b2", devId:"d1", name:"Backup", script:"backup.bat", timeout:600 },
+  ],
+  con: { lines:[], running:false, exit:null, dur:null, timer:null },
+  upd: "",
+};
+
+/* ══════════════════════════ Helpers ═══════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const t = (k, vars) => {
+  let s = (I18N[state.lang] && I18N[state.lang][k]) ?? I18N.de[k] ?? k;
+  for (const [v, r] of Object.entries(vars || {})) s = s.replaceAll("{"+v+"}", r);
+  return s;
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const escA = s => esc(s).replaceAll("\n","<br>");
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const byId = id => state.devices.find(d => d.id === id);
+const DAY_CODES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const RE_MAC = /^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/;
+const RE_HOST = /^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$/;
+const RE_IP = /^(\d{1,3}\.){3}\d{1,3}$/;
+const dotCls = d => d.status === "online" ? "dotOnline" : d.status === "offline" ? "dotOffline"
+  : d.status === "waking" ? "dotWaking" : "dotUnknown";
+const statusName = d => t("status." + (d.status === "waking" ? "unknown" : d.status));
+function fmtUptime(s) {
+  const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+  return (d ? d+"d " : "") + String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
+}
+function daysText(days) {
+  if (!days.length || days.length === 7) return t("sched.days.every");
+  if (days.length === 5 && DAY_CODES.slice(0,5).every(d => days.includes(d))) return t("sched.days.weekdays");
+  return DAY_CODES.filter(d => days.includes(d)).map(d => t("day."+d)).join(" · ");
+}
+function logIt(device, level, msg) {
+  state.logs.unshift({ ts: Date.now(), device, level, msg });
+  if (state.logs.length > 300) state.logs.pop();
+  if (state.ui.screen === "logs") renderLogs();
+}
+function toast(msg, isErr) {
+  const el = $("#toast"); el.textContent = msg;
+  el.classList.toggle("err", !!isErr); el.classList.add("show");
+  clearTimeout(el._tm); el._tm = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+/* ══════════════════════════ Sheet / Dialoge ═══════════════════════════════ */
+function openSheet(html) { $("#sheet").innerHTML = html; $("#sheet").classList.add("open"); $("#overlay").classList.add("open"); }
+function closeSheet() { $("#sheet").classList.remove("open"); $("#overlay").classList.remove("open"); state.ui.editing = null; state.ui.confirmFn = null; }
+function openConfirm(title, msg, onYes, yesCls = "primary") {
+  state.ui.confirmFn = onYes;
+  openSheet(`<div class="grab"></div><h2>${esc(title)}</h2>
+    <p style="font-size:13.5px;line-height:1.55">${escA(msg)}</p>
+    <div class="sheetbtns"><button class="btn" data-act="sheet-close">${esc(t("no"))}</button>
+    <button class="btn ${yesCls}" data-act="confirm-yes">${esc(t("yes"))}</button></div>`);
+}
+function openAlert(title, msg) {
+  openSheet(`<div class="grab"></div><h2>${esc(title)}</h2>
+    <p style="font-size:13.5px;line-height:1.55">${escA(msg)}</p>
+    <div class="sheetbtns"><button class="btn primary" data-act="sheet-close">${esc(t("ok"))}</button></div>`);
+}
+/* Herunterfahren bestätigen – wie Windows ModernShutdownConfirmDialog (Power-Symbol) */
+function openShutdownConfirm(d) {
+  state.ui.confirmFn = () => shutdownDevice(d);
+  openSheet(`<div class="grab"></div>
+    <div style="text-align:center"><div class="powerIcon"></div>
+    <h2 style="text-align:center;margin-bottom:0">${esc(t("shutdown.title"))}</h2>
+    <p style="font-size:13.5px;color:var(--text-dim);margin-top:8px">${esc(t("shutdown.message"))}<br><b style="color:var(--text)">${esc(d.name)}</b></p></div>
+    <div class="sheetbtns"><button class="btn" data-act="sheet-close">${esc(t("no"))}</button>
+    <button class="btn danger" data-act="confirm-yes">${esc(t("yes"))}</button></div>`);
+}
+
+/* ══════════════════════════ Aktionen: Wake / Shutdown / Ping ══════════════ */
+function wakeDevice(d) {
+  if (d.status === "online" || d.status === "waking" || !d.enabled) return;
+  d.status = "waking"; renderDevices();
+  setTimeout(() => {
+    d.status = "online"; d.upSeconds = 45; d.metrics = null;
+    logIt(d.name, "info", t("wol.online", {}));
+    toast(t("wol.online", { name: d.name }));
+    renderDevices(); if (state.ui.screen === "dash") renderDash();
+  }, rnd(3500, 6000));
+  logIt(d.name, "info", "Magic Packet (Port " + state.settings.broadcastPort + ") gesendet");
+  toast(t("wol.sent", { name: d.name }));
+}
+function shutdownDevice(d) {
+  logIt(d.name, "info", "Host Service: Shutdown ausgeführt");
+  toast(t("devices.shutdown") + ": " + d.name + " …");
+  setTimeout(() => { d.status = "offline"; d.metrics = null;
+    renderDevices(); if (state.ui.screen === "dash") renderDash(); }, 2500);
+}
+function refreshStatus() {
+  renderDevices(); renderManage();
+}
+setInterval(() => { if (state.ui.screen === "devices") refreshStatus(); }, 30000);
+
+function pingDevice(d) {
+  if (d.status === "online") toast(t("ping.ok", { ip: d.ip, ms: Math.round(rnd(1, 9)) }));
+  else toast(t("ping.fail", { ip: d.ip }), true);
+}
+
+/* ══════════════════════════ Netzwerk-Scan (Verwalten) ═════════════════════ */
+const SCAN_POOL = [
+  { ip:"192.168.2.1",   mac:"AA:BB:CC:00:11:22", host:"fritz.box" },
+  { ip:"192.168.2.33",  mac:"DC:A6:32:9F:11:0A", host:"nas01.lan" },
+  { ip:"192.168.2.50",  mac:"60:CF:84:84:31:29", host:"a4-h20" },
+  { ip:"192.168.2.77",  mac:"B8:27:EB:44:C0:FE", host:"" },
+  { ip:"192.168.2.111", mac:"A0:AD:9F:1C:09:FF", host:"a4-tv" },
+];
+function startScan() {
+  if (!state.scan.ifaces.some(i => i.checked)) { openAlert(t("manage.scan.none"), t("manage.scan.none.msg")); return; }
+  state.scan.running = true; state.scan.results = []; state.scan.shown = false;
+  renderManage();
+  let p = 0;
+  const tm = setInterval(() => {
+    p = Math.min(100, p + rnd(9, 22));
+    const bar = $("#scanProg"); if (bar) bar.style.width = p + "%";
+    if (p >= 100) {
+      clearInterval(tm);
+      const knownMacs = new Set(state.devices.map(d => d.mac.toUpperCase()));
+      state.scan.running = false; state.scan.shown = true;
+      state.scan.results = SCAN_POOL.map(r => ({ ...r, known: knownMacs.has(r.mac) }));
+      logIt("—", "info", t("manage.scan.done", { count: state.scan.results.length }));
+      renderManage();
+    }
+  }, 180);
+}
+function scanAdd(host, ip, mac) {
+  if (state.devices.some(d => d.mac.toUpperCase() === mac.toUpperCase())) {
+    openAlert(t("mac.dup.title"), t("mac.dup.msg", { mac })); return;
+  }
+  if (!mac || mac === "—") {
+    openConfirm(t("mac.unknown.title"), t("mac.unknown.msg", { host: host || ip, ip }), () => {
+      closeSheet(); openDeviceSheet(null, { name: host === "Unknown" ? "" : (host || ip), ip, mac: "00:00:00:00:00:00" });
+    });
+    return;
+  }
+  openDeviceSheet(null, { name: (!host || host === "Unknown") ? "" : host, ip, mac });
+}
+
+/* ══════════════════════════ Geräte-Dialog (Bottom-Sheet) ══════════════════ */
+function openDeviceSheet(id, prefill) {
+  const d = id ? byId(id) : null;
+  state.ui.editing = d ? { ...d, watch: [...d.watch] } : {
+    id: null, name: prefill?.name || "", mac: prefill?.mac || "", ip: prefill?.ip || "",
+    username: "", password: "", enabled: true, method: state.settings.method, watch: [] };
+  const e = state.ui.editing;
+  openSheet(`
+    <div class="grab"></div><h2>${esc(t(d ? "dev.edit" : "dev.add"))}</h2>
+    <div class="field"><label>${esc(t("dev.name"))}</label>
+      <input class="inp" id="i-name" value="${esc(e.name)}" placeholder="${esc(t("ph.name"))}" maxlength="60">
+      <div class="hint" id="e-name" style="color:var(--danger);display:none">${esc(t("err.name"))}</div></div>
+    <div class="field"><label>${esc(t("dev.mac"))}</label>
+      <input class="inp" id="i-mac" value="${esc(e.mac)}" placeholder="${esc(t("ph.mac"))}" maxlength="17">
+      <div class="hint" id="e-mac" style="color:var(--danger);display:none">${esc(t("err.mac"))}</div></div>
+    <div class="field"><label>${esc(t("dev.ip"))}</label>
+      <input class="inp" id="i-ip" value="${esc(e.ip)}" placeholder="${esc(t("ph.ip"))}" maxlength="253">
+      <div class="hint" id="e-ip" style="color:var(--danger);display:none">${esc(t("err.ip"))}</div></div>
+    <div class="field"><label>${esc(t("dev.user"))}</label>
+      <input class="inp" id="i-user" value="${esc(e.username)}" placeholder="${esc(t("ph.user"))}" autocomplete="off"></div>
+    <div class="field"><label>${esc(t("dev.pass"))}</label>
+      <input class="inp" id="i-pass" type="password" value="${esc(e.password)}" placeholder="${esc(t("ph.pass"))}" autocomplete="new-password"></div>
+    <div class="field"><label>${esc(t("dev.method"))}</label>
+      <select class="sel" id="i-method" style="width:100%">
+        <option value="host" ${e.method==="host"?"selected":""}>${esc(t("dev.method.host"))}</option>
+        <option value="smb" ${e.method==="smb"?"selected":""}>${esc(t("dev.method.smb"))}</option></select></div>
+    <div class="field"><label>${esc(t("dev.watch"))}</label>
+      <input class="inp" id="i-watch" value="${esc(e.watch.join(", "))}" placeholder="${esc(t("ph.watch"))}"></div>
+    <div class="togRow" style="padding:6px 0 0"><div>${esc(t("dev.enabled"))}</div>
+      <div class="toggle ${e.enabled ? "on" : ""}" data-act="edit-toggle" data-key="enabled"></div></div>
+    <div class="sheetbtns">
+      <button class="btn" data-act="sheet-close">${esc(t("dev.cancel"))}</button>
+      <button class="btn primary" data-act="dev-save">${esc(t(d ? "dev.update" : "dev.save"))}</button>
+    </div>`);
+}
+function saveDeviceFromSheet() {
+  const e = state.ui.editing;
+  const name = $("#i-name").value.trim(), mac = $("#i-mac").value.trim(), ip = $("#i-ip").value.trim();
+  let bad = false;
+  const mark = (id, ok) => { $("#" + id).style.display = ok ? "none" : "block"; if (!ok) bad = true; };
+  mark("e-name", !!name);
+  mark("e-mac", RE_MAC.test(mac));
+  mark("e-ip", !ip || (RE_HOST.test(ip) && ip.length <= 253));
+  if (bad) return;
+  const target = e.id ? byId(e.id) : { id: "d"+(SEQ++), status: "unknown", local: false, upSeconds: 0,
+    metrics: null, spark: {cpu:[],ram:[],gpu:[]}, gpuHigh: 0, sim: { proto: 5, reachable: true }, allow_batch: false };
+  Object.assign(target, { name, mac: mac.toUpperCase(), ip,
+    username: $("#i-user").value.trim(), password: $("#i-pass").value,
+    enabled: e.enabled, method: $("#i-method").value,
+    watch: $("#i-watch").value.split(/[,;]/).map(s => s.trim()).filter(Boolean) });
+  if (!e.id) state.devices.push(target);
+  closeSheet(); renderDevices(); renderManage(); renderSched();
+  toast(t("dev.saved"));
+}
+function deleteDevice(id) {
+  const d = byId(id);
+  openConfirm(t("del.title"), t("del.message", { name: d.name }), () => {
+    state.devices = state.devices.filter(x => x.id !== id);
+    state.schedules = state.schedules.filter(s => s.deviceId !== id);
+    closeSheet(); renderDevices(); renderManage(); renderSched();
+    logIt(d.name, "warn", t("dev.deleted")); toast(t("dev.deleted"));
+  }, "danger");
+}
+
+/* ══════════════════════════ Zeitplan-Dialog (Bottom-Sheet) ════════════════ */
+function openSchedSheet(id) {
+  if (!state.devices.length) { openAlert(t("sched.no_dev.title"), t("sched.no_dev.msg")); return; }
+  const sc = id ? state.schedules.find(s => s.id === id) : null;
+  state.ui.editing = sc ? { ...sc, days: [...sc.days] } :
+    { id: null, deviceId: state.devices[0].id, action: "wake", time: "07:30",
+      days: [...DAY_CODES], enabled: true };
+  const e = state.ui.editing;
+  openSheet(`
+    <div class="grab"></div><h2>${esc(t(sc ? "sc.edit" : "sc.add"))}</h2>
+    <div class="field"><label>${esc(t("sc.device"))}</label>
+      <select class="sel" id="sc-dev" style="width:100%">${state.devices.map(d =>
+        `<option value="${d.id}" ${d.id === e.deviceId ? "selected" : ""}>${esc(d.name)}</option>`).join("")}</select></div>
+    <div class="field"><label>${esc(t("sc.action"))}</label>
+      <select class="sel" id="sc-act" style="width:100%">
+        <option value="wake" ${e.action==="wake"?"selected":""}>${esc(t("sc.act.wake"))}</option>
+        <option value="shutdown" ${e.action==="shutdown"?"selected":""}>${esc(t("sc.act.shutdown"))}</option></select></div>
+    <div class="field"><label>${esc(t("sc.time"))}</label>
+      <input class="inp" type="time" id="sc-time" value="${e.time}"></div>
+    <div class="field"><label>${esc(t("sc.days"))}</label>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">${DAY_CODES.map(c =>
+        `<span class="chip ${e.days.includes(c) ? "run" : "off"}" style="cursor:pointer;padding:6px 12px"
+          data-act="sc-day" data-day="${c}">${esc(t("day."+c))}</span>`).join("")}</div></div>
+    <div class="togRow" style="padding:2px 0"><div>${esc(t("sc.enabled"))}</div>
+      <div class="toggle ${e.enabled ? "on" : ""}" data-act="edit-toggle" data-key="enabled"></div></div>
+    <div class="sheetbtns">
+      <button class="btn" data-act="sheet-close">${esc(t("dev.cancel"))}</button>
+      <button class="btn primary" data-act="sc-save">${esc(t(sc ? "dev.update" : "dev.save"))}</button>
+    </div>`);
+}
+function saveSchedFromSheet() {
+  const e = state.ui.editing;
+  e.deviceId = $("#sc-dev").value; e.action = $("#sc-act").value; e.time = $("#sc-time").value;
+  if (!e.days.length) { openAlert(t("sc.no_days.title"), t("sc.no_days.msg")); return; }
+  if (e.id) Object.assign(state.schedules.find(s => s.id === e.id), e);
+  else { e.id = "s" + Date.now(); state.schedules.push(e); }
+  closeSheet(); renderSched(); toast(t("sc.saved"));
+}
+
+/* ══════════════════════════ Long-Press-Kontextmenü (wie Rechtsklick) ══════ */
+function openDeviceMenu(id) {
+  const d = byId(id);
+  const actRow = d.status === "online"
+    ? `<div class="menuitem" data-act="m-shutdown" data-id="${id}">⏻ ${esc(t("devices.shutdown"))}</div>`
+    : `<div class="menuitem ${d.status==="waking"||!d.enabled?"dis":""}" data-act="m-wake" data-id="${id}">⚡ ${esc(t("devices.wake"))}</div>`;
+  openSheet(`<div class="grab"></div><h2>${esc(d.name)}</h2>
+    <div class="menuitem ${d.status!=="online"?"dis":""}" data-act="m-rdp" data-id="${id}" data-mode="full">🖥️ ${esc(t("button.remote_fullscreen"))}</div>
+    <div class="menuitem ${d.status!=="online"?"dis":""}" data-act="m-rdp" data-id="${id}" data-mode="win">🪟 ${esc(t("button.remote_window"))}</div>
+    <div class="menuitem ${d.status!=="online"?"dis":""}" data-act="m-dash" data-id="${id}">📊 ${esc(t("button.dashboard"))}</div>
+    <div class="sep"></div>${actRow}
+    <div class="menuitem" data-act="m-ping" data-id="${id}">📡 ${esc(t("button.ping"))}</div>
+    <div class="sep"></div>
+    <div class="menuitem" data-act="m-edit" data-id="${id}">✏️ ${esc(t("edit.title"))}</div>
+    <div class="menuitem" style="color:var(--danger)" data-act="m-del" data-id="${id}">🗑️ ${esc(t("edit.delete"))}</div>
+    <div class="sheetbtns"><button class="btn" data-act="sheet-close">${esc(t("dev.cancel"))}</button></div>`);
+}
+
+/* ══════════════════════════ Dashboard-Metriken (2 s-Tick wie Windows) ═════ */
+function walk(prev, min, max, vol) {
+  if (prev == null) return clamp(rnd(min, max), min, max);
+  return clamp(prev + rnd(-vol, vol), min, max);
+}
+function seedMetrics(d) {
+  d.metrics = { cpu: Math.round(walk(null,15,70,0)), ram: Math.round(walk(null,30,75,0)),
+    gpu: Math.round(walk(null,5,90,0)), vram: Math.round(walk(null,10,80,0)),
+    cores: 16, ramTotal: 64, models: ["Qwen3.8-Flash-256k-62","DeepSeek-R1-Distill-32B"] };
+  d.spark = { cpu:[], ram:[], gpu:[] };
+}
+function tickMetrics() {
+  const d = byId(state.ui.dashDeviceId);
+  if (!d || d.status !== "online" || !d.username || !d.sim.reachable) return;
+  if (!d.metrics) seedMetrics(d);
+  const m = d.metrics;
+  m.cpu = Math.round(walk(m.cpu, 2, 98, 9)); m.ram = Math.round(walk(m.ram, 20, 95, 3));
+  m.gpu = Math.round(walk(m.gpu, 0, 99, 14)); m.vram = Math.round(walk(m.vram, 5, 96, 6));
+  d.upSeconds += state.ui.dashInterval / 1000;
+  for (const k of ["cpu","ram","gpu"]) { d.spark[k].push(m[k]); if (d.spark[k].length > 60) d.spark[k].shift(); }
+  if (m.gpu >= 60) d.gpuHigh++; else d.gpuHigh = 0;
+  if (state.ui.screen === "dash") updateDashLive(d);
+}
+let dashTimer = null;
+function restartDashTimer() {
+  clearInterval(dashTimer);
+  dashTimer = setInterval(tickMetrics, state.ui.dashInterval);
+}
+restartDashTimer();
+
+function updateDashLive(d) {
+  const m = d.metrics; if (!m) return;
+  for (const k of ["cpu","ram","gpu","vram"]) {
+    const g = document.querySelector(`[data-g="${k}"]`); if (!g) return;
+    g.style.setProperty("--v", m[k]);
+    const b = document.querySelector(`[data-gv="${k}"]`); if (b) b.textContent = m[k] + "%";
+  }
+  for (const k of ["cpu","ram","gpu"]) {
+    const sp = document.querySelector(`[data-spark="${k}"]`);
+    if (sp) sp.innerHTML = sparkSvg(d.spark[k], `var(--gauge-${k})`);
+  }
+  const up = $("#dashUptime"); if (up) up.textContent = t("d.uptime", { v: fmtUptime(d.upSeconds) });
+  const inf = $("#infBadge"); if (inf) inf.style.display = d.gpuHigh >= 2 ? "inline" : "none";
+}
+function sparkSvg(vals, color) {
+  if (!vals || !vals.length) return `<svg width="100%" height="30" viewBox="0 0 140 30"></svg>`;
+  const pts = vals.map((v, i) => `${((i / Math.max(1, vals.length - 1)) * 140).toFixed(1)},${(30 - (v / 100) * 28 - 1).toFixed(1)}`).join(" ");
+  return `<svg width="100%" height="30" viewBox="0 0 140 30" preserveAspectRatio="none">
+    <polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/></svg>`;
+}
+function serviceState(d, entry) {
+  if (d.status !== "online") return "off";
+  return entry.includes(":") ? "run" : "probe";
+}
+function svcLine(d, entry) {
+  const st = serviceState(d, entry);
+  const pid = 1000 + (entry.length * 7) % 8000;
+  const port = (entry.split(":")[1] || "8080");
+  if (st === "off") return t("svc.gone");
+  if (entry.toLowerCase().startsWith("backup")) return t("svc.running", { pid });
+  return entry.includes(":") ? t("svc.ready", { pid, port }) : t("svc.running", { pid });
+}
+
+/* ══════════════════════════ Batches (Dashboard) ═══════════════════════════ */
+const BATCH_OUT = {
+  "nvidia-smi": ["| GPU  Name      Bus-Id  Vol Unc Corr |","|  0  RTX 4090   01:00.0    0    0 |","| Memory 18.2 / 24.0 GiB   GPU  64 % |"],
+  "backup.bat": ["Sichere D:\\Dokumente …","Fehler: Datenträger nicht gefunden.","backup: exit 2"],
+};
+function currentBatches() { return state.batches.filter(b => b.devId === state.ui.dashDeviceId); }
+function selBatchObj() { return state.batches.find(b => b.id === state.ui.selBatch); }
+function runBatch() {
+  const b = selBatchObj(); const d = byId(state.ui.dashDeviceId);
+  if (!b || !d || state.con.running) return;
+  if (!d.allow_batch) { toast(t("batch.disabled"), true); return; }
+  state.con = { lines: ["$ " + b.script], running: true, exit: null, dur: null, timer: null };
+  const out = BATCH_OUT[b.script] || ["OK"];
+  let i = 0; const t0 = Date.now();
+  const step = () => {
+    if (!state.con.running) return;
+    if (i < out.length) { state.con.lines.push(out[i++]); renderDash(); state.con.timer = setTimeout(step, rnd(250, 600)); }
+    else {
+      state.con.running = false;
+      state.con.exit = /fehler|error/i.test(out.join(" ")) ? 2 : 0;
+      state.con.dur = ((Date.now() - t0) / 1000).toFixed(1);
+      logIt(d.name, state.con.exit === 0 ? "info" : "error", `${b.name} -> Exit-Code ${state.con.exit}`);
+      renderDash();
+    }
+  };
+  renderDash(); step();
+}
+
+/* ══════════════════════════ Render: Geräte ════════════════════════════════ */
+function filteredDevices(search) {
+  let devs = [...state.devices];
+  const q = (search || "").toLowerCase();
+  if (q) devs = devs.filter(d => (d.name + " " + d.ip + " " + d.mac + " " + d.username).toLowerCase().includes(q));
+  const rank = { online: 0, offline: 1, waking: 2, unknown: 3 };
+  const ipKey = ip => (ip || "").split(".").map(n => String(n.length).padStart(2,"0") + n).join(".");
+  if (state.ui.sort === "name") devs.sort((a,b) => a.name.localeCompare(b.name));
+  else if (state.ui.sort === "ip") devs.sort((a,b) => ipKey(a.ip).localeCompare(ipKey(b.ip)));
+  else if (state.ui.sort === "mac") devs.sort((a,b) => a.mac.localeCompare(b.mac));
+  else devs.sort((a,b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+  return devs;
+}
+function nameSuffix(d) {
+  let s = "";
+  if (d.local) s += ` <span style="color:var(--text-dim);font-weight:400">${esc(t("device.me"))}</span>`;
+  if (!d.enabled) s += ` <span style="color:var(--text-dim);font-weight:400">${esc(t("device.disabled"))}</span>`;
+  return s;
+}
+function renderDevices() {
+  const online = state.devices.filter(d => d.status === "online").length;
+  const devs = filteredDevices(state.ui.search);
+  const grid = state.ui.deviceView === "grid";
+  const cards = grid
+    ? `<div class="grid">${devs.map(d => `
+        <div class="card ${d.enabled ? "" : "dis"}" data-press data-id="${d.id}">
+          <span class="dot ${dotCls(d)}" title="${esc(statusName(d))}"></span>
+          <div class="name">${esc(d.name)}${nameSuffix(d)}</div>
+          ${d.ip ? `<span class="mono">${esc(d.ip)}</span>` : ""}
+          <span class="mono">${esc(d.mac)}</span>
+          <div class="tiles">
+            <button class="tileBtn" data-act="rdp-full" data-id="${d.id}" title="${esc(t("button.remote_fullscreen"))}" ${d.status!=="online"?"disabled":""}>🖥️</button>
+            <button class="tileBtn" data-act="rdp-win" data-id="${d.id}" title="${esc(t("button.remote_window"))}" ${d.status!=="online"?"disabled":""}>🪟</button>
+            <button class="tileBtn" data-act="open-dash" data-id="${d.id}" title="${esc(t("button.dashboard"))}" ${d.status!=="online"?"disabled":""}>📊</button>
+          </div>
+          ${d.status === "online"
+            ? `<button class="shutdownBtn" data-act="shutdown" data-id="${d.id}">${esc(t("devices.shutdown"))}</button>`
+            : `<button class="wakeBtn" data-act="wake" data-id="${d.id}" ${d.status==="waking"||!d.enabled?"disabled":""}>${esc(t("devices.wake"))}</button>`}
+        </div>`).join("")}</div>`
+    : `<div class="panel">${devs.map((d, i) => `
+        ${i ? '<div class="sep"></div>' : ""}
+        <div class="row64" data-press data-id="${d.id}">
+          <span class="dot ${dotCls(d)}" title="${esc(statusName(d))}"></span>
+          <div class="rowInfo"><div class="rowTitle ${d.enabled?"":"dis"}">${esc(d.name)}${nameSuffix(d)}</div>
+            <span class="mono">${esc([d.ip, d.mac].filter(Boolean).join(" · "))}</span></div>
+          <div class="tiles">
+            <button class="tileBtn" data-act="rdp-full" data-id="${d.id}" ${d.status!=="online"?"disabled":""}>🖥️</button>
+            <button class="tileBtn" data-act="rdp-win" data-id="${d.id}" ${d.status!=="online"?"disabled":""}>🪟</button>
+            <button class="tileBtn" data-act="open-dash" data-id="${d.id}" ${d.status!=="online"?"disabled":""}>📊</button>
+            <button class="tileBtn" data-act="edit-dev" data-id="${d.id}">✏️</button>
+          </div>
+        </div>`).join("")}</div>`;
+  $("#s-devices").innerHTML = `
+    <div class="toprow"><div><div class="pageTitle">${esc(t("nav.devices"))}</div>
+      <div class="pageSub">${esc(t("devices.summary", { total: state.devices.length, online }))}</div></div></div>
+    <div class="toolbar">
+      <button class="iconBtn" data-act="view" title="${esc(t(grid ? "devices.viewList" : "devices.viewGrid"))}">${grid ? "☰" : "▦"}</button>
+      <button class="iconBtn" data-act="refresh" title="${esc(t("devices.refresh"))}">⟳</button>
+      <span class="spacer"></span>
+      <button class="btn primary small" data-act="wake-all">${esc(t("devices.wake_all"))}</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <select class="sel" data-act="sort" style="flex:0 0 auto">
+        ${["name","ip","mac","status"].map(s => `<option value="${s}" ${state.ui.sort===s?"selected":""}>${esc(t("sort."+s))}</option>`).join("")}
+      </select>
+      <div class="search" style="flex:1;margin-bottom:0">🔍<input placeholder="${esc(t("devices.search"))}" value="${esc(state.ui.search)}" data-act="search"></div>
+    </div>
+    ${devs.length === 0 ? `<div class="empty">${esc(t("devices.empty"))}</div>` : cards}`;
+}
+
+/* ══════════════════════════ Render: Verwalten ═════════════════════════════ */
+function renderManage() {
+  const devs = state.devices
+    .filter(d => !state.ui.manageSearch || (d.name+" "+d.ip+" "+d.mac+" "+d.username).toLowerCase().includes(state.ui.manageSearch.toLowerCase()))
+    .sort((a,b) => a.name.localeCompare(b.name));
+  const sc = state.scan;
+  $("#s-manage").innerHTML = `
+    <div class="toprow"><div><div class="pageTitle">${esc(t("nav.manage"))}</div>
+      <div class="pageSub">${esc(t("manage.subtitle"))}</div></div></div>
+    <div class="sectionHeading">${esc(t("manage.sec.devices"))}</div>
+    <div class="toolbar" style="flex-wrap:wrap">
+      <button class="btn primary small" data-act="add-device">${esc(t("manage.add"))}</button>
+      <button class="btn small" data-act="import">${esc(t("manage.import"))}</button>
+      <button class="btn small" data-act="export">${esc(t("manage.export"))}</button>
+    </div>
+    <div class="search">🔍<input placeholder="${esc(t("devices.search"))}" value="${esc(state.ui.manageSearch)}" data-act="manage-search"></div>
+    ${devs.length === 0 ? `<div class="empty">${esc(t("devices.empty"))}</div>` :
+    `<div class="panel">${devs.map((d, i) => `
+      ${i ? '<div class="sep"></div>' : ""}
+      <div class="row64">
+        <span class="dot ${dotCls(d)}" title="${esc(statusName(d))}"></span>
+        <div class="rowInfo"><div class="rowTitle ${d.enabled?"":"dis"}">${esc(d.name)}${nameSuffix(d)}</div>
+          <span class="mono">${esc([d.ip, d.mac].filter(Boolean).join(" · "))}</span></div>
+        <div class="tiles">
+          <button class="tileBtn" data-act="edit-dev" data-id="${d.id}">✏️</button>
+          <button class="tileBtn tileDanger" data-act="del-dev" data-id="${d.id}">🗑️</button>
+        </div>
+      </div>`).join("")}</div>`}
+    <div class="sectionHeading">${esc(t("manage.sec.scan"))}</div>
+    <div class="panel">${state.scan.ifaces.map((f, i) => `
+      ${i ? '<div class="sep"></div>' : ""}
+      <div class="togRow"><div class="mono" style="font-size:12px">${esc(f.ip)} / ${esc(f.netmask)}${f.dns ? esc(t("manage.dns", { dns: f.dns })) : ""}</div>
+        <div class="toggle ${f.checked ? "on" : ""}" data-act="iface-toggle" data-i="${i}"></div></div>`).join("")}
+    </div>
+    <div class="toolbar" style="margin-top:10px">
+      <button class="btn primary small" data-act="scan" ${sc.running?"disabled":""}>${esc(t("manage.scan.start"))}</button>
+    </div>
+    <div class="pageSub">${sc.running ? '<span class="spin"></span> ' + esc(t("manage.scan.running"))
+      : sc.shown ? esc(t("manage.scan.done", { count: sc.results.length }))
+      : esc(t("manage.scan.initial"))}</div>
+    ${sc.running ? '<div class="progress"><i id="scanProg"></i></div>' : ""}
+    ${sc.shown && sc.results.length ? `<div class="panel" style="margin-top:10px">${sc.results.map((r, i) => `
+      ${i ? '<div class="sep"></div>' : ""}
+      <div class="row64">
+        <span class="dot dotOnline"></span>
+        <div class="rowInfo"><div class="rowTitle">${esc(r.host || "Unknown")}
+          <span class="badge ${r.known ? "known" : "new"}">${esc(t(r.known ? "scan.known" : "scan.new"))}</span></div>
+          <span class="mono">${esc(r.ip)} · ${esc(r.mac)}</span></div>
+        <button class="btn small" style="border-color:var(--accent);color:var(--accent)" data-act="scan-add" data-i="${i}">${esc(t("manage.add.btn"))}</button>
+      </div>`).join("")}</div>` : ""}`;
+}
+
+/* ══════════════════════════ Render: Zeitplan ══════════════════════════════ */
+function renderSched() {
+  let list = [...state.schedules].sort((a,b) => a.time.localeCompare(b.time));
+  const q = state.ui.schedSearch.toLowerCase();
+  if (q) list = list.filter(s => {
+    const d = byId(s.deviceId);
+    return ((d?.name || "") + " " + s.time + " " + t("sched." + s.action) + " " + daysText(s.days)).toLowerCase().includes(q);
+  });
+  $("#s-sched").innerHTML = `
+    <div class="toprow"><div><div class="pageTitle">${esc(t("nav.schedule"))}</div>
+      <div class="pageSub">${esc(t("sched.subtitle"))}</div></div></div>
+    <div class="toolbar">
+      <button class="btn primary small" data-act="add-sched">${esc(t("sched.add"))}</button>
+    </div>
+    <div class="search">🔍<input placeholder="${esc(t("sched.search"))}" value="${esc(state.ui.schedSearch)}" data-act="sched-search"></div>
+    ${list.length === 0 ? `<div class="empty">${esc(t("sched.empty"))}</div>` :
+    `<div class="panel">${list.map((s, i) => {
+      const d = byId(s.deviceId);
+      return `${i ? '<div class="sep"></div>' : ""}
+      <div class="row64">
+        <div class="toggle ${s.enabled ? "on" : ""}" data-act="sc-toggle" data-id="${s.id}"></div>
+        <div class="rowInfo"><div class="rowTitle ${s.enabled?"":"dis"}">${esc(d ? d.name : t("sc.unknown"))}</div>
+          <span class="mono">${esc(daysText(s.days))} · ${esc(s.time)} · ${esc(t("sched." + s.action))}</span></div>
+        <div class="tiles">
+          <button class="tileBtn" data-act="sc-edit" data-id="${s.id}">✏️</button>
+          <button class="tileBtn tileDanger" data-act="sc-del" data-id="${s.id}">🗑️</button>
+        </div>
+      </div>`; }).join("")}</div>`}`;
+}
+
+/* ══════════════════════════ Render: Protokolle ════════════════════════════ */
+const LVL_TXT = { info: "INFO", warn: "WARN", error: "FEHLER" };
+const LVL_CLS = { info: "badgeInfo", warn: "badgeWarn", error: "badgeError" };
+function renderLogs() {
+  const q = state.ui.logSearch.toLowerCase();
+  const rows = state.logs.filter(l =>
+    (state.ui.logLevel === "all" || l.level === state.ui.logLevel) &&
+    (!q || (l.msg + " " + l.device).toLowerCase().includes(q)));
+  const fmt = ts => { const d = new Date(ts);
+    return String(d.getDate()).padStart(2,"0") + "." + String(d.getMonth()+1).padStart(2,"0") + " " +
+           String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); };
+  $("#s-logs").innerHTML = `
+    <div class="toprow"><div><div class="pageTitle">${esc(t("nav.logs"))}</div>
+      <div class="pageSub">${esc(t("logs.subtitle"))}</div></div></div>
+    <div class="search">🔍<input placeholder="${esc(t("logs.search"))}" value="${esc(state.ui.logSearch)}" data-act="log-search"></div>
+    <div class="toolbar">
+      <select class="sel" data-act="log-level" style="flex:1">
+        <option value="all" ${state.ui.logLevel==="all"?"selected":""}>${esc(t("logs.level.all"))}</option>
+        <option value="info" ${state.ui.logLevel==="info"?"selected":""}>INFO</option>
+        <option value="warn" ${state.ui.logLevel==="warn"?"selected":""}>WARN</option>
+        <option value="error" ${state.ui.logLevel==="error"?"selected":""}>FEHLER</option>
+      </select>
+      <button class="btn small" data-act="log-export">${esc(t("logs.export"))}</button>
+    </div>
+    ${rows.length === 0 ? `<div class="empty">${esc(t("logs.empty"))}</div>` :
+    `<div class="panel">${rows.map((l, i) => `
+      ${i ? '<div class="sep"></div>' : ""}
+      <div class="logrow">
+        <span class="lvl ${LVL_CLS[l.level]}">${LVL_TXT[l.level]}</span>
+        <span class="t">${fmt(l.ts)}</span>
+        ${l.device && l.device !== "—" && l.device !== t("logs.unknown") ? `<span class="dv">${esc(l.device)} ·</span>` : ""}
+        <span class="m" title="${esc(l.msg)}">${esc(l.msg)}</span>
+      </div>`).join("")}</div>`}`;
+}
+
+/* ══════════════════════════ Render: Einstellungen (+ Info unten) ══════════ */
+function renderSettings() {
+  const s = state.settings;
+  $("#s-set").innerHTML = `
+    <div class="toprow"><div><div class="pageTitle">${esc(t("nav.settings"))}</div>
+      <div class="pageSub">${esc(t("set.subtitle"))}</div></div></div>
+    <div class="field"><label>${esc(t("set.broadcast_ip"))}</label>
+      <input class="inp" id="st-ip" value="${esc(s.broadcastIp)}" placeholder="255.255.255.255"></div>
+    <div class="field"><label>${esc(t("set.broadcast_port"))}</label>
+      <input class="inp" id="st-port" type="number" min="1" max="65535" value="${s.broadcastPort}"></div>
+    <div class="field"><label>${esc(t("set.language"))}</label>
+      <select class="sel" id="st-lang" style="width:100%">
+        <option value="de" ${s.language==="de"?"selected":""}>Deutsch</option>
+        <option value="en" ${s.language==="en"?"selected":""}>English</option>
+        <option value="fr" ${s.language==="fr"?"selected":""}>Français</option>
+        <option value="es" ${s.language==="es"?"selected":""}>Español</option></select></div>
+    <div class="field"><label>${esc(t("set.display"))}</label>
+      <select class="sel" id="st-disp" style="width:100%">
+        <option value="auto" ${s.displayMode==="auto"?"selected":""}>${esc(t("disp.auto"))}</option>
+        <option value="light" ${s.displayMode==="light"?"selected":""}>${esc(t("disp.light"))}</option>
+        <option value="dark" ${s.displayMode==="dark"?"selected":""}>${esc(t("disp.dark"))}</option></select></div>
+    <div class="field"><label>${esc(t("set.design"))}</label>
+      <select class="sel" id="st-design" style="width:100%">
+        <option value="classic" ${s.design==="classic"?"selected":""}>${esc(t("design.classic"))}</option>
+        <option value="modern" ${s.design==="modern"?"selected":""}>${esc(t("design.modern"))}</option></select>
+      <div class="hint">${esc(t("set.design.hint"))}</div></div>
+    <div class="togRow" style="padding:6px 0"><div>${esc(t("set.auto_update"))}</div>
+      <div class="toggle ${s.autoUpdate?"on":""}" data-act="set-toggle" data-key="autoUpdate"></div></div>
+    <div class="field" style="margin-top:12px"><label>${esc(t("set.interval"))}</label>
+      <select class="sel" id="st-int" style="width:100%">
+        <option value="24" ${s.interval==="24"?"selected":""}>${esc(t("int.day"))}</option>
+        <option value="168" ${s.interval==="168"?"selected":""}>${esc(t("int.week"))}</option>
+        <option value="720" ${s.interval==="720"?"selected":""}>${esc(t("int.month"))}</option></select></div>
+    <div class="field"><label>${esc(t("set.max_logs"))}</label>
+      <input class="inp" id="st-maxlogs" type="number" min="10" max="10000" step="50" value="${s.maxLogs}"></div>
+    <div class="field"><label>${esc(t("set.resolution"))}</label>
+      <select class="sel" id="st-res" style="width:100%">
+        <option value="opt" ${s.resolution==="opt"?"selected":""}>${esc(t("res.opt"))}</option>
+        <option value="1280x720" ${s.resolution==="1280x720"?"selected":""}>1280 × 720</option>
+        <option value="1920x1080" ${s.resolution==="1920x1080"?"selected":""}>1920 × 1080</option>
+        <option value="2560x1440" ${s.resolution==="2560x1440"?"selected":""}>2560 × 1440</option></select></div>
+    <div class="field"><label>${esc(t("set.method"))}</label>
+      <select class="sel" id="st-method" style="width:100%">
+        <option value="host" ${s.method==="host"?"selected":""}>${esc(t("dev.method.host"))}</option>
+        <option value="smb" ${s.method==="smb"?"selected":""}>${esc(t("dev.method.smb"))}</option></select></div>
+    <div class="infoBlock">${esc(t("set.info"))}</div>
+    <div class="toolbar" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn small" data-act="set-reset">${esc(t("set.reset"))}</button>
+      <button class="btn primary small" data-act="set-save">${esc(t("set.save"))}</button>
+    </div>
+
+    <div class="sep" style="margin:20px 0 0"></div>
+    <div class="aboutBlock">
+      <div class="logoTile">⚡</div>
+      <div class="aboutTitle">${esc(t("about.name"))}</div>
+      <div class="aboutVer">${esc(t("about.version", { v: "2.3.0" }))} · iOS</div>
+      <div class="aboutText">${esc(t("about.desc"))}</div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="btn primary small" data-act="upd-check">${esc(t("upd.check"))}</button>
+        <a class="btn small" style="text-decoration:none;display:inline-block" href="https://github.com/pdchristian/WOL/releases" target="_blank" rel="noopener">${esc(t("upd.changelog"))}</a>
+      </div>
+      <div class="updStatus" id="updStatus">${state.upd}</div>
+    </div>`;
+}
+
+/* ══════════════════════════ Render: Dashboard (📊, kein Nav-Eintrag) ══════ */
+function renderDash() {
+  const d = byId(state.ui.dashDeviceId);
+  if (!d) { $("#s-dash").innerHTML = `<div class="empty">${esc(t("devices.empty"))}</div>`; return; }
+  const on = d.status === "online";
+  const pill = on ? "pillOnline" : d.status === "offline" ? "pillOffline" : "pillUnknown";
+  let warn = "";
+  if (!on) warn = `<div class="warnbox err">${esc(t("dash.unreach", { ip: d.ip || "?" }))}</div>`;
+  else if (!d.username) warn = `<div class="warnbox warn">${esc(t("dash.creds"))}</div>`;
+  const showMetrics = on && d.username && d.sim.reachable;
+  if (showMetrics && !d.metrics) seedMetrics(d);
+  const m = showMetrics ? d.metrics : null;
+  const svc = d.watch.map(w => ({ w, st: serviceState(d, w) }));
+  const models = (d.metrics?.models || []);
+  const anyReady = svc.some(s => s.st === "run");
+  const batches = currentBatches();
+  const sb = selBatchObj();
+  const metricCard = (key, val, detail) => `
+    <div class="metricCard">
+      <div class="mt"><i style="background:var(--gauge-${key})"></i>${esc(t("m." + key))}</div>
+      <div class="gauge" data-g="${key}" style="--v:${val ?? 0};--c:var(--gauge-${key})">
+        <div class="in"><b data-gv="${key}">${val ?? "–"}%</b></div></div>
+      <div class="mdet">${esc(detail)}</div>
+      ${key !== "vram" ? `<div data-spark="${key}">${sparkSvg(d.spark[key], `var(--gauge-${key})`)}</div>` : ""}
+    </div>`;
+  $("#s-dash").innerHTML = `
+    <div class="toolbar" style="align-items:center">
+      <button class="btn small" data-act="nav-devices">${esc(t("dash.back"))}</button>
+      <span class="spacer"></span>
+      <span class="mono" style="font-size:11px">${esc(t("dash.interval"))}</span>
+      <select class="sel" data-act="dash-int" style="padding:6px 8px">
+        ${[2000,3000,5000,10000].map(v => `<option value="${v}" ${state.ui.dashInterval===v?"selected":""}>${v/1000} s</option>`).join("")}
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <div class="pageTitle" style="font-size:19px">${esc(d.name)}</div>
+      <span class="pill ${pill}">${esc(statusName(d))}</span>
+    </div>
+    <div class="mono">${esc([d.ip, d.mac].filter(Boolean).join(" · "))} · ${d.sim.proto >= 3 ? esc(t("hostv", { v: d.sim.proto })) : "—"}</div>
+    ${warn}
+    ${showMetrics ? `
+      <div class="sectionHeading" style="display:flex;justify-content:space-between;align-items:baseline">
+        <span>${esc(t("dash.svc"))}</span><span style="font-size:11px;font-weight:400">${esc(t("dash.svc.sub"))}</span></div>
+      ${d.watch.length ? `<div class="panel">${svc.map((s, i) => `
+        ${i ? '<div class="sep"></div>' : ""}
+        <div class="row64" style="min-height:56px">
+          <span style="font-size:20px">${s.w.toLowerCase().includes("llama") ? "🦙" : "⚙️"}</span>
+          <div class="rowInfo"><div class="rowTitle" style="font-size:13px">${esc(s.w.split(":")[0])}
+            ${s.w.toLowerCase().includes("llama") && d.gpuHigh >= 2 ? `<span class="chip probe" style="margin-left:6px;font-size:9px" id="infBadge">${esc(t("dash.inferenz"))}</span>` : ""}</div>
+            <span class="mono">${esc(svcLine(d, s.w))}</span>
+            ${s.w.toLowerCase().includes("llama") && anyReady && models.length ? `<span class="mono">${esc(t("dash.model", { m: models[0] }))}${models.length > 1 ? ` +${models.length - 1}` : ""}</span>` : ""}
+          </div>
+        </div>`).join("")}</div>`
+      : `<div class="pageSub">${esc(t("dash.svc.none"))}</div>`}
+      ${m ? `
+      <div class="mono" id="dashUptime" style="margin:10px 0 0">${esc(t("d.uptime", { v: fmtUptime(d.upSeconds) }))}</div>
+      <div class="metrics">
+        ${metricCard("cpu", m.cpu, t("d.cores", { n: m.cores }))}
+        ${metricCard("ram", m.ram, t("d.gb", { used: (m.ram * m.ramTotal / 100).toFixed(1), total: m.ramTotal }))}
+        ${metricCard("gpu", m.gpu, t("d.na"))}
+        ${metricCard("vram", m.vram, t("d.na"))}
+      </div>` : ""}` : ""}
+    <div class="sectionHeading" style="display:flex;justify-content:space-between;align-items:baseline">
+      <span>${esc(t("batch.title"))}</span>
+      <button class="btn small" data-act="batch-new">${esc(t("batch.new"))}</button></div>
+    ${batches.length ? `<div class="panel">${batches.map(b => `
+      <div class="batchItem ${state.ui.selBatch === b.id ? "sel" : ""}" data-act="batch-sel" data-id="${b.id}">
+        ${esc(b.name)}<div class="mono">${esc(b.script)} · ${b.timeout} s</div></div>
+      <div class="sep"></div>`).join("")}</div>
+      <div class="toolbar" style="margin-top:8px">
+        <button class="btn small" data-act="batch-dup">${esc(t("batch.dup"))}</button>
+        <button class="btn small danger" data-act="batch-del">${esc(t("batch.del"))}</button>
+      </div>`
+    : `<div class="pageSub">${esc(t("batch.empty"))}</div>`}
+    ${sb ? `
+    <div class="panel" style="padding:12px;margin-top:10px">
+      <div class="field"><input class="inp" id="b-name" value="${esc(sb.name)}" placeholder="${esc(t("batch.newname"))}"></div>
+      <textarea class="code" id="b-script" placeholder="@echo off">${esc(sb.script)}</textarea>
+      <div class="toolbar" style="margin:10px 0 0;align-items:center">
+        <span class="mono" style="font-size:11px">${esc(t("batch.timeout"))}</span>
+        <input class="inp" id="b-timeout" type="number" min="5" max="3600" value="${sb.timeout}" style="width:76px;padding:6px 8px">
+        <span class="spacer"></span>
+        <button class="btn small" data-act="batch-save" ${state.ui.selBatch===sb.id?"":""} >${esc(t("batch.save"))}</button>
+        <button class="btn small primary" data-act="batch-run">${esc(t("batch.run"))}</button>
+      </div>
+      <div class="togRow" style="padding:10px 0 0"><div style="font-size:12px">${esc(t("batch.allow"))}</div>
+        <div class="toggle ${d.allow_batch?"on":""}" data-act="batch-allow"></div></div>
+      ${!d.allow_batch ? `<div class="hint" style="font-size:11px;color:var(--unknown);margin-top:6px">${esc(t("batch.disabled"))}</div>` : ""}
+    </div>
+    <div class="sectionHeading" style="display:flex;justify-content:space-between;align-items:baseline">
+      <span>${esc(t("batch.out"))}</span>
+      <button class="btn small" data-act="con-clear">${esc(t("batch.clear"))}</button></div>
+    <div class="console">${state.con.lines.map(l =>
+      `<div class="${/fehler|error/i.test(l) ? "err" : ""}">${esc(l)}</div>`).join("")}
+      ${state.con.running ? `<div class="dim">${esc(t("batch.running"))}</div>` : ""}
+      ${state.con.exit != null ? `<div class="dim">${esc(t("batch.exit", { c: state.con.exit }))} · ${esc(t("batch.dur", { s: state.con.dur }))}</div>` : ""}</div>` : ""}`;
+}
+
+/* ══════════════════════════ Theme / Sprache ═══════════════════════════════ */
+function applyTheme() {
+  const mode = state.settings.displayMode;
+  const eff = mode === "auto"
+    ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : mode;
+  state.theme = eff;
+  $("#phone").dataset.theme = eff;
+}
+matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", () => {
+  if (state.settings.displayMode === "auto") applyTheme();
+});
+
+function renderAll() {
+  applyTheme();
+  document.querySelectorAll("[data-t]").forEach(el => el.textContent = t(el.dataset.t));
+  renderDevices(); renderManage(); renderSched(); renderLogs(); renderSettings(); renderDash();
+}
+
+/* ══════════════════════════ Navigation ════════════════════════════════════ */
+function go(screen) {
+  state.ui.screen = screen;
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  $("#s-" + screen).classList.add("active");
+  document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.nav === screen));
+  if (screen === "logs") renderLogs();
+  if (screen === "dash") renderDash();
+  if (screen === "devices") renderDevices();
+}
+
+/* ══════════════════════════ Event-Delegation ══════════════════════════════ */
+$("#phone").addEventListener("click", ev => {
+  const nav = ev.target.closest("[data-nav]");
+  if (nav) return go(nav.dataset.nav);
+  const el = ev.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act, id = el.dataset.id;
+  switch (act) {
+    /* ── Geräte ── */
+    case "view": state.ui.deviceView = state.ui.deviceView === "grid" ? "list" : "grid"; renderDevices(); break;
+    case "refresh": refreshStatus(); toast(t("devices.refresh") + " …"); break;
+    case "wake": wakeDevice(byId(id)); break;
+    case "shutdown": openShutdownConfirm(byId(id)); break;
+    case "wake-all": {
+      const targets = state.devices.filter(d => d.enabled && d.status !== "online" && d.status !== "waking");
+      if (!targets.length) break;
+      openConfirm(t("wakeall.title"), t("wakeall.message", { count: targets.length }), () => {
+        closeSheet();
+        targets.forEach((d, i) => setTimeout(() => wakeDevice(d), i * 400));
+        toast(t("wakeall.done", { count: targets.length }));
+      });
+      break; }
+    case "rdp-full": toast(t("remote.demo", { mode: t("button.remote_fullscreen"), name: byId(id).name })); break;
+    case "rdp-win": toast(t("remote.demo", { mode: t("button.remote_window"), name: byId(id).name })); break;
+    case "open-dash": state.ui.dashDeviceId = id; state.ui.selBatch = null; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; go("dash"); break;
+    case "nav-devices": go("devices"); break;
+    case "edit-dev": openDeviceSheet(id); break;
+    case "del-dev": deleteDevice(id); break;
+    case "dev-save": saveDeviceFromSheet(); break;
+    /* ── Long-Press-Menü ── */
+    case "m-rdp": toast(t("remote.demo", { mode: el.dataset.mode === "full" ? t("button.remote_fullscreen") : t("button.remote_window"), name: byId(id).name })); closeSheet(); break;
+    case "m-dash": closeSheet(); state.ui.dashDeviceId = id; go("dash"); break;
+    case "m-wake": closeSheet(); wakeDevice(byId(id)); break;
+    case "m-shutdown": closeSheet(); openShutdownConfirm(byId(id)); break;
+    case "m-ping": closeSheet(); pingDevice(byId(id)); break;
+    case "m-edit": closeSheet(); openDeviceSheet(id); break;
+    case "m-del": closeSheet(); deleteDevice(id); break;
+    /* ── Verwalten ── */
+    case "add-device": openDeviceSheet(null); break;
+    case "import": toast(t("imp.done", { count: 0 })); break;
+    case "export": {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify({ devices: state.devices.map(({ metrics, spark, ...d }) => d) }, null, 2)], { type: "application/json" }));
+      a.download = "wol_devices.json"; a.click(); URL.revokeObjectURL(a.href);
+      toast(t("exp.done")); break; }
+    case "scan": startScan(); break;
+    case "scan-add": { const r = state.scan.results[+el.dataset.i]; scanAdd(r.host, r.ip, r.mac); break; }
+    case "sheet-close": closeSheet(); break;
+    case "confirm-yes": { const fn = state.ui.confirmFn; state.ui.confirmFn = null; closeSheet(); fn && fn(); break; }
+    case "edit-toggle": {
+      const e = state.ui.editing;
+      if (el.dataset.key === "sim_host") e.sim.host = !e.sim.host; else e[el.dataset.key] = !e[el.dataset.key];
+      el.classList.toggle("on"); break; }
+    /* ── Zeitplan ── */
+    case "add-sched": openSchedSheet(null); break;
+    case "sc-toggle": { const s = state.schedules.find(x => x.id === id); s.enabled = !s.enabled; renderSched(); break; }
+    case "sc-edit": openSchedSheet(id); break;
+    case "sc-save": saveSchedFromSheet(); break;
+    case "sc-del": {
+      const s = state.schedules.find(x => x.id === id); const d = byId(s.deviceId);
+      openConfirm(t("sched.del.title"), t("sched.del.message", { name: d ? d.name : t("sc.unknown") }), () => {
+        state.schedules = state.schedules.filter(x => x.id !== id);
+        closeSheet(); renderSched(); toast(t("sched.del.title") + " ✓");
+      }, "danger");
+      break; }
+    case "sc-day": {
+      const e = state.ui.editing, day = el.dataset.day;
+      e.days = e.days.includes(day) ? e.days.filter(x => x !== day) : [...e.days, day];
+      el.classList.toggle("run"); el.classList.toggle("off"); break; }
+    /* ── Protokolle ── */
+    case "log-export": {
+      const csv = "timestamp,device_name,action,status,message\n" + state.logs.map(l =>
+        [new Date(l.ts).toISOString(), l.device, l.level, l.level === "error" ? "FAILED" : "OK", (l.msg || "").replaceAll(",", ";")].join(",")).join("\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv" }));
+      a.download = "wol_logs.csv"; a.click(); URL.revokeObjectURL(a.href);
+      toast(t("logs.exported", { path: "wol_logs.csv" })); break; }
+    /* ── Einstellungen ── */
+    case "set-toggle": {
+      const k = el.dataset.key; state.settings[k] = !state.settings[k]; el.classList.toggle("on"); break; }
+    case "set-save": {
+      const ip = $("#st-ip").value.trim(), port = +$("#st-port").value;
+      if (!ip) { openAlert(t("err.ip_missing"), t("err.ip_msg")); break; }
+      if (!RE_IP.test(ip) && !RE_HOST.test(ip)) { openAlert(t("err.ip_title"), t("err.ip_msg")); break; }
+      if (!(port >= 1 && port <= 65535)) { openAlert(t("err.port_title"), t("err.port_msg")); break; }
+      state.settings.broadcastIp = ip; state.settings.broadcastPort = port;
+      state.settings.language = $("#st-lang").value; state.lang = state.settings.language;
+      state.settings.displayMode = $("#st-disp").value;
+      state.settings.design = $("#st-design").value;
+      state.settings.interval = $("#st-int").value;
+      state.settings.maxLogs = +$("#st-maxlogs").value || 100;
+      state.settings.resolution = $("#st-res").value;
+      state.settings.method = $("#st-method").value;
+      applyTheme(); renderAll();
+      openAlert(t("set.saved.title"), t("set.saved.msg"));
+      break; }
+    case "set-reset":
+      openConfirm(t("set.reset.title"), t("set.reset.msg"), () => {
+        Object.assign(state.settings, { broadcastIp: "255.255.255.255", broadcastPort: 9,
+          language: "de", displayMode: "auto", design: "modern", autoUpdate: true,
+          interval: "168", maxLogs: 100, resolution: "opt", method: "host" });
+        state.lang = "de"; closeSheet(); renderAll();
+      });
+      break;
+    /* ── Info / Update ── */
+    case "upd-check": {
+      state.upd = `<span class="spin"></span> ${esc(t("upd.checking"))}`;
+      $("#updStatus").innerHTML = state.upd;
+      setTimeout(() => { state.upd = esc(t("upd.ok")); $("#updStatus").textContent = state.upd; }, 1500);
+      break; }
+    /* ── Dashboard / Batches ── */
+    case "batch-new": {
+      const b = { id: "b" + Date.now(), devId: state.ui.dashDeviceId, name: t("batch.newname"), script: "@echo off", timeout: 120 };
+      state.batches.push(b); state.ui.selBatch = b.id; renderDash(); break; }
+    case "batch-sel": state.ui.selBatch = id; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; renderDash(); break;
+    case "batch-dup": { const b = selBatchObj(); if (b) { state.batches.push({ ...b, id: "b" + Date.now(), name: b.name + " (Kopie)" }); renderDash(); } break; }
+    case "batch-del": { state.batches = state.batches.filter(b => b.id !== state.ui.selBatch); state.ui.selBatch = null; renderDash(); break; }
+    case "batch-save": {
+      const b = selBatchObj(); if (!b) break;
+      b.name = $("#b-name").value.trim() || b.name; b.script = $("#b-script").value;
+      b.timeout = clamp(+$("#b-timeout").value || 120, 5, 3600);
+      renderDash(); toast(t("dev.saved")); break; }
+    case "batch-run": runBatch(); break;
+    case "batch-allow": { const d = byId(state.ui.dashDeviceId); d.allow_batch = !d.allow_batch; renderDash(); break; }
+    case "con-clear": state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; renderDash(); break;
+  }
+});
+$("#phone").addEventListener("change", ev => {
+  const el = ev.target.closest("[data-act]"); if (!el) return;
+  switch (el.dataset.act) {
+    case "sort": state.ui.sort = el.value; renderDevices(); break;
+    case "log-level": state.ui.logLevel = el.value; renderLogs(); break;
+    case "dash-int": state.ui.dashInterval = +el.value; restartDashTimer(); renderDash(); break;
+  }
+});
+$("#phone").addEventListener("input", ev => {
+  const el = ev.target.closest("[data-act]"); if (!el) return;
+  const act = el.dataset.act;
+  const keepFocus = (fn) => { const pos = el.selectionStart; fn(); };
+  if (act === "search") { state.ui.search = el.value; renderDevices();
+    const n = document.querySelector('[data-act="search"]'); if (n) { n.focus(); n.setSelectionRange(el.selectionStart, el.selectionStart); } }
+  if (act === "manage-search") { state.ui.manageSearch = el.value; renderManage();
+    const n = document.querySelector('[data-act="manage-search"]'); if (n) { n.focus(); n.setSelectionRange(el.selectionStart, el.selectionStart); } }
+  if (act === "sched-search") { state.ui.schedSearch = el.value; renderSched();
+    const n = document.querySelector('[data-act="sched-search"]'); if (n) { n.focus(); n.setSelectionRange(el.selectionStart, el.selectionStart); } }
+  if (act === "log-search") { state.ui.logSearch = el.value; renderLogs();
+    const n = document.querySelector('[data-act="log-search"]'); if (n) { n.focus(); n.setSelectionRange(el.selectionStart, el.selectionStart); } }
+});
+/* Interface-Toggles (Scan) – Klick auf Toggle */
+$("#phone").addEventListener("click", ev => {
+  const el = ev.target.closest('[data-act="iface-toggle"]');
+  if (!el) return;
+  const f = state.scan.ifaces[+el.dataset.i]; f.checked = !f.checked; renderManage();
+});
+
+/* Long-Press = Rechtsklick-Kontextmenü auf Karten/Zeilen */
+const phoneEl = $("#phone");
+phoneEl.addEventListener("pointerdown", ev => {
+  const host = ev.target.closest("[data-press]");
+  if (!host || ev.target.closest("button")) return;
+  state.ui.pressTimer = setTimeout(() => openDeviceMenu(host.dataset.id), 550);
+});
+["pointerup","pointercancel","pointermove"].forEach(evt =>
+  phoneEl.addEventListener(evt, () => clearTimeout(state.ui.pressTimer)));
+
+$("#overlay").addEventListener("click", closeSheet);
+
+/* Uhr in der Statusbar */
+setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }, 1000);
+
+renderAll();
+</script>
+</body>
+</html>

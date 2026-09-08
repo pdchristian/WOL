@@ -40,6 +40,11 @@
     <string name="wol_fail">%1$d appareil(s) n\'ont pas reçu le paquet.</string>
     <string name="ping_ok">Ping vers %1$s : réponse en %2$s ms</string>
     <string name="ping_fail">Ping vers %1$s : destination injoignable</string>
+    <string name="diag_title">Diagnostic – %1$s</string>
+    <string name="diag_head">%1$s résolu en %2$s adresse(s) IPv4 :</string>
+    <string name="diag_none">%1$s n’a pas pu être résolu (aucune entrée DNS IPv4). Vérifiez le WLAN/DNS du smartphone (DNS privé désactivé, mDNS possible ?).</string>
+    <string name="diag_ok">✓ %1$s – port accessible (%2$s ms)</string>
+    <string name="diag_fail">✗ %1$s – %2$s</string>
     <string name="remote_unavailable">Le bureau à distance n\'est disponible que dans la version Windows.</string>
 
     <string name="manage_subtitle">Gestion des appareils &amp; analyse réseau</string>

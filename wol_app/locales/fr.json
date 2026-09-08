@@ -269,6 +269,7 @@
   "settings.label.language": "Langue :",
   "settings.label.default_shutdown_method": "Méthode par défaut pour les nouveaux appareils :",
   "settings.label.max_logs": "Nombre maximal d'entrées de journal :",
+  "settings.label.close_to_tray": "Rester dans la zone de notification à la fermeture",
   "settings.language.de": "Allemand",
   "settings.language.en": "Anglais",
   "settings.language.es": "Espagnol",
@@ -383,6 +384,7 @@
   "modern.quit_confirm.title": "Quitter l'application",
   "modern.quit_confirm.message": "Voulez-vous vraiment quitter {app} ?",
   "modern.quit_confirm.yes": "Oui",
+  "modern.quit_confirm.minimize": "Réduire",
   "modern.quit_confirm.no": "Non",
   "modern.placeholder.hint": "Ce domaine sera modernisé dans une prochaine version. La boîte de dialogue éprouvée s'ouvre en attendant.",
   "modern.placeholder.devices": "Vue d'ensemble des appareils avec cartes d'état",
@@ -493,5 +495,8 @@
   "modern.dashboard.svc.tip_running": "PID {pid} · actif depuis {uptime} · CPU {cpu}% · RAM {ram} GB",
   "modern.dashboard.svc.tip_no_port": "PID {pid} trouvé, mais le port {port} ne répond pas",
   "modern.dashboard.svc.tip_stopped": "Processus introuvable",
-  "modern.dashboard.svc.tip_models": "Modèles : {models}"
+  "modern.dashboard.svc.tip_models": "Modèles : {models}",
+  "tray.tooltip": "{app} continue de s'exécuter dans la zone de notification",
+  "tray.menu.open": "Ouvrir la fenêtre",
+  "tray.menu.quit": "Quitter"
 }

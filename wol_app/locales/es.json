@@ -267,6 +267,7 @@
   "settings.label.language": "Idioma:",
   "settings.label.default_shutdown_method": "Método predeterminado para nuevos dispositivos:",
   "settings.label.max_logs": "Entradas máximas de registro:",
+  "settings.label.close_to_tray": "Mantener en el área de notificación al cerrar",
   "settings.label.remote_desktop_resolution": "Resolución:",
   "settings.label.remote_desktop_resolution_auto": "Optimizado 16:9",
   "settings.language.de": "Alemán",
@@ -383,6 +384,7 @@
   "modern.quit_confirm.title": "Cerrar aplicación",
   "modern.quit_confirm.message": "¿Seguro que desea cerrar {app}?",
   "modern.quit_confirm.yes": "Sí",
+  "modern.quit_confirm.minimize": "Minimizar",
   "modern.quit_confirm.no": "No",
   "modern.placeholder.hint": "Esta área se modernizará en una próxima versión. Mientras tanto se abre el diálogo habitual.",
   "modern.placeholder.devices": "Vista general de dispositivos con tarjetas de estado",
@@ -493,5 +495,8 @@
   "modern.dashboard.svc.tip_running": "PID {pid} · activo desde {uptime} · CPU {cpu}% · RAM {ram} GB",
   "modern.dashboard.svc.tip_no_port": "PID {pid} encontrado, pero el puerto {port} no responde",
   "modern.dashboard.svc.tip_stopped": "Proceso no encontrado",
-  "modern.dashboard.svc.tip_models": "Modelos: {models}"
+  "modern.dashboard.svc.tip_models": "Modelos: {models}",
+  "tray.tooltip": "{app} sigue ejecutándose en el área de notificación",
+  "tray.menu.open": "Abrir ventana",
+  "tray.menu.quit": "Salir"
 }

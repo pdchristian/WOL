@@ -18,14 +18,17 @@ from PyQt6.QtCore import QEvent, QRect, QSize, Qt, QTimer
 from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
     QStackedWidget,
+    QSystemTrayIcon,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -49,7 +52,10 @@ from wol_app.views.logs_view import LogsView
 from wol_app.views.manage_view import ManageView
 from wol_app.views.schedule_view import ScheduleView
 from wol_app.views.settings_view import SettingsView
-from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
+from wol_app.views.shutdown_confirm_dialog import (
+    MINIMIZE_RESULT_CODE,
+    ModernShutdownConfirmDialog,
+)
 from wol_app.views.update_view import UpdateView
 from wol_app.wol_engine import WOLEngine
 
@@ -115,6 +121,13 @@ class ModernMainWindow(QMainWindow):
         self._sidebar_applying: bool = False
         self._active_nav_btn: QPushButton | None = None
 
+        # Notification area (system tray) state — see _apply_tray_mode.
+        # _quitting marks the one real shutdown path so closeEvent stops
+        # redirecting closes to the tray.
+        self._tray: QSystemTrayIcon | None = None
+        self._tray_menu: QMenu | None = None
+        self._quitting: bool = False
+
         self._setup_ui()
         self._apply_sidebar_mode()
         self._select_nav(0)
@@ -123,6 +136,10 @@ class ModernMainWindow(QMainWindow):
         if not HEADLESS_MODE:
             self.engine.schedule_fired.connect(self._on_schedule_fired)
             self.engine.start_scheduler()
+
+        # Honour the "keep running in the notification area" preference
+        # (ui.close_to_tray) from the very first start.
+        self._apply_tray_mode()
 
     # ── UI construction ──────────────────────────────────────────────────
 
@@ -457,6 +474,10 @@ class ModernMainWindow(QMainWindow):
         environment variable in the user's shell must not silently disable
         the confirmation (automated tests call ``close()`` directly and
         never route through here).
+
+        With "keep running in the notification area" enabled the dialog
+        gains a third button (Ja / Minimieren / Nein); without a usable
+        tray it stays a plain Ja / Nein question.
         """
         dialog = ModernShutdownConfirmDialog(
             "",
@@ -465,10 +486,15 @@ class ModernMainWindow(QMainWindow):
             message_key="modern.quit_confirm.message",
             yes_key="modern.quit_confirm.yes",
             no_key="modern.quit_confirm.no",
+            min_key=("modern.quit_confirm.minimize"
+                     if self._close_to_tray_active() else None),
             message_kwargs={"app": Translations.tr("app.name")},
         )
-        if dialog.exec():
-            self.close()
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            self._quit_application()
+        elif result == MINIMIZE_RESULT_CODE:
+            self._hide_to_tray()
 
     def _on_settings_saved(self) -> None:
         """React to a save/reset on the native settings screen.
@@ -486,6 +512,9 @@ class ModernMainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             apply_modern_theme(app, self.dark_mode)
+        # The "keep running in the notification area" toggle may have
+        # changed — apply it live, no restart required.
+        self._apply_tray_mode()
         if self.settings_view.restart_required:
             QMessageBox.information(
                 self,
@@ -503,6 +532,106 @@ class ModernMainWindow(QMainWindow):
             self.config, self.engine, device_id, action,
             lambda msg, _ms: None,  # no status bar in the modern layout
         )
+
+    # ── Notification area (system tray) ──────────────────────────────────
+
+    @staticmethod
+    def _tray_supported() -> bool:
+        """Whether a system tray can be offered in this environment.
+
+        False in headless/offscreen runs and on desktops without a tray
+        host — hiding the window there would make it unreachable.
+        """
+        if HEADLESS_MODE:
+            return False
+        return QSystemTrayIcon.isSystemTrayAvailable()
+
+    def _close_to_tray_active(self) -> bool:
+        """Effective tray preference: setting AND a usable tray."""
+        return self.config.get_close_to_tray() and self._tray_supported()
+
+    def _apply_tray_mode(self) -> None:
+        """Sync tray icon and quit-on-last-window behaviour with the setting.
+
+        Called at startup and after every settings save. With tray mode on,
+        a closed window must NOT end the application, so Qt's default
+        ``quitOnLastWindowClosed`` is switched off (and back on otherwise —
+        otherwise ``close()`` alone would no longer quit).
+        """
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(not self._close_to_tray_active())
+        if self._close_to_tray_active():
+            self._ensure_tray()
+        elif self._tray is not None:
+            self._tray.hide()
+            self._tray = None
+            self._tray_menu = None
+
+    def _ensure_tray(self) -> QSystemTrayIcon | None:
+        """Create the tray icon lazily (visible only while the window hides)."""
+        if self._tray is not None:
+            return self._tray
+        icon = self.windowIcon()
+        if icon.isNull():
+            pixmap = app_icon_pixmap(64)
+            if pixmap is not None and not pixmap.isNull():
+                icon = QIcon(pixmap)
+        if icon.isNull():
+            icon_path = get_resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                icon = QIcon(icon_path)
+        if icon.isNull():
+            return None  # no usable icon at all — keep window-close behaviour
+        tray = QSystemTrayIcon(icon, self)
+        self._tray_menu = QMenu(self)
+        open_action = self._tray_menu.addAction(
+            Translations.tr("tray.menu.open"))
+        open_action.triggered.connect(self._show_from_tray)
+        quit_action = self._tray_menu.addAction(
+            Translations.tr("tray.menu.quit"))
+        quit_action.triggered.connect(self._quit_application)
+        tray.setContextMenu(self._tray_menu)
+        tray.setToolTip(Translations.tr(
+            "tray.tooltip", app=Translations.tr("app.name")))
+        tray.activated.connect(self._on_tray_activated)
+        self._tray = tray
+        return tray
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        """Double-click / single-click on the tray icon restores the window."""
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger,
+                      QSystemTrayIcon.ActivationReason.DoubleClick):
+            self._show_from_tray()
+
+    def _show_from_tray(self) -> None:
+        """Restore the window from the notification area."""
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _hide_to_tray(self) -> None:
+        """Hide the window to the notification area.
+
+        ``hide()`` deliberately bypasses ``closeEvent``: schedulers and
+        workers keep running so planned wake-ups still fire.
+        """
+        tray = self._ensure_tray()
+        if tray is None:
+            return
+        tray.show()
+        self.hide()
+
+    def _quit_application(self) -> None:
+        """The one real exit path while tray mode is active."""
+        self._quitting = True
+        if self._tray is not None:
+            self._tray.hide()
+        self.close()
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(True)
+            app.quit()
 
     # ── Language / theme ─────────────────────────────────────────────────
 
@@ -536,9 +665,27 @@ class ModernMainWindow(QMainWindow):
         self.update_view.retranslate()
         self.dashboard_view.retranslate()
 
+        # Tray icon tooltip + context menu (only while the tray exists).
+        if self._tray is not None and self._tray_menu is not None:
+            self._tray.setToolTip(Translations.tr(
+                "tray.tooltip", app=Translations.tr("app.name")))
+            open_action, quit_action = self._tray_menu.actions()
+            open_action.setText(Translations.tr("tray.menu.open"))
+            quit_action.setText(Translations.tr("tray.menu.quit"))
+
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        # "Keep running in the notification area": the close button hides
+        # the window instead of quitting — schedulers keep working. The
+        # cleanup below runs only on the real exit (_quitting) or when the
+        # feature is off. A hidden window must always be allowed to close
+        # (otherwise the app could never quit again without a tray).
+        if (not self._quitting and self._close_to_tray_active()
+                and self.isVisible() and not self.isMinimized()):
+            event.ignore()
+            self._hide_to_tray()
+            return
         # Flush any pending debounced sidebar width save.
         if self._sidebar_save_timer is not None:
             self._sidebar_save_timer.stop()

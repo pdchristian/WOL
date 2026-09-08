@@ -23,6 +23,12 @@ from PyQt6.QtWidgets import (
 from wol_app.modern_theme import current_tokens
 from wol_app.translations import Translations
 
+#: Result code returned by :meth:`QDialog.exec` when the optional third
+#: ("minimise") button is used. Deliberately different from both
+#: ``QDialog.Rejected`` (0) and ``QDialog.Accepted`` (1) so that existing
+#: ``if dialog.exec():`` call-sites keep their meaning.
+MINIMIZE_RESULT_CODE = 2
+
 
 def _power_icon_pixmap(size: int, color: str, dpr: float = 1.0) -> QPixmap:
     """Render the power symbol (open circle + vertical line) as a QPixmap.
@@ -63,6 +69,10 @@ class ModernShutdownConfirmDialog(QDialog):
 
     Defaults to the device-shutdown texts; the window-quit confirmation
     reuses the same layout with ``title_key``/``message_key`` overrides.
+
+    Passing ``min_key`` adds a third button between Ja and Nein whose
+    ``exec()`` result is :data:`MINIMIZE_RESULT_CODE` — used by the quit
+    confirmation when "keep running in the notification area" is enabled.
     """
 
     def __init__(self, device_name: str, parent: QWidget | None = None, *,
@@ -70,6 +80,7 @@ class ModernShutdownConfirmDialog(QDialog):
                  message_key: str = "modern.shutdown_confirm.message",
                  yes_key: str = "modern.shutdown_confirm.yes",
                  no_key: str = "modern.shutdown_confirm.no",
+                 min_key: str | None = None,
                  message_kwargs: dict | None = None) -> None:
         super().__init__(parent)
         self.device_name = device_name
@@ -78,6 +89,7 @@ class ModernShutdownConfirmDialog(QDialog):
         self._message_kwargs = message_kwargs or {}
         self._yes_key = yes_key
         self._no_key = no_key
+        self._min_key = min_key
         self.setWindowTitle(Translations.tr(title_key))
         self.setMinimumWidth(380)
         self._setup_ui()
@@ -107,15 +119,22 @@ class ModernShutdownConfirmDialog(QDialog):
 
         layout.addSpacing(4)
 
-        # Buttons: Ja (danger/confirm) — Nein
+        # Buttons: Ja (danger/confirm) — [Minimieren] — Nein
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         self.yes_btn = QPushButton(Translations.tr(self._yes_key))
         self.yes_btn.setObjectName("dangerButton")
         self.yes_btn.clicked.connect(self.accept)
+        self.min_btn: QPushButton | None = None
+        if self._min_key:
+            self.min_btn = QPushButton(Translations.tr(self._min_key))
+            self.min_btn.clicked.connect(
+                lambda: self.done(MINIMIZE_RESULT_CODE))
         self.no_btn = QPushButton(Translations.tr(self._no_key))
         self.no_btn.clicked.connect(self.reject)
         btn_row.addWidget(self.yes_btn)
+        if self.min_btn is not None:
+            btn_row.addWidget(self.min_btn)
         btn_row.addWidget(self.no_btn)
         layout.addLayout(btn_row)
 

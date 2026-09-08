@@ -269,6 +269,7 @@
   "settings.label.language": "Sprache:",
   "settings.label.default_shutdown_method": "Standard-Methode für neue Geräte:",
   "settings.label.max_logs": "Maximale Protokolleinträge:",
+  "settings.label.close_to_tray": "Beim Schließen im Iconbereich bleiben",
   "settings.language.de": "Deutsch",
   "settings.language.en": "Englisch",
   "settings.language.es": "Spanisch",
@@ -383,6 +384,7 @@
   "modern.quit_confirm.title": "Anwendung beenden",
   "modern.quit_confirm.message": "Wollen Sie {app} wirklich beenden?",
   "modern.quit_confirm.yes": "Ja",
+  "modern.quit_confirm.minimize": "Minimieren",
   "modern.quit_confirm.no": "Nein",
   "modern.placeholder.hint": "Dieser Bereich wird in einer der nächsten Versionen modernisiert. Bis dahin öffnet sich der bewährte Dialog.",
   "modern.placeholder.devices": "Geräteübersicht mit Status-Karten",
@@ -493,5 +495,8 @@
   "modern.dashboard.svc.tip_running": "PID {pid} · läuft seit {uptime} · CPU {cpu}% · RAM {ram} GB",
   "modern.dashboard.svc.tip_no_port": "PID {pid} gefunden, aber Port {port} antwortet nicht",
   "modern.dashboard.svc.tip_stopped": "Prozess nicht gefunden",
-  "modern.dashboard.svc.tip_models": "Modelle: {models}"
+  "modern.dashboard.svc.tip_models": "Modelle: {models}",
+  "tray.tooltip": "{app} läuft im Iconbereich weiter",
+  "tray.menu.open": "Fenster öffnen",
+  "tray.menu.quit": "Beenden"
 }

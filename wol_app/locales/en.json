@@ -268,6 +268,7 @@
   "settings.label.remote_desktop_resolution": "Resolution:",
   "settings.label.remote_desktop_resolution_auto": "Optimized 16:9",
   "settings.label.max_logs": "Maximum log entries:",
+  "settings.label.close_to_tray": "Keep running in the notification area when closed",
   "settings.label.default_shutdown_method": "Default method for new devices:",
   "settings.language.de": "German",
   "settings.language.en": "English",
@@ -383,6 +384,7 @@
   "modern.quit_confirm.title": "Quit Application",
   "modern.quit_confirm.message": "Do you really want to quit {app}?",
   "modern.quit_confirm.yes": "Yes",
+  "modern.quit_confirm.minimize": "Minimize",
   "modern.quit_confirm.no": "No",
   "modern.placeholder.hint": "This area will be modernized in an upcoming release. The proven dialog opens instead.",
   "modern.placeholder.devices": "Device overview with status cards",
@@ -493,5 +495,8 @@
   "modern.dashboard.svc.tip_running": "PID {pid} · running for {uptime} · CPU {cpu}% · RAM {ram} GB",
   "modern.dashboard.svc.tip_no_port": "PID {pid} found, but port {port} does not answer",
   "modern.dashboard.svc.tip_stopped": "Process not found",
-  "modern.dashboard.svc.tip_models": "Models: {models}"
+  "modern.dashboard.svc.tip_models": "Models: {models}",
+  "tray.tooltip": "{app} keeps running in the notification area",
+  "tray.menu.open": "Open Window",
+  "tray.menu.quit": "Quit"
 }

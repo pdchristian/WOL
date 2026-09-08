@@ -44,6 +44,15 @@ def _main_linux():
     app.setApplicationName("Wake-on-LAN Manager")
     app.setOrganizationName("WakeOnLAN")
 
+    # GNOME (Dock + top bar) associates the running window with its launcher
+    # through the desktop file name: it becomes the Wayland app id and the X11
+    # WM_CLASS. Without it Qt derives both from argv[0] - which is "python3"
+    # when started via the launcher script - so GNOME shows a generic icon
+    # even though the app grid entry (icon_modern.png) is correct. The name
+    # must match the .desktop file (wake-on-lan-manager.desktop) and its
+    # StartupWMClass key, as installed by install.sh / packaging/build_deb.sh.
+    app.setDesktopFileName("wake-on-lan-manager")
+
     # Diagnostics: set WOL_WATCHDOG=1 (or seconds) to dump all thread stacks
     # to ~/.wol_app/wol_watchdog.log when the GUI thread hangs.
     maybe_start_watchdog(app)

@@ -262,6 +262,11 @@ DEFAULT_CONFIG = {
         # collapsed state (see SIDEBAR_* constants).
         "sidebar_width": SIDEBAR_WIDTH_DEFAULT,
         "sidebar_collapsed": False,
+        # Modern layout: keep running in the notification area (system tray)
+        # when the window is closed. The window's close button then minimises
+        # to the tray; the sidebar "Beenden" action asks
+        # (Ja / Minimieren / Nein). Ignored when no tray is available.
+        "close_to_tray": False,
         # Modern main window rect [x, y, w, h] (normal state, restored on
         # start when it still intersects an attached screen).
         "window_geometry": None,
@@ -583,6 +588,17 @@ class ConfigManager:
     def set_sidebar_collapsed(self, collapsed: bool) -> None:
         """Persist the modern sidebar collapsed (icon-only) state."""
         self.config.setdefault("ui", {})["sidebar_collapsed"] = bool(collapsed)
+        self.save()
+
+    # --- Modern notification area (system tray) ---
+
+    def get_close_to_tray(self) -> bool:
+        """Return whether closing the modern window keeps the app in the tray."""
+        return bool(self.config.get("ui", {}).get("close_to_tray", False))
+
+    def set_close_to_tray(self, enabled: bool) -> None:
+        """Persist the "keep running in the notification area" preference."""
+        self.config.setdefault("ui", {})["close_to_tray"] = bool(enabled)
         self.save()
 
     # --- Modern main window geometry ---

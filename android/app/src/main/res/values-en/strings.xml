@@ -40,6 +40,11 @@
     <string name="wol_fail">%1$d device(s) did not receive the packet.</string>
     <string name="ping_ok">Ping to %1$s: reply in %2$s ms</string>
     <string name="ping_fail">Ping to %1$s: destination unreachable</string>
+    <string name="diag_title">Diagnosis – %1$s</string>
+    <string name="diag_head">%1$s resolved to %2$s IPv4 address(es):</string>
+    <string name="diag_none">%1$s could not be resolved (no IPv4 DNS entry). Check the phone’s Wi‑Fi/DNS (Private DNS off, mDNS possible?).</string>
+    <string name="diag_ok">✓ %1$s – port reachable (%2$s ms)</string>
+    <string name="diag_fail">✗ %1$s – %2$s</string>
     <string name="remote_unavailable">Remote desktop is only available in the Windows version.</string>
 
     <string name="manage_subtitle">Device management &amp; network scan</string>

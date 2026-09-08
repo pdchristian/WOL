@@ -43,6 +43,11 @@
     <string name="wol_fail">%1$d Gerät(e) haben das Paket nicht erhalten.</string>
     <string name="ping_ok">Ping an %1$s: Antwort in %2$s ms</string>
     <string name="ping_fail">Ping an %1$s: Ziel nicht erreichbar</string>
+    <string name="diag_title">Diagnose – %1$s</string>
+    <string name="diag_head">%1$s aufgelöst auf %2$s IPv4-Adresse(n):</string>
+    <string name="diag_none">%1$s konnte nicht aufgelöst werden (kein IPv4-DNS-Eintrag). Prüfen Sie WLAN/DNS des Smartphones (Private DNS aus, mDNS möglich?).</string>
+    <string name="diag_ok">✓ %1$s – Port erreichbar (%2$s ms)</string>
+    <string name="diag_fail">✗ %1$s – %2$s</string>
     <string name="remote_unavailable">Remote-Desktop ist nur in der Windows-Version verfügbar.</string>
 
     <!-- Verwalten -->

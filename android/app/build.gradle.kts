@@ -13,8 +13,8 @@ android {
         applicationId = "de.wolmanager"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "2.3.0"
+        versionCode = 3
+        versionName = "2.3.1"
     }
 
     buildTypes {

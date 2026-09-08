@@ -40,6 +40,11 @@
     <string name="wol_fail">%1$d dispositivo(s) no recibieron el paquete.</string>
     <string name="ping_ok">Ping a %1$s: respuesta en %2$s ms</string>
     <string name="ping_fail">Ping a %1$s: destino inaccesible</string>
+    <string name="diag_title">Diagnóstico – %1$s</string>
+    <string name="diag_head">%1$s resuelto en %2$s dirección(es) IPv4:</string>
+    <string name="diag_none">No se pudo resolver %1$s (sin entrada DNS IPv4). Compruebe WLAN/DNS del smartphone (¿DNS privado desactivado, mDNS posible?).</string>
+    <string name="diag_ok">✓ %1$s – puerto accesible (%2$s ms)</string>
+    <string name="diag_fail">✗ %1$s – %2$s</string>
     <string name="remote_unavailable">El escritorio remoto solo está disponible en la versión de Windows.</string>
 
     <string name="manage_subtitle">Gestión de dispositivos y escaneo de red</string>
