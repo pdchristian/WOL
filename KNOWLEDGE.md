@@ -298,6 +298,7 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
 > - `ui.devices_view_mode` — `"grid"` (Kachelansicht) or `"list"` (Geräteliste) on the modern Devices screen; toggled via the toolbar icon, persisted by `ConfigManager.set_devices_view_mode()`.
 > - `ui.devices_sort_key` — `"name"` / `"ip"` / `"mac"` / `"status"` sort order of the modern Devices screen (status ranks Online → Offline → Unknown); persisted by `ConfigManager.set_devices_sort_key()`.
 > - `ui.dashboard_interval_ms` — polling interval of the per-device dashboard (ms, clamped to 2000–60000, default 3000); `ConfigManager.get/set_dashboard_interval_ms()`.
+> - `ui.close_to_tray` — modern layout only: closing the window hides it to the system tray (`QSystemTrayIcon`, created lazily by `ModernMainWindow._ensure_tray`) instead of quitting; `app.setQuitOnLastWindowClosed` is flipped by `_apply_tray_mode()`, the real exit path is `_quit_application()` (`_quitting` flag bypasses the `closeEvent` redirect). The quit confirmation gains a *Minimieren* button (`MINIMIZE_RESULT_CODE` from `views/shutdown_confirm_dialog.py`) only while the tray is active; ignored when `HEADLESS_MODE` or `QSystemTrayIcon.isSystemTrayAvailable()` is false. `ConfigManager.get/set_close_to_tray()`, applied live via `settings_saved` → `_apply_tray_mode()`.
 
 ### 4.3 Device Schema
 
@@ -651,7 +652,7 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 - **Shared flows:** both layouts reuse `wol_app/remote_desktop.py` (`start_remote_desktop`) and `wol_app/shutdown_flow.py` (`confirm_shutdown`/`execute_shutdown`), the same `ConfigManager` API, the same `WOLEngine`, and the classic `UpdateAvailableDialog` for downloads.
 - **Theming:** `modern_theme.py` provides `DARK`/`LIGHT` token sets and `apply_modern_theme()`; objectName-based QSS so it never leaks into the classic UI. Respects `ui.display_mode` (auto/light/dark).
 - **Native dialogs:** `ModernDeviceDialog` (`views/device_edit_dialog.py`) and `ModernScheduleEditDialog` (`views/schedule_edit_dialog.py`); `widgets/toggle_switch.py` provides `ToggleSwitch`/`ToggleWithLabel`.
-- **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution) — devices/schedules/logs and the layout mode are preserved.
+- **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution, close-to-tray) — devices/schedules/logs and the layout mode are preserved.
 - **Device Dashboard (`dashboard_view.py`, stack index 6, no sidebar entry):** opened via the 📊 tile on each device card/row (between the remote-desktop tiles and edit) or the context menu — `DevicesView.dashboard_requested(device_id)` → `ModernMainWindow.open_device_dashboard()` (also refreshes the header on `_on_devices_changed`; `closeEvent` and `back_requested` → nav index 0 call `cancel_workers()`). Widgets: `RingGauge` (painted arc, "–" when `None`), `Sparkline` (60-sample deque, gaps break the line), `MetricCard` (CPU/RAM/GPU/VRAM, gauge colours from theme tokens `gauge_cpu`/`gauge_ram`/`gauge_gpu`/`gauge_vram`). Polls `get_metrics()` every `ui.dashboard_interval_ms` (single-flight `_metrics_busy`, paused in `hideEvent`, guarded by `HEADLESS_MODE`); offline keeps the last values but flips the badge and shows the error in `status_line`. Batch library (QListWidget + editor + console) persists via `ConfigManager.set_device_batches()`; running a batch requires the device's `allow_batch` checkbox and the host-side gate (see §5.5).
 
 ### 7.3 Dialog Components
@@ -666,6 +667,7 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 | UpdateAvailableDialog| `update_dialog.py`        | Show release notes + download   |
 | UpdateErrorDialog    | `update_dialog.py`        | Network error during update     |
 | UpdateInfoDialog     | `update_dialog.py`        | "Already up to date" message    |
+| ModernShutdownConfirmDialog | `views/shutdown_confirm_dialog.py` | Modern confirm dialog; device shutdown (Ja/Nein) or window quit (Ja/Minimieren/Nein via `min_key`, result `MINIMIZE_RESULT_CODE`) |
 
 ---
 

@@ -94,6 +94,28 @@ Im selben Bereich **Design/Anzeige** wählen Sie den **Anzeige-Modus**:
 
 Der gewählte Modus wird von **beiden** Layouts (modern und klassisch) respektiert.
 
+### Im Iconbereich bleiben beim Schließen
+
+Standardmäßig beendet das Schließen des Fensters (✕) die App. Mit der Option
+**„Beim Schließen im Iconbereich bleiben"** (moderne Oberfläche: Bildschirm
+**Einstellungen → Beim Schließen im Iconbereich bleiben**) ändert sich das:
+
+- **Schließen-Button (✕)** – das Fenster verschwindet, die App läuft im
+  **Iconbereich** (System-Tray, rechts in der Taskleiste) weiter. Geplante
+  **Zeitpläne** (automatisches Aufwecken/Herunterfahren) werden weiterhin
+  ausgeführt.
+- **Fenster wieder öffnen** – **Doppelklick** auf das Tray-Symbol, oder
+  Rechtsklick → **Fenster öffnen**.
+- **App wirklich beenden** – Rechtsklick auf das Tray-Symbol → **Beenden**,
+  oder ⏻ in der Seitenleiste.
+- **Beenden-Dialog:** Ist die Option aktiv, fragt ⏻ mit drei Buttons nach:
+  **Ja** (App beenden) · **Minimieren** (in den Iconbereich) · **Nein**
+  (nichts tun). Ohne aktivierte Option bleibt es beim bekannten **Ja / Nein**.
+
+> **Hinweis:** Die Option ist nur wirksam, wenn Ihr System einen Iconbereich
+> bereitstellt (unter Windows immer). Deaktivieren Sie die Option, verhält sich
+> die App wieder wie gewohnt.
+
 ### Aufbau der modernen Oberfläche
 
 Die moderne Oberfläche besteht aus zwei Teilen:

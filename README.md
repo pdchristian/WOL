@@ -112,7 +112,12 @@ the bridge protocol and a browser demo mode.
 
 ### Unreleased
 
-#### 📱 Android HTML app (`android_html/`)
+#### � Stay in the notification area (close to tray)
+- **New setting "Keep running in the notification area when closed"** (modern layout, *Settings* screen): the window's close button now hides the app to the system tray instead of quitting — scheduled wake-ups and shutdowns keep firing while hidden. Double-click the tray icon (or *Open Window* in its context menu) to restore it; *Quit* in the tray menu ends the app
+- **Third button on the quit dialog:** the sidebar ⏻ confirmation now offers **Ja / Minimieren / Nein** while the option is active (plain Ja / Nein otherwise, and whenever no system tray is available)
+- Persisted as `ui.close_to_tray` (default `false`); applied live without an app restart
+
+#### �📱 Android HTML app (`android_html/`)
 - New companion Android client based on the *Android 5.0* prototype: fullscreen WebView (dark/light theme, DE/EN/FR/ES), Kotlin shell + `@JavascriptInterface` bridge, real Host Service v4 dashboard (CPU/RAM/GPU/VRAM, uptime, watched llama.cpp services), batch console, network scanner, schedules, CSV/JSON log export and update check. Device import/export matches the Windows `devices.json` format. Debug APK via `.\build_html.ps1`
 
 #### 🔄 Remote Desktop: automatic second attempt without password

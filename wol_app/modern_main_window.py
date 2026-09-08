@@ -101,7 +101,10 @@ class ModernMainWindow(QMainWindow):
         self.setWindowTitle(Translations.tr("app.name"))
         # Use the modern logo in the taskbar (WM_SETICON uses the window icon,
         # not the app icon, so this must be set on the window itself).
+        # Linux packages ship only PNGs, hence the .png fallback before .ico.
         icon_path = get_resource_path("icon_modern.ico")
+        if not os.path.exists(icon_path):
+            icon_path = get_resource_path("icon_modern.png")
         if not os.path.exists(icon_path):
             icon_path = get_resource_path("icon.ico")
         if os.path.exists(icon_path):
@@ -707,6 +710,8 @@ def run_modern_window(config: ConfigManager, dark_mode: bool) -> NoReturn:
 
     apply_modern_theme(QApplication.instance(), dark_mode)
     icon_path: str = get_resource_path("icon_modern.ico")
+    if not os.path.exists(icon_path):
+        icon_path = get_resource_path("icon_modern.png")
     if not os.path.exists(icon_path):
         icon_path = get_resource_path("icon.ico")
     if os.path.exists(icon_path):

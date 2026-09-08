@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>de</string>
+	<key>CFBundleDisplayName</key>
+	<string>Wake-on-LAN</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>2.3.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Automatic</string>
+	<key>UIBackgroundModes</key>
+	<array/>
+	<!-- Lokales Netzwerk: UDP-Broadcast (WOL) + TCP (Host-Service, Scan).
+	     iOS 14+ verlangt den Zweck-Text, sonst scheitern LAN-Sends still. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Wake-on-LAN Manager sendet Magic-Pakete und spricht den WOL Host Service in Ihrem lokalen Netzwerk an, um Geräte zu wecken, abzuschalten und ihren Status anzuzeigen.</string>
+	<!-- Hintergrund-Aktualisierung für Zeitpläne (Best-Effort). -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>de.wolmanager.schedule-refresh</string>
+	</array>
+	<!-- ms-rd:// für Microsoft Remote Desktop / Windows App abfragen dürfen. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>ms-rd</string>
+	</array>
+	<!-- Nur lokale Netze erlauben (Host-Service nutzt http-ähnliche TCP-Verbindung);
+	     der GitHub-Update-Check bleibt via ATS sicher (HTTPS). -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>de</string>
+		<string>en</string>
+		<string>fr</string>
+		<string>es</string>
+	</array>
+</dict>
+</plist>

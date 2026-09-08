@@ -39,6 +39,15 @@ def _main_linux():
     from wol_app.utils import get_resource_path
     from wol_app.watchdog import maybe_start_watchdog
 
+    # X11/XWayland WM_CLASS instance name: GNOME matches the running window
+    # against the StartupWMClass key of the desktop file (case-sensitive).
+    # Qt derives the instance name from argv[0] - "python3" when started via
+    # the launcher script - so GNOME finds no launcher and shows the generic
+    # gear icon in the Dash/Dock. RESOURCE_NAME overrides the instance name
+    # and must be set BEFORE the QApplication is created. (On Wayland the
+    # app_id comes from setDesktopFileName below - both are needed.)
+    os.environ.setdefault("RESOURCE_NAME", "wake-on-lan-manager")
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")  # Consistent modern look on Linux/GNOME
     app.setApplicationName("Wake-on-LAN Manager")

@@ -1,0 +1,96 @@
+{
+  "info": {
+    "author": "WOL Manager",
+    "description": "Wake-on-LAN Manager (iOS, WKWebView-Wrapper)"
+  },
+  "settings": {
+    "generateMultipleXcodeproj": false,
+    "defaultConfig": "Release"
+  },
+  "options": {
+    "bundleIdPrefix": "de",
+    "deploymentTarget": { "iOS": "16.0" },
+    "createIntermediateGroups": true,
+    "postGenCommand": "echo 'XcodeGen fertig: ios/WolManager.xcodeproj erzeugen mit: xcodegen generate'"
+  },
+  "targets": {
+    "WolManager": {
+      "type": "application",
+      "platform": "iOS",
+      "sources": [
+        "WolManager"
+      ],
+      "resources": [
+        "WebApp"
+      ],
+      "configFiles": [],
+      "settings": {
+        "base": {
+          "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager",
+          "PRODUCT_NAME": "Wake-on-LAN Manager",
+          "MARKETING_VERSION": "2.3.0",
+          "CURRENT_PROJECT_VERSION": "1",
+          "INFOPLIST_FILE": "WolManager/Info.plist",
+          "IPHONEOS_DEPLOYMENT_TARGET": "16.0",
+          "SWIFT_VERSION": "5.9",
+          "TARGETED_DEVICE_FAMILY": "1",
+          "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+          "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
+          "CODE_SIGN_STYLE": "Automatic",
+          "DEVELOPMENT_TEAM": "",
+          "ENABLE_PREVIEWS": "YES",
+          "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks"
+        },
+        "configs": {
+          "Debug": {
+            "CODE_SIGN_IDENTITY": "Apple Development",
+            "DEBUG_INFORMATION_FORMAT": "dwarf"
+          },
+          "Release": {
+            "CODE_SIGN_IDENTITY": "Apple Distribution",
+            "DEBUG_INFORMATION_FORMAT": "dwarf-with-dsym"
+          }
+        }
+      },
+      "info": {
+        "path": "WolManager/Info.plist"
+      }
+    },
+    "WolManagerTests": {
+      "type": "bundle.unit-test",
+      "platform": "iOS",
+      "sources": [
+        "WolManagerTests"
+      ],
+      "dependencies": [
+        { "target": "WolManager" }
+      ],
+      "settings": {
+        "base": {
+          "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager.tests",
+          "PRODUCT_NAME": "WolManagerTests",
+          "SWIFT_VERSION": "5.9",
+          "IPHONEOS_DEPLOYMENT_TARGET": "16.0",
+          "GENERATE_INFOPLIST_FILE": "YES"
+        }
+      }
+    }
+  },
+  "schemes": {
+    "WolManager": {
+      "build": {
+        "targets": {
+          "WolManager": "all",
+          "WolManagerTests": ["test"]
+        }
+      },
+      "run": {
+        "config": "Debug"
+      },
+      "test": {
+        "config": "Debug",
+        "targets": ["WolManagerTests"]
+      }
+    }
+  }
+}
