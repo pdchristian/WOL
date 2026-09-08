@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- Wake-on-LAN Manager – HTML-App (WebView). Rahmen/Phone-Frame entfernt: fullscreen. -->
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Wake-on-LAN Manager</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="phone" id="phone">
+
+<div class="screen active" id="s-devices"></div>
+<div class="screen" id="s-manage"></div>
+<div class="screen" id="s-sched"></div>
+<div class="screen" id="s-logs"></div>
+<div class="screen" id="s-set"></div>
+<div class="screen" id="s-dash"></div>
+
+<div class="bottomnav">
+<button class="nav active" data-nav="devices"><span class="i">💻</span><span data-t="nav.devices">Geräte</span></button>
+<button class="nav" data-nav="manage"><span class="i">🔧</span><span data-t="nav.manage">Verwalten</span></button>
+<button class="nav" data-nav="sched"><span class="i">🕒</span><span data-t="nav.schedule">Zeitplan</span></button>
+<button class="nav" data-nav="logs"><span class="i">📋</span><span data-t="nav.logs">Protokolle</span></button>
+<button class="nav" data-nav="set"><span class="i">⚙️</span><span data-t="nav.settings">Einstellungen</span></button>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="sheet" id="sheet"></div>
+<div class="toast" id="toast"></div>
+
+</div>
+<script src="bridge.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

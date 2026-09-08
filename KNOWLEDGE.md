@@ -718,6 +718,31 @@ Inno Setup 6 (ISCC.exe, winget install JRSoftware.InnoSetup)
 PowerShell 5.1+ (for build.ps1)
 ```
 
+### 8.3 Android HTML App (`android_html/`, new in 2.3.0)
+
+Separate Android client: fullscreen WebView (UI = HTML/CSS/JS from
+`design_prototype/Android_50.html`) inside a thin Kotlin shell — **not** the
+native Compose app in `android/`.
+
+- **Build:** `.\build_html.ps1` (adds `-Tests` for unit tests) →
+  `dist_onefile/wolmanager-android-html-<ver>-debug.apk`. Requires
+  `JAVA_HOME=C:\Program Files\Android\openjdk\jdk-21.0.8`, Gradle 8.7
+  (`C:\tools\gradle-8.7`), Android SDK 34. No Gradle wrapper.
+- **Architecture:** `WebViewActivity` (shell, SAF file pickers, vibrate,
+  back-button) + `Bridge.kt` (`@JavascriptInterface Android.call(...)` →
+  async `window.__nativeResult`; events via `window.__nativeEvent`).
+  Kotlin core (`data/net/sched/util` packages) talks Host Service protocol
+  v4 (metrics, watched processes, llama.cpp models) and sends magic packets.
+- **Web assets:** `app/src/main/assets/app/` — `index.html`, `app.css`,
+  `bridge.js` (native adapter + browser demo stub), `app.js` (all UI logic).
+  Opening `index.html` directly in a desktop browser runs demo mode (no
+  native bridge needed).
+- **Windows compatibility:** `devices.json` import/export matches the
+  desktop format (array of device objects, plaintext passwords in export;
+  import clears DPAPI-encrypted values).
+- **Docs:** `docs/android/html-app.md` (bridge protocol, dev workflow,
+  pitfalls — e.g. `addJavascriptInterface` must be called before first load).
+
 ---
 
 ## 9. Data Flow Diagrams

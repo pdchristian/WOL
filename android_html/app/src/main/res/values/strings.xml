@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WOL Manager</string>
+    <string name="webview_load_error">Die App-Oberfläche konnte nicht geladen werden. Bitte App neu starten.</string>
+</resources>

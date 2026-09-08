@@ -97,9 +97,23 @@ A detailed user manual is available in German:
 
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
 
+### Android App (HTML variant, new in 2.3.0)
+
+A companion Android client lives in [`android_html/`](android_html/) — a
+fullscreen WebView app (HTML/CSS/JS UI) with a thin Kotlin bridge to the real
+Host Service protocol v4 (live dashboard metrics, watched processes, batch
+execution), magic-packet wake, network scanner, schedules and encrypted
+password storage. `devices.json` import/export is compatible with the
+Windows app. Build with `.\build_html.ps1` (requires JDK 21 + Android SDK);
+see [docs/android/html-app.md](docs/android/html-app.md) for architecture,
+the bridge protocol and a browser demo mode.
+
 ## 📝 Changelog
 
 ### Unreleased
+
+#### 📱 Android HTML app (`android_html/`)
+- New companion Android client based on the *Android 5.0* prototype: fullscreen WebView (dark/light theme, DE/EN/FR/ES), Kotlin shell + `@JavascriptInterface` bridge, real Host Service v4 dashboard (CPU/RAM/GPU/VRAM, uptime, watched llama.cpp services), batch console, network scanner, schedules, CSV/JSON log export and update check. Device import/export matches the Windows `devices.json` format. Debug APK via `.\build_html.ps1`
 
 #### 🔄 Remote Desktop: automatic second attempt without password
 - **Fast-exit detection for xrdp/Ubuntu hosts:** when a stored password is used and `mstsc` closes again within 10 seconds (black screen, window vanishes — the typical response of an xrdp host to a wrong password), the app now asks whether to reconnect **without the stored password**. Confirming deletes the `TERMSRV/<host>` entry from the Windows Credential Manager and reopens `mstsc` with the username pre-filled, so the password can be typed directly into the Remote Desktop prompt. The password stored in the device record stays untouched, and a `RDP/WARNING` entry is written to the log
