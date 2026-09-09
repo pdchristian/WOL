@@ -124,31 +124,11 @@ final class HostServiceClient {
                             timeoutMs: Int, maxBytes: Int) -> HostResult {
         // IPv4 gezielt auflösen und jeden A-Record probieren (siehe connectIpv4),
         // damit Host-Namen mit mehreren Adressen / Dual-Stack nicht offline wirken.
+        // connectIpv4 liefert einen bereits verbundenen fd inkl. Sende-/Empfangs-Timeout.
         guard let fd = connectIpv4(host: host, port: port, timeoutMs: timeoutMs) else {
             return .error(errNoResponse)
         }
         defer { close(fd) }
-
-        var sendTime = timeval(tv_sec: timeoutMs / 1000, tv_usec: Int32((timeoutMs % 1000) * 1000))
-        var recvTime = sendTime
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sendTime, socklen_t(MemoryLayout<timeval>.size))
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &recvTime, socklen_t(MemoryLayout<timeval>.size))
-
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(port).bigEndian
-        if inet_pton(AF_INET, host, &addr.sin_addr) != 1 {
-            addr.sin_addr.s_addr = inet_addr(host)
-            if addr.sin_addr.s_addr == INADDR_NONE,
-               let resolved = resolveHost(host) { addr.sin_addr.s_addr = resolved }
-        }
-
-        let connOk: Bool = withUnsafePointer(to: &addr) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
-            }
-        }
-        if !connOk { return .error(errNoResponse) }
 
         guard let jsonLine = try? JSONSerialization.data(withJSONObject: payload),
               var sendStr = String(data: jsonLine, encoding: .utf8) else {
