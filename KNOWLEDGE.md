@@ -772,6 +772,16 @@ native Compose app in `android/` was removed in 2.3.1.)
   (DE/EN/FR/ES). URI building/encoding lives in `util/RemoteDesktop.kt` (pure
   Kotlin, `RemoteDesktopTest`); launch uses `BridgeHost.openExternal` on the main
   thread; `AndroidManifest` declares `<queries>` for the `rdp`/`ms-rd` schemes.
+- **Network scan (Wi-Fi only, new in 2.3.4):** `NetworkScanner.activeInterfaces()`
+  keeps only networks with `TRANSPORT_WIFI` or `TRANSPORT_VPN` (mobile data
+  excluded; `NET_CAPABILITY_INTERNET` deliberately *not* required so a gateway-less
+  Wi-Fi still scans), and a new `isScannable(ip)` hides `169.*` (APIPA) and the whole
+  `172.*` range (VMware/Hyper-V/Docker/VPN dummies) — parity with desktop
+  `is_real_interface()`. `scanStart` now accepts the UI selection
+  (`{ifaces:[{name,ip,prefix,dns}]}`, fallback = all active when absent); the list is
+  re-fetched on every *Manage* tab open (visible before *Start scan*), and an empty
+  list shows a “no Wi-Fi” hint with the button disabled. `NetworkScannerTest` covers
+  `isScannable`.
 - **Docs:** `docs/android/html-app.md` (bridge protocol, dev workflow,
   pitfalls — e.g. `addJavascriptInterface` must be called before first load).
 
@@ -795,6 +805,13 @@ native Compose app in `android/` was removed in 2.3.1.)
   hasPassword}`, errors `remote.notinstalled` / `remote.nohost` (DE/EN/FR/ES).
   Profile persists on the device (by design). `RemoteDesktopTests.swift`
   covers the pure URI builder.
+- **Network scan (Wi-Fi only, new in 2.3.4):** `NetworkScanner.activeInterfaces()`
+  returns only the **`en0`** interface (Wi-Fi) — `awdl`/`utun`/VPN tunnels are
+  dropped so they no longer appear as 172.* dummy networks — plus `isScannable()`
+  filters `169.*`/`172.*` (parity with desktop). `InterfaceHelper.ipv4Interfaces()`
+  stays unfiltered (also used for WOL directed broadcasts). `scanStart` accepts the
+  UI selection like Android; *Manage* tab re-fetches the list before *Start scan*.
+  `NetworkScannerTests.swift` covers `isScannable` (re-run `xcodegen` after adding).
 
 ---
 

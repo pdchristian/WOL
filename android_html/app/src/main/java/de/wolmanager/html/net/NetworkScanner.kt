@@ -42,7 +42,10 @@ class NetworkScanner(private val context: Context) {
         data class Done(val count: Int) : ScanEvent
     }
 
-    /** Liefert alle aktiven IPv4-/24-Netze (Loopback/APIPA ausgeschlossen). */
+    /**
+     * Liefert die für einen Scan sinnvollen IPv4-Netze: nur WLAN- und VPN-Transport
+     * (Mobilfunk aus), Loopback/APIPA sowie 169.x- und 172.x-Bereich ausgeblendet.
+     */
     fun activeInterfaces(): List<Iface> {
         val result = LinkedHashMap<String, Iface>()
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
@@ -50,27 +53,35 @@ class NetworkScanner(private val context: Context) {
         val nets = cm.allNetworks
         for (n in nets) {
             val caps = cm.getNetworkCapabilities(n) ?: continue
-            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue
+            // Scan nur über die tatsächliche Verbindung: WLAN (oder VPN-Tunnel ins Netz),
+            // aber nie Mobilfunk. INTERNET-Capability ist bewusst keine Bedingung, damit ein
+            // WLAN ohne Internet-Gateway weiterhin scannbar bleibt.
+            if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+            ) continue
             val link: LinkProperties = cm.getLinkProperties(n) ?: continue
             val dns = link.dnsServers.firstOrNull()?.hostAddress ?: ""
             for (addr in link.linkAddresses) {
                 val inet = addr.address
                 if (inet is Inet4Address && !inet.isLoopbackAddress) {
                     val ip = inet.hostAddress ?: continue
-                    if (ip.startsWith("169.254.")) continue
+                    if (!isScannable(ip)) continue
                     val prefix = addr.prefixLength
                     result.putIfAbsent(ip, Iface(link.interfaceName ?: "?", ip, if (prefix in 8..30) prefix else 24, dns))
                 }
             }
         }
         if (result.isEmpty()) {
-            // Fallback: alle NICs direkt lesen
+            // Fallback: NICs direkt lesen, auf WLAN-/Tunnel-Namen beschränkt
             try {
                 for (ni in NetworkInterface.getNetworkInterfaces()) {
                     if (!ni.isUp || ni.isLoopback) continue
+                    val n = ni.name ?: continue
+                    if (!(n.startsWith("wlan") || n.startsWith("tun") || n.startsWith("ppp"))) continue
                     for (ia in ni.inetAddresses) {
-                        if (ia is Inet4Address && !ia.isLoopbackAddress && !ia.hostAddress.startsWith("169.254.")) {
-                            result.putIfAbsent(ia.hostAddress, Iface(ni.name, ia.hostAddress, 24, ""))
+                        val ip = ia.hostAddress ?: continue
+                        if (ia is Inet4Address && !ia.isLoopbackAddress && isScannable(ip)) {
+                            result.putIfAbsent(ip, Iface(n, ip, 24, ""))
                         }
                     }
                 }
@@ -153,5 +164,13 @@ class NetworkScanner(private val context: Context) {
         private val SCAN_PORTS = listOf(HostServiceClient.DEFAULT_PORT, 445, 135, 80, 443, 22)
         private const val PORT_TIMEOUT_MS = 300
         private const val MAX_PARALLEL = 64
+
+        /**
+         * Blendet Dummy-/Virtualisierungs-Bereiche aus (Parität zur Desktop-App,
+         * siehe wol_app/network_scanner.py is_real_interface): 169.x = APIPA/link-local,
+         * 172.x = VMware/Hyper-V/Docker/VPN-Adapter (per Nutzerentscheid komplett).
+         */
+        fun isScannable(ip: String?): Boolean =
+            !ip.isNullOrEmpty() && !ip.startsWith("169.") && !ip.startsWith("172.")
     }
 }

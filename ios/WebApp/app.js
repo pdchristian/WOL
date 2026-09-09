@@ -31,6 +31,7 @@ de:{
  "manage.scan.running":"Scanne ausgewählte Netzwerke nach aktiven Geräten",
  "manage.scan.done":"{count} Gerät(e) gefunden",
  "manage.scan.none":"Kein Netzwerk ausgewählt","manage.scan.none.msg":"Bitte wählen Sie mindestens ein Netzwerk zum Scannen aus.",
+ "manage.scan.nowifi":"Kein WLAN-Netzwerk gefunden. Bitte verbinden Sie sich mit einem WLAN.",
  "manage.dns":"  |  DNS: {dns}",
  "edit.title":"Bearbeiten","edit.delete":"Löschen",
  "del.title":"Löschung bestätigen","del.message":'Möchten Sie das Gerät "{name}" wirklich löschen?',
@@ -149,6 +150,7 @@ en:{
  "manage.scan.running":"Scanning selected networks for active devices",
  "manage.scan.done":"{count} device(s) found",
  "manage.scan.none":"No network selected","manage.scan.none.msg":"Please select at least one network to scan.",
+ "manage.scan.nowifi":"No Wi-Fi network found. Please connect to a Wi-Fi network.",
  "manage.dns":"  |  DNS: {dns}",
  "edit.title":"Edit","edit.delete":"Delete",
  "del.title":"Confirm deletion","del.message":'Do you really want to delete the device "{name}"?',
@@ -261,6 +263,7 @@ fr:{
  "manage.scan.running":"Analyse des réseaux sélectionnés",
  "manage.scan.done":"{count} appareil(s) trouvé(s)",
  "manage.scan.none":"Aucun réseau sélectionné","manage.scan.none.msg":"Veuillez sélectionner au moins un réseau à analyser.",
+ "manage.scan.nowifi":"Aucun réseau Wi-Fi trouvé. Veuillez vous connecter à un réseau Wi-Fi.",
  "manage.dns":"  |  DNS : {dns}",
  "edit.title":"Modifier","edit.delete":"Supprimer",
  "del.title":"Confirmer la suppression","del.message":'Voulez-vous vraiment supprimer l\'appareil "{name}" ?',
@@ -373,6 +376,7 @@ es:{
  "manage.scan.running":"Escaneando las redes seleccionadas",
  "manage.scan.done":"{count} dispositivo(s) encontrados",
  "manage.scan.none":"Ninguna red seleccionada","manage.scan.none.msg":"Seleccione al menos una red para escanear.",
+ "manage.scan.nowifi":"No se encontró ninguna red Wi-Fi. Conéctese a una red Wi-Fi.",
  "manage.dns":"  |  DNS: {dns}",
  "edit.title":"Editar","edit.delete":"Eliminar",
  "del.title":"Confirmar eliminación","del.message":'¿Realmente quiere eliminar el dispositivo "{name}"?',
@@ -653,7 +657,10 @@ function startScan() {
   if (!state.scan.ifaces.some(i => i.checked)) { openAlert(t("manage.scan.none"), t("manage.scan.none.msg")); return; }
   state.scan.running = true; state.scan.results = []; state.scan.shown = false;
   renderManage();
-  Native.call("scanStart", {});
+  /* Nur die in der UI ausgewählten Netze scannen (Native respektiert die Auswahl). */
+  const sel = state.scan.ifaces.filter(i => i.checked)
+    .map(f => ({ name: f.name, ip: f.ip, prefix: f.prefix, dns: f.dns }));
+  Native.call("scanStart", { ifaces: sel });
 }
 function scanAdd(host, ip, mac) {
   if (mac && state.devices.some(d => d.mac.toUpperCase() === mac.toUpperCase())) {
@@ -1026,17 +1033,17 @@ function renderManage() {
         </div>
       </div>`).join("")}</div>`}
     <div class="sectionHeading">${esc(t("manage.sec.scan"))}</div>
-    <div class="panel">${state.scan.ifaces.map((f, i) => `
+    ${state.scan.ifaces.length ? `<div class="panel">${state.scan.ifaces.map((f, i) => `
       ${i ? '<div class="sep"></div>' : ""}
       <div class="togRow"><div class="mono" style="font-size:12px">${esc(f.ip)}/${esc(f.prefix)}${f.dns ? esc(t("manage.dns", { dns: f.dns })) : ""}</div>
         <div class="toggle ${f.checked ? "on" : ""}" data-act="iface-toggle" data-i="${i}"></div></div>`).join("")}
-    </div>
+    </div>` : `<div class="empty">${esc(t("manage.scan.nowifi"))}</div>`}
     <div class="toolbar" style="margin-top:10px">
-      <button class="btn primary small" data-act="scan" ${sc.running?"disabled":""}>${esc(t("manage.scan.start"))}</button>
+      <button class="btn primary small" data-act="scan" ${sc.running || !state.scan.ifaces.length ? "disabled" : ""}>${esc(t("manage.scan.start"))}</button>
     </div>
     <div class="pageSub">${sc.running ? '<span class="spin"></span> ' + esc(t("manage.scan.running"))
       : sc.shown ? esc(t("manage.scan.done", { count: sc.results.length }))
-      : esc(t("manage.scan.initial"))}</div>
+      : state.scan.ifaces.length ? esc(t("manage.scan.initial")) : ""}</div>
     ${sc.running ? '<div class="progress"><i id="scanProg"></i></div>' : ""}
     ${sc.shown && sc.results.length ? `<div class="panel" id="scanResults" style="margin-top:10px">${sc.results.map((r, i) => `
       ${i ? '<div class="sep"></div>' : ""}
@@ -1294,6 +1301,7 @@ function go(screen) {
   if (screen === "logs") renderLogs();
   if (screen === "dash") renderDash();
   if (screen === "devices") renderDevices();
+  if (screen === "manage") loadIfaces(); // Netzliste vor "Scan starten" aktuell halten
 }
 
 /* ══════════════════════════ Event-Delegation ══════════════════════════════ */

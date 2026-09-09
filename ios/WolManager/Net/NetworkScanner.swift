@@ -39,11 +39,16 @@ final class NetworkScanner {
         cancelLock.lock(); cancelFlag = true; cancelLock.unlock()
     }
 
-    /// Liefert alle aktiven IPv4-Netze (Loopback/APIPA ausgeschlossen) via getifaddrs.
+    /// Liefert das aktiven WLAN-IPv4-Netz (en0) via getifaddrs. Bewusst NUR en0:
+    /// awdl (Bluetooth-AP), utun (VPN) und andere virtuelle Interfaces würden sonst
+    /// als Dummy-Netze (172.*) in der Scanliste auftauchen. APIPA/Virtualisierungs-
+    /// Bereiche (169.x/172.x) zusätzlich gefiltert — Parität zur Desktop-App.
     func activeInterfaces() -> [Iface] {
         var result: [Iface] = []
         var seen = Set<String>()
         for iface in InterfaceHelper.ipv4Interfaces() {
+            guard iface.name == "en0" else { continue } // nur die WLAN-Verbindung
+            guard Self.isScannable(iface.ip) else { continue }
             guard !seen.contains(iface.ip) else { continue }
             seen.insert(iface.ip)
             let prefix = InterfaceHelper.prefix(fromNetmask: iface.netmask)
@@ -51,6 +56,14 @@ final class NetworkScanner {
             result.append(Iface(name: iface.name, ip: iface.ip, prefix: pfx, dns: "", checked: true))
         }
         return result
+    }
+
+    /// Blendet Dummy-/Virtualisierungs-Bereiche aus (Parität zur Desktop-App,
+    /// siehe wol_app/network_scanner.py is_real_interface): 169.x = APIPA/link-local,
+    /// 172.x = VMware/Hyper-V/Docker/VPN-Adapter (per Nutzerentscheid komplett).
+    static func isScannable(_ ip: String?) -> Bool {
+        guard let ip, !ip.isEmpty else { return false }
+        return !ip.hasPrefix("169.") && !ip.hasPrefix("172.")
     }
 
     /// Host-Adressen eines Netzes, ohne Netzwerk-/Broadcast-Adresse.

@@ -145,7 +145,7 @@ final class Bridge: NSObject, WKScriptMessageHandler {
         case "scanIfaces":
             return ifacesJson()
         case "scanStart":
-            startScan()
+            startScan(p["ifaces"] as? [[String: Any]])
             return true
         case "scanStop":
             container.scanner.cancel()
@@ -400,10 +400,24 @@ final class Bridge: NSObject, WKScriptMessageHandler {
 
     // ── Scan / Wake-All / Status (Event-Streaming) ─────────────────────────
 
-    private func startScan() {
+    /// JS schickt die in der UI ausgewählten Netze; ohne Parameter (abwärtskompatibel)
+    /// werden alle aktiven Netze gescannt — analog zu Bridge.kt.
+    private func startScan(_ selected: [[String: Any]]? = nil) {
         container.scanner.cancel()
         scanRunning = true
-        let ifaces = container.scanner.activeInterfaces()
+        let ifaces: [NetworkScanner.Iface]
+        if let selected {
+            ifaces = selected.compactMap { o -> NetworkScanner.Iface? in
+                let ip = pStr(o, "ip")
+                guard !ip.isEmpty, NetworkScanner.isScannable(ip) else { return nil }
+                let prefix = (o["prefix"] as? Int) ?? 24
+                return NetworkScanner.Iface(name: pStr(o, "name"), ip: ip,
+                                            prefix: (8...30).contains(prefix) ? prefix : 24,
+                                            dns: pStr(o, "dns"), checked: true)
+            }
+        } else {
+            ifaces = container.scanner.activeInterfaces()
+        }
         container.scanner.scan(ifaces: ifaces, onEvent: { [weak self] ev in
             guard let self else { return }
             switch ev {

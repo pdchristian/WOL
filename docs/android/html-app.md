@@ -83,9 +83,16 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
   Profil (Rechner + Benutzer); das Passwort liegt danach in der Zwischenablage
   (URI-Schema kann es nicht übertragen). Profil bleibt bestehen. Siehe
   `remote`-Methode oben.
-- **Netzwerk-Scan:** TCP-Sweep (Ports 8765, 445, 135, 80, 443, 22) über alle
-  aktiven /24-Netze. Android liefert keine MAC-Adressen → gefundene Geräte
-  werden mit Platzhalter-MAC `00:00:00:00:00:00` in den Dialog übernommen.
+- **Netzwerk-Scan:** TCP-Sweep (Ports 8765, 445, 135, 80, 443, 22). Ab 2.3.4 nur
+  über die **tatsächliche Verbindung**: WLAN-Transport (plus VPN-Tunnel), Mobilfunk
+  aus; Bereichsfilter blendet `169.*` (APIPA) und komplett `172.*`
+  (Virtualisierungs-/VPN-Adapter) aus — Parität zur Desktop-App
+  (`is_real_interface`). Die Netzliste wird beim Öffnen des Verwalten-Tabs
+  geladen (sichtbar **vor** „Scan starten“); `scanStart` erhält die UI-Auswahl
+  (`{ifaces:[{name,ip,prefix,dns}]}`) und scannt exakt diese. Ohne WLAN: Hinweis
+  „Kein WLAN-Netzwerk gefunden“ + deaktivierter Button. Android liefert keine
+  MAC-Adressen → gefundene Geräte werden mit Platzhalter-MAC
+  `00:00:00:00:00:00` in den Dialog übernommen.
 - **Dashboard:** echte Host-Service-v4-Metriken (CPU/RAM/GPU/VRAM, überwachte
   Prozesse mit PID/API-Port, Modell-Badges) im eingestellten Intervall.
   Wischen nach links/rechts wechselt zum nächsten/vorherigen Gerät – in

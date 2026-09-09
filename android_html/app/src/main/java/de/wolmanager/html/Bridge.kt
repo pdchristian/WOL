@@ -141,7 +141,7 @@ class Bridge(
         "metrics" -> metricsJson(p.str("id"))
         "runBatch" -> runBatchJson(p.str("id"), p.str("batchId"))
         "scanIfaces" -> ifacesJson()
-        "scanStart" -> { startScan(); JsonPrimitive(true) }
+        "scanStart" -> { startScan(p.opt("ifaces") as? JsonArray); JsonPrimitive(true) }
         "scanStop" -> { scanJob?.cancel(); scanJob = null; JsonPrimitive(true) }
         "wakeAll" -> { startWakeAll(); JsonPrimitive(true) }
         "refreshStatus" -> { startRefreshStatus(); JsonPrimitive(true) }
@@ -339,10 +339,20 @@ class Bridge(
 
     // ── Scan / Wake-All / Status (Event-Streaming) ───────────────────────────
 
-    private fun startScan() {
+    private fun startScan(selected: JsonArray?) {
+        // JS schickt die in der UI ausgewählten Netze; ohne Parameter (abwärtskompatibel)
+        // werden alle aktiven Netze gescannt.
+        val ifaces = selected?.mapNotNull { el ->
+            val o = (el as? JsonObject) ?: return@mapNotNull null
+            val ip = o.str("ip")
+            if (ip.isBlank() || !NetworkScanner.isScannable(ip)) return@mapNotNull null
+            val prefix = o.opt("prefix")?.jsonPrimitive?.intOrNull ?: 24
+            NetworkScanner.Iface(o.str("name"), ip, if (prefix in 8..30) prefix else 24, o.str("dns"))
+        }
+        val targets = if (ifaces != null) ifaces else container.scanner.activeInterfaces()
         scanJob?.cancel()
         scanJob = scope.launch {
-            container.scanner.scan(container.scanner.activeInterfaces()).collectLatest { ev ->
+            container.scanner.scan(targets).collectLatest { ev ->
                 when (ev) {
                     is NetworkScanner.ScanEvent.Progress -> emitEvent(buildJsonObject {
                         put("type", "scan-progress"); put("done", ev.done); put("total", ev.total); put("current", ev.current)

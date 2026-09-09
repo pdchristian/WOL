@@ -124,7 +124,12 @@ the bridge protocol and a browser demo mode.
 - **Third button on the quit dialog:** the sidebar ⏻ confirmation now offers **Ja / Minimieren / Nein** while the option is active (plain Ja / Nein otherwise, and whenever no system tray is available)
 - Persisted as `ui.close_to_tray` (default `false`); applied live without an app restart
 
-#### 📱 Android HTML app (`android_html/`)
+#### � Network scan: Wi-Fi only (Android & iOS)
+- **The network scan is now restricted to the actual connection:** Android lists only **Wi-Fi** networks (plus VPN tunnels into your network — mobile data is excluded), iOS only the **`en0` interface** (Wi-Fi), so virtual adapters (`awdl`, `utun`, VPN dummies) no longer show up as scannable networks
+- **Same range filter as the desktop app:** `169.*` (APIPA / link-local) and the complete `172.*` range (VMware / Hyper-V / Docker / VPN dummy adapters) are hidden from the network list (mirrors `is_real_interface()` in `wol_app/network_scanner.py`)
+- **Selection is respected:** the network list is refreshed every time the *Manage* tab opens — visible **before** pressing *Start scan* — and `scanStart` now receives the toggled selection from the UI (`{ifaces:[{name,ip,prefix,dns}]}`) instead of re-scanning everything natively. Without Wi-Fi the list shows a hint and the button is disabled (DE/EN/FR/ES)
+
+#### �📱 Android HTML app (`android_html/`)
 - New companion Android client based on the *Android 5.0* prototype: fullscreen WebView (dark/light theme, DE/EN/FR/ES), Kotlin shell + `@JavascriptInterface` bridge, real Host Service v4 dashboard (CPU/RAM/GPU/VRAM, uptime, watched llama.cpp services), batch console, network scanner, schedules, CSV/JSON log export and update check. Device import/export matches the Windows `devices.json` format. Debug APK via `.\build_html.ps1`
 - **Fixed (2.3.1): host names as device addresses** — status checks and ping now resolve the name to IPv4 explicitly and try every A record (the Host Service listens on IPv4 only, so a dual-stack AAAA preference or a stale DHCP lease no longer marks devices like `blade-18.fritz.box` offline). The Ping action reports what failed (DNS vs. port) directly in the message
 - **Fixed (2.3.2): blank screen after startup** — a stray brace broke the JS language packs, leaving the WebView empty; also bumped so the installed build is identifiable (2.3.1 shipped that regression)

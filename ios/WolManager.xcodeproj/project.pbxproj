@@ -25,6 +25,7 @@
 		8AF3C3C9322A537DE252BB1B /* ScheduleEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C6A26EBD16915565E32B42 /* ScheduleEngineTests.swift */; };
 		904245C9459982F1FF360417 /* ValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A93B4216676A70825B59263 /* ValidationTests.swift */; };
 		9936BD816B07C8C849A71600 /* Ipv4ResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676002A7A1450C3382C6CD8C /* Ipv4ResolverTests.swift */; };
+		A7C3E91D4B8F6025C1D3E7A9 /* NetworkScannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E8B2A6F1C95073B8A2D6C4 /* NetworkScannerTests.swift */; };
 		9EAC3D05BD961F83DDCC3809 /* DocumentPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA435C0F1DE951DA9227CB73 /* DocumentPicker.swift */; };
 		A233D9ED6EB375EA693C7163 /* WebApp in Resources */ = {isa = PBXBuildFile; fileRef = DBCA0F358D0F6D4E98E9045A /* WebApp */; };
 		A23C56EA918409FD59C2862C /* WebViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DDEE83B6F10253B383DBB30 /* WebViewController.swift */; };
@@ -67,6 +68,7 @@
 		4B3521ACB9965B4FF1EF51E7 /* Csv.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Csv.swift; sourceTree = "<group>"; };
 		5045EFD5602623494321F2E0 /* Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge.swift; sourceTree = "<group>"; };
 		676002A7A1450C3382C6CD8C /* Ipv4ResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ipv4ResolverTests.swift; sourceTree = "<group>"; };
+		D4E8B2A6F1C95073B8A2D6C4 /* NetworkScannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkScannerTests.swift; sourceTree = "<group>"; };
 		714A349561DF3F4685408029 /* HostServiceProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostServiceProtocolTests.swift; sourceTree = "<group>"; };
 		78CE8FB438687DF8F06AC3EA /* RemoteDesktopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktopTests.swift; sourceTree = "<group>"; };
 		7B06007E761479C1CDB76BAA /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
@@ -105,6 +107,7 @@
 				02E3B18B8C6CCB4C6F8E903F /* CsvTests.swift */,
 				714A349561DF3F4685408029 /* HostServiceProtocolTests.swift */,
 				676002A7A1450C3382C6CD8C /* Ipv4ResolverTests.swift */,
+				D4E8B2A6F1C95073B8A2D6C4 /* NetworkScannerTests.swift */,
 				7B86995A0984D0DE3618B15D /* MagicPacketTests.swift */,
 				78CE8FB438687DF8F06AC3EA /* RemoteDesktopTests.swift */,
 				4A69BF020554ACE84D414677 /* RepoTests.swift */,
@@ -285,6 +288,7 @@
 				20440BFD05890900643E0477 /* CsvTests.swift in Sources */,
 				E21BD8EBAB10B7D280E05CA9 /* HostServiceProtocolTests.swift in Sources */,
 				9936BD816B07C8C849A71600 /* Ipv4ResolverTests.swift in Sources */,
+				A7C3E91D4B8F6025C1D3E7A9 /* NetworkScannerTests.swift in Sources */,
 				86DEA058AD5495C0C5613E31 /* MagicPacketTests.swift in Sources */,
 				CA3EE30C45DBDBC534E2467B /* RemoteDesktopTests.swift in Sources */,
 				0620A820D11997217FD2457B /* RepoTests.swift in Sources */,
@@ -407,7 +411,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.3.3;
+				MARKETING_VERSION = 2.3.4;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
@@ -473,7 +477,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.3.3;
+				MARKETING_VERSION = 2.3.4;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
