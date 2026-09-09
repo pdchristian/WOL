@@ -1,4 +1,5 @@
 {
+  "name": "WolManager",
   "info": {
     "author": "WOL Manager",
     "description": "Wake-on-LAN Manager (iOS, WKWebView-Wrapper)"
@@ -18,16 +19,14 @@
       "type": "application",
       "platform": "iOS",
       "sources": [
-        "WolManager"
-      ],
-      "resources": [
-        "WebApp"
+        "WolManager",
+        { "path": "WebApp", "type": "folder" }
       ],
       "configFiles": [],
       "settings": {
         "base": {
           "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager",
-          "PRODUCT_NAME": "Wake-on-LAN Manager",
+          "PRODUCT_NAME": "WolManager",
           "MARKETING_VERSION": "2.3.0",
           "CURRENT_PROJECT_VERSION": "1",
           "INFOPLIST_FILE": "WolManager/Info.plist",
