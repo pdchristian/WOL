@@ -174,21 +174,24 @@ final class Bridge: NSObject, WKScriptMessageHandler {
         case "remote":
             let d = try device(pStr(p, "id"))
             let mode = pStr(p, "mode")
-            let ok = await MainActor.run { () -> Bool in
-                guard let root = self.webView?.window?.rootViewController else { return false }
-                return RemoteDesktop.open(device: d, mode: mode, from: Self.topViewController(root))
+            let password = container.repo.getPassword(id: d.id)
+            let res: RemoteDesktop.Result
+            do {
+                res = try await RemoteDesktop.open(device: d, password: password, mode: mode)
+            } catch RemoteDesktop.RemoteError.noHost {
+                throw BridgeError(RemoteDesktop.errNoHost)
+            } catch {
+                throw BridgeError(RemoteDesktop.errNotInstalled)
             }
-            if ok { return true }
-            throw BridgeError("remote.notinstalled")
+            let userPart = d.username.isEmpty ? "" : ", user=\(d.username)"
+            let pwPart = res.passwordCopied ? ", password -> clipboard" : ", kein Passwort hinterlegt"
+            container.repo.log(device: d.name, level: "info",
+                               msg: "RDP: Windows App geöffnet (\(res.host)\(userPart)\(pwPart))")
+            return ["ok": true, "host": res.host, "username": res.username,
+                    "passwordCopied": res.passwordCopied, "hasPassword": res.hasPassword]
         default:
             throw BridgeError("unknown_method:\(method)")
         }
-    }
-
-    private static func topViewController(_ vc: UIViewController) -> UIViewController {
-        if let nav = vc as? UINavigationController, let top = nav.topViewController { return top }
-        if let pres = vc.presentedViewController { return topViewController(pres) }
-        return vc
     }
 
     // ── Snapshot ────────────────────────────────────────────────────────────

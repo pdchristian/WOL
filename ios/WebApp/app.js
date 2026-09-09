@@ -20,6 +20,8 @@ de:{
  "remote.demo":"{mode}: verbindungsaufbau zu {name} (Demo)",
  "remote.soon":"Remote-Desktop folgt – bitte die Windows App / Microsoft Remote Desktop verwenden.",
  "remote.notinstalled":"Microsoft Remote Desktop nicht installiert – bitte die App \"Windows App\" oder \"Microsoft Remote Desktop\" installieren.",
+ "remote.nohost":"Für dieses Gerät ist keine IP-Adresse/Hostname hinterlegt.",
+ "remote.pwcopied":"RDP-Passwort in die Zwischenablage kopiert – im Verbindungsfenster einfügen.",
  /* Verwalten */
  "manage.subtitle":"Geräte-Verwaltung & Netzwerk-Scan",
  "manage.sec.devices":"Geräte-Verwaltung","manage.sec.scan":"Netzwerk-Scan",
@@ -137,6 +139,8 @@ en:{
  "remote.demo":"{mode}: connecting to {name} (demo)",
  "remote.soon":"Remote desktop coming soon – please use the Windows App / Microsoft Remote Desktop.",
  "remote.notinstalled":"Microsoft Remote Desktop not installed – please install the \"Windows App\" or \"Microsoft Remote Desktop\" from the App Store.",
+ "remote.nohost":"No IP address/hostname configured for this device.",
+ "remote.pwcopied":"RDP password copied to clipboard – paste it in the connection window.",
  "manage.subtitle":"Device management & network scan",
  "manage.sec.devices":"Device management","manage.sec.scan":"Network scan",
  "manage.add":"+ Add device","manage.import":"Import","manage.export":"Export",
@@ -247,6 +251,8 @@ fr:{
  "remote.demo":"{mode} : connexion à {name} (démo)",
  "remote.soon":"Bureau à distance bientôt disponible – veuillez utiliser Windows App / Microsoft Remote Desktop.",
  "remote.notinstalled":"Microsoft Remote Desktop non installé – veuillez installer « Windows App » ou « Microsoft Remote Desktop » depuis l'App Store.",
+ "remote.nohost":"Aucune adresse IP/nom d'hôte défini pour cet appareil.",
+ "remote.pwcopied":"Mot de passe RDP copié dans le presse-papiers – collez-le dans la fenêtre de connexion.",
  "manage.subtitle":"Gestion des appareils & analyse réseau",
  "manage.sec.devices":"Gestion des appareils","manage.sec.scan":"Analyse réseau",
  "manage.add":"+ Ajouter un appareil","manage.import":"Importer","manage.export":"Exporter",
@@ -357,6 +363,8 @@ es:{
  "remote.demo":"{mode}: conectando a {name} (demo)",
  "remote.soon":"Escritorio remoto próximamente – use Windows App / Microsoft Remote Desktop.",
  "remote.notinstalled":"Microsoft Remote Desktop no instalado: instale « Windows App » o « Microsoft Remote Desktop » desde el App Store.",
+ "remote.nohost":"No hay dirección IP/nombre de host configurado para este dispositivo.",
+ "remote.pwcopied":"Contraseña RDP copiada al portapapeles – péguela en la ventana de conexión.",
  "manage.subtitle":"Gestión de dispositivos y escaneo de red",
  "manage.sec.devices":"Gestión de dispositivos","manage.sec.scan":"Escaneo de red",
  "manage.add":"+ Añadir dispositivo","manage.import":"Importar","manage.export":"Exportar",
@@ -610,14 +618,20 @@ function pingDevice(d) {
   });
 }
 
-/* Remotedesktop: nativer Versuch via ms-rd:// (Microsoft Remote Desktop).
+/* Remotedesktop: Windows App per URI-Schema öffnen (Host + Benutzer
+   vorbefüllt, Profil bleibt bestehen); Passwort → Zwischenablage.
    Fehler (nicht installiert / kein Host) → Toast mit Hinweis. */
 function doRemote(id, mode) {
   Native.call("remote", { id, mode: mode === "win" ? "win" : "full" }).then(res => {
     if (!res.ok) {
       const msg = String(res.error || "");
-      toast(msg === "remote.notinstalled" ? t("remote.notinstalled") : msg, true);
+      const key = msg === "remote.notinstalled" ? "remote.notinstalled"
+        : msg === "remote.nohost" ? "remote.nohost" : null;
+      toast(key ? t(key) : msg, true);
+      return;
     }
+    const d = res.data || {};
+    if (d.passwordCopied) toast(t("remote.pwcopied"));
   });
 }
 

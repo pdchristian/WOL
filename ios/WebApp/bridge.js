@@ -105,6 +105,12 @@
         break;
       case "wake": case "shutdown": case "status": r.data = true; break;
       case "ping": r.data = Math.round(1 + Math.random() * 8); break;
+      case "remote": {
+        var rd = demoDevices.find(function (x) { return x.id === p.id; }) || demoDevices[0];
+        r.data = { ok: true, host: rd ? rd.ip : "", username: rd ? rd.username : "",
+          passwordCopied: false, hasPassword: true };
+        break;
+      }
       case "metrics":
         demoMetrics.cpu = Math.max(2, Math.min(98, demoMetrics.cpu + Math.round(Math.random() * 18 - 9)));
         demoMetrics.ram = Math.max(20, Math.min(95, demoMetrics.ram + Math.round(Math.random() * 6 - 3)));

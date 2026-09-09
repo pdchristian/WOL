@@ -81,9 +81,15 @@ Gerät anschließen, in Xcode Team + Bundle-ID `de.wolmanager` setzen,
   jeden Kandidaten mit frischem Socket (Status + Ping). Damit werden Geräte mit
   Dual-Stack (AAAA) oder Mehrfach-/veralteten A-Records (z. B.
   `blade-18.fritz.box`) nicht mehr fälschlich als offline angezeigt.
-- **Remote-Desktop**: Öffnet die **Microsoft Remote Desktop / Windows App**
-  über `ms-rd://add/host/...` (Schema in `LSApplicationQueriesSchemes`).
-  App installiert? Sonst erscheint ein Hinweis-Toast.
+- **Remote-Desktop** (2.3.3): Öffnet die **Windows App** (ehem. Microsoft
+  Remote Desktop) per URI – Kandidaten: `rdp://full%20address=s:…&username=s:…`
+  (Legacy, für iOS dokumentiert) und `ms-rd://add/host/…?username=…`
+  (Schemata in `LSApplicationQueriesSchemes`). Host = IP/Hostname, sonst
+  Gerätename; der Benutzer wird vorbefüllt. Kein Schema überträgt Passwörter
+  → das Passwort wird in die **Zwischenablage** kopiert und die Web-UI zeigt
+  einen Hinweis-Toast. Das beim Verbinden entstehende Profil bleibt auf dem
+  Gerät bestehen (gewollt – kein Löschen wie unter Windows). Fehler:
+  `remote.notinstalled` / `remote.nohost`.
 - **Dashboard-Wischen**: Im Dashboard wechselt ein Wisch nach links/rechts zum
   nächsten/vorherigen Gerät – in genau der Reihenfolge, die gerade im
   Gerätemanager sortiert ist (zyklisch, Anzeige `Position/Gesamt` neben dem
@@ -102,5 +108,7 @@ Gerät anschließen, in Xcode Team + Bundle-ID `de.wolmanager` setzen,
 
 Identisch zu `android_html/`: `window.Android.call(callId, method, paramsJson)`
 → `window.__nativeResult(callId, {ok, data|error})`, Events via
-`window.__nativeEvent({type, ...})`. iOS ergänzt `remote {id, mode}`
-(`ms-rd://`, Fehler `remote.notinstalled`). Details: `WolManager/WebView/Bridge.swift`.
+`window.__nativeEvent({type, ...})`. iOS ergänzt `remote {id, mode}` →
+`{ok, host, username, passwordCopied, hasPassword}` (Fehler
+`remote.notinstalled` / `remote.nohost`). Details: `WolManager/WebView/Bridge.swift`,
+`WolManager/Util/RemoteDesktop.swift`.
