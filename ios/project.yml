@@ -52,7 +52,12 @@
         }
       },
       "info": {
-        "path": "WolManager/Info.plist"
+        "path": "WolManager/Info.plist",
+        "properties": {
+          "UILaunchScreen": {
+            "UIColorName": "LaunchBackground"
+          }
+        }
       }
     },
     "WolManagerTests": {
