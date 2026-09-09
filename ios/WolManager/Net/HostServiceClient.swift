@@ -76,8 +76,14 @@ final class HostServiceClient {
         let exitCode = (body["exit_code"] as? Int) ?? Int((body["exit_code"] as? String) ?? "") ?? -1
         let stdout = (body["stdout"] as? String) ?? ""
         let stderr = (body["stderr"] as? String) ?? ""
-        let durationMs = Int64((body["duration_ms"] as? String) ?? "")
-            ?? Int64((body["duration_ms"] as? Int).map(String.init)) ?? 0
+        let durationMs: Int64
+        if let s = body["duration_ms"] as? String {
+            durationMs = Int64(s) ?? 0
+        } else if let i = body["duration_ms"] as? Int {
+            durationMs = Int64(i)
+        } else {
+            durationMs = 0
+        }
         let truncated: Bool
         if let s = body["truncated"] as? String { truncated = (s == "true") }
         else { truncated = (body["truncated"] as? Bool) ?? false }
@@ -122,6 +128,27 @@ final class HostServiceClient {
             return .error(errNoResponse)
         }
         defer { close(fd) }
+
+        var sendTime = timeval(tv_sec: timeoutMs / 1000, tv_usec: Int32((timeoutMs % 1000) * 1000))
+        var recvTime = sendTime
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sendTime, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &recvTime, socklen_t(MemoryLayout<timeval>.size))
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(port).bigEndian
+        if inet_pton(AF_INET, host, &addr.sin_addr) != 1 {
+            addr.sin_addr.s_addr = inet_addr(host)
+            if addr.sin_addr.s_addr == INADDR_NONE,
+               let resolved = resolveHost(host) { addr.sin_addr.s_addr = resolved }
+        }
+
+        let connOk: Bool = withUnsafePointer(to: &addr) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
+        }
+        if !connOk { return .error(errNoResponse) }
 
         guard let jsonLine = try? JSONSerialization.data(withJSONObject: payload),
               var sendStr = String(data: jsonLine, encoding: .utf8) else {
@@ -169,7 +196,7 @@ final class HostServiceClient {
         guard fd >= 0 else { return false }
         defer { close(fd) }
 
-        var tv = timeval(tv_sec: timeoutMs / 1000, tv_usec: (timeoutMs % 1000) * 1000)
+        var tv = timeval(tv_sec: timeoutMs / 1000, tv_usec: Int32((timeoutMs % 1000) * 1000))
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 
         var addr = sockaddr_in()
@@ -196,7 +223,7 @@ final class HostServiceClient {
         guard getaddrinfo(host, nil, &hints, &res) == 0, let r = res else { return nil }
         defer { freeaddrinfo(res) }
         guard let sa = r.pointee.ai_addr else { return nil }
-        let sin = sa.pointee.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
+        let sin = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
         return sin.s_addr
     }
 

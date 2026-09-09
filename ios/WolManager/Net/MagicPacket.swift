@@ -94,7 +94,7 @@ enum MagicPacket {
         var dest = sockaddr_in()
         dest.sin_family = sa_family_t(AF_INET)
         dest.sin_port = in_port_t(port).bigEndian
-        guard inet_pton(AF_INET, host, &dest.sin_addr) == 1 else {
+        if inet_pton(AF_INET, host, &dest.sin_addr) != 1 {
             // Hostname (selten) per inet_addr auflösen
             dest.sin_addr.s_addr = inet_addr(host)
         }
@@ -149,11 +149,11 @@ enum InterfaceHelper {
             defer { ptr = cur.pointee.ifa_next }
             guard let sa = cur.pointee.ifa_addr, sa.pointee.sa_family == UInt8(AF_INET) else { continue }
             let name = String(cString: cur.pointee.ifa_name)
-            var addr = sa.pointee.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+            var addr = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
             let ip = String(cString: inet_ntoa(addr.sin_addr))
             var mask: String? = nil
             if let ma = cur.pointee.ifa_netmask {
-                mask = ma.pointee.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { m in
+                mask = ma.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { m in
                     var mm = m.pointee
                     return String(cString: inet_ntoa(mm.sin_addr))
                 }

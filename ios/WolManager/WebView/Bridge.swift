@@ -578,10 +578,12 @@ final class Bridge: NSObject, WKScriptMessageHandler {
     private func postResult(_ callId: Int, _ payload: [String: Any]) {
         let clean = sanitize(payload)
         DispatchQueue.main.async { [weak self] in
-            self?.webView?.callAsyncJavaScript(
-                "window.__nativeResult && window.__nativeResult(arguments[0], arguments[1])",
-                arguments: [callId, clean],
-                contentWorld: .page,
+            guard let webView = self?.webView else { return }
+            webView.callAsyncJavaScript(
+                "window.__nativeResult && window.__nativeResult(callId, res)",
+                arguments: ["callId": callId, "res": clean],
+                in: nil,
+                in: .page,
                 completionHandler: nil)
         }
     }
@@ -590,10 +592,12 @@ final class Bridge: NSObject, WKScriptMessageHandler {
     func emitEvent(_ payload: [String: Any]) {
         let clean = sanitize(payload)
         DispatchQueue.main.async { [weak self] in
-            self?.webView?.callAsyncJavaScript(
-                "window.__nativeEvent && window.__nativeEvent(arguments[0])",
-                arguments: [clean],
-                contentWorld: .page,
+            guard let webView = self?.webView else { return }
+            webView.callAsyncJavaScript(
+                "window.__nativeEvent && window.__nativeEvent(ev)",
+                arguments: ["ev": clean],
+                in: nil,
+                in: .page,
                 completionHandler: nil)
         }
     }

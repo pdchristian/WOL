@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -40,11 +40,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		AA0000000000000000000090 /* PBXContainerItemProxy */ = {
+		0799752A09634FA31FBEEEB3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = AA00000000000000000000A0 /* Project object */;
+			containerPortal = 8EF06E7D89E73B32DB806E12 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = AA00000000000000000000B0;
+			remoteGlobalIDString = FF54870EB608CD9A6555F513;
 			remoteInfo = WolManager;
 		};
 /* End PBXContainerItemProxy section */
@@ -85,81 +85,63 @@
 		AA0000000000000000000E108 /* Ipv4ResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ipv4ResolverTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFrameworksBuildPhase section */
-		AA00000000000000000000E1 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		AA00000000000000000000E4 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXFrameworksBuildPhase section */
-
 /* Begin PBXGroup section */
-		AA00000000000000000000A1 = {
+		07CE8CDCF96AC9393A57F053 /* Net */ = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000601 /* WolManager */,
-				AA0000000000000000000F130 /* WebApp */,
-				AA0000000000000000000608 /* WolManagerTests */,
-				AA00000000000000000000A2 /* Products */,
+				44773AFF3EA4365D963646D1 /* HostServiceClient.swift */,
+				918697C6C7EAE13B14A19AED /* MagicPacket.swift */,
+				1938409CE1BA92131CAB1738 /* NetworkScanner.swift */,
+			);
+			path = Net;
+			sourceTree = "<group>";
+		};
+		0A93E8AA38D81C52D494A3F8 /* WolManagerTests */ = {
+			isa = PBXGroup;
+			children = (
+				02E3B18B8C6CCB4C6F8E903F /* CsvTests.swift */,
+				714A349561DF3F4685408029 /* HostServiceProtocolTests.swift */,
+				7B86995A0984D0DE3618B15D /* MagicPacketTests.swift */,
+				4A69BF020554ACE84D414677 /* RepoTests.swift */,
+				04C6A26EBD16915565E32B42 /* ScheduleEngineTests.swift */,
+				966A1222BE1A0937DEB16664 /* UpdateCheckTests.swift */,
+				9A93B4216676A70825B59263 /* ValidationTests.swift */,
+			);
+			path = WolManagerTests;
+			sourceTree = "<group>";
+		};
+		0FCA5322D3349066AC58C69C = {
+			isa = PBXGroup;
+			children = (
+				DBCA0F358D0F6D4E98E9045A /* WebApp */,
+				B04D3521B541CDF053A0AE6E /* WolManager */,
+				0A93E8AA38D81C52D494A3F8 /* WolManagerTests */,
+				BA67E2549D676F98B0033AD1 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		AA00000000000000000000A2 /* Products */ = {
+		5373034962EEC6EFE0847F79 /* Sched */ = {
 			isa = PBXGroup;
 			children = (
-				AA00000000000000000000B1 /* Wake-on-LAN Manager.app */,
-				AA00000000000000000000C1 /* WolManagerTests.xctest */,
+				0155C84044D7BD9D4EC5D4CD /* ScheduleEngine.swift */,
+				83A538A2854AE6220C6B35DB /* ScheduleScheduler.swift */,
 			);
-			name = Products;
+			path = Sched;
 			sourceTree = "<group>";
 		};
-		AA0000000000000000000601 /* WolManager */ = {
+		A72E3EEC19482345C110D892 /* Util */ = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000F101 /* AppDelegate.swift */,
-				AA0000000000000000000F102 /* SceneDelegate.swift */,
-				AA0000000000000000000F103 /* AppContainer.swift */,
-				AA0000000000000000000F121 /* Info.plist */,
-				AA0000000000000000000F120 /* Assets.xcassets */,
-				AA0000000000000000000602 /* WebView */,
-				AA0000000000000000000603 /* Model */,
-				AA0000000000000000000604 /* Net */,
-				AA0000000000000000000605 /* Sched */,
-				AA0000000000000000000606 /* Util */,
+				4B3521ACB9965B4FF1EF51E7 /* Csv.swift */,
+				7B06007E761479C1CDB76BAA /* Haptics.swift */,
+				DF93F71D2B0D8D262F8EC5BB /* RemoteDesktop.swift */,
+				FE04592B5806F06186548C86 /* UpdateCheck.swift */,
+				8CB7B3E8E2DA7BE02735DE25 /* Validation.swift */,
 			);
-			path = WolManager;
+			path = Util;
 			sourceTree = "<group>";
 		};
-		AA0000000000000000000602 /* WebView */ = {
-			isa = PBXGroup;
-			children = (
-				AA0000000000000000000F104 /* Bridge.swift */,
-				AA0000000000000000000F105 /* WebViewController.swift */,
-				AA0000000000000000000F106 /* DocumentPicker.swift */,
-			);
-			path = WebView;
-			sourceTree = "<group>";
-		};
-		AA0000000000000000000603 /* Model */ = {
-			isa = PBXGroup;
-			children = (
-				AA0000000000000000000F107 /* Models.swift */,
-				AA0000000000000000000F108 /* Repo.swift */,
-				AA0000000000000000000F109 /* SecureStore.swift */,
-			);
-			path = Model;
-			sourceTree = "<group>";
-		};
-		AA0000000000000000000604 /* Net */ = {
+		B04D3521B541CDF053A0AE6E /* WolManager */ = {
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000F110 /* MagicPacket.swift */,
@@ -167,31 +149,29 @@
 				AA0000000000000000000F112 /* NetworkScanner.swift */,
 				AA0000000000000000000F123 /* Ipv4Resolver.swift */,
 			);
-			path = Net;
+			path = WolManager;
 			sourceTree = "<group>";
 		};
-		AA0000000000000000000605 /* Sched */ = {
+		B6201036186D1BC1480D1E23 /* Model */ = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000F113 /* ScheduleEngine.swift */,
-				AA0000000000000000000F114 /* ScheduleScheduler.swift */,
+				A88BA43FEA9FACA00A8C9839 /* Models.swift */,
+				21BD1CCC42EF78403965A662 /* Repo.swift */,
+				C9EE2609F215B497A12C2466 /* SecureStore.swift */,
 			);
-			path = Sched;
+			path = Model;
 			sourceTree = "<group>";
 		};
-		AA0000000000000000000606 /* Util */ = {
+		BA67E2549D676F98B0033AD1 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000F115 /* Validation.swift */,
-				AA0000000000000000000F116 /* Csv.swift */,
-				AA0000000000000000000F117 /* UpdateCheck.swift */,
-				AA0000000000000000000F118 /* Haptics.swift */,
-				AA0000000000000000000F119 /* RemoteDesktop.swift */,
+				09D44119A5E973979683B39C /* WolManager.app */,
+				29A7F1ACDE2209E12EEB5A94 /* WolManagerTests.xctest */,
 			);
-			path = Util;
+			name = Products;
 			sourceTree = "<group>";
 		};
-		AA0000000000000000000608 /* WolManagerTests */ = {
+		DAB5E51DEB5A257928CB77B2 /* WebView */ = {
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000E101 /* MagicPacketTests.swift */,
@@ -203,99 +183,96 @@
 				AA0000000000000000000E107 /* UpdateCheckTests.swift */,
 				AA0000000000000000000E108 /* Ipv4ResolverTests.swift */,
 			);
-			path = WolManagerTests;
+			path = WebView;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AA00000000000000000000B0 /* WolManager */ = {
+		490F24FACD5D3507BB047173 /* WolManagerTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA00000000000000000000D1 /* Build configuration list for PBXNativeTarget "WolManager" */;
+			buildConfigurationList = D7F44F13C59918772915C0DC /* Build configuration list for PBXNativeTarget "WolManagerTests" */;
 			buildPhases = (
-				AA00000000000000000000E0 /* Sources */,
-				AA00000000000000000000E1 /* Frameworks */,
-				AA00000000000000000000E2 /* Resources */,
+				C14AC9BAF4D5BD06D76054D1 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7FA6E94CB41B71A61657C877 /* PBXTargetDependency */,
+			);
+			name = WolManagerTests;
+			packageProductDependencies = (
+			);
+			productName = WolManagerTests;
+			productReference = 29A7F1ACDE2209E12EEB5A94 /* WolManagerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		FF54870EB608CD9A6555F513 /* WolManager */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB7A7A912188BD3792DE5F63 /* Build configuration list for PBXNativeTarget "WolManager" */;
+			buildPhases = (
+				F6149BBB3A0FF1C5EC157B7B /* Sources */,
+				9499D00B9A1432019236EA01 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = WolManager;
+			packageProductDependencies = (
+			);
 			productName = WolManager;
-			productReference = AA00000000000000000000B1 /* Wake-on-LAN Manager.app */;
+			productReference = 09D44119A5E973979683B39C /* WolManager.app */;
 			productType = "com.apple.product-type.application";
-		};
-		AA00000000000000000000C0 /* WolManagerTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AA00000000000000000000D2 /* Build configuration list for PBXNativeTarget "WolManagerTests" */;
-			buildPhases = (
-				AA00000000000000000000E3 /* Sources */,
-				AA00000000000000000000E4 /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				AA0000000000000000000091 /* PBXTargetDependency */,
-			);
-			name = WolManagerTests;
-			productName = WolManagerTests;
-			productReference = AA00000000000000000000C1 /* WolManagerTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		AA00000000000000000000A0 /* Project object */ = {
+		8EF06E7D89E73B32DB806E12 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 1500;
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					AA00000000000000000000B0 = {
-						CreatedOnToolsVersion = 15.0;
-					};
-					AA00000000000000000000C0 = {
-						CreatedOnToolsVersion = 15.0;
-						TestTargetID = AA00000000000000000000B0;
+					FF54870EB608CD9A6555F513 = {
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
-			buildConfigurationList = AA00000000000000000000D0 /* Build configuration list for PBXProject "WolManager" */;
-			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = de;
+			buildConfigurationList = D23FB796BAC7B4C8BF87BB35 /* Build configuration list for PBXProject "WolManager" */;
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				de,
-				en,
 				Base,
+				en,
 			);
-			mainGroup = AA00000000000000000000A1;
-			productRefGroup = AA00000000000000000000A2 /* Products */;
+			mainGroup = 0FCA5322D3349066AC58C69C;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = BA67E2549D676F98B0033AD1 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AA00000000000000000000B0 /* WolManager */,
-				AA00000000000000000000C0 /* WolManagerTests */,
+				FF54870EB608CD9A6555F513 /* WolManager */,
+				490F24FACD5D3507BB047173 /* WolManagerTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		AA00000000000000000000E2 /* Resources */ = {
+		9499D00B9A1432019236EA01 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AA00000000000000000005120 /* Assets.xcassets in Resources */,
-				AA00000000000000000005130 /* WebApp in Resources */,
+				BD98234B52AF8FB2F1995121 /* Assets.xcassets in Resources */,
+				A233D9ED6EB375EA693C7163 /* WebApp in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		AA00000000000000000000E0 /* Sources */ = {
+		C14AC9BAF4D5BD06D76054D1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -322,7 +299,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AA00000000000000000000E3 /* Sources */ = {
+		F6149BBB3A0FF1C5EC157B7B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -340,71 +317,83 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		AA0000000000000000000091 /* PBXTargetDependency */ = {
+		7FA6E94CB41B71A61657C877 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = AA00000000000000000000B0 /* WolManager */;
-			targetProxy = AA0000000000000000000090 /* PBXContainerItemProxy */;
+			target = FF54870EB608CD9A6555F513 /* WolManager */;
+			targetProxy = 0799752A09634FA31FBEEEB3 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		AA00000000000000000000D3 /* Debug */ = {
+		20DF54B59EA1D43E785CC72E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-			};
-			name = Debug;
-		};
-		AA00000000000000000000D4 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				VALIDATE_PRODUCT = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				defaultConfig = Release;
+				generateMultipleXcodeproj = NO;
 			};
 			name = Release;
 		};
-		AA00000000000000000000D5 /* Debug */ = {
+		341F3B9EEED5D436E127796E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = F2W9M4SR79;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WolManager/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -413,24 +402,64 @@
 				);
 				MARKETING_VERSION = 2.3.3;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
-				PRODUCT_MODULE_NAME = WolManager;
-				PRODUCT_NAME = "Wake-on-LAN Manager";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				PRODUCT_NAME = WolManager;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		AF469ADF2990CB364F792B91 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager.tests;
+				PRODUCT_NAME = WolManagerTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WolManager.app/WolManager";
+			};
+			name = Release;
+		};
+		B65BDC392D055499E3766F41 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager.tests;
+				PRODUCT_NAME = WolManagerTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WolManager.app/WolManager";
 			};
 			name = Debug;
 		};
-		AA00000000000000000000D6 /* Release */ = {
+		FA044E43EF424E33D4886DBC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = F2W9M4SR79;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WolManager/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -439,81 +468,109 @@
 				);
 				MARKETING_VERSION = 2.3.3;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
-				PRODUCT_MODULE_NAME = WolManager;
-				PRODUCT_NAME = "Wake-on-LAN Manager";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				PRODUCT_NAME = WolManager;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Release;
-		};
-		AA00000000000000000000D7 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wake-on-LAN Manager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Wake-on-LAN Manager";
 			};
 			name = Debug;
 		};
-		AA00000000000000000000D8 /* Release */ = {
+		FC5808E50FEDD3CFB13AA57A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager.tests;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wake-on-LAN Manager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Wake-on-LAN Manager";
+				defaultConfig = Release;
+				generateMultipleXcodeproj = NO;
 			};
-			name = Release;
+			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA00000000000000000000D0 /* Build configuration list for PBXProject "WolManager" */ = {
+		D23FB796BAC7B4C8BF87BB35 /* Build configuration list for PBXProject "WolManager" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AA00000000000000000000D3 /* Debug */,
-				AA00000000000000000000D4 /* Release */,
+				FC5808E50FEDD3CFB13AA57A /* Debug */,
+				20DF54B59EA1D43E785CC72E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
-		AA00000000000000000000D1 /* Build configuration list for PBXNativeTarget "WolManager" */ = {
+		D7F44F13C59918772915C0DC /* Build configuration list for PBXNativeTarget "WolManagerTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AA00000000000000000000D5 /* Debug */,
-				AA00000000000000000000D6 /* Release */,
+				B65BDC392D055499E3766F41 /* Debug */,
+				AF469ADF2990CB364F792B91 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
-		AA00000000000000000000D2 /* Build configuration list for PBXNativeTarget "WolManagerTests" */ = {
+		EB7A7A912188BD3792DE5F63 /* Build configuration list for PBXNativeTarget "WolManager" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AA00000000000000000000D7 /* Debug */,
-				AA00000000000000000000D8 /* Release */,
+				FA044E43EF424E33D4886DBC /* Debug */,
+				341F3B9EEED5D436E127796E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = AA00000000000000000000A0 /* Project object */;
+	rootObject = 8EF06E7D89E73B32DB806E12 /* Project object */;
 }

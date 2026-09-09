@@ -44,22 +44,22 @@ final class RepoTests: XCTestCase {
         // Reload liest konsistent
         repo.reload()
         XCTAssertEqual(repo.snapshot.devices.count, 1)
-        XCTAssertEqual(repo.device(id: "d1")?.name, "PC")
+        XCTAssertEqual(repo.device("d1")?.name, "PC")
         XCTAssertEqual(repo.getPassword(id: "d1"), "geheim")
     }
 
     func testSaveDeviceGeneratesId() {
         let saved = repo.saveDevice(Device(name: "Ohne ID", mac: "AA:BB:CC:DD:EE:FF"))
         XCTAssertFalse(saved.id.isEmpty)
-        XCTAssertNotNil(repo.device(id: saved.id))
+        XCTAssertNotNil(repo.device(saved.id))
     }
 
     func testUpdateDeviceKeepsOtherFieldsOnList() {
         repo.saveDevice(Device(id: "d1", name: "Alt", mac: "AA:BB:CC:DD:EE:FF"))
         repo.saveDevice(Device(id: "d1", name: "Neu", mac: "11:22:33:44:55:66"))
         XCTAssertEqual(repo.snapshot.devices.count, 1)
-        XCTAssertEqual(repo.device(id: "d1")?.name, "Neu")
-        XCTAssertEqual(repo.device(id: "d1")?.mac, "11:22:33:44:55:66")
+        XCTAssertEqual(repo.device("d1")?.name, "Neu")
+        XCTAssertEqual(repo.device("d1")?.mac, "11:22:33:44:55:66")
     }
 
     func testMigratePlaintextPasswordsOnLoad() throws {
@@ -68,10 +68,10 @@ final class RepoTests: XCTestCase {
         [{"id":"old1","name":"ALT","mac":"AA:BB:CC:DD:EE:FF","ip":"",\
         "username":"u","password":"klar123","enabled":true}]
         """
-        try plain.write(to: dir.appendingPathComponent("devices.json"), encoding: .utf8)
+        try plain.write(to: dir.appendingPathComponent("devices.json"), atomically: true, encoding: .utf8)
 
         let r2 = Repo(baseDir: dir, secure: secure)
-        XCTAssertEqual(r2.device(id: "old1")?.password, "") // Arbeitsspeicher: geleert
+        XCTAssertEqual(r2.device("old1")?.password, "") // Arbeitsspeicher: geleert
         XCTAssertEqual(r2.getPassword(id: "old1"), "klar123") // Keychain: migriert
     }
 
@@ -81,7 +81,7 @@ final class RepoTests: XCTestCase {
         repo.saveSchedule(ScheduleDef(id: "s2", deviceId: "other", hour: 8, minute: 0))
 
         repo.deleteDevice(id: "d1")
-        XCTAssertNil(repo.device(id: "d1"))
+        XCTAssertNil(repo.device("d1"))
         XCTAssertEqual(repo.snapshot.schedules.map(\.id), ["s2"])
         XCTAssertEqual(repo.getPassword(id: "d1"), "")
     }

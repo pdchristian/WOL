@@ -43,8 +43,14 @@ enum ScheduleEngine {
     /// "HH:MM" → (stunde, minute) oder nil.
     static func parseTime(_ text: String) -> (hour: Int, minute: Int)? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard let m = trimmed.firstMatch(of: Regex("^(\\d{1,2}):(\\d{2})$")) else { return nil }
-        guard let h = Int(m.1), let min = Int(m.2) else { return nil }
+        let parts = trimmed.split(separator: ":")
+        // Stunden: 1–2 Ziffern, Minuten: genau 2 Ziffern (wie "HH:MM").
+        guard parts.count == 2,
+              parts[0].count >= 1, parts[0].count <= 2,
+              parts[1].count == 2,
+              parts[0].allSatisfy(\.isNumber),
+              parts[1].allSatisfy(\.isNumber),
+              let h = Int(parts[0]), let min = Int(parts[1]) else { return nil }
         guard (0...23).contains(h), (0...59).contains(min) else { return nil }
         return (h, min)
     }

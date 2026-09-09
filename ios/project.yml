@@ -1,4 +1,5 @@
 {
+  "name": "WolManager",
   "info": {
     "author": "WOL Manager",
     "description": "Wake-on-LAN Manager (iOS, WKWebView-Wrapper)"
@@ -18,10 +19,8 @@
       "type": "application",
       "platform": "iOS",
       "sources": [
-        "WolManager"
-      ],
-      "resources": [
-        "WebApp"
+        "WolManager",
+        { "path": "WebApp", "type": "folder" }
       ],
       "configFiles": [],
       "settings": {

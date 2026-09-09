@@ -25,8 +25,8 @@ final class WebViewController: UIViewController, BridgeHost, WKNavigationDelegat
         let config = WKWebViewConfiguration()
         let controller = WKUserContentController()
         bridge = Bridge(container: AppContainer.shared, host: self)
-        controller.addScriptMessageHandler(WeakMessageHandler(target: bridge), name: "Android")
-        controller.addScriptMessageHandler(WeakMessageHandler(target: bridge), name: "AndroidSetSheet")
+        controller.add(WeakMessageHandler(target: bridge), name: "Android")
+        controller.add(WeakMessageHandler(target: bridge), name: "AndroidSetSheet")
         controller.addUserScript(Bridge.userScript) // VOR bridge.js → window.Android existiert
         config.userContentController = controller
         config.defaultWebpagePreferences.allowsContentJavaScript = true
