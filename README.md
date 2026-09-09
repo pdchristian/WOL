@@ -112,15 +112,26 @@ the bridge protocol and a browser demo mode.
 
 ### Unreleased
 
-#### � Stay in the notification area (close to tray)
+#### 👉 Dashboard: swipe between devices (Android & iOS)
+- **Swipe left or right on the dashboard** to jump to the next / previous device — in exactly the order the devices are currently sorted in the device manager (name / IP / MAC / status), wrapping around at the ends. The device title shows a `position/total` pill (with a swipe hint) and the content slides in horizontally, with a short haptic tick on each change
+- Vertical scrolling stays untouched, and the gesture is ignored while interacting with inputs, the interval selector, the batch console or any sheet — so it never fights with normal dashboard use. Implemented once per WebView app (`android_html/` and `ios/WebApp/` share the `app.js` gesture code)
+
+#### 📦 Export includes watched processes (all platforms)
+- **Device export now carries `watch_processes`** (the *Watched processes (Dashboard)* field): Windows/Ubuntu (`wol_app/device_io.py`), Android (`Bridge.kt`) and iOS (`Bridge.swift`) write the per-device watch list into `devices.json` (key `watch_processes`, Windows format). Empty lists are omitted; on import a missing key keeps the existing list, and entries are sanitised (trimmed, deduped, max 8 × 128 chars) just like the config editor does — so a watch list survives a round-trip between desktop and mobile
+
+#### 🔔 Stay in the notification area (close to tray)
 - **New setting "Keep running in the notification area when closed"** (modern layout, *Settings* screen): the window's close button now hides the app to the system tray instead of quitting — scheduled wake-ups and shutdowns keep firing while hidden. Double-click the tray icon (or *Open Window* in its context menu) to restore it; *Quit* in the tray menu ends the app
 - **Third button on the quit dialog:** the sidebar ⏻ confirmation now offers **Ja / Minimieren / Nein** while the option is active (plain Ja / Nein otherwise, and whenever no system tray is available)
 - Persisted as `ui.close_to_tray` (default `false`); applied live without an app restart
 
-#### �📱 Android HTML app (`android_html/`)
+#### 📱 Android HTML app (`android_html/`)
 - New companion Android client based on the *Android 5.0* prototype: fullscreen WebView (dark/light theme, DE/EN/FR/ES), Kotlin shell + `@JavascriptInterface` bridge, real Host Service v4 dashboard (CPU/RAM/GPU/VRAM, uptime, watched llama.cpp services), batch console, network scanner, schedules, CSV/JSON log export and update check. Device import/export matches the Windows `devices.json` format. Debug APK via `.\build_html.ps1`
 - **Fixed (2.3.1): host names as device addresses** — status checks and ping now resolve the name to IPv4 explicitly and try every A record (the Host Service listens on IPv4 only, so a dual-stack AAAA preference or a stale DHCP lease no longer marks devices like `blade-18.fritz.box` offline). The Ping action reports what failed (DNS vs. port) directly in the message
 - **Fixed (2.3.2): blank screen after startup** — a stray brace broke the JS language packs, leaving the WebView empty; also bumped so the installed build is identifiable (2.3.1 shipped that regression)
+- **Remote Desktop now launches the Windows App:** the *Remote fullscreen* / *Remote window* actions (device tiles and long-press menu) open the installed **Windows App** (formerly Microsoft Remote Desktop) with a ready-made profile — PC address (device IP, falling back to the device name) and username are pre-filled via the documented Android `rdp://` URI scheme, and the profile **stays** in the Windows App (no clean-up, unlike the desktop app). The Android URI scheme cannot carry a password (no attribute, no Credential Manager access), so the stored device password is placed on the clipboard and a toast asks you to paste it in the connect window. Missing app or missing address report a localised error (DE/EN/FR/ES)
+
+#### 📱 iOS app (`ios/`)
+- **Fixed (2.3.2): host names as device addresses** — same as Android: `Ipv4Resolver.swift` resolves names to all IPv4 A records (deduplicated) and `HostServiceClient.connectIpv4` tries every candidate with a fresh socket for status checks and ping, so devices like `blade-18.fritz.box` (dual-stack or stale DHCP lease) are no longer shown offline. The Ping action now reports whether DNS resolution or the TCP port failed (DE/EN/FR/ES)
 - The native Compose app under `android/` has been removed; `android_html/` is the Android client
 
 #### 🔄 Remote Desktop: automatic second attempt without password

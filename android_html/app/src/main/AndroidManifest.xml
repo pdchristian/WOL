@@ -10,6 +10,21 @@
     <!-- Kurzes Vibrieren beim Long-Press-Kontextmenü -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Remote-Desktop: Sichtbarkeit der Windows App (rdp:// bzw. ms-rd://).
+         startActivity würde auch ohne queries funktionieren; die Deklaration macht
+         die Auflösung auf Android 11+ explizit und stabil. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="rdp" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="ms-rd" />
+        </intent>
+        <package android:name="com.microsoft.rdc.androidx" />
+    </queries>
+
     <application
         android:name=".WolApplication"
         android:allowBackup="false"

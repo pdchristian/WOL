@@ -315,7 +315,8 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
   "batches": [
     { "id": "uuid4-string", "name": "string", "script": "cmd/batch text",
       "timeout": 120 }
-  ]
+  ],
+  "watch_processes": ["llama-server.exe", "nginx.exe:8080"]
 }
 ```
 
@@ -325,6 +326,13 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
 > max 32 000 chars, timeout 5–3600 s, default 120 s) shown in the dashboard
 > editor; managed via `ConfigManager.set_device_batches()` /
 > `set_device_allow_batch()`. Malformed entries are skipped on read.
+> **Watched processes (protocol v3):** `watch_processes` is the per-device list
+> of monitored processes (max 8 entries, each ≤ 128 chars; `name.exe` or
+> `name.exe:port`) driving the dashboard service chips; managed via
+> `ConfigManager.get/set_device_watch_processes()`. It is included in the
+> device export/import (`wol_app/device_io.py`, key `watch_processes`) and by
+> the Android/iOS bridges; empty lists are omitted from the export and a
+> missing key on import keeps the existing list.
 
 ### 4.4 Schedule Schema
 
@@ -739,9 +747,31 @@ native Compose app in `android/` was removed in 2.3.1.)
   `bridge.js` (native adapter + browser demo stub), `app.js` (all UI logic).
   Opening `index.html` directly in a desktop browser runs demo mode (no
   native bridge needed).
+- **Dashboard swipe:** a left/right swipe on `#s-dash` switches to the
+  next/previous device in the *current device-list order* (`sortDevices()`
+  extracted from `filteredDevices()`), wrapping around; position shown as
+  `n/total` pill next to the title, horizontal slide animation
+  (`.dashInLeft`/`.dashInRight`), haptic tick. Vertical scrolling and
+  inputs/selects/console/batch widgets are excluded from the gesture.
+  Same code in `ios/WebApp/app.js` (iOS uses `Native.call("vibrate")`).
 - **Windows compatibility:** `devices.json` import/export matches the
   desktop format (array of device objects, plaintext passwords in export;
-  import clears DPAPI-encrypted values).
+  import clears DPAPI-encrypted values). Export includes `watch_processes`
+  (dashboard watched processes) and import restores them (missing key = keep).
+- **Remote Desktop (new in 2.3.3):** the *Remote fullscreen/window* actions
+  (`rdp-full`/`rdp-win` tiles, `m-rdp` menu) call `Native.call("remote", {id,
+  mode})`. `Bridge.remoteJson` launches the installed **Windows App** (formerly
+  Microsoft Remote Desktop, `com.microsoft.rdc.androidx`) via the legacy
+  `rdp://full%20address=s:<host>&username=s:<user>` URI (Android scheme; the
+  `ms-rd://add/host/<host>` iOS form is a fallback candidate). Host = device IP,
+  falling back to name (like iOS). The profile **persists** in the Windows App —
+  unlike the desktop app, nothing is cleaned up. The Android URI scheme has **no
+  password attribute** (and no Credential Manager access), so the bridge copies
+  the stored password to the clipboard and the UI toasts a hint to paste it in the
+  connect window. Errors `remote.notinstalled` / `remote.nohost` surface as toasts
+  (DE/EN/FR/ES). URI building/encoding lives in `util/RemoteDesktop.kt` (pure
+  Kotlin, `RemoteDesktopTest`); launch uses `BridgeHost.openExternal` on the main
+  thread; `AndroidManifest` declares `<queries>` for the `rdp`/`ms-rd` schemes.
 - **Docs:** `docs/android/html-app.md` (bridge protocol, dev workflow,
   pitfalls — e.g. `addJavascriptInterface` must be called before first load).
 

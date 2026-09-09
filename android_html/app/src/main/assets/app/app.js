@@ -19,6 +19,9 @@ de:{
  "ping.ok":"Ping an {ip}: Antwort in {ms} ms","ping.fail":"Ping an {ip}: Ziel nicht erreichbar","ping.diag.none":"{ip}: kein IPv4-DNS-Eintrag – Smartphone-DNS prüfen (Privates DNS aus?)","ping.diag.fail":"{ip}: Port nicht erreichbar –",
  "remote.demo":"{mode}: verbindungsaufbau zu {name} (Demo)",
  "remote.soon":"Remote-Desktop folgt – bitte die Windows App / Microsoft Remote Desktop verwenden.",
+ "remote.notinstalled":"Keine Remote-Desktop-App gefunden – bitte die App „Windows App“ (Microsoft Remote Desktop) installieren.",
+ "remote.nohost":"Für dieses Gerät ist keine IP-Adresse/Hostname hinterlegt.",
+ "remote.pwcopied":"RDP-Passwort in die Zwischenablage kopiert – im Verbindungsfenster einfügen.",
  /* Verwalten */
  "manage.subtitle":"Geräte-Verwaltung & Netzwerk-Scan",
  "manage.sec.devices":"Geräte-Verwaltung","manage.sec.scan":"Netzwerk-Scan",
@@ -96,6 +99,7 @@ de:{
  "upd.new":"🆕 Neue Version {v} verfügbar!",
  /* Dashboard */
  "dash.back":"← Geräte","dash.interval":"Intervall",
+ "dash.swipe":"Wischen nach links/rechts wechselt zum nächsten Gerät.",
  "dash.svc":"Dienste","dash.svc.sub":"Überwachte Prozesse","dash.svc.none":"Keine überwachten Prozesse konfiguriert.",
  "svc.running":"läuft · PID {pid}","svc.ready":"läuft · PID {pid} · API bereit :{port}","svc.unreach":"läuft (PID {pid}), aber Port {port} nicht erreichbar","svc.gone":"Prozess nicht gefunden",
  "svc.probing":"wird geprüft…",
@@ -134,6 +138,9 @@ en:{
  "ping.ok":"Ping to {ip}: reply in {ms} ms","ping.fail":"Ping to {ip}: destination unreachable","ping.diag.none":"{ip}: no IPv4 DNS entry – check the phone's DNS (Private DNS off?)","ping.diag.fail":"{ip}: port unreachable –",
  "remote.demo":"{mode}: connecting to {name} (demo)",
  "remote.soon":"Remote desktop coming soon – please use the Windows App / Microsoft Remote Desktop.",
+ "remote.notinstalled":"No remote desktop app found – please install the “Windows App” (Microsoft Remote Desktop).",
+ "remote.nohost":"This device has no IP address/hostname configured.",
+ "remote.pwcopied":"RDP password copied to the clipboard – paste it in the connect window.",
  "manage.subtitle":"Device management & network scan",
  "manage.sec.devices":"Device management","manage.sec.scan":"Network scan",
  "manage.add":"+ Add device","manage.import":"Import","manage.export":"Export",
@@ -204,6 +211,7 @@ en:{
  "upd.err":"⚠️ {msg}","upd.err.msg":"The update check could not be performed.",
  "upd.new":"🆕 New version {v} available!",
  "dash.back":"← Devices","dash.interval":"Interval",
+ "dash.swipe":"Swipe left/right to switch to the next device.",
  "dash.svc":"Services","dash.svc.sub":"Watched processes","dash.svc.none":"No watched processes configured.",
  "svc.running":"running · PID {pid}","svc.ready":"running · PID {pid} · API ready :{port}","svc.unreach":"running (PID {pid}), but port {port} unreachable","svc.gone":"Process not found",
  "svc.probing":"checking…",
@@ -242,6 +250,9 @@ fr:{
  "ping.ok":"Ping vers {ip} : réponse en {ms} ms","ping.fail":"Ping vers {ip} : destination injoignable","ping.diag.none":"{ip} : aucune entrée DNS IPv4 – vérifier le DNS du smartphone (DNS privé désactivé ?)","ping.diag.fail":"{ip} : port inaccessible –",
  "remote.demo":"{mode} : connexion à {name} (démo)",
  "remote.soon":"Bureau à distance bientôt disponible – veuillez utiliser Windows App / Microsoft Remote Desktop.",
+ "remote.notinstalled":"Aucune application de bureau à distance trouvée – veuillez installer « Windows App » (Microsoft Remote Desktop).",
+ "remote.nohost":"Aucune adresse IP/nom d'hôte configuré pour cet appareil.",
+ "remote.pwcopied":"Mot de passe RDP copié dans le presse-papiers – collez-le dans la fenêtre de connexion.",
  "manage.subtitle":"Gestion des appareils & analyse réseau",
  "manage.sec.devices":"Gestion des appareils","manage.sec.scan":"Analyse réseau",
  "manage.add":"+ Ajouter un appareil","manage.import":"Importer","manage.export":"Exporter",
@@ -312,6 +323,7 @@ fr:{
  "upd.err":"⚠️ {msg}","upd.err.msg":"La vérification a échoué.",
  "upd.new":"🆕 Nouvelle version {v} disponible !",
  "dash.back":"← Appareils","dash.interval":"Intervalle",
+ "dash.swipe":"Faites glisser à gauche/droite pour changer d'appareil.",
  "dash.svc":"Services","dash.svc.sub":"Processus surveillés","dash.svc.none":"Aucun processus surveillé.",
  "svc.running":"actif · PID {pid}","svc.ready":"actif · PID {pid} · API prête :{port}","svc.unreach":"actif (PID {pid}), port {port} injoignable","svc.gone":"Processus introuvable",
  "svc.probing":"vérification…",
@@ -350,6 +362,9 @@ es:{
  "ping.ok":"Ping a {ip}: respuesta en {ms} ms","ping.fail":"Ping a {ip}: destino inaccesible","ping.diag.none":"{ip}: sin entrada DNS IPv4 – compruebe el DNS del smartphone (¿DNS privado desactivado?)","ping.diag.fail":"{ip}: puerto inaccesible –",
  "remote.demo":"{mode}: conectando a {name} (demo)",
  "remote.soon":"Escritorio remoto próximamente – use Windows App / Microsoft Remote Desktop.",
+ "remote.notinstalled":"No se encontró ninguna aplicación de escritorio remoto: instale « Windows App » (Microsoft Remote Desktop).",
+ "remote.nohost":"Este dispositivo no tiene dirección IP/nombre de host configurado.",
+ "remote.pwcopied":"Contraseña RDP copiada al portapapeles: péguela en la ventana de conexión.",
  "manage.subtitle":"Gestión de dispositivos y escaneo de red",
  "manage.sec.devices":"Gestión de dispositivos","manage.sec.scan":"Escaneo de red",
  "manage.add":"+ Añadir dispositivo","manage.import":"Importar","manage.export":"Exportar",
@@ -420,6 +435,7 @@ es:{
  "upd.err":"⚠️ {msg}","upd.err.msg":"No se pudo comprobar la actualización.",
  "upd.new":"🆕 ¡Nueva versión {v} disponible!",
  "dash.back":"← Dispositivos","dash.interval":"Intervalo",
+ "dash.swipe":"Desliza a izquierda/derecha para cambiar de dispositivo.",
  "dash.svc":"Servicios","dash.svc.sub":"Procesos supervisados","dash.svc.none":"Sin procesos supervisados.",
  "svc.running":"activo · PID {pid}","svc.ready":"activo · PID {pid} · API lista :{port}","svc.unreach":"activo (PID {pid}), puerto {port} inaccesible","svc.gone":"Proceso no encontrado",
  "svc.probing":"comprobando…",
@@ -596,6 +612,23 @@ function pingDevice(d) {
     if (!dg.resolved) { toast(t("ping.diag.none", { ip: dg.host || d.ip }), true); return; }
     const detail = cands.map(c => "✗ " + c.address + " – " + (c.error || "?")).join("  ");
     toast(t("ping.diag.fail", { ip: dg.host || d.ip }) + (detail ? " " + detail : ""), true);
+  });
+}
+
+/* Remotedesktop: Windows App per rdp://-URI öffnen (Rechner + Benutzer vorbelegt).
+   Das Passwort kann das Android-URI-Schema nicht übertragen → die Bridge legt es in
+   die Zwischenablage, die UI weist darauf hin. Fehler → Toast. */
+function doRemote(id, mode) {
+  Native.call("remote", { id, mode: mode === "win" ? "win" : "full" }).then(res => {
+    if (!res.ok) {
+      const msg = String(res.error || "");
+      const key = msg === "remote.notinstalled" ? "remote.notinstalled"
+        : msg === "remote.nohost" ? "remote.nohost" : null;
+      toast(key ? t(key) : msg, true);
+      return;
+    }
+    const d = res.data || {};
+    if (d.passwordCopied) toast(t("remote.pwcopied"));
   });
 }
 
@@ -782,6 +815,43 @@ function restartDashTimer() {
 }
 restartDashTimer();
 
+/* ── Wisch-Geste im Dashboard: wechselt zum nächsten/vorherigen Gerät in
+   genau der Reihenfolge, die gerade im Gerätemanager sortiert ist. ──────── */
+function dashDevicesOrdered() { return sortDevices([...state.devices]); }
+function switchDashDevice(dir) {
+  const list = dashDevicesOrdered();
+  if (list.length < 2) return;
+  let i = list.findIndex(x => x.id === state.ui.dashDeviceId);
+  if (i < 0) i = 0;
+  const nd = list[(i + dir + list.length) % list.length];
+  state.ui.dashDeviceId = nd.id; state.ui.selBatch = null;
+  state.con = { lines: [], running: false, exit: null, dur: null, timer: null };
+  renderDash(dir > 0 ? "left" : "right");
+  Native.call("vibrate", { ms: 10 });
+}
+(function initDashSwipe() {
+  const el = document.getElementById("s-dash");
+  if (!el) return;
+  let s = null;
+  el.addEventListener("touchstart", ev => {
+    if (ev.touches.length !== 1) { s = null; return; }
+    const p = ev.touches[0];
+    s = { x: p.clientX, y: p.clientY, tm: Date.now() };
+  }, { passive: true });
+  el.addEventListener("touchend", ev => {
+    if (!s) return;
+    const st = s; s = null;
+    const p = ev.changedTouches[0];
+    const dx = p.clientX - st.x, dy = p.clientY - st.y;
+    if (Date.now() - st.tm > 900) return;                    /* kein Drag/Scroll */
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return; /* zu klein / vertikal */
+    if (ev.target && ev.target.closest &&
+        ev.target.closest("input,select,textarea,.console,#sheet,#overlay")) return;
+    switchDashDevice(dx < 0 ? 1 : -1); /* links wischen → nächstes Gerät */
+  }, { passive: true });
+  el.addEventListener("touchcancel", () => { s = null; }, { passive: true });
+})();
+
 function updateDashLive(d) {
   const m = d.metrics; if (!m) return;
   for (const k of ["cpu", "ram", "gpu", "vram"]) {
@@ -850,10 +920,9 @@ function runBatch() {
 }
 
 /* ══════════════════════════ Render: Geräte ════════════════════════════════ */
-function filteredDevices(search) {
-  let devs = [...state.devices];
-  const q = (search || "").toLowerCase();
-  if (q) devs = devs.filter(d => (d.name + " " + d.ip + " " + d.mac + " " + d.username).toLowerCase().includes(q));
+/* Geräte in der aktuell gewählten Gerätelisten-Sortierung (auch für das
+   Dashboard: Wischen wechselt Geräte in genau dieser Reihenfolge). */
+function sortDevices(devs) {
   const rank = { online: 0, offline: 1, waking: 2, unknown: 3 };
   const ipKey = ip => (ip || "").split(".").map(n => String(n.length).padStart(2,"0") + n).join(".");
   if (state.ui.sort === "name") devs.sort((a,b) => a.name.localeCompare(b.name));
@@ -861,6 +930,12 @@ function filteredDevices(search) {
   else if (state.ui.sort === "mac") devs.sort((a,b) => a.mac.localeCompare(b.mac));
   else devs.sort((a,b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
   return devs;
+}
+function filteredDevices(search) {
+  let devs = [...state.devices];
+  const q = (search || "").toLowerCase();
+  if (q) devs = devs.filter(d => (d.name + " " + d.ip + " " + d.mac + " " + d.username).toLowerCase().includes(q));
+  return sortDevices(devs);
 }
 function nameSuffix(d) {
   let s = "";
@@ -1087,9 +1162,11 @@ function renderSettings() {
 }
 
 /* ══════════════════════════ Render: Dashboard (📊, kein Nav-Eintrag) ══════ */
-function renderDash() {
+function renderDash(dir) {
   const d = byId(state.ui.dashDeviceId);
   if (!d) { $("#s-dash").innerHTML = `<div class="empty">${esc(t("devices.empty"))}</div>`; return; }
+  const dlist = dashDevicesOrdered();
+  const dpos = dlist.findIndex(x => x.id === d.id);
   const on = d.status === "online";
   const pill = on ? "pillOnline" : d.status === "offline" ? "pillOffline" : "pillUnknown";
   let warn = "";
@@ -1111,7 +1188,8 @@ function renderDash() {
       <div class="mdet">${esc(detail)}</div>
       ${key !== "vram" ? `<div data-spark="${key}">${sparkSvg(d.spark[key], `var(--gauge-${key})`)}</div>` : ""}
     </div>`;
-  $("#s-dash").innerHTML = `
+  const anim = dir === "left" ? " dashInLeft" : dir === "right" ? " dashInRight" : "";
+  $("#s-dash").innerHTML = `<div class="dashSwap${anim}">
     <div class="toolbar" style="align-items:center">
       <button class="btn small" data-act="nav-devices">${esc(t("dash.back"))}</button>
       <span class="spacer"></span>
@@ -1122,6 +1200,7 @@ function renderDash() {
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
       <div class="pageTitle" style="font-size:19px">${esc(d.name)}</div>
+      ${dlist.length > 1 ? `<span class="pill dashPos mono" title="${esc(t("dash.swipe"))}">${dpos + 1}/${dlist.length}</span>` : ""}
       <span class="pill ${pill}">${esc(statusName(d))}</span>
     </div>
     <div class="mono">${esc([d.ip, d.mac].filter(Boolean).join(" · "))} · ${m && m.protocol >= 3 ? esc(t("hostv", { v: m.protocol })) : "—"}</div>
@@ -1181,7 +1260,8 @@ function renderDash() {
     <div class="console">${state.con.lines.map(l =>
       `<div class="${/fehler|error/i.test(l) ? "err" : ""}">${esc(l)}</div>`).join("")}
       ${state.con.running ? `<div class="dim">${esc(t("batch.running"))}</div>` : ""}
-      ${state.con.exit != null ? `<div class="dim">${esc(t("batch.exit", { c: state.con.exit }))} · ${esc(t("batch.dur", { s: state.con.dur }))}</div>` : ""}</div>` : ""}`;
+      ${state.con.exit != null ? `<div class="dim">${esc(t("batch.exit", { c: state.con.exit }))} · ${esc(t("batch.dur", { s: state.con.dur }))}</div>` : ""}</div>` : ""}
+  </div>`;
 }
 
 /* ══════════════════════════ Theme / Sprache ═══════════════════════════════ */
@@ -1236,14 +1316,15 @@ document.addEventListener("click", ev => {
         Native.call("wakeAll", {});
       });
       break; }
-    case "rdp-full": case "rdp-win": toast(t("remote.soon")); break;
+    case "rdp-full": doRemote(id, "full"); break;
+    case "rdp-win": doRemote(id, "win"); break;
     case "open-dash": state.ui.dashDeviceId = id; state.ui.selBatch = null; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; go("dash"); break;
     case "nav-devices": go("devices"); break;
     case "edit-dev": openDeviceSheet(id); break;
     case "del-dev": deleteDevice(id); break;
     case "dev-save": saveDeviceFromSheet(); break;
     /* ── Long-Press-Menü ── */
-    case "m-rdp": toast(t("remote.soon")); closeSheet(); break;
+    case "m-rdp": closeSheet(); doRemote(id, el.dataset.mode); break;
     case "m-dash": closeSheet(); state.ui.dashDeviceId = id; go("dash"); break;
     case "m-wake": closeSheet(); wakeDevice(byId(id)); break;
     case "m-shutdown": closeSheet(); openShutdownConfirm(byId(id)); break;

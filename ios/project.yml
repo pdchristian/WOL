@@ -28,7 +28,7 @@
         "base": {
           "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager",
           "PRODUCT_NAME": "Wake-on-LAN Manager",
-          "MARKETING_VERSION": "2.3.0",
+          "MARKETING_VERSION": "2.3.3",
           "CURRENT_PROJECT_VERSION": "1",
           "INFOPLIST_FILE": "WolManager/Info.plist",
           "IPHONEOS_DEPLOYMENT_TARGET": "16.0",

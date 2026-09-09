@@ -164,6 +164,19 @@ class WebViewActivity : ComponentActivity(), BridgeHost {
         }
     }
 
+    /**
+     * Externe App per ACTION_VIEW öffnen (Remote-Desktop: Windows App via rdp://).
+     * false, wenn keine App das Schema bedient → die Bridge meldet "remote.notinstalled".
+     */
+    override fun openExternal(url: String): Boolean = try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        true
+    } catch (_: Exception) {
+        false
+    }
+
     // ── Lebenszyklus ──────────────────────────────────────────────────────────
 
     override fun onPause() {

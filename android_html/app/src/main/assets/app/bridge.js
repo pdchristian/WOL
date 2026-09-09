@@ -173,6 +173,11 @@
       case "exportDevices": case "exportCsv": case "importDevices": r.data = true; break;
       case "updateCheck": r.data = { state: "latest" }; break;
       case "vibrate": r.data = true; break;
+      case "remote": {
+        var rd = demoDevices.find(function (x) { return x.id === p.id; }) || demoDevices[0];
+        r.data = { ok: true, host: rd ? rd.ip : "", username: rd ? rd.username : "",
+          passwordCopied: false, hasPassword: true };
+        break; }
       default: r = { ok: false, error: "demo: unknown " + method };
     }
     return Promise.resolve(r);

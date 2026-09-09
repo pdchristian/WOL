@@ -193,3 +193,86 @@ class TestBatchImportExport:
         assert dev.get("ip") == "10.0.0.9"
         batches = ConfigManager.get_device_batches(dev)
         assert [b["name"] for b in batches] == ["Keep"]
+
+
+class TestWatchProcessImportExport:
+    """Watched processes (dashboard) travel with the device through I/O."""
+
+    def _export(self, config, path):
+        with patch("wol_app.device_io.QFileDialog.getSaveFileName",
+                   return_value=(str(path), "")), \
+             patch("wol_app.device_io.QMessageBox.information"):
+            assert export_devices(config) is True
+
+    def _import(self, config, path):
+        with patch("wol_app.device_io.QFileDialog.getOpenFileName",
+                   return_value=(str(path), "")), \
+             patch("wol_app.device_io.QMessageBox.information"):
+            return import_devices(config)
+
+    def test_roundtrip_with_watch_processes(self, config, tmp_path):
+        d1 = config.add_device("PC1", "AA:BB:CC:DD:EE:01")
+        config.set_device_watch_processes(d1["id"], [
+            "llama-server.exe", "nginx.exe:8080"])
+        src = tmp_path / "dev.json"
+        self._export(config, src)
+        data = json.loads(src.read_text(encoding="utf-8"))
+        assert data[0]["watch_processes"] == ["llama-server.exe",
+                                              "nginx.exe:8080"]
+
+        config2 = ConfigManager(config_path=str(tmp_path / "config2.json"))
+        assert self._import(config2, src) is True
+        imported = config2.get_device_by_name("PC1")
+        assert ConfigManager.get_device_watch_processes(imported) == [
+            "llama-server.exe", "nginx.exe:8080"]
+
+    def test_export_omits_empty_watch_processes(self, config, tmp_path):
+        config.add_device("Plain", "AA:BB:CC:DD:EE:02")
+        src = tmp_path / "dev.json"
+        self._export(config, src)
+        data = json.loads(src.read_text(encoding="utf-8"))
+        assert "watch_processes" not in data[0]
+
+    def test_import_sanitizes_watch_processes(self, config, tmp_path):
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([{
+            "name": "PC", "mac": "AA:BB:CC:DD:EE:03",
+            "watch_processes": [
+                "  llama-server.exe  ",   # trimmed
+                "llama-server.exe",        # duplicate after trimming
+                "",                        # empty → skipped
+                42,                        # not a string → skipped
+                "x" * 129,                 # too long → skipped
+                "nginx.exe:8080",
+            ],
+        }]), encoding="utf-8")
+        assert self._import(config, src) is True
+        dev = config.get_device_by_name("PC")
+        assert ConfigManager.get_device_watch_processes(dev) == [
+            "llama-server.exe", "nginx.exe:8080"]
+
+    def test_import_caps_watch_processes(self, config, tmp_path):
+        entries = [f"proc{i}.exe" for i in range(20)]
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([
+            {"name": "PC", "mac": "AA:BB:CC:DD:EE:04",
+             "watch_processes": entries},
+        ]), encoding="utf-8")
+        assert self._import(config, src) is True
+        dev = config.get_device_by_name("PC")
+        watch = ConfigManager.get_device_watch_processes(dev)
+        assert len(watch) == 8
+        assert watch == entries[:8]
+
+    def test_import_without_watch_processes_keeps_existing(self, config,
+                                                           tmp_path):
+        d1 = config.add_device("PC1", "AA:BB:CC:DD:EE:01")
+        config.set_device_watch_processes(d1["id"], ["keep-me.exe"])
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([
+            {"name": "PC1", "mac": "AA:BB:CC:DD:EE:01", "ip": "10.0.0.9"},
+        ]), encoding="utf-8")
+        assert self._import(config, src) is True
+        dev = config.get_device_by_name("PC1")
+        assert dev.get("ip") == "10.0.0.9"
+        assert ConfigManager.get_device_watch_processes(dev) == ["keep-me.exe"]

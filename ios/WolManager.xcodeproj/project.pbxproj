@@ -26,6 +26,7 @@
 		AA00000000000000000005117 /* UpdateCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F117 /* UpdateCheck.swift */; };
 		AA00000000000000000005118 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F118 /* Haptics.swift */; };
 		AA00000000000000000005119 /* RemoteDesktop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F119 /* RemoteDesktop.swift */; };
+		AA00000000000000000005123 /* Ipv4Resolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F123 /* Ipv4Resolver.swift */; };
 		AA00000000000000000005120 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F120 /* Assets.xcassets */; };
 		AA00000000000000000005130 /* WebApp in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F130 /* WebApp */; };
 		AA00000000000000000007101 /* MagicPacketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E101 /* MagicPacketTests.swift */; };
@@ -35,6 +36,7 @@
 		AA00000000000000000007105 /* HostServiceProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E105 /* HostServiceProtocolTests.swift */; };
 		AA00000000000000000007106 /* RepoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E106 /* RepoTests.swift */; };
 		AA00000000000000000007107 /* UpdateCheckTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E107 /* UpdateCheckTests.swift */; };
+		AA00000000000000000007108 /* Ipv4ResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000E108 /* Ipv4ResolverTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +71,7 @@
 		AA0000000000000000000F117 /* UpdateCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheck.swift; sourceTree = "<group>"; };
 		AA0000000000000000000F118 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		AA0000000000000000000F119 /* RemoteDesktop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktop.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F123 /* Ipv4Resolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ipv4Resolver.swift; sourceTree = "<group>"; };
 		AA0000000000000000000F120 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA0000000000000000000F121 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA0000000000000000000F130 /* WebApp */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WebApp; sourceTree = "<group>"; };
@@ -79,6 +82,7 @@
 		AA0000000000000000000E105 /* HostServiceProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostServiceProtocolTests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000E106 /* RepoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepoTests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000E107 /* UpdateCheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000E108 /* Ipv4ResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ipv4ResolverTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -161,6 +165,7 @@
 				AA0000000000000000000F110 /* MagicPacket.swift */,
 				AA0000000000000000000F111 /* HostServiceClient.swift */,
 				AA0000000000000000000F112 /* NetworkScanner.swift */,
+				AA0000000000000000000F123 /* Ipv4Resolver.swift */,
 			);
 			path = Net;
 			sourceTree = "<group>";
@@ -196,6 +201,7 @@
 				AA0000000000000000000E105 /* HostServiceProtocolTests.swift */,
 				AA0000000000000000000E106 /* RepoTests.swift */,
 				AA0000000000000000000E107 /* UpdateCheckTests.swift */,
+				AA0000000000000000000E108 /* Ipv4ResolverTests.swift */,
 			);
 			path = WolManagerTests;
 			sourceTree = "<group>";
@@ -312,6 +318,7 @@
 				AA00000000000000000005117 /* UpdateCheck.swift in Sources */,
 				AA00000000000000000005118 /* Haptics.swift in Sources */,
 				AA00000000000000000005119 /* RemoteDesktop.swift in Sources */,
+				AA00000000000000000005123 /* Ipv4Resolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -326,6 +333,7 @@
 				AA00000000000000000007105 /* HostServiceProtocolTests.swift in Sources */,
 				AA00000000000000000007106 /* RepoTests.swift in Sources */,
 				AA00000000000000000007107 /* UpdateCheckTests.swift in Sources */,
+				AA00000000000000000007108 /* Ipv4ResolverTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -403,7 +411,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.3.0;
+				MARKETING_VERSION = 2.3.3;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
 				PRODUCT_MODULE_NAME = WolManager;
 				PRODUCT_NAME = "Wake-on-LAN Manager";
@@ -429,7 +437,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.3.0;
+				MARKETING_VERSION = 2.3.3;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
 				PRODUCT_MODULE_NAME = WolManager;
 				PRODUCT_NAME = "Wake-on-LAN Manager";

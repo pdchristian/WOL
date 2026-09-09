@@ -1,5 +1,7 @@
 package de.wolmanager.html
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import android.os.Handler
@@ -14,6 +16,7 @@ import de.wolmanager.html.data.ScheduleDef
 import de.wolmanager.html.net.HostServiceClient
 import de.wolmanager.html.net.NetworkScanner
 import de.wolmanager.html.util.Csv
+import de.wolmanager.html.util.RemoteDesktop
 import de.wolmanager.html.util.UpdResult
 import de.wolmanager.html.util.UpdateCheck
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +25,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -45,6 +49,9 @@ interface BridgeHost {
     fun launchCreateDocument(mime: String, suggestedName: String, cb: (Uri?) -> Unit)
     fun launchOpenDocument(cb: (Uri?) -> Unit)
     fun vibrate(ms: Long)
+
+    /** Externe App per ACTION_VIEW öffnen; false, wenn sich keine App dafür findet. */
+    fun openExternal(url: String): Boolean
 }
 
 /**
@@ -143,6 +150,7 @@ class Bridge(
         "importDevices" -> { importDevices(); JsonPrimitive(true) }
         "updateCheck" -> updateCheckJson()
         "vibrate" -> { host.vibrate(p.opt("ms")?.jsonPrimitive?.intOrNull?.toLong() ?: 12); JsonPrimitive(true) }
+        "remote" -> remoteJson(p.str("id"), p.str("mode"))
         else -> fail("unknown_method:$method")
     }
 
@@ -403,6 +411,10 @@ class Bridge(
                             }))
                             put("allow_batch", d.allowBatch)
                         }
+                        // Überwachte Prozesse (Dashboard) — Windows-Format (watch_processes).
+                        if (d.watchProcesses.isNotEmpty()) {
+                            put("watch_processes", JsonArray(d.watchProcesses.map { JsonPrimitive(it) }))
+                        }
                     })
                 }
             }
@@ -464,6 +476,10 @@ class Bridge(
                     script = script, timeout = bo.opt("timeout")?.jsonPrimitive?.intOrNull ?: 120,
                 )
             } ?: emptyList()
+            // Überwachte Prozesse (Dashboard) — fehlend = bestehende behalten.
+            val watch = (o["watch_processes"] as? JsonArray)?.mapNotNull { el ->
+                (el as? JsonPrimitive)?.contentOrNullSafe()?.trim()?.takeIf { it.isNotEmpty() }
+            }?.distinct()?.take(8)
             val match = container.repo.snapshot.value.devices.firstOrNull { it.name == name }
             val dev = (match ?: Device(name = name)).copy(
                 mac = de.wolmanager.html.util.Validation.normalizeMac(mac),
@@ -473,6 +489,7 @@ class Bridge(
                 enabled = o.opt("enabled")?.jsonPrimitive?.booleanOrNull ?: true,
                 batches = if (batches.isNotEmpty()) batches else (match?.batches ?: emptyList()),
                 allowBatch = o.opt("allow_batch")?.jsonPrimitive?.booleanOrNull ?: (match?.allowBatch ?: false),
+                watchProcesses = if (!watch.isNullOrEmpty()) watch else (match?.watchProcesses ?: emptyList()),
             )
             container.repo.saveDevice(dev)
             if (match != null) updated++ else added++
@@ -488,6 +505,56 @@ class Bridge(
         } catch (_: Exception) {
             false
         }
+    }
+
+    // ── Remote-Desktop (Windows App) ──────────────────────────────────────────
+
+    /**
+     * Öffnet die Windows App (früher „Microsoft Remote Desktop") mit vorgefertigtem
+     * Profil: Rechner = IP/Hostname (Fallback: Gerätename), Benutzer = Geräte-Benutzer.
+     * Das Profil bleibt in der Windows App bestehen — im Gegensatz zur Windows-Version
+     * der App wird hier nichts wieder gelöscht.
+     *
+     * Die Windows App kann über das Android-URI-Schema kein Passwort übernehmen
+     * (kein Attribut dafür, kein Zugang zum Credential Manager), daher liegt das
+     * Geräte-Passwort danach in der Zwischenablage und kann im Verbindungsfenster
+     * eingefügt werden. Ohne Passwort öffnet die App ihre eigene Eingabemaske.
+     */
+    private suspend fun remoteJson(id: String, mode: String): JsonElement {
+        val d = device(id)
+        val rdpHost = RemoteDesktop.hostOf(d.ip, d.name)
+        if (rdpHost.isBlank()) fail(RemoteDesktop.ERR_NO_HOST)
+        val password = container.repo.getPassword(d.id)
+
+        // startActivity gehört auf den Main-Thread; erster Kandidat, für den sich
+        // eine App findet (rdp:// → ms-rd://), gewinnt.
+        val launched = withContext(Dispatchers.Main) {
+            RemoteDesktop.candidates(rdpHost, d.username, mode).firstOrNull { c -> host.openExternal(c) }
+        }
+        if (launched == null) fail(RemoteDesktop.ERR_NOT_INSTALLED)
+
+        // Passwort zuletzt: die Windows App liest die Zwischenablage erst im Dialog.
+        val copied = password.isNotEmpty() && copyToClipboard("WOL RDP-Passwort", password)
+        val userPart = if (d.username.isBlank()) "" else ", user=${d.username}"
+        val pwPart = if (copied) ", password -> clipboard" else ", kein Passwort hinterlegt"
+        container.repo.log(d.name, "info", "RDP: Windows App geöffnet ($rdpHost$userPart$pwPart)")
+
+        return buildJsonObject {
+            put("ok", true)
+            put("host", rdpHost)
+            put("username", d.username)
+            put("passwordCopied", copied)
+            put("hasPassword", password.isNotEmpty())
+        }
+    }
+
+    /** Text in die System-Zwischenablage legen (ohne Toast der Systeme-UI). */
+    private fun copyToClipboard(label: String, text: String): Boolean = try {
+        val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+        cm.setPrimaryClip(ClipData.newPlainText(label, text))
+        true
+    } catch (_: Exception) {
+        false
     }
 
     // ── Update-Check ──────────────────────────────────────────────────────────

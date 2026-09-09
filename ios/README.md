@@ -23,11 +23,11 @@ ios/
 │   ├── Info.plist
 │   ├── Assets.xcassets         # AppIcon (1024), AccentColor, LaunchBackground
 │   ├── Model/                  # Models, Repo (JSON-Dateien), SecureStore (Keychain)
-│   ├── Net/                    # MagicPacket, HostServiceClient (TCP 8765), NetworkScanner
+│   ├── Net/                    # MagicPacket, HostServiceClient (TCP 8765), NetworkScanner, Ipv4Resolver
 │   ├── Sched/                  # ScheduleEngine + BGAppRefreshTask
 │   ├── Util/                   # Validation, Csv, UpdateCheck, Haptics, RemoteDesktop
 │   └── WebView/                # Bridge (27 Methoden), WebViewController, DocumentPicker
-└── WolManagerTests/            # XCTest-Suite (7 Klassen)
+└── WolManagerTests/            # XCTest-Suite (8 Klassen)
 ```
 
 ## Build auf dem Mac (Apple Silicon)
@@ -73,10 +73,21 @@ Gerät anschließen, in Xcode Team + Bundle-ID `de.wolmanager` setzen,
   „Standortfreigabe für das lokale Netzwerk" — zwingend *Erlauben*,
   sonst scheitern WOL, Scan und Host-Service (iOS 14+).
 - **Ping**: iOS erlaubt kein ICMP — die Ping-Funktion mißt die
-  TCP-Verbindungszeit zu Port 8765 (oder Geräte-Port).
+  TCP-Verbindungszeit zu Port 8765 (oder Geräte-Port). Der Ping meldet jetzt
+  differenziert, ob die DNS-Auflösung des Host-Namens fehlschlug oder der
+  Port nicht erreichbar ist (statt nur „Ziel nicht erreichbar").
+- **Host-Name statt IP**: Wie Android löst `Ipv4Resolver.swift` Namen gezielt
+  zu **allen** IPv4-A-Records auf, und `HostServiceClient.connectIpv4` probiert
+  jeden Kandidaten mit frischem Socket (Status + Ping). Damit werden Geräte mit
+  Dual-Stack (AAAA) oder Mehrfach-/veralteten A-Records (z. B.
+  `blade-18.fritz.box`) nicht mehr fälschlich als offline angezeigt.
 - **Remote-Desktop**: Öffnet die **Microsoft Remote Desktop / Windows App**
   über `ms-rd://add/host/...` (Schema in `LSApplicationQueriesSchemes`).
   App installiert? Sonst erscheint ein Hinweis-Toast.
+- **Dashboard-Wischen**: Im Dashboard wechselt ein Wisch nach links/rechts zum
+  nächsten/vorherigen Gerät – in genau der Reihenfolge, die gerade im
+  Gerätemanager sortiert ist (zyklisch, Anzeige `Position/Gesamt` neben dem
+  Titel). Kurzer Haptik-Impuls bei Wechsel; vertikales Scrollen bleibt erhalten.
 - **Passwörter** liegen im Keychain
   (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`), `devices.json`
   bleibt frei von Klartext — wie auf Android.

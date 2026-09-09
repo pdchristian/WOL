@@ -128,11 +128,16 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             return await container.checkStatus(device: try device(pStr(p, "id")))
         case "ping":
             let d = try device(pStr(p, "id"))
-            guard !d.ip.isEmpty else { throw BridgeError("no_ip") }
-            guard let ms = await container.hostClient.ping(host: d.ip) else {
-                throw BridgeError("host_unreachable")
+            let diag = await container.hostClient.diagnose(host: d.ip.isEmpty ? d.mac : d.ip)
+            var candidates: [[String: Any]] = []
+            for c in diag.candidates {
+                candidates.append(["address": c.address, "ok": c.ok,
+                                   "rttMs": NSNumber(value: c.rttMs), "error": c.error])
             }
-            return ms
+            let anyOk = diag.candidates.contains { $0.ok }
+            return ["host": diag.host, "resolved": diag.resolved,
+                    "resolveError": diag.resolveError, "ok": anyOk,
+                    "candidates": candidates]
         case "metrics":
             return try await metricsJson(pStr(p, "id"))
         case "runBatch":
@@ -458,6 +463,10 @@ final class Bridge: NSObject, WKScriptMessageHandler {
                 o["batches"] = d.batches.map { ["id": $0.id, "name": $0.name, "script": $0.script, "timeout": $0.timeout] }
                 o["allow_batch"] = d.allowBatch
             }
+            // Überwachte Prozesse (Dashboard) — Windows-Format (watch_processes).
+            if !d.watchProcesses.isEmpty {
+                o["watch_processes"] = d.watchProcesses
+            }
             return o
         }
         let data = (try? JSONSerialization.data(withJSONObject: arr, options: [.prettyPrinted, .sortedKeys])) ?? Data()
@@ -511,6 +520,18 @@ final class Bridge: NSObject, WKScriptMessageHandler {
                                 name: pStr(bo, "name"), script: script,
                                 timeout: (bo["timeout"] as? Int) ?? 120)
             } ?? []
+            // Überwachte Prozesse (Dashboard) — fehlend = bestehende behalten.
+            // Trimmen, Dedup unter Beibehaltung der Reihenfolge, max. 8 (wie Windows).
+            var watch: [String] = []
+            if let raw = o["watch_processes"] as? [Any] {
+                for value in raw {
+                    guard let s = value as? String else { continue }
+                    let trimmed = s.trimmingCharacters(in: .whitespaces)
+                    if trimmed.isEmpty || watch.contains(trimmed) { continue }
+                    watch.append(trimmed)
+                    if watch.count >= 8 { break }
+                }
+            }
             let match = container.repo.snapshot.devices.first { $0.name == name }
             var dev = match ?? Device(name: name)
             dev.name = name
@@ -521,6 +542,7 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             dev.enabled = pBool(o, "enabled") ?? true
             dev.batches = !batches.isEmpty ? batches : (match?.batches ?? [])
             dev.allowBatch = pBool(o, "allow_batch") ?? match?.allowBatch ?? false
+            dev.watchProcesses = !watch.isEmpty ? watch : (match?.watchProcesses ?? [])
             container.repo.saveDevice(dev)
             if match != nil { updated += 1 } else { added += 1 }
         }

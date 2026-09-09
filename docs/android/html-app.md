@@ -22,9 +22,9 @@ Voraussetzungen (wie in `build_html.ps1` hinterlegt):
 ```
 
 Installation auf dem Gerät: APK kopieren und öffnen (Debug-Signatur), z. B.
-`adb install -r dist_onefile\wolmanager-android-html-2.3.1-debug.apk`.
+`adb install -r dist_onefile\wolmanager-android-html-2.3.3-debug.apk`.
 
-Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.1`,
+Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.3`,
 minSdk 26, compileSdk 34, AGP 8.5.2, Kotlin 2.0.21 – **kein Compose**.
 
 ## Architektur
@@ -55,7 +55,18 @@ Methoden: `snapshot`, `info`, `saveDevice`, `deleteDevice`, `getPassword`,
 `saveSchedule`, `deleteSchedule`, `saveSettings`, `resetSettings`, `clearLogs`,
 `log`, `wake`, `shutdown`, `status`, `ping`, `metrics`, `runBatch`,
 `scanIfaces`, `scanStart`, `scanStop`, `wakeAll`, `refreshStatus`,
-`exportDevices`, `exportCsv`, `importDevices`, `updateCheck`, `vibrate`.
+`exportDevices`, `exportCsv`, `importDevices`, `updateCheck`, `vibrate`,
+`remote`.
+
+`remote({id, mode})` öffnet die installierte **Windows App** (früher „Microsoft
+Remote Desktop“, `com.microsoft.rdc.androidx`) per `rdp://`-URI mit vorgefertigtem
+Profil (Rechner = IP/Hostname, Fallback Gerätename; Benutzer = Geräte-Benutzer).
+Das Profil bleibt in der Windows App bestehen (kein Löschen wie unter Windows).
+Das Android-URI-Schema kann **kein Passwort** übertragen (kein Attribut dafür, kein
+Zugang zum Credential Manager) — die Bridge legt das Geräte-Passwort deshalb in die
+Zwischenablage und die UI weist per Toast darauf hin, damit es im Verbindungsfenster
+eingefügt wird. Fehler: `remote.notinstalled` (keine App), `remote.nohost`
+(keine Adresse). URI-Bau/Kodierung: `util/RemoteDesktop.kt` (JVM-testbar).
 
 ### Entwicklung im Browser (ohne Gerät)
 
@@ -68,24 +79,31 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
 
 - **Entfernt:** Einstellungsfelder „Auflösung“ und „Design (Klassisch/Moderne)“,
   Shutdown-Methode SMB (nur Host Service v4), Statusbar-Uhr/Phone-Rahmen.
-- **Remote-Desktop:** nur Hinweis-Toast; späterer Link zur Windows App /
-  Microsoft Remote Desktop.
+- **Remote-Desktop:** öffnet die Windows App per `rdp://`-URI mit vorausgefülltem
+  Profil (Rechner + Benutzer); das Passwort liegt danach in der Zwischenablage
+  (URI-Schema kann es nicht übertragen). Profil bleibt bestehen. Siehe
+  `remote`-Methode oben.
 - **Netzwerk-Scan:** TCP-Sweep (Ports 8765, 445, 135, 80, 443, 22) über alle
   aktiven /24-Netze. Android liefert keine MAC-Adressen → gefundene Geräte
   werden mit Platzhalter-MAC `00:00:00:00:00:00` in den Dialog übernommen.
 - **Dashboard:** echte Host-Service-v4-Metriken (CPU/RAM/GPU/VRAM, überwachte
   Prozesse mit PID/API-Port, Modell-Badges) im eingestellten Intervall.
+  Wischen nach links/rechts wechselt zum nächsten/vorherigen Gerät – in
+  genau der Reihenfolge, die gerade im Gerätemanager sortiert ist
+  (`sortDevices()`; Anzeige `Position/Gesamt` neben dem Titel, zyklisch).
 
 ## Windows-Kompatibilität der Geräte-Dateien
 
 - `devices.json` im App-Speicher ist ein **JSON-Array** im Windows-Format
-  (`name, mac, ip, username, enabled, batches, allow_batch`).
+  (`name, mac, ip, username, enabled, batches, allow_batch, watch_processes`).
 - Passwörter liegen in `EncryptedSharedPreferences` (`pw_<id>`), nie in `devices.json`.
 - **Export** (SAF): JSON-Array mit **Klartext-Passwörtern** – der Windows-Import
-  (`wol_app/device_io.py`) liest Klartext und DPAPI.
+  (`wol_app/device_io.py`) liest Klartext und DPAPI. Überwachte Prozesse
+  (`watch_processes`) werden mit exportiert (leere Liste entfällt).
 - **Import:** JSON-Array; matching per Name (Update) sonst Neuanlage; ungültige
   MACs werden übersprungen; DPAPI-verschlüsselte Passwörter (Base64 ≥ 13 Bytes)
-  können auf Android nicht entschlüsselt werden und werden geleert.
+  können auf Android nicht entschlüsselt werden und werden geleert;
+  `watch_processes` werden übernommen (fehlender Schlüssel = bestehende behalten).
 
 ## Bekannte Fallstricke
 
@@ -94,5 +112,8 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
 - Dashboard-Tick rendert DOM neu → Event-Delegation nur über
   `[data-act]`/`[data-id]`-Selektoren, nie über gespeicherte Knotenreferenzen.
 - `kotlinx.serialization`: `intOrNull`/`booleanOrNull` sind **Properties**, keine Funktionen.
+- `Bridge` hat ein Property `host: BridgeHost`. Eine lokale `val host` im selben
+  Scope **überschattet** es → `host.openExternal(...)` schlägt fehl (Unresolved).
+  Lokale Host-Variable deshalb `rdpHost` nennen.
 - Theme-Umschaltung wirkt auf `document.documentElement` (`html[data-theme=…]`),
   nicht mehr auf `#phone`.

@@ -14,8 +14,10 @@ from wol_app.config import (
     BATCH_TIMEOUT_MAX_S,
     BATCH_TIMEOUT_MIN_S,
     DEFAULT_BATCH_TIMEOUT_S,
-    MAX_BATCHES_PER_DEVICE,
     MAX_BATCH_SCRIPT_CHARS,
+    MAX_BATCHES_PER_DEVICE,
+    MAX_WATCH_ENTRY_CHARS,
+    MAX_WATCH_PROCESSES_PER_DEVICE,
 )
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.translations import Translations
@@ -56,6 +58,37 @@ def _apply_batches(config_manager: Any, device_id: str, batches: list[dict],
     config_manager.set_device_allow_batch(device_id, allow_batch)
 
 
+def _sanitize_watch_processes(raw: Any) -> list[str]:
+    """Normalise an imported ``watch_processes`` list (defensive: foreign files).
+
+    Mirrors ``ConfigManager.get_device_watch_processes``: strings only,
+    trimmed, deduped and capped at MAX_WATCH_PROCESSES_PER_DEVICE so a
+    hand-edited file never breaks the dashboard or the host service.
+    """
+    if not isinstance(raw, list):
+        return []
+    result: list[str] = []
+    for entry in raw:
+        if not isinstance(entry, str):
+            continue
+        entry = entry.strip()
+        if not entry or len(entry) > MAX_WATCH_ENTRY_CHARS:
+            continue
+        if entry not in result:
+            result.append(entry)
+        if len(result) >= MAX_WATCH_PROCESSES_PER_DEVICE:
+            break
+    return result
+
+
+def _apply_watch_processes(config_manager: Any, device_id: str,
+                           entries: list[str]) -> None:
+    """Write imported watch entries only when the file actually carried them."""
+    if not entries:
+        return
+    config_manager.set_device_watch_processes(device_id, entries)
+
+
 def export_devices(config_manager: Any, parent=None) -> bool:
     """Export configured devices to a JSON file.
 
@@ -87,6 +120,10 @@ def export_devices(config_manager: Any, parent=None) -> bool:
         if batches:
             entry["batches"] = batches
             entry["allow_batch"] = bool(dev.get("allow_batch", False))
+        # Watched processes (dashboard service chips, host protocol v3+).
+        watch = _sanitize_watch_processes(dev.get("watch_processes"))
+        if watch:
+            entry["watch_processes"] = watch
         export_data.append(entry)
 
     try:
@@ -166,6 +203,7 @@ def import_devices(config_manager: Any, parent=None) -> bool:
 
         batches = _sanitize_batches(dev_data.get("batches"))
         allow_batch = bool(dev_data.get("allow_batch", False))
+        watch = _sanitize_watch_processes(dev_data.get("watch_processes"))
         existing = config_manager.get_device_by_name(name)
         if existing:
             # Update existing device
@@ -182,6 +220,7 @@ def import_devices(config_manager: Any, parent=None) -> bool:
             )
             _apply_batches(config_manager, existing["id"], batches,
                            allow_batch)
+            _apply_watch_processes(config_manager, existing["id"], watch)
             updated += 1
         else:
             # Add new device
@@ -199,6 +238,7 @@ def import_devices(config_manager: Any, parent=None) -> bool:
                 )
                 _apply_batches(config_manager, device["id"], batches,
                                allow_batch)
+                _apply_watch_processes(config_manager, device["id"], watch)
                 imported += 1
 
     # Build summary message

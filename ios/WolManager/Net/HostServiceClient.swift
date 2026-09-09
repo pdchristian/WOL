@@ -92,7 +92,8 @@ final class HostServiceClient {
         return await withCheckedContinuation { cont in
             queue.async {
                 let start = Int64(Date().timeIntervalSince1970 * 1000)
-                if Self.tcpConnect(host: host, port: p, timeoutMs: timeoutMs) {
+                if let fd = Self.connectIpv4(host: host, port: p, timeoutMs: timeoutMs) {
+                    close(fd)
                     cont.resume(returning: Int64(Date().timeIntervalSince1970 * 1000) - start)
                 } else {
                     cont.resume(returning: nil)
@@ -115,30 +116,12 @@ final class HostServiceClient {
     /// Blockierend (Worker-Queue): verdrahtet identisch zu Kotlin request().
     static func requestSync(host: String, port: Int, payload: [String: Any],
                             timeoutMs: Int, maxBytes: Int) -> HostResult {
-        let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
-        guard fd >= 0 else { return .error(errGeneric) }
+        // IPv4 gezielt auflösen und jeden A-Record probieren (siehe connectIpv4),
+        // damit Host-Namen mit mehreren Adressen / Dual-Stack nicht offline wirken.
+        guard let fd = connectIpv4(host: host, port: port, timeoutMs: timeoutMs) else {
+            return .error(errNoResponse)
+        }
         defer { close(fd) }
-
-        var sendTime = timeval(tv_sec: timeoutMs / 1000, tv_usec: (timeoutMs % 1000) * 1000)
-        var recvTime = sendTime
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sendTime, socklen_t(MemoryLayout<timeval>.size))
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &recvTime, socklen_t(MemoryLayout<timeval>.size))
-
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(port).bigEndian
-        if inet_pton(AF_INET, host, &addr.sin_addr) != 1 {
-            addr.sin_addr.s_addr = inet_addr(host)
-            if addr.sin_addr.s_addr == INADDR_NONE,
-               let resolved = resolveHost(host) { addr.sin_addr.s_addr = resolved }
-        }
-
-        let connOk: Bool = withUnsafePointer(to: &addr) { p in
-            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
-            }
-        }
-        if !connOk { return .error(errNoResponse) }
 
         guard let jsonLine = try? JSONSerialization.data(withJSONObject: payload),
               var sendStr = String(data: jsonLine, encoding: .utf8) else {
@@ -205,7 +188,7 @@ final class HostServiceClient {
         }
     }
 
-    /// DNS-Auflösung (erster IPv4-Treffer).
+    /// DNS-Auflösung (erster IPv4-Treffer) — für Aufrufer, die nur eine Adresse brauchen.
     static func resolveHost(_ host: String) -> in_addr_t? {
         var hints = addrinfo(ai_flags: 0, ai_family: AF_INET, ai_socktype: SOCK_STREAM,
                              ai_protocol: IPPROTO_TCP, ai_addrlen: 0, ai_canonname: nil, ai_addr: nil, ai_next: nil)
@@ -215,5 +198,91 @@ final class HostServiceClient {
         guard let sa = r.pointee.ai_addr else { return nil }
         let sin = sa.pointee.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
         return sin.s_addr
+    }
+
+    /// Verbindet sich zur ersten erreichbaren IPv4-Adresse von `host`. Host-Namen
+    /// werden explizit zu IPv4 aufgelöst und jeder A-Record mit einem frischen
+    /// Socket probiert (ein fehlgeschlagener connect schließt seinen Socket), damit
+    /// ein Gerät mit zusätzlichem IPv6 (AAAA) oder veralteter A-Adresse trotzdem
+    /// den IPv4-only Host Service erreicht. Liefert den verbundenen fd oder nil.
+    static func connectIpv4(host: String, port: Int, timeoutMs: Int) -> Int32? {
+        for ip in Ipv4Resolver.resolveAll(host) {
+            let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+            guard fd >= 0 else { continue }
+            var tv = timeval(tv_sec: timeoutMs / 1000, tv_usec: (timeoutMs % 1000) * 1000)
+            var recvTv = tv
+            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &recvTv, socklen_t(MemoryLayout<timeval>.size))
+
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = in_port_t(port).bigEndian
+            var okAddr = false
+            if inet_pton(AF_INET, ip, &addr.sin_addr) == 1 {
+                okAddr = true
+            } else {
+                let n = inet_addr(ip)
+                if n != INADDR_NONE { addr.sin_addr.s_addr = n; okAddr = true }
+            }
+            guard okAddr else { close(fd); continue }
+
+            let connOk: Bool = withUnsafePointer(to: &addr) { p in
+                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                    connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+                }
+            }
+            if connOk { return fd }
+            close(fd)
+        }
+        return nil
+    }
+
+    /// Diagnose für die UI: DNS-Auflösung + TCP-Erreichbarkeit pro IPv4-Kandidat.
+    /// Zeigt, WARUM ein Gerät offline ist (Name nicht auflösbar vs. Dienst antwortet nicht).
+    struct CandidateResult { let address: String; let ok: Bool; let rttMs: Int64; let error: String }
+    struct HostDiagnosis { let host: String; let resolved: Bool; let candidates: [CandidateResult]; let resolveError: String }
+
+    func diagnose(host: String, timeoutMs: Int = 2000) async -> HostDiagnosis {
+        await withCheckedContinuation { cont in
+            queue.async {
+                let ips = Ipv4Resolver.resolveAll(host)
+                if host.trimmingCharacters(in: .whitespaces).isEmpty {
+                    cont.resume(returning: HostDiagnosis(host: host, resolved: false, candidates: [], resolveError: "no_ip"))
+                    return
+                }
+                if ips.isEmpty {
+                    cont.resume(returning: HostDiagnosis(host: host, resolved: false, candidates: [], resolveError: "no_ipv4_record"))
+                    return
+                }
+                let results = ips.map { ip -> CandidateResult in
+                    let start = Int64(Date().timeIntervalSince1970 * 1000)
+                    if let fd = Self.connectOne(ip: ip, port: self.port, timeoutMs: timeoutMs) {
+                        close(fd)
+                        return CandidateResult(address: ip, ok: true, rttMs: Int64(Date().timeIntervalSince1970 * 1000) - start, error: "")
+                    }
+                    return CandidateResult(address: ip, ok: false, rttMs: Int64(Date().timeIntervalSince1970 * 1000) - start, error: "unreachable")
+                }
+                cont.resume(returning: HostDiagnosis(host: host, resolved: true, candidates: results, resolveError: ""))
+            }
+        }
+    }
+
+    /// Einzelnen IPv4-Punkt verbinden (für Diagnose); aufrufenderseitig schließen.
+    private static func connectOne(ip: String, port: Int, timeoutMs: Int) -> Int32? {
+        let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        guard fd >= 0 else { return nil }
+        var tv = timeval(tv_sec: timeoutMs / 1000, tv_usec: (timeoutMs % 1000) * 1000)
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(port).bigEndian
+        guard inet_pton(AF_INET, ip, &addr.sin_addr) == 1 else { close(fd); return nil }
+        let ok: Bool = withUnsafePointer(to: &addr) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
+        }
+        if !ok { close(fd); return nil }
+        return fd
     }
 }
