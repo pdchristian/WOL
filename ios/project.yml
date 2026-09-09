@@ -26,7 +26,7 @@
       "settings": {
         "base": {
           "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager",
-          "PRODUCT_NAME": "Wake-on-LAN Manager",
+          "PRODUCT_NAME": "WolManager",
           "MARKETING_VERSION": "2.3.3",
           "CURRENT_PROJECT_VERSION": "1",
           "INFOPLIST_FILE": "WolManager/Info.plist",
@@ -54,9 +54,18 @@
       "info": {
         "path": "WolManager/Info.plist",
         "properties": {
-          "UILaunchScreen": {
-            "UIColorName": "LaunchBackground"
-          }
+          "CFBundleDisplayName": "Wake-on-LAN",
+          "CFBundleLocalizations": ["de", "en", "fr", "es"],
+          "LSRequiresIPhoneOS": true,
+          "UILaunchScreen": { "UIColorName": "LaunchBackground" },
+          "UISupportedInterfaceOrientations": ["UIInterfaceOrientationPortrait"],
+          "UIUserInterfaceStyle": "Automatic",
+          "UIApplicationSceneManifest": { "UIApplicationSupportsMultipleScenes": false },
+          "NSLocalNetworkUsageDescription": "Wake-on-LAN Manager sendet Magic-Pakete und spricht den WOL Host Service in Ihrem lokalen Netzwerk an, um Geräte zu wecken, abzuschalten und ihren Status anzuzeigen.",
+          "BGTaskSchedulerPermittedIdentifiers": ["de.wolmanager.schedule-refresh"],
+          "LSApplicationQueriesSchemes": ["ms-rd", "rdp"],
+          "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true },
+          "ITSAppUsesNonExemptEncryption": false
         }
       }
     },

@@ -775,6 +775,27 @@ native Compose app in `android/` was removed in 2.3.1.)
 - **Docs:** `docs/android/html-app.md` (bridge protocol, dev workflow,
   pitfalls — e.g. `addJavascriptInterface` must be called before first load).
 
+### 8.4 iOS App (`ios/`, XcodeGen project)
+
+- **Build:** macOS only — `xcodegen generate` (from `ios/project.yml`,
+  MARKETING_VERSION tracks the app version) then Xcode/`xcodebuild`. Cannot
+  be compiled on Windows; Swift edits must be hand-verified. Adding a test
+  file (e.g. `RemoteDesktopTests.swift`) requires re-running `xcodegen`.
+- **Architecture:** mirror of Android — `WebView` shell + `Bridge.swift`
+  (`WKScriptMessageHandler`, same JS contract/method table), `WebApp/app.js`
+  is a near-copy of the Android asset, `Repo.swift` persists the same
+  `devices.json`, passwords in the Keychain.
+- **Remote Desktop (new in 2.3.3):** `remote {id, mode}` opens the
+  **Windows App** via URI candidates from `Util/RemoteDesktop.swift`
+  (`rdp://full%20address=s:<host>&username=s:<user>` first, then
+  `ms-rd://add/host/<host>?username=…&use.maximizewindow=…`); `Info.plist`
+  `LSApplicationQueriesSchemes` lists `rdp` + `ms-rd` (canOpenURL fails
+  silently without them). Password → `UIPasteboard` (no URI scheme carries
+  passwords); bridge returns `{ok, host, username, passwordCopied,
+  hasPassword}`, errors `remote.notinstalled` / `remote.nohost` (DE/EN/FR/ES).
+  Profile persists on the device (by design). `RemoteDesktopTests.swift`
+  covers the pure URI builder.
+
 ---
 
 ## 9. Data Flow Diagrams
