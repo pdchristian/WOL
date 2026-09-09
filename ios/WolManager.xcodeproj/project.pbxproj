@@ -34,6 +34,7 @@
 		BD98234B52AF8FB2F1995121 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 048A6F2DAF29D9E7B72E3BED /* Assets.xcassets */; };
 		BDE0682B10B47E7803572891 /* SecureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9EE2609F215B497A12C2466 /* SecureStore.swift */; };
 		C47974437B829B165A4674DE /* NetworkScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1938409CE1BA92131CAB1738 /* NetworkScanner.swift */; };
+		CA3EE30C45DBDBC534E2467B /* RemoteDesktopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CE8FB438687DF8F06AC3EA /* RemoteDesktopTests.swift */; };
 		DAB1CCF0F6CCC3ABA73B0EEC /* Csv.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B3521ACB9965B4FF1EF51E7 /* Csv.swift */; };
 		E21BD8EBAB10B7D280E05CA9 /* HostServiceProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714A349561DF3F4685408029 /* HostServiceProtocolTests.swift */; };
 		E4299168D7DA309F263A87DC /* ScheduleEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0155C84044D7BD9D4EC5D4CD /* ScheduleEngine.swift */; };
@@ -54,7 +55,7 @@
 		02E3B18B8C6CCB4C6F8E903F /* CsvTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CsvTests.swift; sourceTree = "<group>"; };
 		048A6F2DAF29D9E7B72E3BED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		04C6A26EBD16915565E32B42 /* ScheduleEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleEngineTests.swift; sourceTree = "<group>"; };
-		09D44119A5E973979683B39C /* Wake-on-LAN Manager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wake-on-LAN Manager.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		09D44119A5E973979683B39C /* WolManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WolManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		183ED19AB4BF38D286FBF9FD /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		1938409CE1BA92131CAB1738 /* NetworkScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkScanner.swift; sourceTree = "<group>"; };
 		1CA41D3EFEBEAAB757274F05 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -67,6 +68,7 @@
 		5045EFD5602623494321F2E0 /* Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge.swift; sourceTree = "<group>"; };
 		676002A7A1450C3382C6CD8C /* Ipv4ResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ipv4ResolverTests.swift; sourceTree = "<group>"; };
 		714A349561DF3F4685408029 /* HostServiceProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostServiceProtocolTests.swift; sourceTree = "<group>"; };
+		78CE8FB438687DF8F06AC3EA /* RemoteDesktopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktopTests.swift; sourceTree = "<group>"; };
 		7B06007E761479C1CDB76BAA /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		7B86995A0984D0DE3618B15D /* MagicPacketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagicPacketTests.swift; sourceTree = "<group>"; };
 		7DDEE83B6F10253B383DBB30 /* WebViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewController.swift; sourceTree = "<group>"; };
@@ -104,6 +106,7 @@
 				714A349561DF3F4685408029 /* HostServiceProtocolTests.swift */,
 				676002A7A1450C3382C6CD8C /* Ipv4ResolverTests.swift */,
 				7B86995A0984D0DE3618B15D /* MagicPacketTests.swift */,
+				78CE8FB438687DF8F06AC3EA /* RemoteDesktopTests.swift */,
 				4A69BF020554ACE84D414677 /* RepoTests.swift */,
 				04C6A26EBD16915565E32B42 /* ScheduleEngineTests.swift */,
 				966A1222BE1A0937DEB16664 /* UpdateCheckTests.swift */,
@@ -173,7 +176,7 @@
 		BA67E2549D676F98B0033AD1 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				09D44119A5E973979683B39C /* Wake-on-LAN Manager.app */,
+				09D44119A5E973979683B39C /* WolManager.app */,
 				29A7F1ACDE2209E12EEB5A94 /* WolManagerTests.xctest */,
 			);
 			name = Products;
@@ -225,7 +228,7 @@
 			packageProductDependencies = (
 			);
 			productName = WolManager;
-			productReference = 09D44119A5E973979683B39C /* Wake-on-LAN Manager.app */;
+			productReference = 09D44119A5E973979683B39C /* WolManager.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -283,6 +286,7 @@
 				E21BD8EBAB10B7D280E05CA9 /* HostServiceProtocolTests.swift in Sources */,
 				9936BD816B07C8C849A71600 /* Ipv4ResolverTests.swift in Sources */,
 				86DEA058AD5495C0C5613E31 /* MagicPacketTests.swift in Sources */,
+				CA3EE30C45DBDBC534E2467B /* RemoteDesktopTests.swift in Sources */,
 				0620A820D11997217FD2457B /* RepoTests.swift in Sources */,
 				8AF3C3C9322A537DE252BB1B /* ScheduleEngineTests.swift in Sources */,
 				604BB531228AEB3EB520EF9C /* UpdateCheckTests.swift in Sources */,
@@ -405,7 +409,7 @@
 				);
 				MARKETING_VERSION = 2.3.3;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
-				PRODUCT_NAME = "Wake-on-LAN Manager";
+				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -471,7 +475,7 @@
 				);
 				MARKETING_VERSION = 2.3.3;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
-				PRODUCT_NAME = "Wake-on-LAN Manager";
+				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;

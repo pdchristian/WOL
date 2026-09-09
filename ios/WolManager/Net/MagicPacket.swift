@@ -27,7 +27,6 @@ enum MagicPacket {
         guard parts.count == 6 else { return nil }
         var out = [UInt8]()
         for p in parts {
-            // wie Kotlin toInt(16).toByte(): 1-2 Hex-Ziffern, leer/ungültig/>255 → nil
             guard !p.isEmpty, p.count <= 2, let b = UInt8(p, radix: 16) else { return nil }
             out.append(b)
         }
@@ -95,7 +94,6 @@ enum MagicPacket {
         dest.sin_family = sa_family_t(AF_INET)
         dest.sin_port = in_port_t(port).bigEndian
         if inet_pton(AF_INET, host, &dest.sin_addr) != 1 {
-            // Hostname (selten) per inet_addr auflösen
             dest.sin_addr.s_addr = inet_addr(host)
         }
 
@@ -149,12 +147,12 @@ enum InterfaceHelper {
             defer { ptr = cur.pointee.ifa_next }
             guard let sa = cur.pointee.ifa_addr, sa.pointee.sa_family == UInt8(AF_INET) else { continue }
             let name = String(cString: cur.pointee.ifa_name)
-            var addr = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+            let addr = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
             let ip = String(cString: inet_ntoa(addr.sin_addr))
             var mask: String? = nil
             if let ma = cur.pointee.ifa_netmask {
                 mask = ma.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { m in
-                    var mm = m.pointee
+                    let mm = m.pointee
                     return String(cString: inet_ntoa(mm.sin_addr))
                 }
             }
@@ -163,7 +161,7 @@ enum InterfaceHelper {
         }
         for n in order {
             guard let entry = names[n] else { continue }
-            if entry.ip.hasPrefix("169.254.") { continue } // APIPA
+            if entry.ip.hasPrefix("169.254.") { continue }
             result.append(IPv4Interface(name: n, ip: entry.ip, netmask: entry.mask ?? "255.255.255.0"))
         }
         _ = names
