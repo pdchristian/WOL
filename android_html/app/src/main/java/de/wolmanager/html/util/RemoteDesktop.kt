@@ -79,14 +79,16 @@ object RemoteDesktop {
 
     /**
      * Inhalt einer `.rdp`-Datei (`KEY:TYP:WERT`, CRLF) — Format wie die Desktop-App
-     * (`wol_app/utils.py`), aber **ohne** Passwort: die mobile Windows App liest
-     * `password:` nicht zuverlässig, und ein Klartext-Passwort auf dem Cache wäre
-     * ein unnötiges Risiko. Das Passwort geht weiterhin über die Zwischenablage.
+     * (`wol_app/utils.py`). Mit Passwort: `password:54:` = base64(UTF-16LE), wie von
+     * mstsc dokumentiert. Die mobilen Clients lesen es möglicherweise nicht — dann
+     * bleibt der Zwischenablage-Weg der Brücke. Anders als iOS (Freigabe-Sheet!)
+     * bleibt die Datei hier im app-private Cache und wird nur der Windows App mit
+     * zeitlich begrenzter Leserechte übergeben, deshalb ist das Einbetten vertretbar.
      *
      * Der Anzeigename des Profils ergibt sich aus dem **Dateinamen** (siehe
      * [sanitizedFilename]) — die `.rdp`-Spezifikation selbst kennt kein Namensfeld.
      */
-    fun buildRdpContent(host: String, username: String, mode: String): String {
+    fun buildRdpContent(host: String, username: String, password: String, mode: String): String {
         val lines = mutableListOf(
             "full address:s:" + host.trim(),
             // Selbstsignierte Zertifikate (typisch für xrdp/Linux) ohne Rückfrage akzeptieren.
@@ -96,6 +98,13 @@ object RemoteDesktop {
         )
         val u = username.trim()
         if (u.isNotEmpty()) lines.add("username:s:$u")
+        if (password.isNotEmpty()) {
+            // java.util.Base64: ab API 26 (minSdk) verfügbar und JVM-testbar.
+            val b64 = java.util.Base64.getEncoder()
+                .encodeToString(password.toByteArray(Charsets.UTF_16LE))
+            lines.add("password:54:$b64")
+            lines.add("prompt credential:i:0")
+        }
         lines.add("screen mode id:i:" + if (mode == "full") 1 else 2)
         return lines.joinToString("\r\n") + "\r\n"
     }

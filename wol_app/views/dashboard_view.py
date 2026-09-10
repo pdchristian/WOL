@@ -874,6 +874,28 @@ class DeviceDashboardView(QWidget):
 
     # ── Prev/next device navigation ──────────────────────────────────────
 
+    def set_nav_statuses(self, statuses: dict[str, str]) -> None:
+        """Inject last known ping statuses (prev/next skips offline ones)."""
+        self._nav_statuses = dict(statuses)
+        self._update_nav_ui()
+
+    def _nav_candidates(self) -> list[dict]:
+        """Devices reachable via prev/next, in the devices-screen order.
+
+        Devices whose last known ping status is explicitly ``"offline"`` are
+        skipped; ``"unknown"``/``"waking"`` stay reachable. The currently
+        open device is always part of the sequence (position badge and
+        border checks keep working even when it went offline).
+        """
+        devices = self._ordered_devices()
+        if self._nav_statuses is None:
+            return devices
+        return [
+            d for d in devices
+            if d.get("id") == self._device_id
+            or self._nav_statuses.get(d.get("id")) != "offline"
+        ]
+
     def _ordered_devices(self) -> list[dict]:
         """Devices in the devices-screen order (shared sort key).
 
