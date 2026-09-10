@@ -184,19 +184,21 @@ class WebViewActivity : ComponentActivity(), BridgeHost {
      * an. Bewusst auf das Paket eingeschränkt: andere RDP-/Share-Empfänger würden
      * sonst das Profil erzeugen. false → Bridge fällt auf die URI-Kandidaten zurück.
      */
-    override fun shareRdpFile(fileUri: Uri): Boolean = try {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/rdp"
-            putExtra(Intent.EXTRA_STREAM, fileUri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            setPackage(RemoteDesktop.WINDOWS_APP_PACKAGE)
+    override fun shareRdpFile(fileUri: Uri): Boolean {
+        return try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/rdp"
+                putExtra(Intent.EXTRA_STREAM, fileUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                setPackage(RemoteDesktop.WINDOWS_APP_PACKAGE)
+            }
+            // Nur starten, wenn die Windows App den Typ auch wirklich übernimmt.
+            if (intent.resolveActivity(packageManager) == null) return false
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
         }
-        // Nur starten, wenn die Windows App den Typ auch wirklich übernimmt.
-        if (intent.resolveActivity(packageManager) == null) return false
-        startActivity(intent)
-        true
-    } catch (_: Exception) {
-        false
     }
 
     // ── Lebenszyklus ──────────────────────────────────────────────────────────
