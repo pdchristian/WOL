@@ -68,6 +68,16 @@ def _main_linux():
 
     # Initialize config and translations.
     config = ConfigManager()
+
+    # Single-instance lock (per config file): a second launch asks the
+    # running instance to bring its window to the front and exits itself.
+    # Disabled with ui.allow_multiple_instances (wol_app/single_instance.py).
+    from wol_app.single_instance import ensure_primary_instance
+
+    guard = ensure_primary_instance(app, config)
+    if guard is None:
+        raise SystemExit(0)
+
     trans = Translations()
     language = config.config.get("ui", {}).get("language", "en")
     trans.load(language)
@@ -89,7 +99,7 @@ def _main_linux():
 
     from wol_app.modern_main_window import run_modern_window
 
-    run_modern_window(config, dark_mode=dark)
+    run_modern_window(config, dark_mode=dark, guard=guard)
     raise SystemExit(0)  # unreachable: run_modern_window calls sys.exit
 
 

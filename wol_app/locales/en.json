@@ -269,6 +269,8 @@
   "settings.label.remote_desktop_resolution_auto": "Optimized 16:9",
   "settings.label.max_logs": "Maximum log entries:",
   "settings.label.close_to_tray": "Keep running in the notification area when closed",
+  "settings.label.allow_multiple_instances": "Allow multiple instances at the same time",
+  "settings.group.application": "Application",
   "settings.label.default_shutdown_method": "Default method for new devices:",
   "settings.language.de": "German",
   "settings.language.en": "English",

@@ -144,6 +144,13 @@ class ModernMainWindow(QMainWindow):
         # (ui.close_to_tray) from the very first start.
         self._apply_tray_mode()
 
+        # Remove the tray icon on EVERY exit path — including the update
+        # flow, which leaves via QApplication.exit() without ever calling
+        # closeEvent/_quit_application (ghost icon on Windows otherwise).
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._on_about_to_quit)
+
     # ── UI construction ──────────────────────────────────────────────────
 
     def _setup_ui(self) -> None:
@@ -627,8 +634,23 @@ class ModernMainWindow(QMainWindow):
                       QSystemTrayIcon.ActivationReason.DoubleClick):
             self._show_from_tray()
 
+    def _on_about_to_quit(self) -> None:
+        """Hide the tray icon when the process ends, however it ends."""
+        if self._tray is not None:
+            self._tray.hide()
+
+    def bring_to_front(self) -> None:
+        """Restore and focus the window (single-instance raise request)."""
+        self._show_from_tray()
+
     def _show_from_tray(self) -> None:
-        """Restore the window from the notification area."""
+        """Restore the window from the notification area.
+
+        The tray icon disappears with the restore — while the window is
+        visible there is exactly one app symbol (the taskbar button).
+        """
+        if self._tray is not None:
+            self._tray.hide()
         self.showNormal()
         self.raise_()
         self.activateWindow()
@@ -722,8 +744,13 @@ class ModernMainWindow(QMainWindow):
         event.accept()
 
 
-def run_modern_window(config: ConfigManager, dark_mode: bool) -> NoReturn:
-    """Show the modern window on an existing QApplication and enter the loop."""
+def run_modern_window(config: ConfigManager, dark_mode: bool,
+                      guard: Any | None = None) -> NoReturn:
+    """Show the modern window on an existing QApplication and enter the loop.
+
+    ``guard`` is the optional :class:`wol_app.single_instance` guard; when
+    given, a second launch raises this window instead of starting twice.
+    """
     import sys
 
     from PyQt6.QtWidgets import QApplication
@@ -738,4 +765,6 @@ def run_modern_window(config: ConfigManager, dark_mode: bool) -> NoReturn:
         QApplication.instance().setWindowIcon(QIcon(icon_path))
     window = ModernMainWindow(config, dark_mode=dark_mode)
     window.show()
+    if guard is not None:
+        guard.set_raise_handler(window.bring_to_front)
     sys.exit(QApplication.instance().exec())

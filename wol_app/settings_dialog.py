@@ -208,6 +208,17 @@ class SettingsDialog(QDialog):
         shutdown_group.setLayout(shutdown_layout)
         right_col.addWidget(shutdown_group)
 
+        # --- Application Behaviour Group ---
+        app_group = QGroupBox(Translations.tr("settings.group.application"))
+        app_layout = QVBoxLayout()
+
+        self.allow_multiple_checkbox = QCheckBox(
+            Translations.tr("settings.label.allow_multiple_instances"))
+        app_layout.addWidget(self.allow_multiple_checkbox)
+
+        app_group.setLayout(app_layout)
+        right_col.addWidget(app_group)
+
         # Info label
         info_label = QLabel(
             Translations.tr("settings.info.text")
@@ -280,6 +291,10 @@ class SettingsDialog(QDialog):
                 self.remote_desktop_resolution_combo.setCurrentIndex(idx)
                 break
 
+        # Load multi-instance setting
+        self.allow_multiple_checkbox.setChecked(
+            self.config.get_allow_multiple_instances())
+
     def _save(self) -> None:
         ip: str = self.broadcast_ip_input.text().strip()
         port: int = self.broadcast_port_input.value()
@@ -345,6 +360,10 @@ class SettingsDialog(QDialog):
         selected_resolution = self.remote_desktop_resolution_combo.currentData()
         if selected_resolution:
             self.config.set_remote_desktop_resolution(selected_resolution)
+
+        # Save multi-instance setting (takes effect on the next start)
+        self.config.set_allow_multiple_instances(
+            self.allow_multiple_checkbox.isChecked())
 
         QMessageBox.information(self, Translations.tr("dialog.saved.title"), Translations.tr("dialog.saved.message"))
         self.accept()

@@ -124,6 +124,10 @@ the bridge protocol and a browser demo mode.
 - **Third button on the quit dialog:** the sidebar ⏻ confirmation now offers **Ja / Minimieren / Nein** while the option is active (plain Ja / Nein otherwise, and whenever no system tray is available)
 - Persisted as `ui.close_to_tray` (default `false`); applied live without an app restart
 
+#### 🔒 Single instance by default
+- **Launching the app a second time now raises the running window** instead of starting a duplicate process (which used to leave a second tray icon behind). The first instance keeps an OS-level lock next to the config file (`instance-<hash>.lock`); every further launch signals "open window" to it and exits silently. A lock left behind by a crashed process is reclaimed automatically
+- **New setting "Allow multiple instances at the same time"** (modern *Settings* screen, classic *Settings* dialog → *Application*) opts out and restores the previous behaviour — every launch starts its own app. Takes effect on the next start; persisted as `ui.allow_multiple_instances` (default `false`)
+
 #### � Network scan: Wi-Fi only (Android & iOS)
 - **The network scan is now restricted to the actual connection:** Android lists only **Wi-Fi** networks (plus VPN tunnels into your network — mobile data is excluded), iOS only the **`en0` interface** (Wi-Fi), so virtual adapters (`awdl`, `utun`, VPN dummies) no longer show up as scannable networks
 - **Same range filter as the desktop app:** `169.*` (APIPA / link-local) and the complete `172.*` range (VMware / Hyper-V / Docker / VPN dummy adapters) are hidden from the network list (mirrors `is_real_interface()` in `wol_app/network_scanner.py`)

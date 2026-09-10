@@ -116,6 +116,27 @@ Standardmäßig beendet das Schließen des Fensters (✕) die App. Mit der Optio
 > bereitstellt (unter Windows immer). Deaktivieren Sie die Option, verhält sich
 > die App wieder wie gewohnt.
 
+### Mehrere Instanzen
+
+Standardmäßig läuft die App **nur einmal gleichzeitig**. Starten Sie sie zum
+zweiten Mal (z. B. über das Desktop-Symbol, während sie bereits im
+Iconbereich läuft), öffnet die neue Instanz das Fenster der laufenden
+App und beendet sich selbst – es entstehen keine doppelten Tray-Symbole und
+keine konkurrierenden Prozesse. Ein Lockfile neben der Konfigurationsdatei
+(`~/.wol_app/instance-<Kennung>.lock`) sorgt dafür; ein Lock eines
+abgestürzten Prozesses wird automatisch freigegeben.
+
+Möchten Sie die App mehrfach parallel starten, aktivieren Sie **„Mehrere
+Instanzen gleichzeitig erlauben"** (moderne Oberfläche: Bildschirm
+**Einstellungen**, klassische Oberfläche: Dialog **Einstellungen →
+Anwendung**). Nach dem nächsten Start verhält sich jede Instanz wieder
+vollständig eigenständig.
+
+> **Hinweis:** Die Einstellung wirkt erst beim nächsten Start. Nutzen Sie
+> die Parallelität nur mit getrennten Konfigurationsdateien – Instanzen,
+> die sich dieselbe Datei teilen, überschreiben sich gegenseitig ihre
+> Einstellungen und Geräte.
+
 ### Aufbau der modernen Oberfläche
 
 Die moderne Oberfläche besteht aus zwei Teilen:

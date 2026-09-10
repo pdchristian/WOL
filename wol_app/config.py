@@ -266,8 +266,11 @@ DEFAULT_CONFIG = {
         # when the window is closed. The window's close button then minimises
         # to the tray; the sidebar "Beenden" action asks
         # (Ja / Minimieren / Nein). Ignored when no tray is available.
-        "close_to_tray": True,
-        # Modern main window rect [x, y, w, h] (normal state, restored on
+        "close_to_tray": True,        # Allow starting several copies of the application in parallel.
+        # Default False: a second start signals the running instance to
+        # bring its window to the front and exits itself (per config file,
+        # see wol_app/single_instance.py).
+        "allow_multiple_instances": False,        # Modern main window rect [x, y, w, h] (normal state, restored on
         # start when it still intersects an attached screen).
         "window_geometry": None,
         # Device dashboard: metrics poll interval in milliseconds
@@ -312,7 +315,26 @@ class ConfigManager:
             self._config_dir = self.config_path.parent
 
         self.config = self._load()
+        self._ensure_single_instance_key()
         self._apply_installer_ui_mode()
+
+    def _ensure_single_instance_key(self) -> None:
+        """Persist ``ui.allow_multiple_instances`` when it is still absent.
+
+        Configs written before the single-instance feature lack the key.
+        The getter already defaults to ``False`` (single instance), but
+        writing it once at load time makes the effective setting explicit
+        in ``config.json`` — visible, editable, and unambiguous for every
+        future start (first run after install or upgrade).
+        """
+        ui = self.config.setdefault("ui", {})
+        if "allow_multiple_instances" not in ui:
+            ui["allow_multiple_instances"] = False
+            try:
+                self.save()
+            except Exception as e:  # pragma: no cover - non-fatal
+                _logger.warning(
+                    "Could not persist allow_multiple_instances default: %s", e)
 
     def _apply_installer_ui_mode(self) -> None:
         """On first start, adopt the UI layout chosen during installation.
@@ -599,6 +621,19 @@ class ConfigManager:
     def set_close_to_tray(self, enabled: bool) -> None:
         """Persist the "keep running in the notification area" preference."""
         self.config.setdefault("ui", {})["close_to_tray"] = bool(enabled)
+        self.save()
+
+    # --- Single instance lock ---
+
+    def get_allow_multiple_instances(self) -> bool:
+        """Return whether parallel app instances are allowed (no lock)."""
+        return bool(self.config.get("ui", {}).get(
+            "allow_multiple_instances", False))
+
+    def set_allow_multiple_instances(self, enabled: bool) -> None:
+        """Persist the "allow multiple instances" preference."""
+        self.config.setdefault("ui", {})[
+            "allow_multiple_instances"] = bool(enabled)
         self.save()
 
     # --- Modern main window geometry ---

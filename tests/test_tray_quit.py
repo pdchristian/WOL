@@ -177,6 +177,27 @@ class TestCloseToTrayWindow:
         window._show_from_tray()
         assert not window.isHidden()
 
+    def test_show_from_tray_hides_the_icon_again(self, window, config):
+        """While the window is visible there is exactly one app symbol."""
+        config.set_close_to_tray(True)
+        window._hide_to_tray()
+        assert window._tray is not None and window._tray.isVisible()
+        window._show_from_tray()
+        assert not window._tray.isVisible()
+
+    def test_about_to_quit_hides_the_icon(self, window, config, monkeypatch):
+        """Every exit path (incl. the update flow) removes the tray icon."""
+        config.set_close_to_tray(True)
+        window._hide_to_tray()
+        assert window._tray is not None and window._tray.isVisible()
+
+        # Simulate the process ending (QApplication.aboutToQuit) without
+        # routing through _quit_application — the update-install path.
+        monkeypatch.setattr(window, "close", lambda: None)
+        qapp = QApplication.instance()
+        qapp.aboutToQuit.emit()
+        assert not window._tray.isVisible()
+
     def test_quit_bypasses_tray_and_closes(self, window, config, monkeypatch):
         config.set_close_to_tray(True)
         window._apply_tray_mode()

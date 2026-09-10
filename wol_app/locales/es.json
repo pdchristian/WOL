@@ -268,6 +268,8 @@
   "settings.label.default_shutdown_method": "Método predeterminado para nuevos dispositivos:",
   "settings.label.max_logs": "Entradas máximas de registro:",
   "settings.label.close_to_tray": "Mantener en el área de notificación al cerrar",
+  "settings.label.allow_multiple_instances": "Permitir varias instancias a la vez",
+  "settings.group.application": "Aplicación",
   "settings.label.remote_desktop_resolution": "Resolución:",
   "settings.label.remote_desktop_resolution_auto": "Optimizado 16:9",
   "settings.language.de": "Alemán",

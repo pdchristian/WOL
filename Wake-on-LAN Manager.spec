@@ -10,6 +10,7 @@ a = Analysis(
     binaries=[],
     datas=[('icon.ico', '.'), ('icon_modern.ico', '.'), ('icon_modern.png', '.'), ('wol_app/locales/*.json', 'wol_app/locales')],
     hiddenimports=[
+        'PyQt6.QtNetwork',
         'wol_app',
         'wol_app.__init__',
         'wol_app.config',
@@ -32,6 +33,7 @@ a = Analysis(
         'wol_app.scan_worker',
         'wol_app.schedule_runner',
         'wol_app.shutdown_flow',
+        'wol_app.single_instance',
         'wol_app.modern_main_window',
         'wol_app.modern_theme',
         'wol_app.theme',

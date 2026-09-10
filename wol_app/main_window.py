@@ -809,6 +809,12 @@ class MainWindow(QMainWindow):
             f"<p>{Translations.tr('dialog.about.supports')}</p>"
         )
 
+    def bring_to_front(self) -> None:
+        """Restore and focus the window (single-instance raise request)."""
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
     def closeEvent(self, event) -> None:
         """Wait for all background threads to finish before closing."""
         if self.status_timer:
@@ -857,6 +863,16 @@ def main() -> NoReturn:
 
     # Initialize config and translations
     config = ConfigManager()
+
+    # Single-instance lock (per config file): a second launch asks the
+    # running instance to bring its window to the front and exits itself.
+    # Disabled with ui.allow_multiple_instances (wol_app/single_instance.py).
+    from wol_app.single_instance import ensure_primary_instance
+
+    guard = ensure_primary_instance(app, config)
+    if guard is None:
+        sys.exit(0)
+
     trans = Translations()
     language = config.config.get("ui", {}).get("language", "en")
     trans.load(language)
@@ -888,10 +904,12 @@ def main() -> NoReturn:
         dark = display_mode == "dark" or (
             display_mode == "auto" and _system_uses_dark()
         )
-        run_modern_window(config, dark_mode=dark)
+        run_modern_window(config, dark_mode=dark, guard=guard)
 
     window = MainWindow()
     window.show()
+    # A second launch (started while this one runs) raises this window.
+    guard.set_raise_handler(window.bring_to_front)
     sys.exit(app.exec())
 
 

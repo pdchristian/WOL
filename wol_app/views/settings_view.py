@@ -225,6 +225,12 @@ class SettingsView(QWidget):
             Translations.tr("settings.label.close_to_tray"))
         grid.addWidget(self.close_to_tray_toggle, 5, 1)
 
+        # Off by default: a second launch raises the running instance's
+        # window instead of starting twice (wol_app/single_instance.py).
+        self.allow_multiple_toggle = ToggleWithLabel(
+            Translations.tr("settings.label.allow_multiple_instances"))
+        grid.addWidget(self.allow_multiple_toggle, 6, 1)
+
         layout.addLayout(grid)
 
         # ── Info label ──
@@ -289,6 +295,8 @@ class SettingsView(QWidget):
             self.remote_desktop_resolution_combo,
             self.config.get_remote_desktop_resolution())
         self.close_to_tray_toggle.setChecked(self.config.get_close_to_tray())
+        self.allow_multiple_toggle.setChecked(
+            self.config.get_allow_multiple_instances())
 
     def _save(self) -> None:
         ip: str = self.broadcast_ip_input.text().strip()
@@ -348,6 +356,9 @@ class SettingsView(QWidget):
 
         # Applied live via settings_saved → _apply_tray_mode (no restart).
         self.config.set_close_to_tray(self.close_to_tray_toggle.isChecked())
+        # Takes effect on the next start (the lock is acquired at startup).
+        self.config.set_allow_multiple_instances(
+            self.allow_multiple_toggle.isChecked())
 
         QMessageBox.information(
             self, Translations.tr("dialog.saved.title"),
@@ -383,6 +394,8 @@ class SettingsView(QWidget):
         ui["display_mode"] = "auto"
         ui["remote_desktop_resolution"] = DEFAULT_CONFIG["ui"]["remote_desktop_resolution"]
         ui["close_to_tray"] = DEFAULT_CONFIG["ui"]["close_to_tray"]
+        ui["allow_multiple_instances"] = DEFAULT_CONFIG[
+            "ui"]["allow_multiple_instances"]
         self.config.save()
 
         Translations.set_language(DEFAULT_CONFIG["ui"]["language"])
@@ -429,6 +442,8 @@ class SettingsView(QWidget):
             Translations.tr("settings.check.auto_update"))
         self.close_to_tray_toggle.setText(
             Translations.tr("settings.label.close_to_tray"))
+        self.allow_multiple_toggle.setText(
+            Translations.tr("settings.label.allow_multiple_instances"))
         self.remote_desktop_resolution_combo.setItemText(
             0, Translations.tr("settings.label.remote_desktop_resolution_auto"))
         for idx, key in enumerate(

@@ -270,6 +270,8 @@
   "settings.label.default_shutdown_method": "Standard-Methode für neue Geräte:",
   "settings.label.max_logs": "Maximale Protokolleinträge:",
   "settings.label.close_to_tray": "Beim Schließen im Iconbereich bleiben",
+  "settings.label.allow_multiple_instances": "Mehrere Instanzen gleichzeitig erlauben",
+  "settings.group.application": "Anwendung",
   "settings.language.de": "Deutsch",
   "settings.language.en": "Englisch",
   "settings.language.es": "Spanisch",
