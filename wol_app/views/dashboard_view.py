@@ -55,6 +55,7 @@ from wol_app.app_core import HEADLESS_MODE
 from wol_app.metrics_worker import BatchWorker, MetricsWorker
 from wol_app.modern_theme import current_tokens
 from wol_app.translations import Translations
+from wol_app.utils import ip_sort_key
 
 # Ring gauge geometry (prototype .gauge: 86 px, stroke 8)
 GAUGE_SIZE = 86
@@ -507,6 +508,8 @@ class DeviceDashboardView(QWidget):
     """Per-device dashboard: live metrics + remote batch execution."""
 
     back_requested = pyqtSignal()
+    prev_requested = pyqtSignal()
+    next_requested = pyqtSignal()
 
     def __init__(self, config_manager: ConfigManager, parent=None) -> None:
         super().__init__(parent)
@@ -571,18 +574,41 @@ class DeviceDashboardView(QWidget):
         self.back_btn.clicked.connect(self.back_requested.emit)
         header.addWidget(self.back_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        # Prev/next device (analog to the mobile swipe gesture); hidden when
+        # only one device is configured, disabled at the first/last device.
+        self.prev_btn = QPushButton("‹")
+        self.prev_btn.setObjectName("navArrowButton")
+        self.prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.prev_btn.clicked.connect(self.prev_requested.emit)
+        self.prev_btn.setVisible(False)
+        header.addWidget(self.prev_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.next_btn = QPushButton("›")
+        self.next_btn.setObjectName("navArrowButton")
+        self.next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.next_btn.clicked.connect(self.next_requested.emit)
+        self.next_btn.setVisible(False)
+        header.addWidget(self.next_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
         name_row = QHBoxLayout()
         name_row.setSpacing(10)
         self.title = QLabel("—")
         self.title.setObjectName("pageTitle")
+        # Position badge "x / n" between name and status pill (like the
+        # mobile dashPos pill); hidden when only one device is configured.
+        self.pos_label = QLabel("")
+        self.pos_label.setObjectName("posBadge")
+        self.pos_label.setFixedHeight(20)
+        self.pos_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         self.badge = QLabel("")
         self.badge.setObjectName("badgeUnknown")
         self.badge.setFixedHeight(20)
         self.badge.setAlignment(
             Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         name_row.addWidget(self.title)
+        name_row.addWidget(self.pos_label, 0, Qt.AlignmentFlag.AlignVCenter)
         name_row.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
         # Watched-process chips (e.g. llama-server) - hidden until the host
         # service reports a "processes" map (protocol v3 + watch config).
@@ -831,14 +857,68 @@ class DeviceDashboardView(QWidget):
         if device is None:
             self.title.setText("—")
             self.mono.setText("")
+            self._update_nav_ui()
             return
         self.title.setText(device.get("name", ""))
         self._update_mono_line()
+        self._update_nav_ui()
         # Watch list may have changed in the device dialog while open.
         watch = ConfigManager.get_device_watch_processes(device)
         if watch != self._watch_entries:
             self._watch_entries = watch
             self._rebuild_service_widgets()
+
+    # ── Prev/next device navigation ──────────────────────────────────────
+
+    def _ordered_devices(self) -> list[dict]:
+        """Devices in the devices-screen order (shared sort key).
+
+        The "status" sort needs live ping results that only the devices
+        screen has; the dashboard falls back to name order for it (like an
+        all-unknown status list).
+        """
+        devices = list(self.config.get_devices())
+        key = self.config.get_devices_sort_key()
+        if key == "ip":
+            return sorted(devices, key=lambda d: ip_sort_key(str(d.get("ip", ""))))
+        if key == "mac":
+            return sorted(devices, key=lambda d: str(d.get("mac", "")).upper())
+        return sorted(devices, key=lambda d: str(d.get("name", "")).lower())
+
+    def _nav_index(self) -> int:
+        """Index of the open device in the ordered list (-1 if unknown)."""
+        if self._device_id is None:
+            return -1
+        return next(
+            (i for i, d in enumerate(self._ordered_devices())
+             if d.get("id") == self._device_id), -1)
+
+    def neighbour_device_id(self, direction: int) -> str | None:
+        """Id of the previous (-1) / next (+1) device, None at the border."""
+        devices = self._ordered_devices()
+        i = self._nav_index()
+        if i < 0:
+            return None
+        j = i + direction
+        if j < 0 or j >= len(devices):
+            return None
+        return devices[j].get("id")
+
+    def _update_nav_ui(self) -> None:
+        """Position badge + prev/next sensitivity (hidden with one device)."""
+        devices = self._ordered_devices()
+        i = self._nav_index()
+        many = len(devices) > 1 and i >= 0
+        self.pos_label.setVisible(many)
+        self.prev_btn.setVisible(many)
+        self.next_btn.setVisible(many)
+        if not many:
+            self.pos_label.setText("")
+            return
+        self.pos_label.setText(Translations.tr(
+            "modern.dashboard.position", index=i + 1, total=len(devices)))
+        self.prev_btn.setEnabled(i > 0)
+        self.next_btn.setEnabled(i < len(devices) - 1)
 
     def _update_mono_line(self) -> None:
         """Header line: ``IP · MAC · Host Service vN`` (version once known)."""
@@ -855,6 +935,9 @@ class DeviceDashboardView(QWidget):
 
     def retranslate(self) -> None:
         self.back_btn.setText(Translations.tr("modern.dashboard.back"))
+        self.prev_btn.setToolTip(Translations.tr("modern.dashboard.prev"))
+        self.next_btn.setToolTip(Translations.tr("modern.dashboard.next"))
+        self._update_nav_ui()
         self.lib_title.setText(Translations.tr("modern.dashboard.batch.title"))
         self.new_btn.setText(Translations.tr("modern.dashboard.batch.new"))
         self.dup_btn.setText(Translations.tr("modern.dashboard.batch.duplicate"))

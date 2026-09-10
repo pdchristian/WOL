@@ -41,6 +41,7 @@ from wol_app.network_scanner import get_local_ips
 from wol_app.remote_desktop import start_remote_desktop
 from wol_app.shutdown_flow import execute_shutdown
 from wol_app.translations import Translations
+from wol_app.utils import ip_sort_key
 from wol_app.views.device_edit_dialog import ModernDeviceDialog
 from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
 from wol_app.wol_engine import WOLEngine
@@ -66,18 +67,6 @@ LIST_ROW_HEIGHT = 64
 
 # Sort order of the "Status" sort key: Online, offline, unbekannt
 STATUS_SORT_RANK = {"online": 0, "offline": 1, "unknown": 2}
-
-
-def _ip_sort_key(ip: str) -> tuple:
-    """Sort IPv4 addresses numerically (192.168.1.9 < 192.168.1.10).
-
-    Anything that is not four dotted decimals sorts after the numeric
-    addresses, still alphabetically among itself.
-    """
-    parts = (ip or "").split(".")
-    if len(parts) == 4 and all(p.isdigit() for p in parts):
-        return (0, tuple(int(p) for p in parts), "")
-    return (1, (), ip or "")
 
 
 def compute_columns(avail: int) -> int:
@@ -727,7 +716,7 @@ class DevicesView(QWidget):
         """Sort by the active key; name/IP/MAC ascending, status by rank."""
         key = self._sort_key
         if key == "ip":
-            return sorted(devices, key=lambda d: _ip_sort_key(str(d.get("ip", ""))))
+            return sorted(devices, key=lambda d: ip_sort_key(str(d.get("ip", ""))))
         if key == "mac":
             return sorted(devices, key=lambda d: str(d.get("mac", "")).upper())
         if key == "status":

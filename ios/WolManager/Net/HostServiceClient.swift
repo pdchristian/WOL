@@ -170,14 +170,24 @@ final class HostServiceClient {
         }
     }
 
-    /// TCP-Connect-Helfer (Status/Ping). true = Verbindung möglich.
+    /// FIONBIO = _IOR('f', 127, int) — C-Makro, das Swift nicht importiert.
+    private static let fionbio: UInt = 0x8004_667E
+
+    /// TCP-Connect-Helfer (Port-Sweep beim Netzwerk-Scan). true = Verbindung möglich.
+    /// Wichtig: Auf iOS/macOS wirkt SO_SNDTIMEO NICHT für connect(). Ohne Non-Blocking-
+    /// Connect mit poll() würde connect() auf toten IPs bis zum kompletten
+    /// SYN-Retransmission-Fenster (~75 s pro Port) blockieren und den Scan ausbremsen —
+    /// Android erzwingt den Timeout dagegen über Socket.connect(addr, timeout).
     static func tcpConnect(host: String, port: Int, timeoutMs: Int) -> Bool {
         let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
         guard fd >= 0 else { return false }
         defer { close(fd) }
 
-        var tv = timeval(tv_sec: timeoutMs / 1000, tv_usec: Int32((timeoutMs % 1000) * 1000))
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        // Non-Blocking-Connect (FIONBIO, da SOCK_NONBLOCK/fcntl auf Apple nicht
+        // direkt nutzbar): connect() liefert dann EINPROGRESS statt zu blockieren,
+        // und poll() setzt den eigentlichen Connect-Timeout durch.
+        var nonblock: Int32 = 1
+        guard ioctl(fd, fionbio, &nonblock) == 0 else { return false }
 
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
@@ -188,11 +198,23 @@ final class HostServiceClient {
                 addr.sin_addr.s_addr = resolved
             }
         }
-        return withUnsafePointer(to: &addr) { p in
+
+        let rc = withUnsafePointer(to: &addr) { p -> Int32 in
             p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
+        if rc == 0 { return true } // sofort verbunden
+        guard errno == EINPROGRESS || errno == EALREADY || errno == EINTR || errno == EAGAIN else {
+            return false // sofort ablehnbar: Host nicht erreichbar
+        }
+
+        var pfd = pollfd(fd: fd, events: Int16(POLLIN | POLLOUT), revents: 0)
+        guard poll(&pfd, 1, Int32(max(timeoutMs, 1))) > 0 else { return false } // Timeout abgelaufen
+        var soErr: Int32 = 0
+        var len = socklen_t(MemoryLayout<Int32>.size)
+        guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &soErr, &len) == 0 else { return false }
+        return soErr == 0 // 0 = Handshake erfolgreich
     }
 
     /// DNS-Auflösung (erster IPv4-Treffer) — für Aufrufer, die nur eine Adresse brauchen.

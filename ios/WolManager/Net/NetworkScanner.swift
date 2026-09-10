@@ -94,32 +94,39 @@ final class NetworkScanner {
         let total = unique.count
         let doneCounter = AtomicCounter()
         let foundCounter = AtomicCounter()
-        let group = DispatchGroup()
-        let sem = DispatchSemaphore(value: Self.maxParallel)
         let eventLock = NSLock()
 
-        for ip in unique {
+        // Feste Worker-Pool-Größe: alle Targets werden über einen atomaren Index
+        // abgearbeitet. Vorher blockierten bis zu 254 GCD-Blöcke auf einem Semaphore,
+        // was Threads band und den Scan zusätzlich ausbremste.
+        let nextIndex = AtomicCounter()
+        let workerCount = min(Self.maxParallel, max(unique.count, 1))
+        let group = DispatchGroup()
+        for _ in 0..<workerCount {
             group.enter()
             scanQueue.async {
-                sem.wait()
-                defer { sem.signal(); group.leave() }
-                if self.isCancelled { return }
-                let open = Self.scanPorts.filter { port in
-                    if self.isCancelled { return false }
-                    return HostServiceClient.tcpConnect(host: ip, port: port, timeoutMs: Self.portTimeoutMs)
-                }
-                eventLock.lock()
-                onEvent(.progress(done: doneCounter.bump(), total: total, current: ip))
-                eventLock.unlock()
-                if !open.isEmpty {
-                    _ = foundCounter.bump()
+                defer { group.leave() }
+                while true {
+                    let i = nextIndex.bump() - 1
+                    if i >= unique.count || self.isCancelled { return }
+                    let ip = unique[i]
+                    let open = Self.scanPorts.filter { port in
+                        if self.isCancelled { return false }
+                        return HostServiceClient.tcpConnect(host: ip, port: port, timeoutMs: Self.portTimeoutMs)
+                    }
+                    // progress + found in EINEM kritischen Abschnitt emittieren —
+                    // niemals zweimal lock() ohne unlock() (NSLock ist nicht rekursiv!).
                     eventLock.lock()
-                    onEvent(.found(DiscoveredHost(
-                        hostname: Self.reverseDns(ip),
-                        ipv4: ip,
-                        mac: "",
-                        openPorts: open,
-                        known: open.contains(HostServiceClient.defaultPort))))
+                    onEvent(.progress(done: doneCounter.bump(), total: total, current: ip))
+                    if !open.isEmpty {
+                        _ = foundCounter.bump()
+                        onEvent(.found(DiscoveredHost(
+                            hostname: Self.reverseDns(ip),
+                            ipv4: ip,
+                            mac: "",
+                            openPorts: open,
+                            known: open.contains(HostServiceClient.defaultPort))))
+                    }
                     eventLock.unlock()
                 }
             }

@@ -46,6 +46,8 @@
   .btn.primary:active{background:var(--accent-dark)}
   .btn.danger{background:rgba(224,72,90,.12);color:var(--danger);border-color:rgba(224,72,90,.4)}
   .btn.small{padding:7px 10px;font-size:12px;border-radius:9px}
+  /* Prev/next device arrows next to the dashboard back button */
+  .btn.navArrow{width:34px;padding:7px 0;text-align:center;font-size:15px;flex-shrink:0}
   .iconBtn{width:36px;height:36px;flex-shrink:0;border:1px solid var(--border);border-radius:9px;
     background:var(--surface);color:var(--text);font-size:15px;cursor:pointer;display:inline-flex;
     align-items:center;justify-content:center}
@@ -186,9 +188,9 @@
     border-bottom:1px solid var(--border)}
   .menuitem:last-of-type{border-bottom:none}
   .menuitem.dis{opacity:.4;pointer-events:none}
-  .powerIcon{width:64px;height:64px;margin:6px auto 12px;border:4px solid var(--danger);
-    border-radius:50%;border-top-color:transparent;position:relative;transform:rotate(-45deg)}
-  .powerIcon::after{content:"";position:absolute;left:50%;top:-26px;width:4px;height:32px;
+  .powerIcon{width:38px;height:38px;margin:6px auto 12px;border:2.5px solid var(--danger);
+    border-radius:50%;border-top-color:transparent;position:relative}
+  .powerIcon::after{content:"";position:absolute;left:50%;top:-16px;width:2.5px;height:19px;
     background:var(--danger);transform:translateX(-50%)}
   /* ── Toast / Spinner ─────────────────────────────────────────────────── */
   .toast{position:fixed;left:16px;right:16px;bottom:calc(100px + env(safe-area-inset-bottom));background:var(--surface-hover);

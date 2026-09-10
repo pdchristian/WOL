@@ -19,7 +19,7 @@
 ; ============================================================================
 
 #ifndef AppVersion
-  #define AppVersion "2.2.3"
+  #define AppVersion "2.3.4"
 #endif
 
 [Setup]

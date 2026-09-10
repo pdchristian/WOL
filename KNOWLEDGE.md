@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.2.3                                                                 |
+| **version**         | 2.3.4                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -680,6 +680,28 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 ---
 
 ## 8. Build System
+
+### 8.0 Version management (single source of truth)
+
+`wol_app/__init__.py` (`__version__`) is the ONE version for ALL variants
+(Windows, Ubuntu, Android, iOS). Never edit the version in a build file by hand.
+
+- **Bump everywhere:** `python update_version.py 2.3.5` — writes
+  `__version__`, propagates via `update_docs_version.py` to `setup.iss`,
+  `android_html/app/build.gradle.kts`, `ios/project.yml`, the WebApp fallbacks
+  (`app.js`/`bridge.js` in both copies), `Bridge.swift`, docs and build
+  helpers, then runs `xcodegen generate` (if installed) to refresh
+  `WolManager.xcodeproj`.
+- **Verify:** `python update_version.py --check` (exit 1 + list on drift) —
+  also covered by `tests/test_version_sync.py` (runs with the normal test suite).
+- **Runtime sources:** Windows/Ubuntu read `__version__` directly
+  (`installer.py`, `packaging/build_deb.sh`). Android uses Gradle
+  `versionName` → `BuildConfig.VERSION_NAME` → bridge `info` call; iOS uses
+  `MARKETING_VERSION` → `CFBundleShortVersionString` → bridge `info` call.
+  The WebApps display the version from the native `info` call; the literal in
+  `app.js` is only a browser-preview fallback and is kept in sync by the tool.
+- Android `versionCode` must still be bumped manually in `build.gradle.kts`
+  (Android requires a monotonically increasing integer).
 
 ### 8.1 build.ps1
 

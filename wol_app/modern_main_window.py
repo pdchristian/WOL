@@ -195,6 +195,12 @@ class ModernMainWindow(QMainWindow):
         # Dashboard: opened from the 📊 tile, returns to the devices screen
         self.devices_view.dashboard_requested.connect(self.open_device_dashboard)
         self.dashboard_view.back_requested.connect(lambda: self._select_nav(0))
+        # Prev/next device arrows (analog to the mobile swipe gesture): the
+        # stack stays on the dashboard, only the polled device changes.
+        self.dashboard_view.prev_requested.connect(
+            lambda: self._step_dashboard_device(-1))
+        self.dashboard_view.next_requested.connect(
+            lambda: self._step_dashboard_device(1))
 
         # Sidebar resize/collapse wiring (after the widgets exist).
         self._sidebar_save_timer = QTimer(self)
@@ -228,6 +234,12 @@ class ModernMainWindow(QMainWindow):
         self.dashboard_view.set_device(device_id)
         self.stack.setCurrentIndex(DASHBOARD_NAV_INDEX)
         self._clear_nav_check()
+
+    def _step_dashboard_device(self, direction: int) -> None:
+        """Switch the open dashboard to the previous/next device."""
+        neighbour = self.dashboard_view.neighbour_device_id(direction)
+        if neighbour is not None:
+            self.dashboard_view.set_device(neighbour)
 
     def _clear_nav_check(self) -> None:
         """Uncheck every nav button (dashboard screen has no nav entry)."""

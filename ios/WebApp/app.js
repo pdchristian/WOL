@@ -100,6 +100,7 @@ de:{
  "upd.new":"🆕 Neue Version {v} verfügbar!",
  /* Dashboard */
  "dash.back":"‹ Geräte","dash.interval":"Intervall",
+ "dash.prev":"Vorheriges Gerät","dash.next":"Nächstes Gerät",
  "dash.swipe":"Wischen nach links/rechts wechselt zum nächsten Gerät.",
  "dash.svc":"Dienste","dash.svc.sub":"Überwachte Prozesse","dash.svc.none":"Keine überwachten Prozesse konfiguriert.",
  "svc.running":"läuft · PID {pid}","svc.ready":"läuft · PID {pid} · API bereit :{port}","svc.unreach":"läuft (PID {pid}), aber Port {port} nicht erreichbar","svc.gone":"Prozess nicht gefunden",
@@ -489,7 +490,7 @@ const state = {
 const Native = (typeof window !== "undefined" && window.Native) ? window.Native : null;
 
 /* Versionsname kommt von nativ ("info"); Fallback für Browser-Vorschau. */
-let APP_VERSION = "2.3.0";
+let APP_VERSION = "2.3.4";
 
 /* Reine Laufzeit-Felder pro Gerät (nie persistiert). */
 function rtDefaults() {
@@ -579,8 +580,8 @@ function openShutdownConfirm(d) {
     <div style="text-align:center"><div class="powerIcon"></div>
     <h2 style="text-align:center;margin-bottom:0">${esc(t("shutdown.title"))}</h2>
     <p style="font-size:13.5px;color:var(--text-dim);margin-top:8px">${esc(t("shutdown.message"))}<br><b style="color:var(--text)">${esc(d.name)}</b></p></div>
-    <div class="sheetbtns"><button class="btn" data-act="sheet-close">${esc(t("no"))}</button>
-    <button class="btn danger" data-act="confirm-yes">${esc(t("yes"))}</button></div>`);
+    <div class="sheetbtns" style="justify-content:flex-end"><button class="btn danger" data-act="confirm-yes">${esc(t("yes"))}</button>
+    <button class="btn" data-act="sheet-close">${esc(t("no"))}</button></div>`);
 }
 
 /* ══════════════════════════ Aktionen: Wake / Shutdown / Ping ══════════════ */
@@ -833,7 +834,9 @@ function switchDashDevice(dir) {
   if (list.length < 2) return;
   let i = list.findIndex(x => x.id === state.ui.dashDeviceId);
   if (i < 0) i = 0;
-  const nd = list[(i + dir + list.length) % list.length];
+  const j = i + dir;
+  if (j < 0 || j >= list.length) return; /* kein Wrap: am Rand bleiben */
+  const nd = list[j];
   state.ui.dashDeviceId = nd.id; state.ui.selBatch = null;
   state.con = { lines: [], running: false, exit: null, dur: null, timer: null };
   renderDash(dir > 0 ? "left" : "right");
@@ -1199,9 +1202,12 @@ function renderDash(dir) {
       ${key !== "vram" ? `<div data-spark="${key}">${sparkSvg(d.spark[key], `var(--gauge-${key})`)}</div>` : ""}
     </div>`;
   const anim = dir === "left" ? " dashInLeft" : dir === "right" ? " dashInRight" : "";
+  const manyDash = dlist.length > 1;
   $("#s-dash").innerHTML = `<div class="dashSwap${anim}">
     <div class="toolbar" style="align-items:center">
       <button class="btn small" data-act="nav-devices">${esc(t("dash.back"))}</button>
+      ${manyDash ? `<button class="btn small navArrow" data-act="dash-prev" ${dpos <= 0 ? "disabled" : ""} title="${esc(t("dash.prev"))}">‹</button>
+      <button class="btn small navArrow" data-act="dash-next" ${dpos >= dlist.length - 1 ? "disabled" : ""} title="${esc(t("dash.next"))}">›</button>` : ""}
       <span class="spacer"></span>
       <span class="mono" style="font-size:11px">${esc(t("dash.interval"))}</span>
       <select class="sel" data-act="dash-int" style="padding:6px 8px">
@@ -1331,6 +1337,8 @@ document.addEventListener("click", ev => {
     case "rdp-win": doRemote(id, "win"); break;
     case "open-dash": state.ui.dashDeviceId = id; state.ui.selBatch = null; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; go("dash"); break;
     case "nav-devices": go("devices"); break;
+    case "dash-prev": switchDashDevice(-1); break;
+    case "dash-next": switchDashDevice(1); break;
     case "edit-dev": openDeviceSheet(id); break;
     case "del-dev": deleteDevice(id); break;
     case "dev-save": saveDeviceFromSheet(); break;

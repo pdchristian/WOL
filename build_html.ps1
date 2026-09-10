@@ -11,6 +11,13 @@ $gradle = 'C:\tools\gradle-8.7\bin\gradle.bat'
 $proj = Join-Path $PSScriptRoot 'android_html'
 $distDir = Join-Path $PSScriptRoot 'dist_onefile'
 
+# Version-Sync: wol_app/__init__.py ist die Single Source of Truth —
+# versionName und WebApp-Fallbacks vor jedem Build angleichen.
+$py = Join-Path $PSScriptRoot 'venv\Scripts\python.exe'
+if (-not (Test-Path $py)) { $py = 'python' }
+& $py (Join-Path $PSScriptRoot 'update_docs_version.py')
+if ($LASTEXITCODE -ne 0) { throw 'Version-Sync fehlgeschlagen' }
+
 Push-Location $proj
 try {
     if ($Tests) {

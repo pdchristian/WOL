@@ -987,6 +987,19 @@ def retry_remote_desktop_without_password(
 
 # ── Sorting helpers ────────────────────────────────────────────────────────
 
+def ip_sort_key(ip: str) -> tuple:
+    """Sort IPv4 addresses numerically (192.168.1.9 < 192.168.1.10).
+
+    Anything that is not four dotted decimals sorts after the numeric
+    addresses, still alphabetically among itself. Shared between the
+    devices screen and the dashboard's prev/next device navigation.
+    """
+    parts = (ip or "").split(".")
+    if len(parts) == 4 and all(p.isdigit() for p in parts):
+        return (0, tuple(int(p) for p in parts), "")
+    return (1, (), ip or "")
+
+
 def get_ip_key(ip_str: str) -> tuple:
     """Convert an IP address string to a tuple of integers for numerical sorting.
 

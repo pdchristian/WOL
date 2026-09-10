@@ -409,6 +409,20 @@ QMessageBox QLabel {{ color: {t['text']}; background: transparent; }}
     padding: 8px 12px; font-size: 13px; font-weight: 600;
 }}
 #backButton:hover {{ background: {t['surface_hover']}; color: {t['text']}; }}
+/* Prev/next device arrows next to the dashboard back button */
+#navArrowButton {{
+    background: {t['surface']}; color: {t['text_dim']};
+    border: 1px solid {t['border']}; border-radius: 9px;
+    padding: 8px 0; font-size: 15px; font-weight: 600;
+    min-width: 34px;
+}}
+#navArrowButton:hover {{ background: {t['surface_hover']}; color: {t['text']}; }}
+#navArrowButton:disabled {{ color: {t['border']}; background: {t['surface']}; }}
+#posBadge {{
+    background: {t['surface_hover']}; color: {t['text_dim']};
+    border-radius: 10px; padding: 0 8px;
+    font-size: 11px; font-weight: 600; font-family: Consolas, monospace;
+}}
 #codeEdit, #consoleEdit {{
     background: {t['console_bg']}; color: {t['text']};
     border: 1px solid {t['border']}; border-radius: 10px;

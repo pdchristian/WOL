@@ -414,3 +414,66 @@ class TestWatchedProcesses:
         v.refresh_device_header()
         assert "llama-server.exe" in v._chip_widgets
         v.cancel_workers()
+
+
+class TestDeviceNavigation:
+    """Prev/next arrows + position badge (x / n) in the dashboard header."""
+
+    def _view_multi(self, qapp, tmp_path, monkeypatch, n=3):
+        cfg = ConfigManager(config_path=str(tmp_path / "nav.json"))
+        for i in range(n):
+            cfg.add_device(f"Dev{i}", f"AA:BB:CC:00:11:{i:02X}")
+        ids = [d["id"] for d in cfg.get_devices()]
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics", lambda self: None)
+        v = DeviceDashboardView(cfg)
+        return v, ids
+
+    def test_single_device_hides_nav(self, view, tmp_config):
+        _, dev_id = tmp_config
+        view.set_device(dev_id)
+        assert view.prev_btn.isHidden()
+        assert view.next_btn.isHidden()
+        assert view.pos_label.isHidden()
+
+    def test_first_device_prev_disabled_next_enabled(self, qapp, tmp_path, monkeypatch):
+        v, ids = self._view_multi(qapp, tmp_path, monkeypatch)
+        v.set_device(ids[0])  # name sort: Dev0 first
+        assert not v.prev_btn.isHidden()
+        assert not v.next_btn.isHidden()
+        assert not v.prev_btn.isEnabled()
+        assert v.next_btn.isEnabled()
+        assert v.pos_label.text() == Translations.tr(
+            "modern.dashboard.position", index=1, total=3)
+
+    def test_last_device_next_disabled(self, qapp, tmp_path, monkeypatch):
+        v, ids = self._view_multi(qapp, tmp_path, monkeypatch)
+        v.set_device(ids[-1])  # name sort: DevN last
+        assert v.prev_btn.isEnabled()
+        assert not v.next_btn.isEnabled()
+        assert v.pos_label.text() == Translations.tr(
+            "modern.dashboard.position", index=3, total=3)
+
+    def test_neighbour_device_id_clamps_at_borders(self, qapp, tmp_path, monkeypatch):
+        v, ids = self._view_multi(qapp, tmp_path, monkeypatch)
+        v.set_device(ids[0])
+        assert v.neighbour_device_id(-1) is None
+        assert v.neighbour_device_id(1) == ids[1]
+        v.set_device(ids[-1])
+        assert v.neighbour_device_id(1) is None
+        assert v.neighbour_device_id(-1) == ids[-2]
+
+    def test_nav_follows_sort_key(self, qapp, tmp_path, monkeypatch):
+        """Ordering follows the persisted devices-screen sort key (IP)."""
+        cfg = ConfigManager(config_path=str(tmp_path / "navip.json"))
+        cfg.add_device("A", "AA:BB:CC:00:00:01")
+        cfg.add_device("B", "AA:BB:CC:00:00:02")
+        ids = [d["id"] for d in cfg.get_devices()]
+        cfg.update_device(ids[0], ip="192.168.1.20")
+        cfg.update_device(ids[1], ip="192.168.1.3")
+        cfg.set_devices_sort_key("ip")
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics", lambda self: None)
+        v = DeviceDashboardView(cfg)
+        v.set_device(ids[1])  # .3 sorts before .20 → first
+        assert v.neighbour_device_id(1) == ids[0]
+        assert v.neighbour_device_id(-1) is None
+        v.cancel_workers()
