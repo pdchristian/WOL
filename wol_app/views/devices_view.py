@@ -524,6 +524,7 @@ class DevicesView(QWidget):
 
     devices_changed = pyqtSignal()
     dashboard_requested = pyqtSignal(str)  # device id — open the dashboard view
+    statuses_refreshed = pyqtSignal(dict)  # device id -> status (dashboard nav)
 
     def __init__(self, config_manager: Any, parent=None) -> None:
         super().__init__(parent)
@@ -1008,6 +1009,8 @@ class DevicesView(QWidget):
         if self._sort_key == "status":
             self.refresh_devices()
         self._update_summary()
+        # Dashboard prev/next navigation skips offline devices.
+        self.statuses_refreshed.emit(dict(self._statuses))
 
     def _auto_refresh(self) -> None:
         if self.isVisible():

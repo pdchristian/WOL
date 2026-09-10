@@ -38,8 +38,8 @@ def config(tmp_path):
 
 
 class TestCloseToTrayConfig:
-    def test_default_is_off(self, config):
-        assert config.get_close_to_tray() is False
+    def test_default_is_on(self, config):
+        assert config.get_close_to_tray() is True
 
     def test_roundtrip(self, config):
         config.set_close_to_tray(True)
@@ -147,7 +147,8 @@ class TestCloseToTrayWindow:
             window._tray.hide()
         window.close()
 
-    def test_inactive_when_setting_off(self, window):
+    def test_inactive_when_setting_off(self, window, config):
+        config.set_close_to_tray(False)
         assert window._close_to_tray_active() is False
 
     def test_active_when_setting_on(self, window, config):
@@ -193,7 +194,9 @@ class TestCloseToTrayWindow:
         assert quit_calls == [True]
         assert not window._tray.isVisible()
 
-    def test_close_still_closes_when_setting_off(self, window, monkeypatch):
+    def test_close_still_closes_when_setting_off(self, window, config, monkeypatch):
+        config.set_close_to_tray(False)
+        window._apply_tray_mode()
         stopped: list[bool] = []
         monkeypatch.setattr(
             window.engine, "stop_scheduler",
@@ -236,9 +239,11 @@ class TestCloseToTrayWindow:
         assert actions == ["quit", "minimize"]
 
     def test_confirm_quit_without_tray_has_no_min_button(
-            self, window, monkeypatch):
+            self, window, config, monkeypatch):
         """Setting off → dialog is created without min_key (plain Ja/Nein)."""
         import wol_app.modern_main_window as mmw
+
+        config.set_close_to_tray(False)
 
         seen: list = []
 
@@ -282,7 +287,7 @@ class TestSettingsViewCloseToTray:
         view._save()
         assert view.restart_required is False
 
-    def test_reset_restores_default_off(self, qapp, config, monkeypatch):
+    def test_reset_restores_default_on(self, qapp, config, monkeypatch):
         from PyQt6.QtWidgets import QMessageBox
 
         from wol_app.views.settings_view import SettingsView
@@ -290,7 +295,7 @@ class TestSettingsViewCloseToTray:
         monkeypatch.setattr(QMessageBox, "question",
                             staticmethod(
                                 lambda *a, **k: QMessageBox.StandardButton.Yes))
-        config.set_close_to_tray(True)
+        config.set_close_to_tray(False)
         view = SettingsView(config)
         view._reset_to_defaults()
-        assert config.get_close_to_tray() is False
+        assert config.get_close_to_tray() is True

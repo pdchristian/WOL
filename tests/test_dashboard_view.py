@@ -477,3 +477,51 @@ class TestDeviceNavigation:
         assert v.neighbour_device_id(1) == ids[0]
         assert v.neighbour_device_id(-1) is None
         v.cancel_workers()
+
+    def test_offline_devices_are_skipped(self, qapp, tmp_path, monkeypatch):
+        """Prev/next jumps over devices whose last ping said "offline"."""
+        v, ids = self._view_multi(qapp, tmp_path, monkeypatch)
+        v.set_nav_statuses({ids[0]: "online", ids[1]: "offline",
+                            ids[2]: "online"})
+        v.set_device(ids[0])
+        assert v.neighbour_device_id(1) == ids[2]  # Dev1 (offline) skipped
+        v.set_device(ids[2])
+        assert v.neighbour_device_id(-1) == ids[0]
+        # Badge/limits count only reachable devices: 1/2 and 2/2.
+        assert v.pos_label.text() == Translations.tr(
+            "modern.dashboard.position", index=2, total=2)
+        assert not v.next_btn.isEnabled()
+
+    def test_offline_current_device_stays_in_sequence(self, qapp, tmp_path,
+                                                      monkeypatch):
+        """An opened device that went offline keeps its place (badge/limits)."""
+        v, ids = self._view_multi(qapp, tmp_path, monkeypatch, n=2)
+        v.set_nav_statuses({ids[0]: "online", ids[1]: "offline"})
+        v.set_device(ids[1])  # opened while offline
+        assert v.pos_label.text() == Translations.tr(
+            "modern.dashboard.position", index=2, total=2)
+        assert v.neighbour_device_id(-1) == ids[0]
+        assert v.neighbour_device_id(1) is None
+
+    def test_all_offline_except_current_hides_nav(self, qapp, tmp_path,
+                                                  monkeypatch):
+        v, ids = self._view_multi(qapp, tmp_path, monkeypatch)
+        v.set_nav_statuses({ids[0]: "online", ids[1]: "offline",
+                            ids[2]: "offline"})
+        v.set_device(ids[0])
+        assert v.prev_btn.isHidden()
+        assert v.next_btn.isHidden()
+        assert v.pos_label.isHidden()
+
+    def test_live_metrics_update_nav_statuses(self, qapp, tmp_path, monkeypatch):
+        """A device going offline/online in the dashboard updates the cache."""
+        v, ids = self._view_multi(qapp, tmp_path, monkeypatch)
+        v.set_nav_statuses({i: "online" for i in ids})
+        v.set_device(ids[1])
+        v._on_metrics(dict(METRICS))
+        assert v.neighbour_device_id(1) == ids[2]
+        v._on_metrics_failed("Connection timed out")  # → offline badge
+        assert v.neighbour_device_id(1) == ids[2]
+        v.set_device(ids[0])
+        # Dev1 is now known offline → next from Dev0 skips it.
+        assert v.neighbour_device_id(1) == ids[2]

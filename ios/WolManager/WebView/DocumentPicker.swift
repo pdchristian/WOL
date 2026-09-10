@@ -53,6 +53,12 @@ final class DocumentPicker: NSObject, UIDocumentPickerDelegate {
             return
         }
         let ac = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        // iPad: Popover braucht eine Quelle, sonst Absturz bei present().
+        if let view = presenter.view {
+            ac.popoverPresentationController?.sourceView = view
+            ac.popoverPresentationController?.sourceRect = CGRect(
+                x: view.bounds.midX, y: view.bounds.maxY, width: 0, height: 1)
+        }
         presenter.present(ac, animated: true) { completion(true) }
     }
 

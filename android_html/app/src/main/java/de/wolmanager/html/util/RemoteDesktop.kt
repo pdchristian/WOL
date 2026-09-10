@@ -4,17 +4,16 @@ package de.wolmanager.html.util
  * Remote-Desktop-Aufruf über die installierte **Windows App**
  * (früher „Microsoft Remote Desktop", `com.microsoft.rdc.androidx`).
  *
- * Android kann kein eigenes RDP bereitstellen, und die Windows App kennt — anders
- * als `mstsc` unter Windows — keinen Weg, einem Aufruf ein **Passwort** mitzugeben:
- * das dokumentierte URI-Schema der Client-App für macOS/iOS/Android
- * (`rdp://<attribut>=<typ>:<wert>&…`) kennt für `full address` und `username`
- * Attribute, aber keines für Passwörter (das Passwort könnte ohnehin nur der
- * Windows Credential Manager übernehmen, der Drittanbietern nicht zur Verfügung
- * steht). Die UI legt das Passwort deshalb in die Zwischenablage, damit es im
- * Verbindungsfenster eingefügt werden kann.
- *
- * Ebenso gibt es kein Attribut für den Anzeigenamen: der Eintrag in der Windows App
- * heißt wie die Adresse. Der Gerätename wird daher nur protokolliert.
+ * Android kann kein eigenes RDP bereitstellen. Das dokumentierte URI-Schema der
+ * Client-App (`rdp://<attribut>=<typ>:<wert>&…`) kennt `full address` und
+ * `username`, aber weder ein **Passwort-** noch ein **Anzeigenamen**-Attribut.
+ * Deshalb zwei Wege (Reihenfolge in `Bridge.remoteJson`):
+ *  1. `.rdp`-Datei ([buildRdpContent], Dateiname = Gerätename via
+ *     [sanitizedFilename]) per FileProvider/ACTION_SEND an die Windows App →
+ *     Profil trägt den **Gerätenamen** und ist vorausgefüllt.
+ *  2. URI-Kandidaten ([candidates]) als Fallback → Profilname ist die Adresse.
+ * Zusätzlich legt die Bridge das Passwort in die Zwischenablage, falls die
+ * Windows App `password:` aus der Datei nicht übernimmt.
  *
  * Quelle: Microsoft Learn – „Remote Desktop URI scheme" (Legacy `rdp://`-Schema,
  * Attribute `full address=s:`, `username=s:`; für Android dokumentiert).

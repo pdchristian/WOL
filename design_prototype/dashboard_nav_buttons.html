@@ -58,8 +58,9 @@
 <body>
 
 <div class="demo">
-  <span><b>Prototyp</b> – Vorschau nur, noch nicht implementiert</span>
+  <span><b>Prototyp</b> – so umgesetzt (Desktop + iOS + Android)</span>
   <label><input type="checkbox" id="oneDevice"> Nur 1 Gerät (blendet ‹/› + 1/n aus)</label>
+  <label><input type="checkbox" id="nasOffline" checked> „nas“ offline (wird beim Wechseln übersprungen)</label>
   <span>Gerät: <b id="dbg">1 / 3</b></span>
 </div>
 
@@ -113,9 +114,13 @@
   let idx = 0;
 
   function render() {
-    const list = document.getElementById("oneDevice").checked ? devices.slice(0, 1) : devices;
-    if (idx >= list.length) idx = 0;
-    const d = list[idx], many = list.length > 1;
+    const all = document.getElementById("oneDevice").checked ? devices.slice(0, 1) : devices;
+    devices[2].on = !document.getElementById("nasOffline").checked;
+    // Nav-Sequenz: offline Geräte werden übersprungen, das aktuelle bleibt drin
+    const list = all.filter(d => d.name === devices[idx].name || d.on);
+    if (!list.some(d => d.name === devices[idx].name)) idx = 0;
+    const d = devices[idx], many = list.length > 1;
+    const li = list.findIndex(x => x.name === d.name);
     for (const p of ["d", "m"]) {
       document.getElementById(p + "-name").textContent = d.name;
       document.getElementById(p + "-mono").textContent = d.ip + " · Host Service v4";
@@ -124,18 +129,28 @@
       b.className = "pill " + (d.on ? "online" : "offline");
       const pos = document.getElementById(p + "-pos");
       pos.style.display = many ? "" : "none";
-      pos.textContent = (idx + 1) + "/" + list.length;
+      pos.textContent = (li + 1) + "/" + list.length;
     }
     document.getElementById("c0").textContent = d.cpu;
     document.getElementById("c1").textContent = d.ram;
-    document.getElementById("dbg").textContent = (idx + 1) + " / " + list.length;
-    // Buttons: sichtbar nur bei >1 Gerät; inaktiv am ersten/letzten Gerät
-    document.querySelectorAll('[data-go="prev"]').forEach(b => { b.style.display = many ? "" : "none"; b.disabled = idx === 0; });
-    document.querySelectorAll('[data-go="next"]').forEach(b => { b.style.display = many ? "" : "none"; b.disabled = idx === list.length - 1; });
+    document.getElementById("dbg").textContent = (li + 1) + " / " + list.length;
+    // Buttons: sichtbar nur bei >1 Gerät; inaktiv am ersten/letzten erreichbaren Gerät
+    document.querySelectorAll('[data-go="prev"]').forEach(b => { b.style.display = many ? "" : "none"; b.disabled = li === 0; });
+    document.querySelectorAll('[data-go="next"]').forEach(b => { b.style.display = many ? "" : "none"; b.disabled = li === list.length - 1; });
   }
-  document.querySelectorAll('[data-go="prev"]').forEach(b => b.onclick = () => { if (idx > 0) { idx--; render(); } });
-  document.querySelectorAll('[data-go="next"]').forEach(b => b.onclick = () => { idx++; render(); });
+  function step(dir) {
+    const all = document.getElementById("oneDevice").checked ? devices.slice(0, 1) : devices;
+    const list = all.filter(d => d.name === devices[idx].name || d.on);
+    const li = list.findIndex(x => x.name === devices[idx].name);
+    const nl = li + dir;
+    if (nl < 0 || nl >= list.length) return;
+    idx = devices.findIndex(d => d.name === list[nl].name);
+    render();
+  }
+  document.querySelectorAll('[data-go="prev"]').forEach(b => b.onclick = () => step(-1));
+  document.querySelectorAll('[data-go="next"]').forEach(b => b.onclick = () => step(1));
   document.getElementById("oneDevice").onchange = () => { idx = 0; render(); };
+  document.getElementById("nasOffline").onchange = render;
   render();
 </script>
 </body>

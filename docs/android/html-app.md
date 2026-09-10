@@ -59,14 +59,24 @@ Methoden: `snapshot`, `info`, `saveDevice`, `deleteDevice`, `getPassword`,
 `remote`.
 
 `remote({id, mode})` öffnet die installierte **Windows App** (früher „Microsoft
-Remote Desktop“, `com.microsoft.rdc.androidx`) per `rdp://`-URI mit vorgefertigtem
-Profil (Rechner = IP/Hostname, Fallback Gerätename; Benutzer = Geräte-Benutzer).
-Das Profil bleibt in der Windows App bestehen (kein Löschen wie unter Windows).
-Das Android-URI-Schema kann **kein Passwort** übertragen (kein Attribut dafür, kein
-Zugang zum Credential Manager) — die Bridge legt das Geräte-Passwort deshalb in die
-Zwischenablage und die UI weist per Toast darauf hin, damit es im Verbindungsfenster
-eingefügt wird. Fehler: `remote.notinstalled` (keine App), `remote.nohost`
-(keine Adresse). URI-Bau/Kodierung: `util/RemoteDesktop.kt` (JVM-testbar).
+Remote Desktop“, `com.microsoft.rdc.androidx`). Reihenfolge:
+
+1. **`.rdp`-Datei** (bevorzugt): Die Bridge schreibt `<cache>/rdp/<Gerätename>.rdp`
+   (`full address`, `username`, best effort `password:54:` = base64 UTF-16LE,
+   `authentication level:i:0`, `use redirection server name:i:1`, `screen mode id`)
+   und übergibt sie per `ACTION_SEND` (`application/rdp`, `FileProvider`
+   `${applicationId}.fileprovider`, fest auf das Windows-App-Paket gerichtet).
+   Vorteil: Die Verbindung trägt in der Windows App den **Gerätenamen** und bleibt
+   dort bestehen.
+2. **URI-Fallback** (`rdp://full%20address=s:…&username=s:…` → `ms-rd://add/host/…`),
+   wenn die Datei nicht übernommen wird; Profilname ist dann die Adresse.
+
+Zusätzlich legt die Bridge das Geräte-Passwort in die **Zwischenablage** (das
+URI-Schema kann kein Passwort übertragen, und mobile Clients lesen `password:`
+möglicherweise nicht) und die UI weist per Toast darauf hin. Fehler:
+`remote.notinstalled` (keine App), `remote.nohost` (keine Adresse). Antwort enthält
+`viaFile` (true → Toast `remote.profile` mit Gerätenamen).
+URI-/Datei-Bau und Namensbereinigung: `util/RemoteDesktop.kt` (JVM-testbar).
 
 ### Entwicklung im Browser (ohne Gerät)
 
@@ -79,10 +89,10 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
 
 - **Entfernt:** Einstellungsfelder „Auflösung“ und „Design (Klassisch/Moderne)“,
   Shutdown-Methode SMB (nur Host Service v4), Statusbar-Uhr/Phone-Rahmen.
-- **Remote-Desktop:** öffnet die Windows App per `rdp://`-URI mit vorausgefülltem
-  Profil (Rechner + Benutzer); das Passwort liegt danach in der Zwischenablage
-  (URI-Schema kann es nicht übertragen). Profil bleibt bestehen. Siehe
-  `remote`-Methode oben.
+- **Remote-Desktop:** öffnet die Windows App — bevorzugt per `.rdp`-Datei
+  (Gerätename = Profilname, Rechner + Benutzer vorausgefüllt), sonst per
+  `rdp://`-URI; das Passwort liegt zusätzlich in der Zwischenablage (URI-Schema
+  kann es nicht übertragen). Profil bleibt bestehen. Siehe `remote`-Methode oben.
 - **Netzwerk-Scan:** TCP-Sweep (Ports 8765, 445, 135, 80, 443, 22). Ab 2.3.4 nur
   über die **tatsächliche Verbindung**: WLAN-Transport (plus VPN-Tunnel), Mobilfunk
   aus; Bereichsfilter blendet `169.*` (APIPA) und komplett `172.*`

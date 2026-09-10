@@ -72,4 +72,34 @@ class RemoteDesktopTest {
         val c = RemoteDesktop.candidates("10.0.0.5", "CORP\\admin", "full")
         assertEquals("rdp://full%20address=s:10.0.0.5&username=s:CORP%5Cadmin", c[0])
     }
+
+    @Test
+    fun rdpContentFullscreenWithUser() {
+        val s = RemoteDesktop.buildRdpContent("192.168.2.10", "ch", "", "full")
+        assertTrue(s.contains("full address:s:192.168.2.10"))
+        assertTrue(s.contains("username:s:ch"))
+        assertTrue(s.contains("screen mode id:i:1"))
+        assertTrue(s.contains("authentication level:i:0"))
+        assertTrue(s.contains("use redirection server name:i:1"))
+        assertTrue(!s.contains("password:"))
+        assertTrue(s.endsWith("\r\n"))
+    }
+
+    @Test
+    fun rdpContentEmbedsPasswordAsUtf16LeBase64() {
+        val s = RemoteDesktop.buildRdpContent("host", "user", "pw", "win")
+        val expected = java.util.Base64.getEncoder()
+            .encodeToString("pw".toByteArray(Charsets.UTF_16LE))
+        assertTrue(s.contains("password:54:$expected"))
+        assertTrue(s.contains("prompt credential:i:0"))
+        assertTrue(s.contains("screen mode id:i:2"))
+    }
+
+    @Test
+    fun sanitizedFilenameStripsUnsafeChars() {
+        assertEquals("Fractal", RemoteDesktop.sanitizedFilename("Fractal"))
+        assertEquals("A4 H20", RemoteDesktop.sanitizedFilename("  A4/H20  "))
+        assertEquals("Remote-PC", RemoteDesktop.sanitizedFilename("///"))
+        assertEquals(60, RemoteDesktop.sanitizedFilename("x".repeat(200)).length)
+    }
 }

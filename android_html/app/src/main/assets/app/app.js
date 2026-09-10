@@ -838,8 +838,13 @@ restartDashTimer();
 /* ── Wisch-Geste im Dashboard: wechselt zum nächsten/vorherigen Gerät in
    genau der Reihenfolge, die gerade im Gerätemanager sortiert ist. ──────── */
 function dashDevicesOrdered() { return sortDevices([...state.devices]); }
+/* Nav-Sequenz (Buttons + Swipe): offline Geräte werden übersprungen; das
+   aktuell geöffnete Gerät bleibt immer enthalten (Badge/Random-Border). */
+function dashNavList() {
+  return dashDevicesOrdered().filter(x => x.id === state.ui.dashDeviceId || x.status !== "offline");
+}
 function switchDashDevice(dir) {
-  const list = dashDevicesOrdered();
+  const list = dashNavList();
   if (list.length < 2) return;
   let i = list.findIndex(x => x.id === state.ui.dashDeviceId);
   if (i < 0) i = 0;
@@ -1186,7 +1191,7 @@ function renderSettings() {
 function renderDash(dir) {
   const d = byId(state.ui.dashDeviceId);
   if (!d) { $("#s-dash").innerHTML = `<div class="empty">${esc(t("devices.empty"))}</div>`; return; }
-  const dlist = dashDevicesOrdered();
+  const dlist = dashNavList();
   const dpos = dlist.findIndex(x => x.id === d.id);
   const on = d.status === "online";
   const pill = on ? "pillOnline" : d.status === "offline" ? "pillOffline" : "pillUnknown";
@@ -1548,10 +1553,12 @@ Native.on("status", ev => {
   const d = byId(ev.id); if (!d) return;
   setRt(d.id, { checking: false, status: ev.online ? "online" : "offline" });
   if (state.ui.screen === "devices") renderDevices();
+  else if (state.ui.screen === "dash") renderDash(); /* nav skips offline */
 });
 Native.on("status-done", () => {
   state.devices.forEach(d => { if (d.checking) setRt(d.id, { checking: false, status: "offline" }); });
   if (state.ui.screen === "devices") renderDevices();
+  else if (state.ui.screen === "dash") renderDash(); /* nav skips offline */
 });
 Native.on("exported", ev => toast(t("exp.done", { name: ev.name, count: ev.count })));
 Native.on("imported", ev => {

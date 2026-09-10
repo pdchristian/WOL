@@ -912,16 +912,20 @@ class DeviceDashboardView(QWidget):
         return sorted(devices, key=lambda d: str(d.get("name", "")).lower())
 
     def _nav_index(self) -> int:
-        """Index of the open device in the ordered list (-1 if unknown)."""
+        """Index of the open device in the reachable sequence (-1 if none)."""
         if self._device_id is None:
             return -1
         return next(
-            (i for i, d in enumerate(self._ordered_devices())
+            (i for i, d in enumerate(self._nav_candidates())
              if d.get("id") == self._device_id), -1)
 
     def neighbour_device_id(self, direction: int) -> str | None:
-        """Id of the previous (-1) / next (+1) device, None at the border."""
-        devices = self._ordered_devices()
+        """Id of the previous (-1) / next (+1) device, None at the border.
+
+        Offline devices are not part of the sequence (see
+        :meth:`_nav_candidates`), so they are skipped in both directions.
+        """
+        devices = self._nav_candidates()
         i = self._nav_index()
         if i < 0:
             return None
@@ -932,7 +936,7 @@ class DeviceDashboardView(QWidget):
 
     def _update_nav_ui(self) -> None:
         """Position badge + prev/next sensitivity (hidden with one device)."""
-        devices = self._ordered_devices()
+        devices = self._nav_candidates()
         i = self._nav_index()
         many = len(devices) > 1 and i >= 0
         self.pos_label.setVisible(many)
@@ -1176,6 +1180,12 @@ class DeviceDashboardView(QWidget):
             style.unpolish(self.badge)
             style.polish(self.badge)
         self.badge.setText(Translations.tr(f"status.{status}"))
+        # Keep the nav status cache in sync with what the dashboard learns
+        # live, so prev/next reflects this device going up/down too.
+        if self._device_id is not None and self._nav_statuses is not None:
+            if self._nav_statuses.get(self._device_id) != status:
+                self._nav_statuses[self._device_id] = status
+                self._update_nav_ui()
 
     # ── Watched processes (service chips + services panel) ───────────────
 

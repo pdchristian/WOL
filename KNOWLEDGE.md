@@ -780,20 +780,28 @@ native Compose app in `android/` was removed in 2.3.1.)
   desktop format (array of device objects, plaintext passwords in export;
   import clears DPAPI-encrypted values). Export includes `watch_processes`
   (dashboard watched processes) and import restores them (missing key = keep).
-- **Remote Desktop (new in 2.3.3):** the *Remote fullscreen/window* actions
-  (`rdp-full`/`rdp-win` tiles, `m-rdp` menu) call `Native.call("remote", {id,
-  mode})`. `Bridge.remoteJson` launches the installed **Windows App** (formerly
-  Microsoft Remote Desktop, `com.microsoft.rdc.androidx`) via the legacy
-  `rdp://full%20address=s:<host>&username=s:<user>` URI (Android scheme; the
-  `ms-rd://add/host/<host>` iOS form is a fallback candidate). Host = device IP,
-  falling back to name (like iOS). The profile **persists** in the Windows App —
-  unlike the desktop app, nothing is cleaned up. The Android URI scheme has **no
-  password attribute** (and no Credential Manager access), so the bridge copies
-  the stored password to the clipboard and the UI toasts a hint to paste it in the
-  connect window. Errors `remote.notinstalled` / `remote.nohost` surface as toasts
-  (DE/EN/FR/ES). URI building/encoding lives in `util/RemoteDesktop.kt` (pure
-  Kotlin, `RemoteDesktopTest`); launch uses `BridgeHost.openExternal` on the main
-  thread; `AndroidManifest` declares `<queries>` for the `rdp`/`ms-rd` schemes.
+- **Remote Desktop (new in 2.3.3, reworked):** the *Remote fullscreen/window*
+  actions (`rdp-full`/`rdp-win` tiles, `m-rdp` menu) call `Native.call("remote",
+  {id, mode})` (previously these were a `remote.soon` stub in `app.js` — now
+  actually wired). `Bridge.remoteJson` opens the installed **Windows App**
+  (formerly Microsoft Remote Desktop, `com.microsoft.rdc.androidx`). Order:
+  (1) write a `.rdp` file to `<cache>/rdp/<sanitized device name>.rdp` and hand it
+  to the Windows App via `ACTION_SEND` (`application/rdp`, `FileProvider`
+  `${applicationId}.fileprovider`, package-restricted) so the connection **carries
+  the device name** and is pre-filled with host/username (and best-effort
+  `password:54:` = base64 UTF-16LE); (2) if that is not handled, fall back to the
+  legacy `rdp://full%20address=s:<host>&username=s:<user>` URI then
+  `ms-rd://add/host/<host>`. Host = device IP, falling back to name (like iOS).
+  The profile **persists** in the Windows App — unlike the desktop app, nothing is
+  cleaned up. The bridge also copies the stored password to the clipboard (the URI
+  scheme has no password attribute and mobile may ignore `password:`), and the UI
+  toasts a hint. Errors `remote.notinstalled` / `remote.nohost` surface as toasts
+  (DE/EN/FR/ES). Result carries `viaFile` (true → UI toasts `remote.profile`).
+  URI/content building & filename sanitising live in `util/RemoteDesktop.kt` (pure
+  Kotlin, `RemoteDesktopTest`); launch uses `BridgeHost.openExternal` /
+  `BridgeHost.shareRdpFile` on the main thread; `AndroidManifest` declares
+  `<queries>` for `rdp`/`ms-rd` + `SEND`/`application/rdp` and the `FileProvider`
+  (`res/xml/file_paths.xml` exposes `<cache>/rdp/`).
 - **Network scan (Wi-Fi only, new in 2.3.4):** `NetworkScanner.activeInterfaces()`
   keeps only networks with `TRANSPORT_WIFI` or `TRANSPORT_VPN` (mobile data
   excluded; `NET_CAPABILITY_INTERNET` deliberately *not* required so a gateway-less
@@ -817,16 +825,27 @@ native Compose app in `android/` was removed in 2.3.1.)
   (`WKScriptMessageHandler`, same JS contract/method table), `WebApp/app.js`
   is a near-copy of the Android asset, `Repo.swift` persists the same
   `devices.json`, passwords in the Keychain.
-- **Remote Desktop (new in 2.3.3):** `remote {id, mode}` opens the
-  **Windows App** via URI candidates from `Util/RemoteDesktop.swift`
-  (`rdp://full%20address=s:<host>&username=s:<user>` first, then
-  `ms-rd://add/host/<host>?username=…&use.maximizewindow=…`); `Info.plist`
-  `LSApplicationQueriesSchemes` lists `rdp` + `ms-rd` (canOpenURL fails
-  silently without them). Password → `UIPasteboard` (no URI scheme carries
-  passwords); bridge returns `{ok, host, username, passwordCopied,
-  hasPassword}`, errors `remote.notinstalled` / `remote.nohost` (DE/EN/FR/ES).
-  Profile persists on the device (by design). `RemoteDesktopTests.swift`
-  covers the pure URI builder.
+- **Remote Desktop (new in 2.3.3, reworked):** `remote {id, mode}` opens the
+  **Windows App** via URI candidates from `Util/RemoteDesktop.swift`. **Parsing
+  fix:** iOS 17+ `URL(string:)` follows RFC 3986 strictly, so a raw `=`/`:` in the
+  authority part (`full%20address=s:host`) made the URL `nil` and the candidate was
+  silently skipped (“not installed” even though the Windows App was present). The
+  attribute separators are now percent-encoded by us (`rdp://full%20address%3Ds%3A
+  <host>%26username%3Ds%3A<user>`; `encodeValue` no longer keeps `:`), the Windows
+  App decodes them as it already does for `full%20address`. Second candidate
+  `ms-rd://add/host/<host>?username=…&use.maximizewindow=…` (documented for the
+  Windows desktop client only → mostly no handler on iOS). If *no* URI handler
+  answers, a `.rdp` file (device name as filename → Windows App uses it as the
+  connection's display name; **no** password inside) is written to the cache and
+  offered via the share sheet (`BridgeHost.presentRdpShare` →
+  `UIActivityViewController`); `Info.plist` `LSApplicationQueriesSchemes` lists
+  `rdp` + `ms-rd` (canOpenURL fails silently without them). Password →
+  `UIPasteboard` (no URI scheme carries passwords); bridge returns
+  `{ok, host, username, passwordCopied, hasPassword, viaFile}`, errors
+  `remote.notinstalled` / `remote.nohost` (DE/EN/FR/ES); `viaFile` → UI toasts
+  `remote.sharesheet`. Profile persists on the device (by design).
+  `RemoteDesktopTests.swift` covers the URI builder, content builder, filename
+  sanitising, and URL-parsability (incl. `host:port` + `DOMAIN\user`).
 - **Network scan (Wi-Fi only, new in 2.3.4):** `NetworkScanner.activeInterfaces()`
   returns only the **`en0`** interface (Wi-Fi) — `awdl`/`utun`/VPN tunnels are
   dropped so they no longer appear as 172.* dummy networks — plus `isScannable()`

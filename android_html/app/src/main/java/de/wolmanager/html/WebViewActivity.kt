@@ -21,6 +21,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import de.wolmanager.html.util.RemoteDesktop
 import java.io.File
 
 /**
@@ -171,6 +172,27 @@ class WebViewActivity : ComponentActivity(), BridgeHost {
     override fun openExternal(url: String): Boolean = try {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    /**
+     * `.rdp`-Datei per ACTION_SEND an die Windows App (`com.microsoft.rdc.androidx`)
+     * übergeben; sie legt daraus eine Verbindung mit dem Dateinamen als Anzeigename
+     * an. Bewusst auf das Paket eingeschränkt: andere RDP-/Share-Empfänger würden
+     * sonst das Profil erzeugen. false → Bridge fällt auf die URI-Kandidaten zurück.
+     */
+    override fun shareRdpFile(fileUri: Uri): Boolean = try {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/rdp"
+            putExtra(Intent.EXTRA_STREAM, fileUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            setPackage(RemoteDesktop.WINDOWS_APP_PACKAGE)
+        }
+        // Nur starten, wenn die Windows App den Typ auch wirklich übernimmt.
+        if (intent.resolveActivity(packageManager) == null) return false
         startActivity(intent)
         true
     } catch (_: Exception) {

@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.core.content.FileProvider
 import de.wolmanager.html.data.AppSettings
 import de.wolmanager.html.data.BatchDef
 import de.wolmanager.html.data.Device
@@ -40,6 +41,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.io.File
 import java.util.Base64
 
 /**
@@ -52,6 +54,13 @@ interface BridgeHost {
 
     /** Externe App per ACTION_VIEW öffnen; false, wenn sich keine App dafür findet. */
     fun openExternal(url: String): Boolean
+
+    /**
+     * `.rdp`-Datei per ACTION_SEND an die **Windows App** übergeben (Profilname =
+     * Dateiname = Gerätename). false, wenn die App die Datei nicht übernimmt
+     * → Aufrufer fällt auf die URI-Kandidaten zurück.
+     */
+    fun shareRdpFile(fileUri: Uri): Boolean
 }
 
 /**
@@ -520,15 +529,21 @@ class Bridge(
     // ── Remote-Desktop (Windows App) ──────────────────────────────────────────
 
     /**
-     * Öffnet die Windows App (früher „Microsoft Remote Desktop") mit vorgefertigtem
-     * Profil: Rechner = IP/Hostname (Fallback: Gerätename), Benutzer = Geräte-Benutzer.
+     * Öffnet die Windows App (früher „Microsoft Remote Desktop") für das Gerät.
      * Das Profil bleibt in der Windows App bestehen — im Gegensatz zur Windows-Version
      * der App wird hier nichts wieder gelöscht.
      *
-     * Die Windows App kann über das Android-URI-Schema kein Passwort übernehmen
-     * (kein Attribut dafür, kein Zugang zum Credential Manager), daher liegt das
-     * Geräte-Passwort danach in der Zwischenablage und kann im Verbindungsfenster
-     * eingefügt werden. Ohne Passwort öffnet die App ihre eigene Eingabemaske.
+     * Reihenfolge:
+     *  1. `.rdp`-Datei (app-eigener Cache, Dateiname = Gerätename) per FileProvider
+     *     an die Windows App übergeben → die Verbindung trägt in der Windows App den
+     *     **Gerätenamen** und ist mit Host/Benutzer (und best effort Passwort)
+     *     vorausgefüllt.
+     *  2. Gelingt das nicht, URI-Kandidaten (`rdp://` → `ms-rd://`) — Profilname ist
+     *     dann die Adresse.
+     *
+     * Zusätzlich liegt das Geräte-Passwort in der Zwischenablage, falls die Windows
+     * App es aus der Datei nicht übernimmt (das URI-Schema kann es ohnehin nicht
+     * übertragen); die UI weist per Toast darauf hin.
      */
     private suspend fun remoteJson(id: String, mode: String): JsonElement {
         val d = device(id)
@@ -536,18 +551,31 @@ class Bridge(
         if (rdpHost.isBlank()) fail(RemoteDesktop.ERR_NO_HOST)
         val password = container.repo.getPassword(d.id)
 
-        // startActivity gehört auf den Main-Thread; erster Kandidat, für den sich
-        // eine App findet (rdp:// → ms-rd://), gewinnt.
-        val launched = withContext(Dispatchers.Main) {
+        // 1) Datei-Weg: Profilname = Gerätename.
+        var viaFile = false
+        val fileName = RemoteDesktop.sanitizedFilename(d.name)
+        try {
+            val dir = File(app.cacheDir, "rdp").apply { mkdirs() }
+            val file = File(dir, "$fileName.rdp")
+            file.writeText(RemoteDesktop.buildRdpContent(rdpHost, d.username, password, mode))
+            val contentUri = FileProvider.getUriForFile(app, app.packageName + ".fileprovider", file)
+            viaFile = withContext(Dispatchers.Main) { host.shareRdpFile(contentUri) }
+        } catch (_: Exception) {
+            viaFile = false
+        }
+
+        // 2) URI-Fallback: erster Kandidat, für den sich eine App findet.
+        val launched = if (viaFile) null else withContext(Dispatchers.Main) {
             RemoteDesktop.candidates(rdpHost, d.username, mode).firstOrNull { c -> host.openExternal(c) }
         }
-        if (launched == null) fail(RemoteDesktop.ERR_NOT_INSTALLED)
+        if (!viaFile && launched == null) fail(RemoteDesktop.ERR_NOT_INSTALLED)
 
         // Passwort zuletzt: die Windows App liest die Zwischenablage erst im Dialog.
         val copied = password.isNotEmpty() && copyToClipboard("WOL RDP-Passwort", password)
         val userPart = if (d.username.isBlank()) "" else ", user=${d.username}"
         val pwPart = if (copied) ", password -> clipboard" else ", kein Passwort hinterlegt"
-        container.repo.log(d.name, "info", "RDP: Windows App geöffnet ($rdpHost$userPart$pwPart)")
+        val viaPart = if (viaFile) ", per Datei (${fileName}.rdp)" else ""
+        container.repo.log(d.name, "info", "RDP: Windows App geöffnet ($rdpHost$userPart$pwPart$viaPart)")
 
         return buildJsonObject {
             put("ok", true)
@@ -555,6 +583,7 @@ class Bridge(
             put("username", d.username)
             put("passwordCopied", copied)
             put("hasPassword", password.isNotEmpty())
+            put("viaFile", viaFile)
         }
     }
 

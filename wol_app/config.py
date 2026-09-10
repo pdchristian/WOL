@@ -266,7 +266,7 @@ DEFAULT_CONFIG = {
         # when the window is closed. The window's close button then minimises
         # to the tray; the sidebar "Beenden" action asks
         # (Ja / Minimieren / Nein). Ignored when no tray is available.
-        "close_to_tray": False,
+        "close_to_tray": True,
         # Modern main window rect [x, y, w, h] (normal state, restored on
         # start when it still intersects an attached screen).
         "window_geometry": None,
@@ -594,7 +594,7 @@ class ConfigManager:
 
     def get_close_to_tray(self) -> bool:
         """Return whether closing the modern window keeps the app in the tray."""
-        return bool(self.config.get("ui", {}).get("close_to_tray", False))
+        return bool(self.config.get("ui", {}).get("close_to_tray", True))
 
     def set_close_to_tray(self, enabled: bool) -> None:
         """Persist the "keep running in the notification area" preference."""

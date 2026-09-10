@@ -10,9 +10,10 @@
     <!-- Kurzes Vibrieren beim Long-Press-Kontextmenü -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Remote-Desktop: Sichtbarkeit der Windows App (rdp:// bzw. ms-rd://).
-         startActivity würde auch ohne queries funktionieren; die Deklaration macht
-         die Auflösung auf Android 11+ explizit und stabil. -->
+    <!-- Remote-Desktop: Sichtbarkeit der Windows App (rdp:// bzw. ms-rd:// und
+         ACTION_SEND für application/rdp). startActivity würde auch ohne queries
+         funktionieren; die Deklaration macht die Auflösung auf Android 11+
+         explizit und stabil (resolveActivity für den Datei-Import). -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
@@ -21,6 +22,10 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="ms-rd" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="application/rdp" />
         </intent>
         <package android:name="com.microsoft.rdc.androidx" />
     </queries>
@@ -47,5 +52,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Remote-Desktop: stellt die erzeugte .rdp-Datei (Cache-Ordner rdp/) der
+             Windows App als content://-URI mit befristeter Leserechte zur Verfügung. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

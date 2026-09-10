@@ -201,6 +201,9 @@ class ModernMainWindow(QMainWindow):
             lambda: self._step_dashboard_device(-1))
         self.dashboard_view.next_requested.connect(
             lambda: self._step_dashboard_device(1))
+        # Prev/next skips devices whose last ping said "offline".
+        self.devices_view.statuses_refreshed.connect(
+            self.dashboard_view.set_nav_statuses)
 
         # Sidebar resize/collapse wiring (after the widgets exist).
         self._sidebar_save_timer = QTimer(self)
@@ -228,10 +231,15 @@ class ModernMainWindow(QMainWindow):
         self.manage_view._refresh_device_list()
         # Keep an open dashboard's header in sync with edits
         self.dashboard_view.refresh_device_header()
+        # New/removed devices change the prev/next sequence as well.
+        self.dashboard_view.set_nav_statuses(self.devices_view.device_statuses())
 
     def open_device_dashboard(self, device_id: str) -> None:
         """Show the per-device dashboard (stack switch, no sidebar entry)."""
         self.dashboard_view.set_device(device_id)
+        # Fresh offline knowledge for prev/next (skips offline neighbours);
+        # ongoing ping results arrive via statuses_refreshed.
+        self.dashboard_view.set_nav_statuses(self.devices_view.device_statuses())
         self.stack.setCurrentIndex(DASHBOARD_NAV_INDEX)
         self._clear_nav_check()
 
