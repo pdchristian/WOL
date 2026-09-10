@@ -55,6 +55,8 @@
         "path": "WolManager/Info.plist",
         "properties": {
           "CFBundleDisplayName": "Wake-on-LAN",
+          "CFBundleShortVersionString": "$(MARKETING_VERSION)",
+          "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
           "CFBundleLocalizations": ["de", "en", "fr", "es"],
           "LSRequiresIPhoneOS": true,
           "UILaunchScreen": { "UIColorName": "LaunchBackground" },

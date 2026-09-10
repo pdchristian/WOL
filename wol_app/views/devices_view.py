@@ -968,6 +968,10 @@ class DevicesView(QWidget):
 
     # ── Status checks ────────────────────────────────────────────────────
 
+    def device_statuses(self) -> dict[str, str]:
+        """Last known ping status per device id (dashboard prev/next nav)."""
+        return dict(self._statuses)
+
     def refresh_statuses(self) -> None:
         """Ping all devices in the background and update the cards in-place."""
         if HEADLESS_MODE:

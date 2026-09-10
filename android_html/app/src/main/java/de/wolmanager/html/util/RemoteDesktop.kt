@@ -77,5 +77,43 @@ object RemoteDesktop {
         return sb.toString()
     }
 
+    /**
+     * Inhalt einer `.rdp`-Datei (`KEY:TYP:WERT`, CRLF) — Format wie die Desktop-App
+     * (`wol_app/utils.py`), aber **ohne** Passwort: die mobile Windows App liest
+     * `password:` nicht zuverlässig, und ein Klartext-Passwort auf dem Cache wäre
+     * ein unnötiges Risiko. Das Passwort geht weiterhin über die Zwischenablage.
+     *
+     * Der Anzeigename des Profils ergibt sich aus dem **Dateinamen** (siehe
+     * [sanitizedFilename]) — die `.rdp`-Spezifikation selbst kennt kein Namensfeld.
+     */
+    fun buildRdpContent(host: String, username: String, mode: String): String {
+        val lines = mutableListOf(
+            "full address:s:" + host.trim(),
+            // Selbstsignierte Zertifikate (typisch für xrdp/Linux) ohne Rückfrage akzeptieren.
+            "authentication level:i:0",
+            // Adresse nach Redirection-Hop als Serveridentität behalten (xrdp).
+            "use redirection server name:i:1",
+        )
+        val u = username.trim()
+        if (u.isNotEmpty()) lines.add("username:s:$u")
+        lines.add("screen mode id:i:" + if (mode == "full") 1 else 2)
+        return lines.joinToString("\r\n") + "\r\n"
+    }
+
+    /**
+     * Dateiname (ohne Endung) aus dem Gerätenamen: dateisystemsicher machen. Die
+     * Windows App verwendet ihn als Anzeigename der neu angelegten Verbindung.
+     */
+    fun sanitizedFilename(name: String): String {
+        var out = name.trim().map { if (it in ('A'..'Z') || it in ('a'..'z') || it in ('0'..'9') ||
+            it in " -._") it else ' ' }.joinToString("").trim()
+        if (out.isEmpty()) out = "Remote-PC"
+        if (out.length > 60) out = out.substring(0, 60).trim()
+        return out
+    }
+
+    /** Paketname der Windows App (ehem. „Microsoft Remote Desktop", Android). */
+    const val WINDOWS_APP_PACKAGE = "com.microsoft.rdc.androidx"
+
     private const val HEX = "0123456789ABCDEF"
 }

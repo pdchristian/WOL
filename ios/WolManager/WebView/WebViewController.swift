@@ -111,6 +111,12 @@ final class WebViewController: UIViewController, BridgeHost, WKNavigationDelegat
         }
     }
 
+    func presentRdpShare(fileUrl: URL, completion: @escaping (Bool) -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            self?.documentPicker.shareRdpFile(url: fileUrl, completion: completion)
+        }
+    }
+
     // ── Lebenszyklus ────────────────────────────────────────────────────────
 
     override func viewDidAppear(_ animated: Bool) {

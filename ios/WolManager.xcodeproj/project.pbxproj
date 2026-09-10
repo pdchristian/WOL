@@ -57,7 +57,7 @@
 		02E3B18B8C6CCB4C6F8E903F /* CsvTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CsvTests.swift; sourceTree = "<group>"; };
 		048A6F2DAF29D9E7B72E3BED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		04C6A26EBD16915565E32B42 /* ScheduleEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleEngineTests.swift; sourceTree = "<group>"; };
-		09D44119A5E973979683B39C /* WolManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WolManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		09D44119A5E973979683B39C /* WolManager.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WolManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		183ED19AB4BF38D286FBF9FD /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		1938409CE1BA92131CAB1738 /* NetworkScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkScanner.swift; sourceTree = "<group>"; };
 		1CA41D3EFEBEAAB757274F05 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -244,6 +244,7 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					FF54870EB608CD9A6555F513 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -407,10 +408,7 @@
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = WolManager/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 2.3.4;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
 				PRODUCT_NAME = WolManager;
@@ -469,14 +467,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = F2W9M4SR79;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = WolManager/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 2.3.4;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
 				PRODUCT_NAME = WolManager;

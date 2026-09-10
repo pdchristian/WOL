@@ -1,10 +1,14 @@
 import Foundation
+import UIKit
 import WebKit
 
 /* Was die Hülle (WebViewController) der Bridge bereitstellen muss: Document-Picker. */
 protocol BridgeHost: AnyObject {
     func exportDocument(suggestedName: String, data: Data, completion: @escaping (Bool) -> Void)
     func openDocument(completion: @escaping (URL?) -> Void)
+    /// `.rdp`-Datei per Freigabe-Sheet an die Windows App übergeben (Fallback, wenn
+    /// kein URI-Handler griff). completion(true) = Sheet wurde präsentiert.
+    func presentRdpShare(fileUrl: URL, completion: @escaping (Bool) -> Void)
 }
 
 /*
@@ -183,12 +187,27 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             } catch {
                 throw BridgeError(RemoteDesktop.errNotInstalled)
             }
+            // Fallback: kein URI-Handler → `.rdp`-Datei per Freigabe-Sheet an die
+            // Windows App übergeben (Profilname = Gerätename). Passwort vorher in
+            // die Zwischenablage – im Verbindungsfenster einfügbar.
+            var shared = false
+            if res.viaFile, let url = res.fileUrl {
+                if !password.isEmpty { await MainActor.run { UIPasteboard.general.string = password } }
+                guard let host = host else { throw BridgeError(RemoteDesktop.errNotInstalled) }
+                shared = await withCheckedContinuation { cont in
+                    host.presentRdpShare(fileUrl: url) { ok in cont.resume(returning: ok) }
+                }
+                if !shared { throw BridgeError(RemoteDesktop.errNotInstalled) }
+            }
             let userPart = d.username.isEmpty ? "" : ", user=\(d.username)"
-            let pwPart = res.passwordCopied ? ", password -> clipboard" : ", kein Passwort hinterlegt"
+            let pwPart = res.passwordCopied || (shared && !password.isEmpty)
+                ? ", password -> clipboard" : ", kein Passwort hinterlegt"
+            let via = shared ? " per Datei-Freigabe" : ""
             container.repo.log(device: d.name, level: "info",
-                               msg: "RDP: Windows App geöffnet (\(res.host)\(userPart)\(pwPart))")
+                               msg: "RDP: Windows App geöffnet (\(res.host)\(userPart)\(pwPart))\(via)")
             return ["ok": true, "host": res.host, "username": res.username,
-                    "passwordCopied": res.passwordCopied, "hasPassword": res.hasPassword]
+                    "passwordCopied": res.passwordCopied || (shared && !password.isEmpty),
+                    "hasPassword": res.hasPassword, "viaFile": shared]
         default:
             throw BridgeError("unknown_method:\(method)")
         }

@@ -540,6 +540,10 @@ class DeviceDashboardView(QWidget):
         # Host service protocol version from the last metrics response
         # (shown behind the MAC in the header); None until metrics arrive.
         self._host_protocol: int | None = None
+        # Last known ping statuses from the devices screen (device id ->
+        # status), injected by ModernMainWindow; prev/next navigation skips
+        # devices that are explicitly "offline". None = never probed.
+        self._nav_statuses: dict[str, str] | None = None
 
         self._setup_ui()
 

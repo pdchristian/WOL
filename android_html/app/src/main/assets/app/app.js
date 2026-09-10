@@ -19,6 +19,10 @@ de:{
  "ping.ok":"Ping an {ip}: Antwort in {ms} ms","ping.fail":"Ping an {ip}: Ziel nicht erreichbar","ping.diag.none":"{ip}: kein IPv4-DNS-Eintrag – Smartphone-DNS prüfen (Privates DNS aus?)","ping.diag.fail":"{ip}: Port nicht erreichbar –",
  "remote.demo":"{mode}: verbindungsaufbau zu {name} (Demo)",
  "remote.soon":"Remote-Desktop folgt – bitte die Windows App / Microsoft Remote Desktop verwenden.",
+ "remote.notinstalled":"Windows App nicht installiert – bitte die App \"Windows App\" (Microsoft Remote Desktop) installieren.",
+ "remote.nohost":"Für dieses Gerät ist keine IP-Adresse/Hostname hinterlegt.",
+ "remote.pwcopied":"RDP-Passwort in die Zwischenablage kopiert – im Verbindungsfenster einfügen.",
+ "remote.profile":"Verbindung \"{name}\" wird in der Windows App angelegt.",
  /* Verwalten */
  "manage.subtitle":"Geräte-Verwaltung & Netzwerk-Scan",
  "manage.sec.devices":"Geräte-Verwaltung","manage.sec.scan":"Netzwerk-Scan",
@@ -137,6 +141,10 @@ en:{
  "ping.ok":"Ping to {ip}: reply in {ms} ms","ping.fail":"Ping to {ip}: destination unreachable","ping.diag.none":"{ip}: no IPv4 DNS entry – check the phone's DNS (Private DNS off?)","ping.diag.fail":"{ip}: port unreachable –",
  "remote.demo":"{mode}: connecting to {name} (demo)",
  "remote.soon":"Remote desktop coming soon – please use the Windows App / Microsoft Remote Desktop.",
+ "remote.notinstalled":"Windows App not installed – please install the \"Windows App\" (Microsoft Remote Desktop).",
+ "remote.nohost":"No IP address/hostname configured for this device.",
+ "remote.pwcopied":"RDP password copied to clipboard – paste it in the connection window.",
+ "remote.profile":"Connection \"{name}\" is being created in the Windows App.",
  "manage.subtitle":"Device management & network scan",
  "manage.sec.devices":"Device management","manage.sec.scan":"Network scan",
  "manage.add":"+ Add device","manage.import":"Import","manage.export":"Export",
@@ -247,6 +255,10 @@ fr:{
  "ping.ok":"Ping vers {ip} : réponse en {ms} ms","ping.fail":"Ping vers {ip} : destination injoignable","ping.diag.none":"{ip} : aucune entrée DNS IPv4 – vérifier le DNS du smartphone (DNS privé désactivé ?)","ping.diag.fail":"{ip} : port inaccessible –",
  "remote.demo":"{mode} : connexion à {name} (démo)",
  "remote.soon":"Bureau à distance bientôt disponible – veuillez utiliser Windows App / Microsoft Remote Desktop.",
+ "remote.notinstalled":"Windows App non installée – veuillez installer « Windows App » (Microsoft Remote Desktop).",
+ "remote.nohost":"Aucune adresse IP/nom d'hôte défini pour cet appareil.",
+ "remote.pwcopied":"Mot de passe RDP copié dans le presse-papiers – collez-le dans la fenêtre de connexion.",
+ "remote.profile":"La connexion « {name} » est créée dans Windows App.",
  "manage.subtitle":"Gestion des appareils & analyse réseau",
  "manage.sec.devices":"Gestion des appareils","manage.sec.scan":"Analyse réseau",
  "manage.add":"+ Ajouter un appareil","manage.import":"Importer","manage.export":"Exporter",
@@ -357,6 +369,10 @@ es:{
  "ping.ok":"Ping a {ip}: respuesta en {ms} ms","ping.fail":"Ping a {ip}: destino inaccesible","ping.diag.none":"{ip}: sin entrada DNS IPv4 – compruebe el DNS del smartphone (¿DNS privado desactivado?)","ping.diag.fail":"{ip}: puerto inaccesible –",
  "remote.demo":"{mode}: conectando a {name} (demo)",
  "remote.soon":"Escritorio remoto próximamente – use Windows App / Microsoft Remote Desktop.",
+ "remote.notinstalled":"Windows App no instalada: instale « Windows App » (Microsoft Remote Desktop).",
+ "remote.nohost":"No hay dirección IP/nombre de host configurado para este dispositivo.",
+ "remote.pwcopied":"Contraseña RDP copiada al portapapeles – péguela en la ventana de conexión.",
+ "remote.profile":"La conexión \"{name}\" se crea en Windows App.",
  "manage.subtitle":"Gestión de dispositivos y escaneo de red",
  "manage.sec.devices":"Gestión de dispositivos","manage.sec.scan":"Escaneo de red",
  "manage.add":"+ Añadir dispositivo","manage.import":"Importar","manage.export":"Exportar",
@@ -609,6 +625,27 @@ function pingDevice(d) {
     if (!dg.resolved) { toast(t("ping.diag.none", { ip: dg.host || d.ip }), true); return; }
     const detail = cands.map(c => "✗ " + c.address + " – " + (c.error || "?")).join("  ");
     toast(t("ping.diag.fail", { ip: dg.host || d.ip }) + (detail ? " " + detail : ""), true);
+  });
+}
+
+/* Remotedesktop: Windows App per URI-Schema öffnen (Host + Benutzer vorbefüllt,
+   Profil bleibt bestehen); Passwort → Zwischenablage. Die native Seite versucht
+   zuerst, eine .rdp-Datei mit dem Gerätenamen an die Windows App zu übergeben –
+   dann trägt die Verbindung in der Windows App den Gerätenamen.
+   Fehler (nicht installiert / kein Host) → Toast mit Hinweis. */
+function doRemote(id, mode) {
+  const dev = byId(id);
+  Native.call("remote", { id, mode: mode === "win" ? "win" : "full" }).then(res => {
+    if (!res.ok) {
+      const msg = String(res.error || "");
+      const key = msg === "remote.notinstalled" ? "remote.notinstalled"
+        : msg === "remote.nohost" ? "remote.nohost" : null;
+      toast(key ? t(key) : msg, true);
+      return;
+    }
+    const d = res.data || {};
+    if (d.viaFile && dev) { toast(t("remote.profile", { name: dev.name })); return; }
+    if (d.passwordCopied) toast(t("remote.pwcopied"));
   });
 }
 
@@ -1304,7 +1341,8 @@ document.addEventListener("click", ev => {
         Native.call("wakeAll", {});
       });
       break; }
-    case "rdp-full": case "rdp-win": toast(t("remote.soon")); break;
+    case "rdp-full": doRemote(id, "full"); break;
+    case "rdp-win": doRemote(id, "win"); break;
     case "open-dash": state.ui.dashDeviceId = id; state.ui.selBatch = null; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; go("dash"); break;
     case "nav-devices": go("devices"); break;
     case "dash-prev": switchDashDevice(-1); break;
@@ -1313,7 +1351,7 @@ document.addEventListener("click", ev => {
     case "del-dev": deleteDevice(id); break;
     case "dev-save": saveDeviceFromSheet(); break;
     /* ── Long-Press-Menü ── */
-    case "m-rdp": toast(t("remote.soon")); closeSheet(); break;
+    case "m-rdp": closeSheet(); doRemote(id, el.dataset.mode); break;
     case "m-dash": closeSheet(); state.ui.dashDeviceId = id; go("dash"); break;
     case "m-wake": closeSheet(); wakeDevice(byId(id)); break;
     case "m-shutdown": closeSheet(); openShutdownConfirm(byId(id)); break;

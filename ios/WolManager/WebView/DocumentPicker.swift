@@ -42,6 +42,20 @@ final class DocumentPicker: NSObject, UIDocumentPickerDelegate {
         presenter?.present(picker, animated: true)
     }
 
+    /// `.rdp`-Datei per UIActivityViewController (Freigabe-Sheet) übergeben, damit
+    /// die Windows App sie als neue Verbindung importiert (Profilname = Dateiname).
+    /// completion(true) = Sheet wurde präsentiert. Bewusst NICHT erst beim Schließen
+    /// aufgelöst: wählt der Nutzer „Windows App", geht unsere App in den Hintergrund
+    /// und der Handler würde erst spät (oder nie) feuern → das JS-Versprechen hinge.
+    func shareRdpFile(url: URL, completion: @escaping (Bool) -> Void) {
+        guard let presenter = presenter, presenter.presentedViewController == nil else {
+            completion(false)
+            return
+        }
+        let ac = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        presenter.present(ac, animated: true) { completion(true) }
+    }
+
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         if onExported != nil {
             let cb = onExported
