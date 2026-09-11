@@ -495,7 +495,7 @@ const Native = (typeof window !== "undefined" && window.Native) ? window.Native 
 
 /* Versionsname kommt von nativ ("info" → BuildConfig); Fallback nur für Browser-Vorschau.
    Die verbindliche Nummer steht in wol_app/__init__.py (wird beim Build synchronisiert). */
-let APP_VERSION = "2.3.4";
+let APP_VERSION = "2.3.5";
 
 /* Reine Laufzeit-Felder pro Gerät (nie persistiert). */
 function rtDefaults() {
@@ -798,7 +798,6 @@ function openDeviceMenu(id) {
     : `<div class="menuitem ${d.status==="waking"||!d.enabled?"dis":""}" data-act="m-wake" data-id="${id}">⚡ ${esc(t("devices.wake"))}</div>`;
   openSheet(`<div class="grab"></div><h2>${esc(d.name)}</h2>
     <div class="menuitem ${d.status!=="online"?"dis":""}" data-act="m-rdp" data-id="${id}" data-mode="full">🖥️ ${esc(t("button.remote_fullscreen"))}</div>
-    <div class="menuitem ${d.status!=="online"?"dis":""}" data-act="m-rdp" data-id="${id}" data-mode="win">🪟 ${esc(t("button.remote_window"))}</div>
     <div class="menuitem ${d.status!=="online"?"dis":""}" data-act="m-dash" data-id="${id}">📊 ${esc(t("button.dashboard"))}</div>
     <div class="sep"></div>${actRow}
     <div class="menuitem" data-act="m-ping" data-id="${id}">📡 ${esc(t("button.ping"))}</div>
@@ -969,6 +968,14 @@ function nameSuffix(d) {
   if (!d.enabled) s += ` <span style="color:var(--text-dim);font-weight:400">${esc(t("device.disabled"))}</span>`;
   return s;
 }
+/* Power-Icon (Feather „power“): Kreis, oben durch vertikalen Strich unterbrochen.
+   Farb-Logik via CSS-Klassen .powerBtn.wake (türkis) / .powerBtn.off (rot). */
+const PWR_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>`;
+function powerBtnHtml(d) {
+  const off = d.status === "online";
+  const dis = !d.enabled || d.status === "waking";
+  return `<button class="powerBtn ${off ? "off" : "wake"}" data-act="${off ? "shutdown" : "wake"}" data-id="${d.id}" title="${esc(t(off ? "devices.shutdown" : "devices.wake"))}" ${dis ? "disabled" : ""}>${PWR_SVG}</button>`;
+}
 function renderDevices() {
   const online = state.devices.filter(d => d.status === "online").length;
   const devs = filteredDevices(state.ui.search);
@@ -982,7 +989,6 @@ function renderDevices() {
           <span class="mono">${esc(d.mac)}</span>
           <div class="tiles">
             <button class="tileBtn" data-act="rdp-full" data-id="${d.id}" title="${esc(t("button.remote_fullscreen"))}" ${d.status!=="online"?"disabled":""}>🖥️</button>
-            <button class="tileBtn" data-act="rdp-win" data-id="${d.id}" title="${esc(t("button.remote_window"))}" ${d.status!=="online"?"disabled":""}>🪟</button>
             <button class="tileBtn" data-act="open-dash" data-id="${d.id}" title="${esc(t("button.dashboard"))}" ${d.status!=="online"?"disabled":""}>📊</button>
           </div>
           ${d.status === "online"
@@ -997,9 +1003,9 @@ function renderDevices() {
             <span class="mono">${esc([d.ip, d.mac].filter(Boolean).join(" · "))}</span></div>
           <div class="tiles">
             <button class="tileBtn" data-act="rdp-full" data-id="${d.id}" ${d.status!=="online"?"disabled":""}>🖥️</button>
-            <button class="tileBtn" data-act="rdp-win" data-id="${d.id}" ${d.status!=="online"?"disabled":""}>🪟</button>
             <button class="tileBtn" data-act="open-dash" data-id="${d.id}" ${d.status!=="online"?"disabled":""}>📊</button>
             <button class="tileBtn" data-act="edit-dev" data-id="${d.id}">✏️</button>
+            ${powerBtnHtml(d)}
           </div>
         </div>`).join("")}</div>`;
   $("#s-devices").innerHTML = `
@@ -1347,7 +1353,6 @@ document.addEventListener("click", ev => {
       });
       break; }
     case "rdp-full": doRemote(id, "full"); break;
-    case "rdp-win": doRemote(id, "win"); break;
     case "open-dash": state.ui.dashDeviceId = id; state.ui.selBatch = null; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; go("dash"); break;
     case "nav-devices": go("devices"); break;
     case "dash-prev": switchDashDevice(-1); break;

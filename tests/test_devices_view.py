@@ -24,6 +24,7 @@ from wol_app.views.devices_view import (  # noqa: E402
     GRID_SPACING,
     PAGE_MARGIN_H,
     DeviceCard,
+    DeviceListRow,
     DevicesView,
 )
 
@@ -112,6 +113,62 @@ class TestDeviceCard:
         card.remote_fs_btn.click()
         card.remote_win_btn.click()
         assert fired == [("d1", True), ("d1", False)]
+
+
+class TestDeviceListRow:
+    """List row: power icon button (wake ↔ shutdown) at the far right."""
+
+    def test_offline_row_shows_wake_icon_button(self, qapp, config_with_devices):
+        row = DeviceListRow(config_with_devices.config["devices"][0], "offline", set())
+        assert row.action_btn.objectName() == "wakeIconButton"
+        assert row.action_btn.toolTip() == Translations.tr("modern.devices.button.wake")
+        assert row.dot.objectName() == "dotOffline"
+
+    def test_online_row_shows_shutdown_icon_button(self, qapp, config_with_devices):
+        row = DeviceListRow(config_with_devices.config["devices"][0], "online", set())
+        assert row.action_btn.objectName() == "shutdownIconButton"
+        assert row.action_btn.toolTip() == Translations.tr("button.shutdown")
+        assert row.dot.objectName() == "dotOnline"
+
+    def test_status_swap_updates_icon_button(self, qapp, config_with_devices):
+        row = DeviceListRow(config_with_devices.config["devices"][0], "offline", set())
+        row.set_status("online")
+        assert row.action_btn.objectName() == "shutdownIconButton"
+        row.set_status("unknown")
+        assert row.action_btn.objectName() == "wakeIconButton"
+        assert row.dot.objectName() == "dotUnknown"
+
+    def test_action_click_emits_wake_or_shutdown(self, qapp, config_with_devices):
+        row = DeviceListRow(config_with_devices.config["devices"][0], "offline", set())
+        fired = []
+        row.wake_requested.connect(lambda did: fired.append(("wake", did)))
+        row.shutdown_requested.connect(lambda did: fired.append(("shutdown", did)))
+        row._action_clicked()  # offline -> wake
+        row.set_status("online")
+        row._action_clicked()  # online -> shutdown
+        assert fired == [("wake", "d1"), ("shutdown", "d1")]
+
+    def test_disabled_device_action_button_disabled(self, qapp, config_with_devices):
+        row = DeviceListRow(config_with_devices.config["devices"][2], "unknown", set())
+        assert not row.action_btn.isEnabled()
+
+    def test_view_rows_wired_to_wake_and_shutdown(self, qapp, config_with_devices):
+        """DeviceListRow signals are connected to the same flows as the cards."""
+        view = DevicesView(config_with_devices)
+        row = view._rows["d1"]
+        fired = []
+        # Disconnect the real flows for this assertion and watch the signal.
+        row.wake_requested.disconnect()
+        row.shutdown_requested.disconnect()
+        row.wake_requested.connect(lambda did: fired.append(("wake", did)))
+        row.shutdown_requested.connect(lambda did: fired.append(("shutdown", did)))
+        row.set_status("offline")
+        row._action_clicked()
+        row.set_status("online")
+        row._action_clicked()
+        assert fired == [("wake", "d1"), ("shutdown", "d1")]
+        view.cancel_workers()
+        view.deleteLater()
 
 
 class TestDevicesView:

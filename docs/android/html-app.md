@@ -24,7 +24,7 @@ Voraussetzungen (wie in `build_html.ps1` hinterlegt):
 Installation auf dem Gerät: APK kopieren und öffnen (Debug-Signatur), z. B.
 `adb install -r dist_onefile\wolmanager-android-html-2.3.3-debug.apk`.
 
-Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.4`,
+Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.5`,
 minSdk 26, compileSdk 34, AGP 8.5.2, Kotlin 2.0.21 – **kein Compose**.
 
 ## Architektur

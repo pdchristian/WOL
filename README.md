@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 2.3.4 - Service Watch Edition**
+**Version 2.3.5 - Service Watch Edition**
 
 A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
 

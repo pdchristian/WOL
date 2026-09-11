@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototyp – Listenansicht mit Power-Button</title>
+<style>
+  /* ══ Tokens = Android app.css (dark/light) ══════════════════════════ */
+  html[data-theme="dark"]{
+    --bg:#0f1115; --surface:#1a1d24; --surface-hover:#232733; --border:#2c303a;
+    --text:#e6e8ee; --text-dim:#9aa0ab; --accent:#00b8a9; --accent-dark:#006b63;
+    --accent-text:#032019;
+    --online:#22c55e; --offline:#ef4444; --unknown:#f59e0b; --danger:#e0485a;
+  }
+  html[data-theme="light"]{
+    --bg:#f3f4f7; --surface:#ffffff; --surface-hover:#eef0f4; --border:#d8dbe2;
+    --text:#1b1e24; --text-dim:#5b6270; --accent:#009688; --accent-dark:#00695f;
+    --accent-text:#ffffff;
+    --online:#16a34a; --offline:#dc2626; --unknown:#d97706; --danger:#dc2637;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"Segoe UI",system-ui,sans-serif}
+  body{background:var(--bg);color:var(--text);min-height:100vh;padding:24px 16px 60px}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-size:20px;font-weight:600;margin-bottom:4px}
+  .sub{color:var(--text-dim);font-size:12.5px;margin-bottom:18px}
+  .themeToggle{position:fixed;top:16px;right:16px;display:flex;gap:6px;background:var(--surface);
+    border:1px solid var(--border);border-radius:10px;padding:4px;z-index:50}
+  .themeToggle button{border:none;background:none;color:var(--text-dim);font-size:12px;
+    padding:6px 12px;border-radius:7px;cursor:pointer;font-weight:600}
+  .themeToggle button.on{background:var(--accent);color:var(--accent-text)}
+  h2{font-size:15px;font-weight:600;margin:30px 0 4px}
+  .hint{color:var(--text-dim);font-size:12px;margin-bottom:12px}
+  .hint code{background:var(--surface-hover);border-radius:5px;padding:1px 6px;font-family:Consolas,monospace;font-size:11.5px}
+  .pill{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 8px;
+    vertical-align:2px;margin-left:8px}
+  .pill.neu{background:rgba(0,184,169,.15);color:var(--accent)}
+  .pill.weg{background:rgba(224,72,90,.14);color:var(--danger)}
+
+  /* ══ Mobile: Nachbau Android-Geräte-Screen (Listenmodus) ════════════ */
+  .phone{max-width:430px;background:var(--bg);border:1px solid var(--border);border-radius:18px;
+    padding:16px 14px 22px}
+  .pageTitle{font-size:21px;font-weight:600}
+  .pageSub{color:var(--text-dim);font-size:12px;margin-top:2px}
+  .toolbar{display:flex;gap:8px;margin:12px 0 10px;align-items:center}
+  .iconBtn{width:36px;height:36px;border:1px solid var(--border);border-radius:9px;
+    background:var(--surface);color:var(--text);font-size:15px;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center}
+  .spacer{flex:1}
+  .btn{border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:12px;
+    font-weight:600;background:var(--surface);color:var(--text);cursor:pointer}
+  .btn.primary{background:var(--accent);color:var(--accent-text);border:none}
+  .searchrow{display:flex;gap:8px;margin-bottom:10px}
+  .sel{background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);
+    padding:9px 10px;font-size:12px;outline:none}
+  .search{display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);
+    border-radius:10px;padding:9px 12px;flex:1;color:var(--text-dim)}
+  .search input{background:none;border:none;outline:none;color:var(--text);flex:1;font-size:13px}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .row64{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 14px}
+  .sep{height:1px;background:var(--border)}
+  .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .dotOnline{background:var(--online);box-shadow:0 0 8px var(--online)}
+  .dotOffline{background:var(--offline)}
+  .dotUnknown{background:var(--unknown)}
+  .dotWaking{background:var(--unknown);animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.3}}
+  .rowInfo{flex:1;min-width:0}
+  .rowTitle{font-size:14px;font-weight:600}
+  .rowTitle.dis{color:var(--text-dim)}
+  .mono{font-family:Consolas,monospace;font-size:12px;color:var(--text-dim);display:block;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .tiles{display:flex;gap:6px;align-items:center}
+  .tileBtn{width:36px;height:36px;border:1px solid var(--border);border-radius:10px;
+    background:var(--surface);font-size:15px;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;flex-shrink:0;color:var(--text)}
+  .tileBtn:active{background:var(--accent);border-color:var(--accent)}
+  .tileBtn:disabled{opacity:.4;cursor:default}
+
+  /* ── NEU: Power-Icon-Button (36×36-Chip, Farb-Logik wie wake/shutdown) ── */
+  .powerBtn{width:36px;height:36px;border-radius:10px;background:transparent;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
+    border:1px solid var(--accent);color:var(--accent)}
+  .powerBtn svg{width:18px;height:18px}
+  .powerBtn.wake:hover{background:var(--accent);color:var(--accent-text)}
+  .powerBtn.off{border-color:var(--danger);color:var(--danger)}
+  .powerBtn.off:hover{background:var(--danger);color:#fff}
+  .powerBtn:disabled{opacity:.4;cursor:default;background:transparent}
+  .powerBtn:active:not(:disabled){transform:scale(.94)}
+
+  /* ══ Desktop-Liste (Nachbau Qt #panel/#deviceRow, Höhe 64) ═══════════ */
+  .desktop{border:1px solid var(--border);border-radius:14px;overflow:hidden;max-width:860px;
+    background:var(--surface)}
+  .drow{display:flex;align-items:center;gap:14px;height:64px;padding:0 18px;background:var(--surface)}
+  .drow:hover{background:var(--surface-hover)}
+  .drow .rowInfo{flex:1}
+  .statlabel{font-size:11px;color:var(--text-dim);width:118px;flex-shrink:0;text-align:right}
+  .note{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px;font-size:12.5px;color:var(--text-dim);line-height:1.7;margin-top:26px}
+  .note b{color:var(--text)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;align-items:center;font-size:12px;color:var(--text-dim)}
+  .legend .powerBtn{pointer-events:none}
+</style>
+</head>
+<body>
+<div class="themeToggle">
+  <button id="btnDark" class="on" onclick="setTheme('dark')">Dunkel</button>
+  <button id="btnLight" onclick="setTheme('light')">Hell</button>
+</div>
+
+<div class="wrap">
+  <h1>Listenansicht mit Power-Button</h1>
+  <div class="sub">Prototyp · 2026-09-11 · Power-Icon = Kreis, oben durch vertikalen Strich unterbrochen (Feather „power“)</div>
+
+  <!-- ═══════════════ MOBILE (Android / iOS) ═══════════════ -->
+  <h2>📱 Mobile – Geräte­liste <span class="pill weg">🪟 entfernt</span> <span class="pill neu">+ Power-Button</span></h2>
+  <div class="hint">Gilt identisch für iOS (rotes <code>--danger</code> = <code>#ff453a</code>). Reihenfolge rechts: 🖥️ Dashboard ✏️ <b>Power</b> (ganz rechts). Power folgt der Kachel-Logik: offline/unbekannt → türkis (Aufwecken), online → rot (Herunterfahren), waking/deaktiviert → ausgegraut.</div>
+
+  <div class="phone">
+    <div class="pageTitle">Geräte</div>
+    <div class="pageSub">6 Geräte · 2 online</div>
+    <div class="toolbar">
+      <button class="iconBtn" title="Kachelansicht">▦</button>
+      <button class="iconBtn" title="Aktualisieren">⟳</button>
+      <span class="spacer"></span>
+      <button class="btn primary">Alle aufwecken</button>
+    </div>
+    <div class="searchrow">
+      <select class="sel"><option>Status</option></select>
+      <div class="search">🔍<input placeholder="Suchen…" disabled></div>
+    </div>
+
+    <div class="panel" id="mobileList"></div>
+  </div>
+
+  <!-- ═══════════════ DESKTOP ═══════════════ -->
+  <h2>🖥️ Desktop (Windows / Ubuntu) – Listenansicht <span class="pill neu">+ Power-Button</span></h2>
+  <div class="hint">Bestehende Kacheln <code>🖥️ 🪟 📊 ✏️</code> bleiben; Power-Icon kommt ganz rechts neu hinzu. Hover = gefüllt (türkis→dunkle Schrift, rot→weiß), analog <code>#wakeButton</code>/<code>#shutdownButton</code> der Kachelansicht.</div>
+
+  <div class="desktop" id="desktopList"></div>
+
+  <div class="legend">
+    <span><button class="powerBtn" title="Aufwecken"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>&nbsp;türkis = Aufwecken</span>
+    <span><button class="powerBtn off" title="Herunterfahren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>&nbsp;rot = Herunterfahren</span>
+    <span><button class="powerBtn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>&nbsp;ausgegraut = waking / Gerät deaktiviert</span>
+  </div>
+
+  <div class="note">
+    <b>Umsetzungshinweise:</b><br>
+    • Mobile: <code>🪟 Remote Fenster</code> entfällt aus Kacheln, Liste <b>und</b> Long-Press-Menü — <code>🖥️ Remote Vollbild</code> bleibt.<br>
+    • Desktop: Geräte-Kacheln und Kontextmenüs bleiben unverändert; nur die Liste erhält den Power-Button (rechts nach ✏️).<br>
+    • Klick auf Power-Icon löst denselben Flow wie der Text-Button der Kachelansicht aus (Wake bzw. Shutdown-Bestätigung).<br>
+    • Tooltips: „Aufwecken" / „Herunterfahren" (bestehende i18n-Keys).
+  </div>
+</div>
+
+<script>
+/* Power-Icon (Feather „power") */
+const PWR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>';
+
+const devices = [
+  {name:"ARBEITS-PC (ich)", ip:"192.168.1.10", mac:"AA:BB:CC:DD:EE:01", status:"online"},
+  {name:"SERVER-01",        ip:"192.168.1.20", mac:"AA:BB:CC:DD:EE:02", status:"online"},
+  {name:"LAPTOP-ANA",       ip:"192.168.1.34", mac:"AA:BB:CC:DD:EE:03", status:"offline"},
+  {name:"MEDIA-PC",         ip:"192.168.1.51", mac:"AA:BB:CC:DD:EE:04", status:"waking"},
+  {name:"ALTDESIGN-PC",     ip:"192.168.1.77", mac:"AA:BB:CC:DD:EE:05", status:"unknown"},
+  {name:"ARCHIV-PC",        ip:"192.168.1.90", mac:"AA:BB:CC:DD:EE:06", status:"offline", disabled:true},
+];
+const dotCls = d => d.disabled ? "dotOffline"
+  : ({online:"dotOnline", offline:"dotOffline", waking:"dotWaking"}[d.status] || "dotUnknown");
+const statusName = d => d.disabled ? "deaktiviert"
+  : ({online:"Online", offline:"Offline", waking:"Wacht auf…", unknown:"Unbekannt"}[d.status]);
+
+/* Power-Button: online → rot (Herunterfahren); waking/deaktiviert → disabled; sonst türkis */
+function powerBtn(d){
+  const off = d.status === "online";
+  const dis = d.disabled || d.status === "waking";
+  return `<button class="powerBtn ${off?"off":"wake"}" ${dis?"disabled":""}
+    title="${off?"Herunterfahren":"Aufwecken"}">${PWR}</button>`;
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ── Mobile-Liste: 🖥️ 📊 ✏️ + Power (🪟 entfernt) ── */
+document.getElementById("mobileList").innerHTML = devices.map((d,i)=>`
+  ${i?'<div class="sep"></div>':""}
+  <div class="row64">
+    <span class="dot ${dotCls(d)}" title="${esc(statusName(d))}"></span>
+    <div class="rowInfo"><div class="rowTitle ${d.disabled?"dis":""}">${esc(d.name)}</div>
+      <span class="mono">${esc([d.ip,d.mac].filter(Boolean).join(" · "))}</span></div>
+    <div class="tiles">
+      <button class="tileBtn" title="Remote Vollbild" ${d.status!=="online"?"disabled":""}>🖥️</button>
+      <button class="tileBtn" title="Dashboard" ${d.status!=="online"?"disabled":""}>📊</button>
+      <button class="tileBtn" title="Bearbeiten">✏️</button>
+      ${powerBtn(d)}
+    </div>
+  </div>`).join("");
+
+/* ── Desktop-Liste: 🖥️ 🪟 📊 ✏️ + Power ganz rechts ── */
+document.getElementById("desktopList").innerHTML = devices.map((d,i)=>`
+  ${i?'<div class="sep"></div>':""}
+  <div class="drow">
+    <span class="dot ${dotCls(d)}" title="${esc(statusName(d))}"></span>
+    <div class="rowInfo"><div class="rowTitle ${d.disabled?"dis":""}">${esc(d.name)}</div>
+      <span class="mono">${esc([d.ip,d.mac].filter(Boolean).join(" · "))}</span></div>
+    <span class="statlabel">${esc(statusName(d))}</span>
+    <div class="tiles">
+      <button class="tileBtn" title="Remote Vollbild" ${d.status!=="online"?"disabled":""}>🖥️</button>
+      <button class="tileBtn" title="Remote Fenster" ${d.status!=="online"?"disabled":""}>🪟</button>
+      <button class="tileBtn" title="Dashboard" ${d.status!=="online"?"disabled":""}>📊</button>
+      <button class="tileBtn" title="Bearbeiten">✏️</button>
+      ${powerBtn(d)}
+    </div>
+  </div>`).join("");
+
+function setTheme(t){
+  document.documentElement.dataset.theme = t;
+  document.getElementById("btnDark").classList.toggle("on", t==="dark");
+  document.getElementById("btnLight").classList.toggle("on", t==="light");
+}
+/* Klicks im Prototyp nur als Demo-Feedback */
+document.addEventListener("click", e=>{
+  const b = e.target.closest(".powerBtn");
+  if (b && !b.disabled) console.log(b.title);
+});
+</script>
+</body>
+</html>

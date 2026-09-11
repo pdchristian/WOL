@@ -72,8 +72,15 @@
   .wakeBtn:active{background:var(--accent);color:var(--accent-text)}
   .shutdownBtn{width:100%;border:1px solid var(--danger);color:var(--danger);background:transparent;
     border-radius:10px;padding:9px;font-size:13px;font-weight:600;cursor:pointer}
-  .shutdownBtn:active{background:var(--danger);color:#fff}
-  /* ── Statuspunkte (10px, NUR Punkt wie Windows) ──────────────────────── */
+  .shutdownBtn:active{background:var(--danger);color:#fff}/* Power-Icon-Button (Listenansicht): 36×36-Chip, Farb-Logik wie wake/shutdown */
+.powerBtn{width:36px;height:36px;border-radius:10px;background:transparent;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
+    border:1px solid var(--accent);color:var(--accent)}
+.powerBtn svg{width:18px;height:18px}
+.powerBtn:active:not(:disabled){background:var(--accent);color:var(--accent-text)}
+.powerBtn.off{border-color:var(--danger);color:var(--danger)}
+.powerBtn.off:active:not(:disabled){background:var(--danger);color:#fff}
+.powerBtn:disabled{opacity:.4;cursor:default}  /* ── Statuspunkte (10px, NUR Punkt wie Windows) ──────────────────────── */
   .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0}
   .dotOnline{background:var(--online);box-shadow:0 0 8px var(--online)}
   .dotOffline{background:var(--offline)}

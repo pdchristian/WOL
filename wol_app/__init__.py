@@ -8,4 +8,4 @@ und regeneriert das Xcode-Projekt. ``tests/test_version_sync.py``
 stellt sicher, dass nichts mehr driftet.
 """
 
-__version__ = "2.3.4"
+__version__ = "2.3.5"

@@ -14,8 +14,8 @@ android {
         applicationId = "de.wolmanager.html"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "2.3.4"
+        versionCode = 6
+        versionName = "2.3.5"
     }
 
     buildTypes {

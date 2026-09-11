@@ -1,6 +1,6 @@
 # ============================================================================
 # Wake-on-LAN Manager - Build Script
-# Version: 2.3.4 - Service Watch Edition
+# Version: 2.3.5 - Service Watch Edition
 # Date: 2026-09-03
 # ============================================================================
 # This script builds the application, host service, uninstaller, the installer
@@ -11,7 +11,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "=======================================" -ForegroundColor Cyan
-Write-Host "  Wake-on-LAN Manager v2.3.4 - Build Script" -ForegroundColor Cyan
+Write-Host "  Wake-on-LAN Manager v2.3.5 - Build Script" -ForegroundColor Cyan
 Write-Host "  Host Service Edition" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""

@@ -268,7 +268,7 @@ final class Bridge: NSObject, WKScriptMessageHandler {
 
     private func infoJson() -> [String: Any] {
         [
-            "versionName": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.3.4",
+            "versionName": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.3.5",
             "versionCode": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1",
             "protocol": 4,
         ]
@@ -594,7 +594,7 @@ final class Bridge: NSObject, WKScriptMessageHandler {
     // ── Update-Check ────────────────────────────────────────────────────────
 
     private func updateCheckJson() async throws -> [String: Any] {
-        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.3.4"
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.3.5"
         switch await UpdateCheck.check(current: current) {
         case let .new(version): return ["state": "update", "version": version]
         case .latest: return ["state": "latest"]

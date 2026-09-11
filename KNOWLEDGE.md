@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.3.4                                                                 |
+| **version**         | 2.3.5                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -654,7 +654,7 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 **Key behaviors:**
 - **Dual view** (`DevicesView`): the toolbar toggle (icon top-left, SVG glyphs `#viewListButton` three-lines / `#viewGridButton` four-tiles) switches between
   - **Card grid** — responsive; each card shows a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window), a 📊 dashboard tile and a primary action button that swaps between *Wake* (offline/unknown) and *Shutdown* (online).
-  - **Device list** (`DeviceListRow`) — panel rows with status dot, name, mono "IP · MAC" and action tiles on the right (🖥️ remote fullscreen / 🪟 remote window / 📊 dashboard / ✏️ edit; double-click also edits).
+  - **Device list** (`DeviceListRow`) — panel rows with status dot, name, mono "IP · MAC" and action tiles on the right (🖥️ remote fullscreen / 🪟 remote window / 📊 dashboard / ✏️ edit; double-click also edits), followed by a far-right power icon button (`wakeIconButton`↔`shutdownIconButton`, same wake/shutdown color logic as the card action button).
   Both views share `_statuses` and rebuild via `refresh_devices()`. Auto-refresh every 30 s (`QTimer`), paused when hidden.
 - **Sorting** (`DevicesView`): drop-down left of the search field — *Namen* (alphabetical), *IP-Adresse* (numeric via `_ip_sort_key`), *MAC-Adresse* (ascending), *Status* (rank Online → Offline → Unknown, then name). Persisted to `ui.devices_sort_key`; applies to both views; re-sorts after status updates when sorting by status.
 - **Cross-sync:** `ModernMainWindow._on_devices_changed` keeps the device lists of `DevicesView` and `ManageView` in sync when a device is added/edited/removed in either area.
@@ -784,7 +784,11 @@ native Compose app in `android/` was removed in 2.3.1.)
 - **Remote Desktop (new in 2.3.3, reworked):** the *Remote fullscreen/window*
   actions (`rdp-full`/`rdp-win` tiles, `m-rdp` menu) call `Native.call("remote",
   {id, mode})` (previously these were a `remote.soon` stub in `app.js` — now
-  actually wired). `Bridge.remoteJson` opens the installed **Windows App**
+  actually wired). **Since 2.3.5 the mobile UI only surfaces *fullscreen*
+  (`rdp-full` / `m-rdp` full): the 🪟 window tile/menu item was removed from the
+  card, list and long-press menu; the `remote` bridge still accepts
+  `mode:"win"` for compatibility.** The device list gained a far-right power
+  icon button (`powerBtnHtml`, wake↔shutdown, same color logic as the card). `Bridge.remoteJson` opens the installed **Windows App**
   (formerly Microsoft Remote Desktop, `com.microsoft.rdc.androidx`). Order:
   (1) write a `.rdp` file to `<cache>/rdp/<sanitized device name>.rdp` and hand it
   to the Windows App via `ACTION_SEND` (`application/rdp`, `FileProvider`

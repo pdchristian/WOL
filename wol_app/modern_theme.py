@@ -183,6 +183,21 @@ def _checkmark_url(color: str) -> str:
     return _svg_url(f"checkmark_{color.lstrip('#')}.svg", svg)
 
 
+def _power_url(color: str, glyph_px: int = 18, canvas: int = 36) -> str:
+    """Power symbol (feather "power"): circle broken by a vertical line.
+
+    Used by the list-view wake/shutdown icon button (accent color while
+    offline → wake, danger color while online → shutdown).
+    """
+    paths = (
+        f'<path d="M18.36 6.64a9 9 0 1 1-12.73 0" stroke="{color}" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<line x1="12" y1="2" x2="12" y2="12" stroke="{color}" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    )
+    return _glyph_canvas(color, paths, "power", glyph_px, canvas)
+
+
 # ── Dark tokens (prototype) ──────────────────────────────────────────────
 DARK = {
     "bg": "#0f1115",
@@ -351,6 +366,36 @@ QPushButton#viewGridButton {{
 QPushButton#viewGridButton:hover {{
     background: {t['surface_hover']}; border-color: {t['accent']};
     image: url("{_grid_view_url(t['text'])}");
+}}
+/* List-row action button: power glyph, wake (accent) ↔ shutdown (danger).
+   The objectName swap in DeviceListRow.set_status() picks color + glyph;
+   hover fills the tile like #wakeButton / #shutdownButton do for the text
+   buttons in the card view. */
+QPushButton#wakeIconButton {{
+    background: transparent; border: 1px solid {t['accent']};
+    border-radius: 10px; padding: 0px;
+    image: url("{_power_url(t['accent'])}");
+}}
+QPushButton#wakeIconButton:hover {{
+    background: {t['accent']};
+    image: url("{_power_url(t['accent_text'])}");
+}}
+QPushButton#wakeIconButton:disabled {{
+    border-color: {t['border']};
+    image: url("{_power_url(t['text_dim'])}");
+}}
+QPushButton#shutdownIconButton {{
+    background: transparent; border: 1px solid {t['danger']};
+    border-radius: 10px; padding: 0px;
+    image: url("{_power_url(t['danger'])}");
+}}
+QPushButton#shutdownIconButton:hover {{
+    background: {t['danger']};
+    image: url("{_power_url('#ffffff')}");
+}}
+QPushButton#shutdownIconButton:disabled {{
+    border-color: {t['border']};
+    image: url("{_power_url(t['text_dim'])}");
 }}
 
 /* ── Dialogs (QDialog / QMessageBox) ─────────────────────────────────── */

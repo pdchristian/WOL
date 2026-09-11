@@ -204,13 +204,16 @@ class DeviceListRow(QWidget):
     """One device in the list view: dot · name / mono IP · MAC · action tiles.
 
     Mirrors the layout proposal: status dot and the two-line info block on
-    the left, three action tiles on the right (remote fullscreen, remote
-    window, edit).
+    the left, action tiles on the right (remote fullscreen, remote window,
+    dashboard, edit) followed by the power icon button (wake ↔ shutdown,
+    same color logic as the card action button).
     """
 
     remote_requested = pyqtSignal(str, bool)  # device id, fullscreen
     edit_requested = pyqtSignal(str)
     dashboard_requested = pyqtSignal(str)
+    wake_requested = pyqtSignal(str)
+    shutdown_requested = pyqtSignal(str)
 
     def __init__(self, device: dict, status: str, local_ips: set[str], parent=None) -> None:
         super().__init__(parent)
@@ -279,12 +282,21 @@ class DeviceListRow(QWidget):
             lambda: self.edit_requested.emit(self.device_id))
         layout.addWidget(self.edit_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        # Power icon button (far right): wake (accent) ↔ shutdown (danger),
+        # objectName swap in set_status() — same logic as DeviceCard.
+        self.action_btn = QPushButton()
+        self.action_btn.setObjectName("wakeIconButton")
+        self.action_btn.setFixedSize(36, 36)
+        self.action_btn.clicked.connect(self._action_clicked)
+        layout.addWidget(self.action_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self.set_status(status)
         if not self.enabled:
-            # Disabled devices cannot be reached remotely
+            # Disabled devices cannot be reached remotely or woken
             self.remote_fs_btn.setEnabled(False)
             self.remote_win_btn.setEnabled(False)
             self.dashboard_btn.setEnabled(False)
+            self.action_btn.setEnabled(False)
 
     # ── Status ────────────────────────────────────────────────────
 
@@ -298,7 +310,7 @@ class DeviceListRow(QWidget):
         return name
 
     def set_status(self, status: str) -> None:
-        """Update the color of the status dot (objectName selects the style)."""
+        """Update the status dot and swap the power button (wake ↔ shutdown)."""
         self._status = status
         self.dot.setToolTip(Translations.tr(f"status.{status}"))
         dot_name = {
@@ -307,9 +319,28 @@ class DeviceListRow(QWidget):
         }.get(status, "dotUnknown")
         if self.dot.objectName() != dot_name:
             self.dot.setObjectName(dot_name)
-            style = self.dot.style()
-            style.unpolish(self.dot)
-            style.polish(self.dot)
+            self._repolish(self.dot)
+
+        online = status == "online"
+        action_name = "shutdownIconButton" if online else "wakeIconButton"
+        tip_key = "button.shutdown" if online else "modern.devices.button.wake"
+        if self.action_btn.objectName() != action_name:
+            self.action_btn.setObjectName(action_name)
+            self._repolish(self.action_btn)
+        self.action_btn.setToolTip(Translations.tr(tip_key))
+
+    @staticmethod
+    def _repolish(widget: QWidget) -> None:
+        """Re-apply the stylesheet rule for a changed objectName."""
+        style = widget.style()
+        style.unpolish(widget)
+        style.polish(widget)
+
+    def _action_clicked(self) -> None:
+        if self._status == "online":
+            self.shutdown_requested.emit(self.device_id)
+        else:
+            self.wake_requested.emit(self.device_id)
 
     # ── Mouse interaction ────────────────────────────────────────
 
@@ -322,7 +353,7 @@ class DeviceListRow(QWidget):
         self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
         self.dashboard_btn.setToolTip(Translations.tr("button.dashboard"))
         self.edit_btn.setToolTip(Translations.tr("device_manager.button.edit"))
-        self.set_status(self._status)
+        self.set_status(self._status)  # refresh power button tooltip
 
 
 class DeviceCard(QWidget):
@@ -775,6 +806,8 @@ class DevicesView(QWidget):
             row.remote_requested.connect(self._remote_device)
             row.edit_requested.connect(self._edit_device)
             row.dashboard_requested.connect(self._open_dashboard)
+            row.wake_requested.connect(self._wake_device)
+            row.shutdown_requested.connect(self._shutdown_device)
             self._rows[device["id"]] = row
             self.list_layout.addWidget(row)
             if idx < len(devices) - 1:

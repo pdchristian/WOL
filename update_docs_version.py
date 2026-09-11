@@ -101,7 +101,10 @@ def update_file(path: Path, version: str) -> bool:
     """Apply version substitutions to *path*. Returns True if anything changed."""
     text = path.read_text(encoding="utf-8")
     changed = False
-    key = str(path.relative_to(ROOT))
+    # DOC_PATTERNS keys use '/' — Path.relative_to yields '\' on Windows, so
+    # without this normalization every sub-directory file silently matched no
+    # pattern and was reported as "already up to date" (2.3.5 drift).
+    key = str(path.relative_to(ROOT)).replace("\\", "/")
     for pattern, replacement in DOC_PATTERNS.get(key, []):
         # Replace {version} with the actual version, then let re.sub resolve
         # the remaining backreferences (\1, \2, ...) via the string form.
