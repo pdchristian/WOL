@@ -385,7 +385,15 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             "gpuName": m.gpuName as Any,
         ]
         out["processes"] = m.processes.map { (key, w) -> [String: Any] in
-            [
+            // Host v5: per-model prompt/generation throughput (t/s).
+            let metrics: [String: Any] = Dictionary(uniqueKeysWithValues:
+                w.modelMetrics.map { (model, mm) in
+                    (model, [
+                        "promptTps": mm.promptTps ?? NSNull(),
+                        "predictedTps": mm.predictedTps ?? NSNull(),
+                    ] as [String: Any])
+                })
+            return [
                 "key": key,
                 "running": w.running,
                 "pid": w.pid ?? NSNull(),
@@ -396,6 +404,7 @@ final class Bridge: NSObject, WKScriptMessageHandler {
                 "apiPort": w.apiPort ?? NSNull(),
                 "apiPortOpen": w.apiPortOpen ?? NSNull(),
                 "models": w.models,
+                "modelMetrics": metrics,
             ]
         }
         return out

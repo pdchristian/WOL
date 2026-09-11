@@ -8,7 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Host-Service-Antworten (Protokoll v4) gegen die Datenmodelle. */
+/** Host-Service-Antworten (Protokoll v4/v5) gegen die Datenmodelle. */
 class HostServiceProtocolTest {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -35,7 +35,10 @@ class HostServiceProtocolTest {
               "running": true, "count": 1, "pid": 4242,
               "cpu": 3.2, "ram": 1073741824, "uptime": 300,
               "model": "mistral-7b.gguf", "api_port": 8080, "api_port_open": true,
-              "models": ["mistral-7b.gguf"]
+              "models": ["mistral-7b.gguf"],
+              "model_metrics": {
+                "mistral-7b.gguf": { "prompt_tps": 261.15, "predicted_tps": 26.65 }
+              }
             },
             "notepad.exe": { "running": false, "count": 0 }
           }
@@ -57,9 +60,13 @@ class HostServiceProtocolTest {
         assertEquals(8080, llama.apiPort)
         assertEquals(true, llama.apiPortOpen)
         assertEquals(listOf("mistral-7b.gguf"), llama.models)
+        // v5: per-model throughput (t/s) from the llama.cpp /metrics endpoint.
+        assertEquals(261.15, llama.modelMetrics["mistral-7b.gguf"]!!.promptTps!!, 0.001)
+        assertEquals(26.65, llama.modelMetrics["mistral-7b.gguf"]!!.predictedTps!!, 0.001)
         val notepad = m.processes["notepad.exe"]!!
         assertEquals(false, notepad.running)
         assertEquals(null, notepad.pid)
+        assertTrue(notepad.modelMetrics.isEmpty())
     }
 
     @Test

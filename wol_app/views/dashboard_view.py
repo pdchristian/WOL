@@ -20,6 +20,7 @@ entry); ``ModernMainWindow`` switches the stack and calls
 :meth:`set_device`.
 """
 
+import math
 from collections import deque
 from datetime import datetime
 from typing import Any
@@ -108,6 +109,34 @@ def _model_names(info: dict) -> list[str]:
             return names
     legacy = str(info.get("model") or "").strip()
     return [legacy] if legacy else []
+
+
+def _model_tps_suffix(info: dict, model_name: str) -> str:
+    """Localized input/output throughput suffix for one model (host v5).
+
+    Reads ``model_metrics[model_name]`` (``prompt_tps``/``predicted_tps``,
+    tokens/s from the llama.cpp Prometheus endpoint) and renders
+    ``" · Input Tokens 261.15 t/s - Output Tokens 26.65 t/s"``. Returns
+    "" when the host reported no metrics for this model (older hosts) or
+    either value is missing/not a finite number - the plain model line
+    stays unchanged then. Values keep two decimals (dot, German-agnostic).
+    """
+    metrics = info.get("model_metrics")
+    if not isinstance(metrics, dict):
+        return ""
+    entry = metrics.get(model_name)
+    if not isinstance(entry, dict):
+        return ""
+    try:
+        prompt = float(entry.get("prompt_tps"))
+        predicted = float(entry.get("predicted_tps"))
+    except (TypeError, ValueError):
+        return ""
+    if not math.isfinite(prompt) or not math.isfinite(predicted):
+        return ""
+    return " · " + Translations.tr(
+        "modern.dashboard.svc.model_tps",
+        prompt=f"{prompt:.2f}", predicted=f"{predicted:.2f}")
 
 
 def _fmt_bytes_gb(value: int | float | None) -> str:
@@ -477,7 +506,9 @@ class ServiceRow(QWidget):
             lbl.setParent(None)
             lbl.deleteLater()
         for lbl, model_name in zip(self._model_labels, names):
-            lbl.setText(f"🧠 {model_name}")
+            # Host protocol v5 appends the per-model prompt/generation
+            # throughput (llama.cpp GET /metrics?model=<name>).
+            lbl.setText(f"🧠 {model_name}{_model_tps_suffix(info, model_name)}")
             lbl.setToolTip(model_name)
             lbl.setVisible(True)
 

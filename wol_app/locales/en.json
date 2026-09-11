@@ -17,6 +17,10 @@
   "device.disabled": "Disabled",
   "device.me": "(me)",
   "device.unknown": "Unknown",
+  "device_dialog.apply_shared.message": "Apply this password to the other {count} device(s) with user \"{username}\"?",
+  "device_dialog.apply_shared.no": "No",
+  "device_dialog.apply_shared.title": "Apply password?",
+  "device_dialog.apply_shared.yes": "Apply",
   "device_dialog.button.cancel": "Cancel",
   "device_dialog.button.save": "Save",
   "device_dialog.button.update": "Update",
@@ -501,6 +505,7 @@
   "modern.dashboard.svc.tip_no_port": "PID {pid} found, but port {port} does not answer",
   "modern.dashboard.svc.tip_stopped": "Process not found",
   "modern.dashboard.svc.tip_models": "Models: {models}",
+  "modern.dashboard.svc.model_tps": "Input Tokens {prompt} t/s - Output Tokens {predicted} t/s",
   "tray.tooltip": "{app} keeps running in the notification area",
   "tray.menu.open": "Open Window",
   "tray.menu.quit": "Quit"

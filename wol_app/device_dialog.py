@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 from wol_app.device_io import export_devices, import_devices
 from wol_app.network_scan_dialog import NetworkScanDialog
 from wol_app.network_scanner import get_local_ips
+from wol_app.shared_password import apply_password, collect_share_targets
 from wol_app.translations import Translations
 from wol_app.widgets.toggle_switch import ToggleWithLabel
 from wol_app.utils import (
@@ -197,8 +198,7 @@ class DeviceDialog(QDialog):
                 updates["password"] = password
             self.config.update_device(self.editing_device["id"], **updates)
             # Re-fetch updated device
-            updated = self.config.get_device_by_id(self.editing_device["id"])
-            self.device_saved.emit(updated)
+            saved = self.config.get_device_by_id(self.editing_device["id"])
         else:
             device = self.config.add_device(
                 name, mac, enabled=self.enabled_check.isChecked()
@@ -214,14 +214,37 @@ class DeviceDialog(QDialog):
                 # user's explicit selection (may differ from the default)
                 if shutdown_method != device.get("shutdown_method"):
                     self.config.update_device(device["id"], shutdown_method=shutdown_method)
-                self.device_saved.emit(self.config.get_device_by_id(device["id"]))
+                saved = self.config.get_device_by_id(device["id"])
             else:
                 QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.save_failed"))
                 return
 
+        # Offer to apply the password to all other devices that share this
+        # username (native question box, matching the other confirmations).
+        self._offer_shared_password(username, password,
+                                    saved.get("id") if saved else None)
+
         # Clear password from input field for security
         self.password_input.clear()
+        self.device_saved.emit(saved)
         self.accept()
+
+    def _offer_shared_password(self, username: str, password: str,
+                               current_id: str | None) -> None:
+        """Ask whether to copy the password to devices with the same username."""
+        targets = collect_share_targets(self.config, username, password,
+                                        exclude_id=current_id)
+        if not targets:
+            return
+        reply: QMessageBox.StandardButton = QMessageBox.question(
+            self,
+            Translations.tr("device_dialog.apply_shared.title"),
+            Translations.tr("device_dialog.apply_shared.message",
+                            username=username.strip(), count=len(targets)),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            apply_password(self.config, targets, password)
 
 
 class DeviceManagerDialog(QDialog):

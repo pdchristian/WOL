@@ -1,5 +1,37 @@
-........................................................................ [ 24%]
-........................................................................ [ 49%]
-........................................................................ [ 73%]
-........................................................................ [ 98%]
-.....                                                                    [100%]
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+PyQt6 6.11.0 -- Qt runtime 6.11.1 -- Qt compiled 6.11.0
+rootdir: C:\Python\WOL
+configfile: pyproject.toml
+plugins: qt-4.5.0
+collected 471 items
+
+tests\test_config.py ..........................                          [  5%]
+tests\test_crypto.py .......                                             [  7%]
+tests\test_dashboard_view.py .........................................   [ 15%]
+tests\test_device_io.py ...............                                  [ 18%]
+tests\test_devices_view.py ....................................          [ 26%]
+tests\test_host_service_client.py .............                          [ 29%]
+tests\test_host_service_metrics.py ..................................... [ 37%]
+..                                                                       [ 37%]
+tests\test_layout_mode.py ........                                       [ 39%]
+tests\test_modern_ui.py .........................................        [ 47%]
+tests\test_network_scanner.py ........                                   [ 49%]
+tests\test_network_scanner_scan.py ...                                   [ 50%]
+tests\test_protocol_schema.py .......................................... [ 59%]
+.......                                                                  [ 60%]
+tests\test_remote_desktop.py ........                                    [ 62%]
+tests\test_shutdown_flow.py .....                                        [ 63%]
+tests\test_sidebar.py ..................                                 [ 67%]
+tests\test_single_instance.py .............                              [ 70%]
+tests\test_tray_quit.py ...................                              [ 74%]
+tests\test_updater.py .......                                            [ 75%]
+tests\test_updater_updatechecker.py ....                                 [ 76%]
+tests\test_utils.py .................................................... [ 87%]
+................                                                         [ 90%]
+tests\test_version_sync.py ...                                           [ 91%]
+tests\test_watchdog.py ..................                                [ 95%]
+tests\test_window_geometry.py ......                                     [ 96%]
+tests\test_wol_engine.py ................                                [100%]
+
+============================ 471 passed in 38.49s =============================

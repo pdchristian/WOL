@@ -84,6 +84,7 @@ run.py
       │
       │  Shared modern dialogs/widgets
       ├── wol_app/views/device_edit_dialog.py  (ModernDeviceDialog)
+      ├── wol_app/shared_password.py  (apply password to same-username devices)
       ├── wol_app/views/schedule_edit_dialog.py (ModernScheduleEditDialog)
       ├── wol_app/widgets/toggle_switch.py     (ToggleSwitch / ToggleWithLabel)
       │
@@ -247,6 +248,7 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
 |---------------------------------|-------------------|----------------------------------------------|
 | `get_devices()`                 | `list[dict]`      | Returns all configured devices               |
 | `get_device_by_id(device_id)`   | `Optional[dict]`  | Lookup device by UUID                        |
+| `get_devices_by_username(user, exclude_id=None, case_insensitive=True)` | `list` | Devices sharing a username (shared-password feature) |
 | `add_device(name, mac)`         | `Optional[dict]`  | Create device (validates inputs)             |
 | `remove_device(device_id)`      | `bool`            | Delete device by ID                          |
 | `update_device(device_id, **kw)`| `bool`            | Update device fields with validation         |
@@ -676,7 +678,9 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 | UpdateAvailableDialog| `update_dialog.py`        | Show release notes + download   |
 | UpdateErrorDialog    | `update_dialog.py`        | Network error during update     |
 | UpdateInfoDialog     | `update_dialog.py`        | "Already up to date" message    |
-| ModernShutdownConfirmDialog | `views/shutdown_confirm_dialog.py` | Modern confirm dialog; device shutdown (Ja/Nein) or window quit (Ja/Minimieren/Nein via `min_key`, result `MINIMIZE_RESULT_CODE`) |
+| ModernShutdownConfirmDialog | `views/shutdown_confirm_dialog.py` | Modern confirm dialog; device shutdown (Ja/Nein) or window quit (Ja/Minimieren/Nein via `min_key`, result `MINIMIZE_RESULT_CODE`); generic reuse via `title_key`/`message_key`/`yes_object_name`/`show_icon` (e.g. shared-password prompt) |
+
+**Shared password (all platforms):** after saving a device with username + password, the app offers to apply the password to every other device with the same (case-insensitive) username. Core helper: `wol_app/shared_password.py` (`collect_share_targets` skips empty user/password and devices that already store the identical password → no popup; `apply_password` loops `update_device`). Desktop: `ModernDeviceDialog._offer_shared_password` (ModernShutdownConfirmDialog, primaryButton, no icon) and classic `DeviceDialog._offer_shared_password` (`QMessageBox.question`), both before `device_saved.emit`. Mobile: `offerSharedPassword()` in both `app.js` (after `saveDevice`, `openConfirm` sheet, then `saveDeviceNative(d,{password})` per target); empty password = keep stored → never asks.
 
 ---
 

@@ -303,6 +303,117 @@ class TestLoadedModels:
         assert "models" not in result["llama-server.exe:8080"]
         assert called == []  # API never queried while the port is closed
 
+    def test_watched_processes_reports_model_metrics(self, monkeypatch):
+        """v5: per-model t/s from GET /metrics?model=<name>."""
+        proc = mock.MagicMock()
+        proc.info = {"pid": 4711, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 0.0
+        proc.memory_info.return_value = mock.MagicMock(rss=1)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe", "-m", "a.gguf"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: True)
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_loaded_models",
+            lambda port: ["Qwen3.8-Flash-256k-62", "glm-4.7-air"])
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_model_metrics",
+            lambda port, name: ({"prompt_tps": 261.15,
+                                 "predicted_tps": 26.65}
+                                if name == "Qwen3.8-Flash-256k-62"
+                                else None))
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        info = result["llama-server.exe:8080"]
+        assert info["model_metrics"] == {
+            "Qwen3.8-Flash-256k-62": {"prompt_tps": 261.15,
+                                      "predicted_tps": 26.65}}
+
+
+class TestModelThroughput:
+    """llama.cpp Prometheus endpoint -> "model_metrics" (protocol v5)."""
+
+    def test_protocol_version_at_least_5(self):
+        assert wol_host_service.PROTOCOL_VERSION >= 5
+
+    def test_parse_prometheus_gauge(self):
+        text = ("# HELP llamacpp:prompt_tokens_seconds Average\n"
+                "# TYPE llamacpp:prompt_tokens_seconds gauge\n"
+                "llamacpp:prompt_tokens_seconds 261.15\n"
+                "llamacpp:predicted_tokens_seconds 26.6524\n")
+        assert wol_host_service._parse_prometheus_gauge(
+            text, wol_host_service._PROMPT_TPS_RE) == 261.15
+        assert wol_host_service._parse_prometheus_gauge(
+            text, wol_host_service._PREDICTED_TPS_RE) == 26.6524
+
+    def test_parse_prometheus_gauge_edge_cases(self):
+        g = wol_host_service._parse_prometheus_gauge
+        p = wol_host_service._PROMPT_TPS_RE
+        # Labels, exponent notation and zero parse fine.
+        assert g('llamacpp:prompt_tokens_seconds{model="m"} 1.5e2', p) == 150.0
+        assert g("llamacpp:prompt_tokens_seconds 0", p) == 0.0
+        # NaN/Inf (server without traffic yet) = not measurable.
+        assert g("llamacpp:prompt_tokens_seconds NaN", p) is None
+        assert g("llamacpp:prompt_tokens_seconds -Inf", p) is None
+        # Missing metric and near-miss names never match.
+        assert g("llamacpp:prompt_tokens_total 5", p) is None
+        assert g("", p) is None
+
+    def test_fetch_model_metrics_ok(self, monkeypatch):
+        body = (b"# TYPE llamacpp:prompt_tokens_seconds gauge\n"
+                b"llamacpp:prompt_tokens_seconds 261.15\n"
+                b"# TYPE llamacpp:predicted_tokens_seconds gauge\n"
+                b"llamacpp:predicted_tokens_seconds 26.6524\n")
+        fake_conn = mock.MagicMock()
+        fake_conn.getresponse.return_value.status = 200
+        fake_conn.getresponse.return_value.read.return_value = body
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_conn)
+        assert wol_host_service._fetch_model_metrics(
+            8080, "Qwen3.8-Flash-256k-62") == {
+                "prompt_tps": 261.15, "predicted_tps": 26.6524}
+        # Model name is URL-encoded into the query string.
+        fake_conn.request.assert_called_once_with(
+            "GET", "/metrics?model=Qwen3.8-Flash-256k-62",
+            headers={"Accept": "text/plain"})
+
+    def test_fetch_model_metrics_partial(self, monkeypatch):
+        # Only the prompt gauge present -> predicted key is omitted.
+        fake_conn = mock.MagicMock()
+        fake_conn.getresponse.return_value.status = 200
+        fake_conn.getresponse.return_value.read.return_value = (
+            b"llamacpp:prompt_tokens_seconds 100\n")
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_conn)
+        assert wol_host_service._fetch_model_metrics(8080, "m") == {
+            "prompt_tps": 100.0}
+
+    def test_fetch_model_metrics_degrades(self, monkeypatch):
+        # non-200 -> None
+        fake_conn = mock.MagicMock()
+        fake_conn.getresponse.return_value.status = 404
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_conn)
+        assert wol_host_service._fetch_model_metrics(1, "m") is None
+        # connection error -> None
+        def boom(*a, **k):
+            raise ConnectionRefusedError()
+        monkeypatch.setattr(wol_host_service.http.client, "HTTPConnection",
+                            boom)
+        assert wol_host_service._fetch_model_metrics(1, "m") is None
+        # empty model name -> no request at all
+        assert wol_host_service._fetch_model_metrics(8080, "") is None
+
 
 class TestBatchGating:
     def test_default_is_disabled(self, tmp_path, monkeypatch):

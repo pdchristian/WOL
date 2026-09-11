@@ -115,6 +115,13 @@ data class MetricsSnapshot(
 )
 
 /** Ein Eintrag aus metrics.processes. */
+/** Durchsatz eines geladenen llama.cpp-Modells (Host-Protokoll v5). */
+@Serializable
+data class ModelMetric(
+    @SerialName("prompt_tps") val promptTps: Double? = null,
+    @SerialName("predicted_tps") val predictedTps: Double? = null,
+)
+
 @Serializable
 data class WatchInfo(
     val running: Boolean = false,
@@ -127,6 +134,7 @@ data class WatchInfo(
     @SerialName("api_port") val apiPort: Int? = null,
     @SerialName("api_port_open") val apiPortOpen: Boolean? = null,
     val models: List<String> = emptyList(),
+    @SerialName("model_metrics") val modelMetrics: Map<String, ModelMetric> = emptyMap(),
 )
 
 /** Antwort des Host-Service-Befehls "run_batch". */

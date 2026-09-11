@@ -1,6 +1,6 @@
 # WOL Host Service — Wire Protocol Specification
 
-**Version:** 4 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
+**Version:** 5 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
 
 Referenzimplementierungen:
 
@@ -101,7 +101,7 @@ Antwort (`status: "ok"`):
 ```json
 {
   "status": "ok",
-  "protocol": 4,
+  "protocol": 5,
   "hostname": "FRACTAL",
   "cpu": 63.4,
   "cpu_count": 16,
@@ -118,7 +118,10 @@ Antwort (`status: "ok"`):
       "ram": 8589934592, "uptime": 10024,
       "model": "Qwen3.8-Flash-256k-62",
       "api_port": 8080, "api_port_open": true,
-      "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"]
+      "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"],
+      "model_metrics": {
+        "Qwen3.8-Flash-256k-62": { "prompt_tps": 261.15, "predicted_tps": 26.65 }
+      }
     },
     "backup-sync.exe": { "running": false }
   }
@@ -160,6 +163,15 @@ felder (`status`, `protocol`, `hostname`) sind immer vorhanden.
   `GET /v1/models`; Alias bevorzugt, sonst Datei-Stem; Resident = Status
   `loaded` **oder** `sleeping` (llama-swap hält Idle-Modelle im RAM).
   Jeder Fehler ⇒ Feld schlicht nicht vorhanden (argv-`model` bleibt Fallback).
+* `model_metrics` (object, **v5**): **nur wenn `api_port_open` und mindestens
+  ein Modell messbar** — pro geladenem Modell (Key = Anzeigename aus `models`)
+  der Durchsatz aus dem llama.cpp-Prometheus-Endpoint
+  (`GET /metrics?model=<name>`): `prompt_tps` (Input,
+  `llamacpp:prompt_tokens_seconds`) und `predicted_tps` (Output,
+  `llamacpp:predicted_tokens_seconds`), beides tokens/s (number). Einzelne
+  Keys fehlen, wenn nur ein Gauge lesbar war (NaN/Inf = nicht messbar);
+  kein Feld, wenn gar nichts messbar war (Dashboard zeigt dann die
+  Modell-Zeile ohne t/s).
 
 Schema: [`schema/response-metrics.json`](schema/response-metrics.json)
 
@@ -235,6 +247,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | 2 | `metrics`, `run_batch` | Dashboard ausblenden |
 | 3 | `watch` → `processes` | Dienste-Panel ausblenden |
 | 4 | `models` pro Watch-Eintrag | argv-`model`-Fallback zeigen |
+| 5 | `model_metrics` pro Watch-Eintrag | Modell-Zeile ohne t/s anzeigen |
 
 Regel: **Nur additive Änderungen.** Neue Felder müssen für ältere Clients
 ignorierbar sein. Neue Pflichtfelder oder Semantic-Änderungen ⇒ neue Major-

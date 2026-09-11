@@ -29,7 +29,10 @@ Commands:
                 when a port was given, ``api_port``/``api_port_open``.
                 Entries with an open port also get ``models``: the model
                 names the llama-server API (``GET /v1/models``) reports as
-                loaded (``alias`` preferred, else the ``id`` file stem).
+                loaded (``alias`` preferred, else the ``id`` file stem), and
+                ``model_metrics``: per-model prompt/generation throughput in
+                tokens/s read from the llama.cpp Prometheus endpoint
+                (``GET /metrics?model=<name>``).
     run_batch - authenticated AND gated: executes a cmd batch script
                 (``script`` field, ``timeout`` optional) and answers with
                 ``exit_code``/``stdout``/``stderr``/``duration_ms``.
@@ -55,7 +58,9 @@ service control dispatcher is entered automatically.
 import ctypes
 import http.client
 import json
+import math
 import os
+import re
 import socket
 import socketserver
 import subprocess
@@ -63,6 +68,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 SERVICE_NAME = "WOLHostService"
@@ -81,7 +87,11 @@ MAX_REQUEST_BYTES = 65536
 # v4 adds "models" per watch entry with an open API port (llama-server
 #    GET /v1/models -> the model names currently resident on the server;
 #    status "loaded" or "sleeping", as llama-swap keeps idle models in RAM).
-PROTOCOL_VERSION = 4
+# v5 adds "model_metrics" per watch entry: prompt/generation throughput in
+#    tokens/s per model (llama.cpp GET /metrics?model=<name> -> the
+#    llamacpp:prompt_tokens_seconds / llamacpp:predicted_tokens_seconds
+#    Prometheus gauges).
+PROTOCOL_VERSION = 5
 
 # Max number of entries in a "watch" list (client configures e.g.
 # ["llama-server.exe", "ollama.exe:11434"] - keep the loop bounded).
@@ -388,6 +398,70 @@ def _fetch_loaded_models(port: int) -> list:
     return _models_from_api_json(payload)
 
 
+# Prometheus gauge lines of the llama.cpp /metrics endpoint. Body is plain
+# text ("# HELP ...\n# TYPE ...\nllamacpp:prompt_tokens_seconds 261.15\n");
+# an optional label set ("{...}") is tolerated. Values may use exponent
+# notation and the specials NaN/Inf appear until the server has answered a
+# request - those are treated as "not measurable".
+_PROMPT_TPS_RE = re.compile(
+    r"^llamacpp:prompt_tokens_seconds(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+_PREDICTED_TPS_RE = re.compile(
+    r"^llamacpp:predicted_tokens_seconds(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+
+
+def _parse_prometheus_gauge(text: str,
+                            pattern: "re.Pattern") -> "float | None":
+    """First match of *pattern* in *text* as float (None when absent/NaN)."""
+    match = pattern.search(text)
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
+
+
+def _fetch_model_metrics(port: int, model_name: str) -> "dict | None":
+    """Per-model throughput from llama.cpp ``GET /metrics?model=<name>``.
+
+    Returns ``{"prompt_tps": float, "predicted_tps": float}`` (a key is
+    omitted when its gauge is missing/NaN) or ``None`` when nothing could
+    be measured - non-llama servers, timeouts, non-200 and non-numeric
+    values all degrade to ``None`` so the dashboard just shows the plain
+    model line without a throughput suffix.
+    """
+    if not model_name:
+        return None
+    path = "/metrics?model=" + urllib.parse.quote(model_name)
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port,
+                                          timeout=WATCH_MODELS_TIMEOUT_S)
+        try:
+            conn.request("GET", path, headers={"Accept": "text/plain"})
+            resp = conn.getresponse()
+            if resp.status != 200:
+                return None
+            body = resp.read(262_144)
+        finally:
+            conn.close()
+        text = body.decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    metrics: dict = {}
+    prompt = _parse_prometheus_gauge(text, _PROMPT_TPS_RE)
+    predicted = _parse_prometheus_gauge(text, _PREDICTED_TPS_RE)
+    if prompt is not None:
+        metrics["prompt_tps"] = prompt
+    if predicted is not None:
+        metrics["predicted_tps"] = predicted
+    return metrics or None
+
+
 def _model_from_argv(argv: list) -> str:
     """Best-effort model name from a llama.cpp-style command line.
 
@@ -517,11 +591,41 @@ def _watched_processes(watch: list) -> dict:
                         names = []
                     if names:
                         model_futures[fut]["models"] = names
+            # On top of the model list, read the prompt/generation
+            # throughput per model from the llama.cpp Prometheus endpoint
+            # (GET /metrics?model=<name>, protocol v5 "model_metrics"). One
+            # request per loaded model, run in parallel with a bounded
+            # worker count; a model whose metrics cannot be read is simply
+            # absent from the map (the dashboard omits its t/s suffix).
+            tps_tasks: list[tuple[dict, int, str]] = []
+            for entry_result, port in ready:
+                for model in entry_result.get("models", []):
+                    tps_tasks.append((entry_result, port, model))
+            if tps_tasks:
+                with ThreadPoolExecutor(
+                        max_workers=min(len(tps_tasks), 8)) as pool:
+                    tps_futures = {
+                        pool.submit(_fetch_model_metrics, port, model):
+                            (entry_result, model)
+                        for entry_result, port, model in tps_tasks}
+                    for fut in tps_futures:
+                        try:
+                            metrics = fut.result()
+                        except Exception:
+                            metrics = None
+                        if metrics:
+                            tps_entry, tps_model = tps_futures[fut]
+                            tps_entry.setdefault(
+                                "model_metrics", {})[tps_model] = metrics
     return result
 
 
 def collect_metrics(watch: "list | None" = None) -> dict:
     """Collect CPU/RAM/GPU/VRAM metrics for the dashboard.
+
+    Watch entries with an open llama-server port additionally report
+    ``models`` (v4) and ``model_metrics`` (v5: per-model prompt/generation
+    throughput in tokens/s from ``GET /metrics?model=<name>``).
 
     All sizes are bytes, percentages 0-100. psutil is imported lazily so a
     broken/missing psutil in an old build only degrades this command.

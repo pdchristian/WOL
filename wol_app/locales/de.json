@@ -17,6 +17,10 @@
   "device.disabled": "Deaktiviert",
   "device.me": "(ich)",
   "device.unknown": "Unbekannt",
+  "device_dialog.apply_shared.message": "Passwort auf die anderen {count} Gerät(e) mit Benutzer \"{username}\" übernehmen?",
+  "device_dialog.apply_shared.no": "Nein",
+  "device_dialog.apply_shared.title": "Passwort übernehmen?",
+  "device_dialog.apply_shared.yes": "Übernehmen",
   "device_dialog.button.cancel": "Abbrechen",
   "device_dialog.button.save": "Speichern",
   "device_dialog.button.update": "Aktualisieren",
@@ -501,6 +505,7 @@
   "modern.dashboard.svc.tip_no_port": "PID {pid} gefunden, aber Port {port} antwortet nicht",
   "modern.dashboard.svc.tip_stopped": "Prozess nicht gefunden",
   "modern.dashboard.svc.tip_models": "Modelle: {models}",
+  "modern.dashboard.svc.model_tps": "Eingabe-Tokens {prompt} t/s – Ausgabe-Tokens {predicted} t/s",
   "tray.tooltip": "{app} läuft im Iconbereich weiter",
   "tray.menu.open": "Fenster öffnen",
   "tray.menu.quit": "Beenden"

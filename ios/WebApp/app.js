@@ -47,6 +47,7 @@ de:{
  "ph.name":"Gerätenamen eingeben","ph.mac":"z.B., AA:BB:CC:DD:EE:FF","ph.ip":"z.B., 192.168.1.100 oder ubuntu-mercury",
  "ph.user":"Benutzername (optional)","ph.pass":"Passwort (optional)","ph.watch":"z.B., llama-server.exe:8080",
  "ph.pass.keep":"Leer lassen = gespeichertes Passwort behalten",
+ "pass.share.title":"Passwort übernehmen?","pass.share.message":'Passwort auf die anderen {count} Gerät(e) mit Benutzer "{username}" übernehmen?',"pass.share.done":"Passwort übernommen.",
  "dev.added":"Gerät hinzugefügt.",
  "dev.method.host":"Host-Service (empfohlen)","dev.method.smb":"SMB (Windows-Freigabe)",
  "dev.enabled":"Gerät ist aktiviert","dev.save":"Speichern","dev.update":"Aktualisieren","dev.cancel":"Abbrechen",
@@ -107,6 +108,7 @@ de:{
  "svc.running":"läuft · PID {pid}","svc.ready":"läuft · PID {pid} · API bereit :{port}","svc.unreach":"läuft (PID {pid}), aber Port {port} nicht erreichbar","svc.gone":"Prozess nicht gefunden",
  "svc.probing":"wird geprüft…",
  "dash.inferenz":"⚡ Inferenz aktiv","dash.model":"🧠 {m}",
+ "dash.model_tps":"Eingabe-Tokens {prompt} t/s – Ausgabe-Tokens {predicted} t/s",
  "m.cpu":"CPU-AUSLASTUNG","m.ram":"RAM-NUTZUNG","m.gpu":"GPU-AUSLASTUNG","m.vram":"VRAM-NUTZUNG",
  "d.cores":"{n} Kerne","d.gb":"{used} / {total} GB","d.uptime":"Uptime {v}","d.na":"k/A",
  "hostv":"Host Service v{v}",
@@ -167,6 +169,7 @@ en:{
  "ph.name":"Enter device name","ph.mac":"e.g., AA:BB:CC:DD:EE:FF","ph.ip":"e.g., 192.168.1.100 or ubuntu-mercury",
  "ph.user":"Username (optional)","ph.pass":"Password (optional)","ph.watch":"e.g., llama-server.exe:8080",
  "ph.pass.keep":"Leave empty = keep stored password",
+ "pass.share.title":"Apply password?","pass.share.message":'Apply this password to the other {count} device(s) with user "{username}"?',"pass.share.done":"Password applied.",
  "dev.added":"Device added.",
  "dev.method.host":"Host service (recommended)","dev.method.smb":"SMB (Windows share)",
  "dev.enabled":"Device is enabled","dev.save":"Save","dev.update":"Update","dev.cancel":"Cancel",
@@ -221,6 +224,7 @@ en:{
  "svc.running":"running · PID {pid}","svc.ready":"running · PID {pid} · API ready :{port}","svc.unreach":"running (PID {pid}), but port {port} unreachable","svc.gone":"Process not found",
  "svc.probing":"checking…",
  "dash.inferenz":"⚡ Inference active","dash.model":"🧠 {m}",
+ "dash.model_tps":"Input Tokens {prompt} t/s - Output Tokens {predicted} t/s",
  "m.cpu":"CPU LOAD","m.ram":"RAM USAGE","m.gpu":"GPU LOAD","m.vram":"VRAM USAGE",
  "d.cores":"{n} cores","d.gb":"{used} / {total} GB","d.uptime":"Uptime {v}","d.na":"n/a",
  "hostv":"Host Service v{v}",
@@ -281,6 +285,7 @@ fr:{
  "ph.name":"Saisir le nom","ph.mac":"ex., AA:BB:CC:DD:EE:FF","ph.ip":"ex., 192.168.1.100 ou ubuntu-mercury",
  "ph.user":"Utilisateur (facultatif)","ph.pass":"Mot de passe (facultatif)","ph.watch":"ex., llama-server.exe:8080",
  "ph.pass.keep":"Vide = conserver le mot de passe enregistré",
+ "pass.share.title":"Appliquer le mot de passe ?","pass.share.message":'Appliquer ce mot de passe aux {count} autre(s) appareil(s) de l\'utilisateur "{username}" ?',"pass.share.done":"Mot de passe appliqué.",
  "dev.added":"Appareil ajouté.",
  "dev.method.host":"Service hôte (recommandé)","dev.method.smb":"SMB (partage Windows)",
  "dev.enabled":"L'appareil est activé","dev.save":"Enregistrer","dev.update":"Actualiser","dev.cancel":"Annuler",
@@ -335,6 +340,7 @@ fr:{
  "svc.running":"actif · PID {pid}","svc.ready":"actif · PID {pid} · API prête :{port}","svc.unreach":"actif (PID {pid}), port {port} injoignable","svc.gone":"Processus introuvable",
  "svc.probing":"vérification…",
  "dash.inferenz":"⚡ Inférence active","dash.model":"🧠 {m}",
+ "dash.model_tps":"Tokens d'entrée {prompt} t/s - Tokens de sortie {predicted} t/s",
  "m.cpu":"CHARGE CPU","m.ram":"UTILISATION RAM","m.gpu":"CHARGE GPU","m.vram":"UTILISATION VRAM",
  "d.cores":"{n} cœurs","d.gb":"{used} / {total} Go","d.uptime":"Uptime {v}","d.na":"n/d",
  "hostv":"Service hôte v{v}",
@@ -395,6 +401,7 @@ es:{
  "ph.name":"Introduzca el nombre","ph.mac":"p. ej., AA:BB:CC:DD:EE:FF","ph.ip":"p. ej., 192.168.1.100 o ubuntu-mercury",
  "ph.user":"Usuario (opcional)","ph.pass":"Contraseña (opcional)","ph.watch":"p. ej., llama-server.exe:8080",
  "ph.pass.keep":"Vacío = mantener la contraseña guardada",
+ "pass.share.title":"¿Aplicar contraseña?","pass.share.message":'¿Aplicar esta contraseña a los otros {count} dispositivo(s) con el usuario "{username}"?',"pass.share.done":"Contraseña aplicada.",
  "dev.added":"Dispositivo añadido.",
  "dev.method.host":"Servicio host (recomendado)","dev.method.smb":"SMB (recurso compartido Windows)",
  "dev.enabled":"El dispositivo está habilitado","dev.save":"Guardar","dev.update":"Actualizar","dev.cancel":"Cancelar",
@@ -449,6 +456,7 @@ es:{
  "svc.running":"activo · PID {pid}","svc.ready":"activo · PID {pid} · API lista :{port}","svc.unreach":"activo (PID {pid}), puerto {port} inaccesible","svc.gone":"Proceso no encontrado",
  "svc.probing":"comprobando…",
  "dash.inferenz":"⚡ Inferencia activa","dash.model":"🧠 {m}",
+ "dash.model_tps":"Tokens de entrada {prompt} t/s - Tokens de salida {predicted} t/s",
  "m.cpu":"CARGA DE CPU","m.ram":"USO DE RAM","m.gpu":"CARGA DE GPU","m.vram":"USO DE VRAM",
  "d.cores":"{n} núcleos","d.gb":"{used} / {total} GB","d.uptime":"Tiempo activo {v}","d.na":"n/d",
  "hostv":"Servicio host v{v}",
@@ -725,13 +733,37 @@ function saveDeviceFromSheet() {
     enabled: e.enabled, watch: $("#i-watch").value.split(/[,;]/).map(s => s.trim()).filter(Boolean),
     allow_batch: e.allow_batch || false, batches: e.batches || [],
   };
+  const prevIds = new Set(state.devices.map(d => d.id));
   Native.call("saveDevice", payload).then(res => {
     if (!res.ok) { toast(String(res.error || "error"), true); return; }
     applyDevices(res.data);
     closeSheet(); renderDevices(); renderManage(); renderSched();
     toast(t("dev.saved"));
     logIt(name, e.id ? "info" : "info", t(e.id ? "dev.saved" : "dev.added"));
+    offerSharedPassword(res.data, payload, prevIds);
   });
+}
+/* Parität Desktop: Passwort auf alle anderen Geräte mit gleichem Benutzer übernehmen. */
+function offerSharedPassword(list, payload, prevIds) {
+  const pw = payload.password || "";
+  const uname = (payload.username || "").trim().toLowerCase();
+  if (!pw || !uname) return; /* leer = gespeichertes PW behalten → nie anfragen */
+  const saved = payload.id ? list.find(d => d.id === payload.id)
+                           : list.find(d => !prevIds.has(d.id));
+  const targets = list.filter(d => d.id !== (saved && saved.id)
+    && (d.username || "").trim().toLowerCase() === uname);
+  if (!targets.length) return;
+  openConfirm(t("pass.share.title"),
+    t("pass.share.message", { username: payload.username.trim(), count: targets.length }),
+    () => {
+      Promise.all(targets.map(d => saveDeviceNative(d, { password: pw }))).then(rs => {
+        const failed = rs.find(r => !r.ok);
+        const last = [...rs].reverse().find(r => r.ok && Array.isArray(r.data));
+        if (last) applyDevices(last.data);
+        renderDevices(); renderManage();
+        toast(failed ? String(failed.error || "error") : t("pass.share.done"), !!failed);
+      });
+    }, "primary");
 }
 function deleteDevice(id) {
   const d = byId(id);
@@ -907,6 +939,15 @@ function svcLine(d, entry) {
   if (p.apiPort != null && p.apiPortOpen) return t("svc.ready", { pid: p.pid, port });
   if (p.apiPort != null && p.apiPortOpen === false) return t("svc.unreach", { pid: p.pid, port });
   return t("svc.running", { pid: p.pid });
+}
+// Host v5: per-model prompt/generation throughput (t/s) from the llama.cpp
+// Prometheus endpoint; "" when the host reported no metrics for this model.
+function modelTps(p, name) {
+  const mm = p && p.modelMetrics && p.modelMetrics[name];
+  if (!mm) return "";
+  const a = Number(mm.promptTps), b = Number(mm.predictedTps);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return "";
+  return " · " + t("dash.model_tps", { prompt: a.toFixed(2), predicted: b.toFixed(2) });
 }
 
 /* ══════════════════════════ Batches (Dashboard, am Gerät persistiert) ════ */
@@ -1249,7 +1290,7 @@ function renderDash(dir) {
           <div class="rowInfo"><div class="rowTitle" style="font-size:13px">${esc(s.w.split(":")[0])}
             ${s.w.toLowerCase().includes("llama") && d.gpuHigh >= 2 ? `<span class="chip probe" style="margin-left:6px;font-size:9px" id="infBadge">${esc(t("dash.inferenz"))}</span>` : ""}</div>
             <span class="mono">${esc(svcLine(d, s.w))}</span>
-            ${s.p && s.p.models && s.p.models.length && s.p.apiPortOpen ? `<span class="mono">${esc(t("dash.model", { m: s.p.models[0] }))}${s.p.models.length > 1 ? ` +${s.p.models.length - 1}` : ""}</span>` : ""}
+            ${s.p && s.p.models && s.p.models.length && s.p.apiPortOpen ? `<span class="mono">${esc(t("dash.model", { m: s.p.models[0] }) + modelTps(s.p, s.p.models[0]))}${s.p.models.length > 1 ? ` +${s.p.models.length - 1}` : ""}</span>` : ""}
           </div>
         </div>`).join("")}</div>`
       : `<div class="pageSub">${esc(t("dash.svc.none"))}</div>`}

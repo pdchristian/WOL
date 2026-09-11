@@ -325,6 +325,62 @@ class TestWatchedProcesses:
         assert any("Qwen3.8-Flash-256k-50" in t for t in row_models)
         assert any("glm-4.7-air" in t for t in row_models)
 
+    def test_row_shows_model_throughput(self, qapp, tmp_path, monkeypatch):
+        """Host v5 "model_metrics": the model line gains a t/s suffix."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe:8080"])
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe:8080": {
+                "running": True, "pid": 4711, "cpu": 3.0,
+                "ram": 5 * 1024**3, "uptime": 3600,
+                "api_port": 8080, "api_port_open": True,
+                "models": ["Qwen3.8-Flash-256k-62", "glm-4.7-air"],
+                "model_metrics": {
+                    "Qwen3.8-Flash-256k-62": {"prompt_tps": 261.15,
+                                              "predicted_tps": 26.65}}}}))
+        row = v._svc_row_widgets["llama-server.exe:8080"]
+        texts = [lbl.text() for lbl in row._model_labels if not lbl.isHidden()]
+        assert len(texts) == 2
+        # Model with metrics: prompt/predicted t/s appended (2 decimals).
+        qwen = next(t for t in texts if "Qwen3.8-Flash-256k-62" in t)
+        assert "261.15" in qwen and "26.65" in qwen
+        assert "t/s" in qwen
+        # Model without metrics stays a plain model line.
+        glm = next(t for t in texts if "glm-4.7-air" in t)
+        assert "t/s" not in glm
+
+    def test_row_no_throughput_without_metrics(self, qapp, tmp_path,
+                                               monkeypatch):
+        """Older hosts (v4) report no model_metrics -> plain model line."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe:8080"])
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe:8080": {
+                "running": True, "pid": 4711, "cpu": 3.0,
+                "ram": 5 * 1024**3, "uptime": 3600,
+                "api_port": 8080, "api_port_open": True,
+                "models": ["Qwen3.8-Flash-256k-62"]}}))
+        row = v._svc_row_widgets["llama-server.exe:8080"]
+        texts = [lbl.text() for lbl in row._model_labels if not lbl.isHidden()]
+        assert texts == ["🧠 Qwen3.8-Flash-256k-62"]
+
+    def test_model_tps_suffix_ignores_bad_values(self):
+        """Non-numeric / non-finite / missing values never produce a suffix."""
+        from wol_app.views.dashboard_view import _model_tps_suffix
+        good = {"model_metrics": {"m": {"prompt_tps": 1.5,
+                                        "predicted_tps": 2.5}}}
+        assert _model_tps_suffix(good, "m") != ""
+        assert _model_tps_suffix({}, "m") == ""
+        assert _model_tps_suffix(good, "other") == ""
+        assert _model_tps_suffix(
+            {"model_metrics": {"m": {"prompt_tps": "x",
+                                     "predicted_tps": 1}}}, "m") == ""
+        assert _model_tps_suffix(
+            {"model_metrics": {"m": {"prompt_tps": float("nan"),
+                                     "predicted_tps": 1}}}, "m") == ""
+        assert _model_tps_suffix(
+            {"model_metrics": {"m": {"prompt_tps": 1}}}, "m") == ""
+
     def test_row_falls_back_to_argv_model(self, qapp, tmp_path, monkeypatch):
         """Hosts without "models" (v3) keep showing the argv-derived name;
 

@@ -531,6 +531,30 @@ class ConfigManager:
                 return dev
         return None
 
+    def get_devices_by_username(self, username: str, exclude_id: str | None = None,
+                                case_insensitive: bool = True) -> list:
+        """Return all devices that share the given username.
+
+        Used by the "apply password to devices with the same user" feature.
+        The comparison ignores leading/trailing whitespace and, by default,
+        letter case (Windows user names are case-insensitive). Devices
+        without a username never match. Returns the live device dicts.
+        """
+        name = (username or "").strip()
+        if not name:
+            return []
+        target = name.lower() if case_insensitive else name
+        result = []
+        for dev in self.config.get("devices", []):
+            if exclude_id is not None and dev.get("id") == exclude_id:
+                continue
+            other = str(dev.get("username") or "").strip()
+            if not other:
+                continue
+            if (other.lower() if case_insensitive else other) == target:
+                result.append(dev)
+        return result
+
     # --- Network ---
 
     def get_network_settings(self) -> dict:

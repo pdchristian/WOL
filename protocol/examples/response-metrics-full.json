@@ -1,6 +1,6 @@
 {
   "status": "ok",
-  "protocol": 4,
+  "protocol": 5,
   "hostname": "FRACTAL",
   "cpu": 63.4,
   "cpu_count": 16,
@@ -22,7 +22,10 @@
       "model": "Qwen3.8-Flash-256k-62",
       "api_port": 8080,
       "api_port_open": true,
-      "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"]
+      "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"],
+      "model_metrics": {
+        "Qwen3.8-Flash-256k-62": { "prompt_tps": 261.15, "predicted_tps": 26.65 }
+      }
     },
     "backup-sync.exe": { "running": false }
   }

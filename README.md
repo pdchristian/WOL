@@ -112,7 +112,12 @@ the bridge protocol and a browser demo mode.
 
 ### Unreleased
 
-#### 👉 Dashboard: swipe between devices (Android & iOS)
+#### � Apply password to devices with the same user
+- **After saving a device with a username and password, the app asks** whether the password should also be applied to every other device that has the **same username** (case-insensitive). A modern Ja/Nein confirmation appears — *Apply* copies the password to all matching devices, *No* keeps them unchanged
+- No popup when the password field is empty (mobile: empty = keep stored password), when no other device shares the user, or when every matching device already stores the identical password
+- Available on all platforms: desktop (modern dialog and classic dialog) and the WebView apps (*Android* / *iOS* — bottom-sheet confirmation, one `saveDevice` call per affected device)
+
+#### �👉 Dashboard: swipe between devices (Android & iOS)
 - **Swipe left or right on the dashboard** to jump to the next / previous device — in exactly the order the devices are currently sorted in the device manager (name / IP / MAC / status), wrapping around at the ends. The device title shows a `position/total` pill (with a swipe hint) and the content slides in horizontally, with a short haptic tick on each change
 - Vertical scrolling stays untouched, and the gesture is ignored while interacting with inputs, the interval selector, the batch console or any sheet — so it never fights with normal dashboard use. Implemented once per WebView app (`android_html/` and `ios/WebApp/` share the `app.js` gesture code)
 

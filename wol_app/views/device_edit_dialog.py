@@ -23,7 +23,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from wol_app.shared_password import apply_password, collect_share_targets
 from wol_app.translations import Translations
+from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
 from wol_app.widgets.toggle_switch import ToggleSwitch
 from wol_app.utils import (
     validate_device_name,
@@ -264,8 +266,7 @@ class ModernDeviceDialog(QDialog):
                 self.config.set_device_watch_processes(
                     self.editing_device["id"], watch_entries)
             # Re-fetch updated device
-            updated = self.config.get_device_by_id(self.editing_device["id"])
-            self.device_saved.emit(updated)
+            saved = self.config.get_device_by_id(self.editing_device["id"])
         else:
             device = self.config.add_device(
                 name, mac, enabled=self.enabled_toggle.isChecked()
@@ -284,11 +285,38 @@ class ModernDeviceDialog(QDialog):
                 if watch_entries:
                     self.config.set_device_watch_processes(
                         device["id"], watch_entries)
-                self.device_saved.emit(self.config.get_device_by_id(device["id"]))
+                saved = self.config.get_device_by_id(device["id"])
             else:
                 QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.save_failed"))
                 return
 
+        # Offer to apply the password to all other devices that share this
+        # username (modern look, Ja/Nein like the shutdown confirmation).
+        self._offer_shared_password(username, password,
+                                    saved.get("id") if saved else None)
+
         # Clear password from input field for security
         self.password_input.clear()
+        self.device_saved.emit(saved)
         self.accept()
+
+    def _offer_shared_password(self, username: str, password: str,
+                               current_id: str | None) -> None:
+        """Ask whether to copy the password to devices with the same username."""
+        targets = collect_share_targets(self.config, username, password,
+                                        exclude_id=current_id)
+        if not targets:
+            return
+        dialog = ModernShutdownConfirmDialog(
+            "", self,
+            title_key="device_dialog.apply_shared.title",
+            message_key="device_dialog.apply_shared.message",
+            yes_key="device_dialog.apply_shared.yes",
+            no_key="device_dialog.apply_shared.no",
+            message_kwargs={"username": username.strip(),
+                            "count": len(targets)},
+            yes_object_name="primaryButton",
+            show_icon=False,
+        )
+        if dialog.exec():
+            apply_password(self.config, targets, password)

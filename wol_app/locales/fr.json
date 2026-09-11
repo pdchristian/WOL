@@ -17,6 +17,10 @@
   "device.disabled": "Désactivé",
   "device.me": "(moi)",
   "device.unknown": "Inconnu",
+  "device_dialog.apply_shared.message": "Appliquer ce mot de passe aux {count} autre(s) appareil(s) de l'utilisateur \"{username}\" ?",
+  "device_dialog.apply_shared.no": "Non",
+  "device_dialog.apply_shared.title": "Appliquer le mot de passe ?",
+  "device_dialog.apply_shared.yes": "Appliquer",
   "device_dialog.button.cancel": "Annuler",
   "device_dialog.button.save": "Enregistrer",
   "device_dialog.button.update": "Mettre à jour",
@@ -501,6 +505,7 @@
   "modern.dashboard.svc.tip_no_port": "PID {pid} trouvé, mais le port {port} ne répond pas",
   "modern.dashboard.svc.tip_stopped": "Processus introuvable",
   "modern.dashboard.svc.tip_models": "Modèles : {models}",
+  "modern.dashboard.svc.model_tps": "Tokens d'entrée {prompt} t/s - Tokens de sortie {predicted} t/s",
   "tray.tooltip": "{app} continue de s'exécuter dans la zone de notification",
   "tray.menu.open": "Ouvrir la fenêtre",
   "tray.menu.quit": "Quitter"

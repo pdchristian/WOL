@@ -1,7 +1,7 @@
 import XCTest
 @testable import WolManager
 
-/* Host-Service-Antworten (Protokoll v4) gegen die Datenmodelle — analog HostServiceProtocolTest.kt. */
+/* Host-Service-Antworten (Protokoll v4/v5) gegen die Datenmodelle — analog HostServiceProtocolTest.kt. */
 final class HostServiceProtocolTests: XCTestCase {
 
     func testMetricsFullResponse() throws {
@@ -25,7 +25,10 @@ final class HostServiceProtocolTests: XCTestCase {
               "running": true, "count": 1, "pid": 4242,
               "cpu": 3.2, "ram": 1073741824, "uptime": 300,
               "model": "mistral-7b.gguf", "api_port": 8080, "api_port_open": true,
-              "models": ["mistral-7b.gguf"]
+              "models": ["mistral-7b.gguf"],
+              "model_metrics": {
+                "mistral-7b.gguf": { "prompt_tps": 261.15, "predicted_tps": 26.65 }
+              }
             },
             "notepad.exe": { "running": false, "count": 0 }
           }
@@ -45,9 +48,13 @@ final class HostServiceProtocolTests: XCTestCase {
         XCTAssertEqual(llama.apiPort, 8080)
         XCTAssertEqual(llama.apiPortOpen, true)
         XCTAssertEqual(llama.models, ["mistral-7b.gguf"])
+        // v5: per-model throughput (t/s) from the llama.cpp /metrics endpoint.
+        XCTAssertEqual(llama.modelMetrics["mistral-7b.gguf"]!.promptTps!, 261.15, accuracy: 0.001)
+        XCTAssertEqual(llama.modelMetrics["mistral-7b.gguf"]!.predictedTps!, 26.65, accuracy: 0.001)
         let notepad = m.processes["notepad.exe"]!
         XCTAssertEqual(notepad.running, false)
         XCTAssertNil(notepad.pid)
+        XCTAssertTrue(notepad.modelMetrics.isEmpty)
     }
 
     func testMetricsMinimalResponse() throws {

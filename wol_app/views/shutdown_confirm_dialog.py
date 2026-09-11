@@ -81,7 +81,9 @@ class ModernShutdownConfirmDialog(QDialog):
                  yes_key: str = "modern.shutdown_confirm.yes",
                  no_key: str = "modern.shutdown_confirm.no",
                  min_key: str | None = None,
-                 message_kwargs: dict | None = None) -> None:
+                 message_kwargs: dict | None = None,
+                 yes_object_name: str = "dangerButton",
+                 show_icon: bool = True) -> None:
         super().__init__(parent)
         self.device_name = device_name
         self._title_key = title_key
@@ -90,6 +92,8 @@ class ModernShutdownConfirmDialog(QDialog):
         self._yes_key = yes_key
         self._no_key = no_key
         self._min_key = min_key
+        self._yes_object_name = yes_object_name
+        self._show_icon = show_icon
         self.setWindowTitle(Translations.tr(title_key))
         self.setMinimumWidth(380)
         self._setup_ui()
@@ -100,15 +104,17 @@ class ModernShutdownConfirmDialog(QDialog):
         layout.setContentsMargins(28, 26, 28, 24)
         layout.setSpacing(14)
 
-        # Power icon, centered
-        icon = QLabel()
-        icon.setPixmap(_power_icon_pixmap(64, t["danger"], self.devicePixelRatioF()))
-        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_row = QHBoxLayout()
-        icon_row.addStretch()
-        icon_row.addWidget(icon)
-        icon_row.addStretch()
-        layout.addLayout(icon_row)
+        # Power icon, centered (optional — non-destructive confirmations
+        # such as "apply password to same-user devices" hide it)
+        if self._show_icon:
+            icon = QLabel()
+            icon.setPixmap(_power_icon_pixmap(64, t["danger"], self.devicePixelRatioF()))
+            icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_row = QHBoxLayout()
+            icon_row.addStretch()
+            icon_row.addWidget(icon)
+            icon_row.addStretch()
+            layout.addLayout(icon_row)
 
         # Question
         msg = QLabel(Translations.tr(self._message_key, **self._message_kwargs))
@@ -123,7 +129,7 @@ class ModernShutdownConfirmDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         self.yes_btn = QPushButton(Translations.tr(self._yes_key))
-        self.yes_btn.setObjectName("dangerButton")
+        self.yes_btn.setObjectName(self._yes_object_name)
         self.yes_btn.clicked.connect(self.accept)
         self.min_btn: QPushButton | None = None
         if self._min_key:

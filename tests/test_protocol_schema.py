@@ -146,6 +146,24 @@ class TestNegativeExamples:
             [f"m{i}" for i in range(17)]
         assert_invalid("response-metrics", payload)
 
+    def test_metrics_watch_model_metrics_ok(self):
+        # The shipped example carries a v5 model_metrics map -> valid.
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        assert_valid("response-metrics", payload)
+
+    def test_metrics_watch_model_metrics_rejects_string_value(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["processes"]["llama-server.exe:8080"]["model_metrics"] = {
+            "Qwen3.8-Flash-256k-62": {"prompt_tps": "261.15"}}
+        assert_invalid("response-metrics", payload)
+
+    def test_metrics_watch_model_metrics_partial_entry_ok(self):
+        # A model with only one readable gauge is allowed (keys optional).
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["processes"]["llama-server.exe:8080"]["model_metrics"] = {
+            "Qwen3.8-Flash-256k-62": {"predicted_tps": 26.65}}
+        assert_valid("response-metrics", payload)
+
     def test_run_batch_ok_requires_exit_code(self):
         payload = _load(EXAMPLES_DIR / "response-run_batch-ok.json")
         del payload["exit_code"]
@@ -214,6 +232,9 @@ def _fake_psutil_with_llama(monkeypatch, svc, port_open=True,
     monkeypatch.setattr(svc, "_check_port_loopback", lambda port: True)
     monkeypatch.setattr(svc, "_fetch_loaded_models",
                         lambda port: models or ["Qwen3.8-Flash-256k-62"])
+    monkeypatch.setattr(
+        svc, "_fetch_model_metrics",
+        lambda port, name: {"prompt_tps": 261.15, "predicted_tps": 26.65})
     svc._WATCH_PROCS.clear()
 
 

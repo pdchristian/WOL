@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "wol-host-protocol/response-metrics.json",
-  "title": "Response to {command: metrics} (authenticated, protocol v4)",
+  "title": "Response to {command: metrics} (authenticated, protocol v5)",
   "description": "Sizes are bytes, percentages 0-100. null = not measurable (psutil/nvidia-smi unavailable). See protocol/SPEC.md §4.2.",
   "allOf": [{ "$ref": "response-core.json" }],
   "type": "object",
@@ -10,7 +10,7 @@
                "vram_total", "gpu_name"],
   "properties": {
     "status": { "const": "ok" },
-    "protocol": { "type": "integer", "minimum": 1, "maximum": 4 },
+    "protocol": { "type": "integer", "minimum": 1, "maximum": 5 },
     "hostname": { "type": "string" },
     "cpu": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
     "cpu_count": { "type": ["integer", "null"], "minimum": 1 },
@@ -46,6 +46,18 @@
           "type": "array",
           "maxItems": 16,
           "items": { "type": "string", "maxLength": 64 }
+        },
+        "model_metrics": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "prompt_tps": { "type": "number", "minimum": 0 },
+              "predicted_tps": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": true
+          }
         }
       },
       "additionalProperties": true,

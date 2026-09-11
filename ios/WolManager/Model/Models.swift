@@ -245,6 +245,23 @@ struct MetricsSnapshot: Codable, Equatable {
     }
 }
 
+/// Durchsatz eines geladenen llama.cpp-Modells (Host-Protokoll v5).
+struct ModelMetric: Codable, Equatable {
+    var promptTps: Double?
+    var predictedTps: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case promptTps = "prompt_tps"
+        case predictedTps = "predicted_tps"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        promptTps = try c.decodeIfPresent(Double.self, forKey: .promptTps)
+        predictedTps = try c.decodeIfPresent(Double.self, forKey: .predictedTps)
+    }
+}
+
 /// Ein Eintrag aus metrics.processes.
 struct WatchInfo: Codable, Equatable {
     var running: Bool = false
@@ -257,12 +274,14 @@ struct WatchInfo: Codable, Equatable {
     var apiPort: Int?
     var apiPortOpen: Bool?
     var models: [String] = []
+    var modelMetrics: [String: ModelMetric] = [:]
 
     enum CodingKeys: String, CodingKey {
         case running, count, pid, cpu, ram, uptime, model
         case apiPort = "api_port"
         case apiPortOpen = "api_port_open"
         case models
+        case modelMetrics = "model_metrics"
     }
 
     init(from decoder: Decoder) throws {
@@ -277,6 +296,8 @@ struct WatchInfo: Codable, Equatable {
         apiPort = try c.decodeIfPresent(Int.self, forKey: .apiPort)
         apiPortOpen = try c.decodeIfPresent(Bool.self, forKey: .apiPortOpen)
         models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
+        modelMetrics = try c.decodeIfPresent([String: ModelMetric].self,
+                                             forKey: .modelMetrics) ?? [:]
     }
 }
 
