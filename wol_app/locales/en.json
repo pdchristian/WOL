@@ -506,6 +506,7 @@
   "modern.dashboard.svc.tip_stopped": "Process not found",
   "modern.dashboard.svc.tip_models": "Models: {models}",
   "modern.dashboard.svc.model_tps": "Input Tokens {prompt} t/s - Output Tokens {predicted} t/s",
+  "modern.dashboard.svc.model_total": "Total Tokens {total}",
   "tray.tooltip": "{app} keeps running in the notification area",
   "tray.menu.open": "Open Window",
   "tray.menu.quit": "Quit"

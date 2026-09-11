@@ -37,7 +37,7 @@ class HostServiceProtocolTest {
               "model": "mistral-7b.gguf", "api_port": 8080, "api_port_open": true,
               "models": ["mistral-7b.gguf"],
               "model_metrics": {
-                "mistral-7b.gguf": { "prompt_tps": 261.15, "predicted_tps": 26.65 }
+                "mistral-7b.gguf": { "prompt_tps": 261.15, "predicted_tps": 26.65, "total_tokens": 77427 }
               }
             },
             "notepad.exe": { "running": false, "count": 0 }
@@ -60,9 +60,10 @@ class HostServiceProtocolTest {
         assertEquals(8080, llama.apiPort)
         assertEquals(true, llama.apiPortOpen)
         assertEquals(listOf("mistral-7b.gguf"), llama.models)
-        // v5: per-model throughput (t/s) from the llama.cpp /metrics endpoint.
+        // v5: per-model throughput (t/s) + total tokens (prompt+decode sum).
         assertEquals(261.15, llama.modelMetrics["mistral-7b.gguf"]!!.promptTps!!, 0.001)
         assertEquals(26.65, llama.modelMetrics["mistral-7b.gguf"]!!.predictedTps!!, 0.001)
+        assertEquals(77427.0, llama.modelMetrics["mistral-7b.gguf"]!!.totalTokens!!, 0.001)
         val notepad = m.processes["notepad.exe"]!!
         assertEquals(false, notepad.running)
         assertEquals(null, notepad.pid)

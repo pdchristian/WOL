@@ -24,7 +24,7 @@
       "api_port_open": true,
       "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"],
       "model_metrics": {
-        "Qwen3.8-Flash-256k-62": { "prompt_tps": 261.15, "predicted_tps": 26.65 }
+        "Qwen3.8-Flash-256k-62": { "prompt_tps": 261.15, "predicted_tps": 26.65, "total_tokens": 77427 }
       }
     },
     "backup-sync.exe": { "running": false }

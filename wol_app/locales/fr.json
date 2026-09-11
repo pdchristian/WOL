@@ -506,6 +506,7 @@
   "modern.dashboard.svc.tip_stopped": "Processus introuvable",
   "modern.dashboard.svc.tip_models": "Modèles : {models}",
   "modern.dashboard.svc.model_tps": "Tokens d'entrée {prompt} t/s - Tokens de sortie {predicted} t/s",
+  "modern.dashboard.svc.model_total": "Tokens totaux {total}",
   "tray.tooltip": "{app} continue de s'exécuter dans la zone de notification",
   "tray.menu.open": "Ouvrir la fenêtre",
   "tray.menu.quit": "Quitter"

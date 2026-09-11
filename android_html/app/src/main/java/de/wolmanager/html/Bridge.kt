@@ -327,12 +327,13 @@ class Bridge(
                     put("apiPort", w.apiPort)
                     put("apiPortOpen", w.apiPortOpen)
                     put("models", JsonArray(w.models.map { JsonPrimitive(it) }))
-                    // Host v5: per-model prompt/generation throughput (t/s).
+                    // Host v5: per-model throughput (t/s) + total tokens.
                     put("modelMetrics", buildJsonObject {
                         w.modelMetrics.forEach { (model, m) ->
                             put(model, buildJsonObject {
                                 put("promptTps", m.promptTps)
                                 put("predictedTps", m.predictedTps)
+                                put("totalTokens", m.totalTokens)
                             })
                         }
                     })

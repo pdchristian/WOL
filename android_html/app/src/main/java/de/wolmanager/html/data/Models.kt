@@ -120,6 +120,8 @@ data class MetricsSnapshot(
 data class ModelMetric(
     @SerialName("prompt_tps") val promptTps: Double? = null,
     @SerialName("predicted_tps") val predictedTps: Double? = null,
+    /** Summe aus `llamacpp:prompt_tokens_total` + `llamacpp:n_decode_total`, wächst fortlaufend. */
+    @SerialName("total_tokens") val totalTokens: Double? = null,
 )
 
 @Serializable

@@ -112,14 +112,22 @@ def _model_names(info: dict) -> list[str]:
 
 
 def _model_tps_suffix(info: dict, model_name: str) -> str:
-    """Localized input/output throughput suffix for one model (host v5).
+    """Localized throughput/size suffix for one model (host v5).
 
-    Reads ``model_metrics[model_name]`` (``prompt_tps``/``predicted_tps``,
-    tokens/s from the llama.cpp Prometheus endpoint) and renders
-    ``" · Input Tokens 261.15 t/s - Output Tokens 26.65 t/s"``. Returns
-    "" when the host reported no metrics for this model (older hosts) or
-    either value is missing/not a finite number - the plain model line
-    stays unchanged then. Values keep two decimals (dot, German-agnostic).
+    Reads ``model_metrics[model_name]`` from the llama.cpp Prometheus
+    endpoint and renders the parts that are available, joined by " · ":
+
+    * ``prompt_tps``/``predicted_tps`` (tokens/s) → the input/output
+      throughput phrase (only when both are finite numbers);
+    * ``total_tokens`` (``llamacpp:prompt_tokens_total`` +
+      ``llamacpp:n_decode_total``, grows continuously) → the localized
+      "Total Tokens" phrase (only when a positive number).
+
+    The host latches the last non-zero throughput reading, so an idle
+    server keeps showing its last real value rather than 0. Returns ""
+    when the host reported nothing usable for this model (older hosts) -
+    the plain model line stays unchanged then. Throughput keeps two
+    decimals (dot, German-agnostic); the total is a plain integer.
     """
     metrics = info.get("model_metrics")
     if not isinstance(metrics, dict):
@@ -127,16 +135,26 @@ def _model_tps_suffix(info: dict, model_name: str) -> str:
     entry = metrics.get(model_name)
     if not isinstance(entry, dict):
         return ""
+    parts: list[str] = []
     try:
         prompt = float(entry.get("prompt_tps"))
         predicted = float(entry.get("predicted_tps"))
     except (TypeError, ValueError):
+        prompt = predicted = math.nan
+    if math.isfinite(prompt) and math.isfinite(predicted):
+        parts.append(Translations.tr(
+            "modern.dashboard.svc.model_tps",
+            prompt=f"{prompt:.2f}", predicted=f"{predicted:.2f}"))
+    try:
+        total = float(entry.get("total_tokens"))
+    except (TypeError, ValueError):
+        total = math.nan
+    if math.isfinite(total) and total > 0:
+        parts.append(Translations.tr(
+            "modern.dashboard.svc.model_total", total=int(total)))
+    if not parts:
         return ""
-    if not math.isfinite(prompt) or not math.isfinite(predicted):
-        return ""
-    return " · " + Translations.tr(
-        "modern.dashboard.svc.model_tps",
-        prompt=f"{prompt:.2f}", predicted=f"{predicted:.2f}")
+    return " · " + " · ".join(parts)
 
 
 def _fmt_bytes_gb(value: int | float | None) -> str:

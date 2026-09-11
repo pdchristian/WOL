@@ -506,6 +506,7 @@
   "modern.dashboard.svc.tip_stopped": "Proceso no encontrado",
   "modern.dashboard.svc.tip_models": "Modelos: {models}",
   "modern.dashboard.svc.model_tps": "Tokens de entrada {prompt} t/s - Tokens de salida {predicted} t/s",
+  "modern.dashboard.svc.model_total": "Tokens totales {total}",
   "tray.tooltip": "{app} sigue ejecutándose en el área de notificación",
   "tray.menu.open": "Abrir ventana",
   "tray.menu.quit": "Salir"

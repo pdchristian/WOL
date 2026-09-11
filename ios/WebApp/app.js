@@ -109,6 +109,7 @@ de:{
  "svc.probing":"wird geprüft…",
  "dash.inferenz":"⚡ Inferenz aktiv","dash.model":"🧠 {m}",
  "dash.model_tps":"Eingabe-Tokens {prompt} t/s – Ausgabe-Tokens {predicted} t/s",
+ "dash.model_total":"Gesamt-Tokens {total}",
  "m.cpu":"CPU-AUSLASTUNG","m.ram":"RAM-NUTZUNG","m.gpu":"GPU-AUSLASTUNG","m.vram":"VRAM-NUTZUNG",
  "d.cores":"{n} Kerne","d.gb":"{used} / {total} GB","d.uptime":"Uptime {v}","d.na":"k/A",
  "hostv":"Host Service v{v}",
@@ -225,6 +226,7 @@ en:{
  "svc.probing":"checking…",
  "dash.inferenz":"⚡ Inference active","dash.model":"🧠 {m}",
  "dash.model_tps":"Input Tokens {prompt} t/s - Output Tokens {predicted} t/s",
+ "dash.model_total":"Total Tokens {total}",
  "m.cpu":"CPU LOAD","m.ram":"RAM USAGE","m.gpu":"GPU LOAD","m.vram":"VRAM USAGE",
  "d.cores":"{n} cores","d.gb":"{used} / {total} GB","d.uptime":"Uptime {v}","d.na":"n/a",
  "hostv":"Host Service v{v}",
@@ -341,6 +343,7 @@ fr:{
  "svc.probing":"vérification…",
  "dash.inferenz":"⚡ Inférence active","dash.model":"🧠 {m}",
  "dash.model_tps":"Tokens d'entrée {prompt} t/s - Tokens de sortie {predicted} t/s",
+ "dash.model_total":"Tokens totaux {total}",
  "m.cpu":"CHARGE CPU","m.ram":"UTILISATION RAM","m.gpu":"CHARGE GPU","m.vram":"UTILISATION VRAM",
  "d.cores":"{n} cœurs","d.gb":"{used} / {total} Go","d.uptime":"Uptime {v}","d.na":"n/d",
  "hostv":"Service hôte v{v}",
@@ -457,6 +460,7 @@ es:{
  "svc.probing":"comprobando…",
  "dash.inferenz":"⚡ Inferencia activa","dash.model":"🧠 {m}",
  "dash.model_tps":"Tokens de entrada {prompt} t/s - Tokens de salida {predicted} t/s",
+ "dash.model_total":"Tokens totales {total}",
  "m.cpu":"CARGA DE CPU","m.ram":"USO DE RAM","m.gpu":"CARGA DE GPU","m.vram":"USO DE VRAM",
  "d.cores":"{n} núcleos","d.gb":"{used} / {total} GB","d.uptime":"Tiempo activo {v}","d.na":"n/d",
  "hostv":"Servicio host v{v}",
@@ -940,14 +944,20 @@ function svcLine(d, entry) {
   if (p.apiPort != null && p.apiPortOpen === false) return t("svc.unreach", { pid: p.pid, port });
   return t("svc.running", { pid: p.pid });
 }
-// Host v5: per-model prompt/generation throughput (t/s) from the llama.cpp
-// Prometheus endpoint; "" when the host reported no metrics for this model.
+// Host v5: per-model throughput (t/s) + total tokens (prompt_tokens_total
+// + n_decode_total) from the llama.cpp Prometheus endpoint. The host
+// latches the last non-zero t/s
+// reading, so idle servers keep showing their last real value. Each part is
+// shown when available; "" when the host reported nothing usable.
 function modelTps(p, name) {
   const mm = p && p.modelMetrics && p.modelMetrics[name];
   if (!mm) return "";
+  const parts = [];
   const a = Number(mm.promptTps), b = Number(mm.predictedTps);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return "";
-  return " · " + t("dash.model_tps", { prompt: a.toFixed(2), predicted: b.toFixed(2) });
+  if (Number.isFinite(a) && Number.isFinite(b)) parts.push(t("dash.model_tps", { prompt: a.toFixed(2), predicted: b.toFixed(2) }));
+  const total = Number(mm.totalTokens);
+  if (Number.isFinite(total) && total > 0) parts.push(t("dash.model_total", { total: Math.round(total) }));
+  return parts.length ? " · " + parts.join(" · ") : "";
 }
 
 /* ══════════════════════════ Batches (Dashboard, am Gerät persistiert) ════ */

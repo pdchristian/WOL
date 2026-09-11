@@ -381,6 +381,26 @@ class TestWatchedProcesses:
         assert _model_tps_suffix(
             {"model_metrics": {"m": {"prompt_tps": 1}}}, "m") == ""
 
+    def test_model_tps_suffix_total_tokens(self):
+        """total_tokens renders as its own part; t/s part is independent."""
+        from wol_app.views.dashboard_view import _model_tps_suffix
+        both = {"model_metrics": {"m": {"prompt_tps": 1.5,
+                                        "predicted_tps": 2.5,
+                                        "total_tokens": 131072}}}
+        suffix = _model_tps_suffix(both, "m")
+        assert "1.50" in suffix and "2.50" in suffix
+        assert "131072" in suffix
+        assert suffix.count(" · ") == 2  # " · " prefix + one join
+        # Only total_tokens (host has nothing latched yet) -> total alone.
+        only_total = {"model_metrics": {"m": {"total_tokens": 42}}}
+        total_suffix = _model_tps_suffix(only_total, "m")
+        assert "42" in total_suffix and "t/s" not in total_suffix
+        # total_tokens 0 / non-numeric is dropped.
+        assert _model_tps_suffix(
+            {"model_metrics": {"m": {"total_tokens": 0}}}, "m") == ""
+        assert _model_tps_suffix(
+            {"model_metrics": {"m": {"total_tokens": "x"}}}, "m") == ""
+
     def test_row_falls_back_to_argv_model(self, qapp, tmp_path, monkeypatch):
         """Hosts without "models" (v3) keep showing the argv-derived name;
 

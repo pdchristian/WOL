@@ -460,6 +460,24 @@ _PROMPT_TPS_RE = re.compile(
 _PREDICTED_TPS_RE = re.compile(
     r"^llamacpp:predicted_tokens_seconds(?:\s*\{[^}]*\})?\s+"
     r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+# Cumulative token counters - "Total Tokens" is their sum: every processed
+# prompt token plus every decoded token. Both grow monotonically while the
+# server runs (reset only on restart), unlike the throughput gauges.
+_PROMPT_TOKENS_TOTAL_RE = re.compile(
+    r"^llamacpp:prompt_tokens_total(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+_N_DECODE_TOTAL_RE = re.compile(
+    r"^llamacpp:n_decode_total(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+
+# llama.cpp zeroes the two throughput gauges while the server idles, so a
+# 0 reading means "nothing measured since the last request", not "no
+# throughput". The last valid (non-zero) reading per (port, model) is
+# latched here and re-sent instead, so the dashboard shows the last known
+# value instead of a flickering 0. Hard-capped against model churn in
+# llama-swap setups (the entry is replaced wholesale when the cap hits).
+_MODEL_TPS_CACHE: dict[tuple[int, str], dict] = {}
+_MODEL_TPS_CACHE_LOCK = threading.Lock()
 
 
 def _parse_prometheus_gauge(text: str,
@@ -480,11 +498,17 @@ def _parse_prometheus_gauge(text: str,
 def _fetch_model_metrics(port: int, model_name: str) -> "dict | None":
     """Per-model throughput from llama.cpp ``GET /metrics?model=<name>``.
 
-    Returns ``{"prompt_tps": float, "predicted_tps": float}`` (a key is
-    omitted when its gauge is missing/NaN) or ``None`` when nothing could
-    be measured - non-llama servers, timeouts, non-200 and non-numeric
-    values all degrade to ``None`` so the dashboard just shows the plain
-    model line without a throughput suffix.
+    Returns ``{"prompt_tps": float, "predicted_tps": float,
+    "total_tokens": int}`` - keys are omitted while not measurable. The
+    two throughput gauges report 0 while the server idles: a 0 (or NaN)
+    reading never overwrites the latched last valid value
+    (``_MODEL_TPS_CACHE``), it is just re-sent. ``total_tokens`` is the
+    sum of the cumulative counters ``llamacpp:prompt_tokens_total`` and
+    ``llamacpp:n_decode_total`` (missing counters count as 0) and grows
+    continuously.
+    ``None`` when nothing is known at all - non-llama servers, timeouts,
+    non-200 and non-numeric values all degrade quietly so the dashboard
+    shows the plain model line without a suffix.
     """
     if not model_name:
         return None
@@ -505,14 +529,30 @@ def _fetch_model_metrics(port: int, model_name: str) -> "dict | None":
         text = body.decode("utf-8", errors="replace")
     except Exception:
         return None
-    metrics: dict = {}
     prompt = _parse_prometheus_gauge(text, _PROMPT_TPS_RE)
     predicted = _parse_prometheus_gauge(text, _PREDICTED_TPS_RE)
-    if prompt is not None:
-        metrics["prompt_tps"] = prompt
-    if predicted is not None:
-        metrics["predicted_tps"] = predicted
-    return metrics or None
+    counter_values = [_parse_prometheus_gauge(text, _PROMPT_TOKENS_TOTAL_RE),
+                      _parse_prometheus_gauge(text, _N_DECODE_TOTAL_RE)]
+    counters = [v for v in counter_values if v is not None]
+    total = sum(counters) if counters else None
+    fresh: dict = {}
+    if prompt is not None and prompt > 0:
+        fresh["prompt_tps"] = prompt
+    if predicted is not None and predicted > 0:
+        fresh["predicted_tps"] = predicted
+    result: dict = {}
+    with _MODEL_TPS_CACHE_LOCK:
+        key = (port, model_name)
+        if fresh:
+            if (len(_MODEL_TPS_CACHE) > 256
+                    and key not in _MODEL_TPS_CACHE):
+                _MODEL_TPS_CACHE.clear()
+            _MODEL_TPS_CACHE[key] = {**_MODEL_TPS_CACHE.get(key, {}),
+                                     **fresh}
+        result.update(_MODEL_TPS_CACHE.get(key, {}))
+    if total is not None and total > 0:
+        result["total_tokens"] = int(total)
+    return result or None
 
 
 def _model_from_argv(argv: list) -> str:

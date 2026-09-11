@@ -249,16 +249,20 @@ struct MetricsSnapshot: Codable, Equatable {
 struct ModelMetric: Codable, Equatable {
     var promptTps: Double?
     var predictedTps: Double?
+    /// Summe aus `llamacpp:prompt_tokens_total` + `llamacpp:n_decode_total`, wächst fortlaufend.
+    var totalTokens: Double?
 
     enum CodingKeys: String, CodingKey {
         case promptTps = "prompt_tps"
         case predictedTps = "predicted_tps"
+        case totalTokens = "total_tokens"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         promptTps = try c.decodeIfPresent(Double.self, forKey: .promptTps)
         predictedTps = try c.decodeIfPresent(Double.self, forKey: .predictedTps)
+        totalTokens = try c.decodeIfPresent(Double.self, forKey: .totalTokens)
     }
 }
 

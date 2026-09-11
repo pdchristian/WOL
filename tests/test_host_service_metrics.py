@@ -340,6 +340,13 @@ class TestLoadedModels:
 class TestModelThroughput:
     """llama.cpp Prometheus endpoint -> "model_metrics" (protocol v5)."""
 
+    @pytest.fixture(autouse=True)
+    def _clear_tps_cache(self):
+        """The latch cache is module-level - keep tests independent."""
+        wol_host_service._MODEL_TPS_CACHE.clear()
+        yield
+        wol_host_service._MODEL_TPS_CACHE.clear()
+
     def test_protocol_version_at_least_5(self):
         assert wol_host_service.PROTOCOL_VERSION >= 5
 
@@ -362,6 +369,11 @@ class TestModelThroughput:
         # NaN/Inf (server without traffic yet) = not measurable.
         assert g("llamacpp:prompt_tokens_seconds NaN", p) is None
         assert g("llamacpp:prompt_tokens_seconds -Inf", p) is None
+        # Cumulative counters parse like any other gauge.
+        pt = wol_host_service._PROMPT_TOKENS_TOTAL_RE
+        nd = wol_host_service._N_DECODE_TOTAL_RE
+        assert g("llamacpp:prompt_tokens_total 75873", pt) == 75873.0
+        assert g('llamacpp:n_decode_total{model="m"} 1554', nd) == 1554.0
         # Missing metric and near-miss names never match.
         assert g("llamacpp:prompt_tokens_total 5", p) is None
         assert g("", p) is None
@@ -396,6 +408,90 @@ class TestModelThroughput:
             lambda *a, **k: fake_conn)
         assert wol_host_service._fetch_model_metrics(8080, "m") == {
             "prompt_tps": 100.0}
+
+    def test_fetch_model_metrics_zero_latches_last_valid(self, monkeypatch):
+        """Idle servers report 0 - the last non-zero reading is re-sent."""
+        def fake_http(body):
+            fake_conn = mock.MagicMock()
+            fake_conn.getresponse.return_value.status = 200
+            fake_conn.getresponse.return_value.read.return_value = body
+            return fake_conn
+
+        # 1) Fresh reading is latched.
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_seconds 261.15\n"
+                b"llamacpp:predicted_tokens_seconds 26.65\n"))
+        assert wol_host_service._fetch_model_metrics(8080, "m") == {
+            "prompt_tps": 261.15, "predicted_tps": 26.65}
+        # 2) Idle poll (both gauges 0) -> last valid values are re-sent.
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_seconds 0\n"
+                b"llamacpp:predicted_tokens_seconds 0\n"))
+        assert wol_host_service._fetch_model_metrics(8080, "m") == {
+            "prompt_tps": 261.15, "predicted_tps": 26.65}
+        # 3) Partial update: only a non-zero gauge replaces its latch slot.
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_seconds 0\n"
+                b"llamacpp:predicted_tokens_seconds 40\n"))
+        assert wol_host_service._fetch_model_metrics(8080, "m") == {
+            "prompt_tps": 261.15, "predicted_tps": 40.0}
+        # 4) A different (port, model) key never sees another key's latch.
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_seconds 0\n"
+                b"llamacpp:predicted_tokens_seconds 0\n"))
+        assert wol_host_service._fetch_model_metrics(8081, "m") is None
+
+    def test_fetch_model_metrics_total_tokens(self, monkeypatch):
+        """total_tokens = prompt_tokens_total + n_decode_total (fresh)."""
+        def fake_http(body):
+            fake_conn = mock.MagicMock()
+            fake_conn.getresponse.return_value.status = 200
+            fake_conn.getresponse.return_value.read.return_value = body
+            return fake_conn
+
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_seconds 0\n"
+                b"llamacpp:predicted_tokens_seconds 0\n"
+                b"llamacpp:prompt_tokens_total 75873\n"
+                b"llamacpp:n_decode_total 1554\n"))
+        # Nothing latched yet, but the growing counters alone are usable.
+        assert wol_host_service._fetch_model_metrics(8080, "tot") == {
+            "total_tokens": 77427}
+        # Only one counter present -> it alone is the total.
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_total 100\n"))
+        assert wol_host_service._fetch_model_metrics(8080, "one") == {
+            "total_tokens": 100}
+        # Both counters 0 (fresh server) -> key omitted entirely.
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_total 0\n"
+                b"llamacpp:n_decode_total 0\n"))
+        assert wol_host_service._fetch_model_metrics(8080, "zero") is None
+        # Combined with a latched t/s reading.
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_seconds 100\n"
+                b"llamacpp:predicted_tokens_seconds 10\n"
+                b"llamacpp:prompt_tokens_total 50\n"
+                b"llamacpp:n_decode_total 5\n"))
+        assert wol_host_service._fetch_model_metrics(8080, "both") == {
+            "prompt_tps": 100.0, "predicted_tps": 10.0,
+            "total_tokens": 55}
 
     def test_fetch_model_metrics_degrades(self, monkeypatch):
         # non-200 -> None
