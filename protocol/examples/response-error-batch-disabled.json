@@ -1,4 +1,4 @@
 {
   "status": "error",
-  "message": "Batch execution disabled on host (run: WOL Host Service.exe --enable-batch)"
+  "message": "Batch execution disabled on host (run: \"C:\\Program Files\\WakeOnLAN\\WOL Host Service\\WOL Host Service.exe\" --enable-batch)"
 }

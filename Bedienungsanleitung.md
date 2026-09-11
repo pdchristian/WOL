@@ -507,7 +507,7 @@ Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
 - **Clientseitig:** das Kontrollkästchen **Batch-Ausführung auf diesem Gerät erlauben** im Dashboard (pro Gerät gespeichert).
 - **Zielsystemseitig:** der Host Service ist standardmäßig gesperrt. Ein Administrator muss es einmalig pro Rechner aktivieren:
   ```
-  "C:\Program Files\WakeOnLAN\WOL Host Service.exe" --enable-batch
+  "C:\Program Files\WakeOnLAN\WOL Host Service\WOL Host Service.exe" --enable-batch
   ```
   Rückgängig mit `--disable-batch`. Die Einstellung wird in `%ProgramData%\WakeOnLAN\WOL Host Service\service.json` gespeichert und bei jeder Anfrage neu gelesen. Ohne diese Freigabe antwortet der Dienst mit *„Batch execution is disabled on this host“*.
 

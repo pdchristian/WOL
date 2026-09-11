@@ -209,6 +209,19 @@ def set_batch_allowed(allowed: bool) -> bool:
     return _write_config({"allow_batch": bool(allowed)})
 
 
+def batch_enable_command() -> str:
+    """Runnable command that enables batch execution on this machine.
+
+    When running as an installed (frozen) service this resolves to the full
+    quoted path of the executable, e.g.
+    ``"C:\\Program Files\\WakeOnLAN\\WOL Host Service\\WOL Host Service.exe"
+    --enable-batch`` so the message shown to the user can be copied verbatim.
+    """
+    if getattr(sys, "frozen", False):
+        return f'"{os.path.abspath(sys.executable)}" --enable-batch'
+    return "WOL Host Service.exe --enable-batch"
+
+
 # --- Metrics collection (psutil + nvidia-smi) ---
 
 _gpu_cache: tuple[float, dict] = (0.0, {})
@@ -815,7 +828,7 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                     self._respond({
                         "status": "error",
                         "message": "Batch execution disabled on host "
-                                   "(run: WOL Host Service.exe --enable-batch)",
+                                   f"(run: {batch_enable_command()})",
                     })
                     return
                 script = str(request.get("script", ""))
