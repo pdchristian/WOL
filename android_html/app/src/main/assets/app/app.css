@@ -88,6 +88,8 @@
   .rowTitle.dis{color:var(--text-dim)}
   .rowInfo{flex:1;min-width:0}
   .rowInfo .mono{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  /* Modell-/Token-Zeile: bei zu langem Inhalt umbrechen statt abschneiden */
+  .rowInfo .mono.wrap{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
   .tiles{display:flex;gap:6px;align-items:center}
   /* ── Geräte-Kacheln (2 Spalten auf Mobil) ────────────────────────────── */
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}

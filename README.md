@@ -112,7 +112,13 @@ the bridge protocol and a browser demo mode.
 
 ### Unreleased
 
-#### � Apply password to devices with the same user
+#### 📏 Dashboard model line wraps on mobile (Android & iOS)
+- **The model / token-throughput line under a watched service no longer gets cut off** with an ellipsis when it is too long for the screen width — on *Android* and *iOS* it now wraps onto additional lines instead, so the full model name and the throughput / total-token figures stay readable
+
+#### 🔢 Thousands separators for token counts (all apps)
+- **Total token counts are now grouped with thousands separators** (`100 000` instead of `100000`) on the dashboard — desktop, *Android* and *iOS*. The separator is a non-breaking space (U+00A0), locale-agnostic and safe against line wrapping inside a number
+
+#### 🔑 Apply password to devices with the same user
 - **After saving a device with a username and password, the app asks** whether the password should also be applied to every other device that has the **same username** (case-insensitive). A modern Ja/Nein confirmation appears — *Apply* copies the password to all matching devices, *No* keeps them unchanged
 - No popup when the password field is empty (mobile: empty = keep stored password), when no other device shares the user, or when every matching device already stores the identical password
 - Available on all platforms: desktop (modern dialog and classic dialog) and the WebView apps (*Android* / *iOS* — bottom-sheet confirmation, one `saveDevice` call per affected device)

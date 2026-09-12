@@ -11,7 +11,7 @@
 
 ## 🎯 Einleitung
 
-Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 1.6.0** implementiert wurden. 
+Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 2.3.5** implementiert wurden (Ausgangspunkt war die Überarbeitung in Version 1.6.0). 
 
 Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert. Seit **Version 1.7.0** kommt der optionale **WOL Host Service** hinzu (siehe unten). Seit **Version 1.10.0** kann die Anwendung **Remote Desktop**-Sitzungen starten; dabei werden die Geräte-Anmeldedaten in einer temporären `.rdp`-Datei unter `~/.wol_app/rdp/` abgelegt (benannt nach dem Gerät), die nach wenigen Sekunden automatisch gelöscht wird, damit Passwörter nicht auf der Festplatte verbleiben. Da aktuelle Windows-Versionen (10/11) ein eingebettetes Passwort in der `.rdp`-Datei aus Sicherheitsgründen ignorieren, registriert die Anwendung die Anmeldedaten beim Start einer Sitzung zusätzlich über `cmdkey` im **Windows-Anmeldeinformations-Manager**; der Eintrag ist auf den Benutzer und den Ziel-Host beschränkt und wird bei jeder Verbindung aktualisiert. Schließt sich `mstsc` innerhalb von 10 Sekunden wieder (xrdp/Ubuntu verwirft die Session bei falschem Passwort), fragt die Anwendung nach dem besten Vorgehen und löscht bei Bestätigung ausschließlich den `TERMSRV/<Host>`-Eintrag über `cmdkey /delete:`, um eine Verbindung ohne gespeichertes Passwort zu ermöglichen — das Geräte-Passwort selbst bleibt unverändert in der verschlüsselten Konfiguration.
 
@@ -276,7 +276,8 @@ Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Mana
 
 | **Version** | **Datum** | **Sicherheitsverbesserungen** | **Status** |
 |-------------|-----------|--------------------------------|------------|
-| **1.6.0** | 2026-08-05 | Lazy-Permissions-Fix, Logging-Modul, Auto-Re-Encryption von Klartext-Passwörtern | ✅ **AKTUELL** |
+| **2.3.5** | 2026-09-12 | Aktuelle Version; keine über 1.6.0 hinausgehenden neuen Sicherheitsrisiken bekannt. Seither: Linux-Host-Service (systemd, PAM-Authentifizierung, Protokoll v4) mit identischer Befehls-Whitelist, Android/iOS-WebView-Clients (verschlüsselte Gerätespeicher-Passwörter), Single-Instance-Lock, ACL-Härtung | ✅ **AKTUELL** |
+| **1.6.0** | 2026-08-05 | Lazy-Permissions-Fix, Logging-Modul, Auto-Re-Encryption von Klartext-Passwörtern | ⚠️ Veraltet |
 | **1.3.3** | 2026-07-18 | Console-Flash behoben (CREATE_NO_WINDOW für takeown/icacls) | ⚠️ Veraltet |
 | **1.3.2** | 2026-07-15 | Installer-Berechtigungslogik optimiert (Fast-Path, korrekte icacls-Syntax) | ⚠️ Veraltet |
 | 1.3.1 | 2026-07-14 | Umfassende Sicherheitsüberarbeitung (15 Risiken behoben) | ⚠️ Veraltet |

@@ -389,7 +389,8 @@ class TestWatchedProcesses:
                                         "total_tokens": 131072}}}
         suffix = _model_tps_suffix(both, "m")
         assert "1.50" in suffix and "2.50" in suffix
-        assert "131072" in suffix
+        # Thousands are grouped with a non-breaking space (131\u00a0072).
+        assert "131\u00a0072" in suffix
         assert suffix.count(" · ") == 2  # " · " prefix + one join
         # Only total_tokens (host has nothing latched yet) -> total alone.
         only_total = {"model_metrics": {"m": {"total_tokens": 42}}}

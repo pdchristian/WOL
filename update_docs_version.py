@@ -85,6 +85,32 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "docs/android/html-app.md": [
         (r"(`versionName )\d+\.\d+\.\d+(`)", r"\g<1>{version}\g<2>"),
     ],
+    "docs/ubuntu/vm-test-guide.md": [
+        (r"(wake-on-lan-manager_)\d+\.\d+\.\d+(-1_all\.deb)", r"\g<1>{version}\g<2>"),
+        (r"(Tag `v)\d+\.\d+\.\d+(`)", r"\g<1>{version}\g<2>"),
+    ],
+    "docs/ubuntu/03-packaging-release.md": [
+        (r"(Version aus `wol_app/__init__\.py` \(=)\d+\.\d+\.\d+(\))", r"\g<1>{version}\g<2>"),
+        (r"(Version final )\d+\.\d+\.\d+", r"\g<1>{version}"),
+    ],
+    "docs/ubuntu/README.md": [
+        (r"(Windows, v)\d+\.\d+\.\d+(, Source of Truth)", r"\g<1>{version}\g<2>"),
+        (r"(Version: auf \*\*)\d+\.\d+\.\d+(\*\* angleichen)", r"\g<1>{version}\g<2>"),
+    ],
+    "SECURITY.md": [
+        # Only the "AKTUELL" row of the version history tracks the release;
+        # historical rows keep their version numbers.
+        (r"(\| \*\*)\d+\.\d+\.\d+(?=\*\*[^\n]*AKTUELL)", r"\g<1>{version}"),
+    ],
+    "KNOWLEDGE.md": [
+        # Keep the column padding: only the version digits are replaced.
+        (r"(\| \*\*version\*\*\s+\| )\d+\.\d+\.\d+", r"\g<1>{version}"),
+        # installer.py metadata table + registry sample (current version).
+        (r"(\| Version\s+\| )\d+\.\d+\.\d+", r"\g<1>{version}"),
+        (r'(DisplayVersion\s+=\s+")\d+\.\d+\.\d+(")', r"\g<1>{version}\g<2>"),
+        # Version-history row marked as current ("Current version." keyword).
+        (r"(\| )\d+\.\d+\.\d+(?=[^\n]*Current version)", r"\g<1>{version}"),
+    ],
 }
 
 

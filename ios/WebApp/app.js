@@ -543,6 +543,8 @@ const t = (k, vars) => {
 };
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const escA = s => esc(s).replaceAll("\n","<br>");
+/* Ganzzahl mit Tausender-Trennern aus geschütztem Leerzeichen (100 000). */
+const fmtInt = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
 const rnd = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const byId = id => state.devices.find(d => d.id === id);
@@ -956,7 +958,7 @@ function modelTps(p, name) {
   const a = Number(mm.promptTps), b = Number(mm.predictedTps);
   if (Number.isFinite(a) && Number.isFinite(b)) parts.push(t("dash.model_tps", { prompt: a.toFixed(2), predicted: b.toFixed(2) }));
   const total = Number(mm.totalTokens);
-  if (Number.isFinite(total) && total > 0) parts.push(t("dash.model_total", { total: Math.round(total) }));
+  if (Number.isFinite(total) && total > 0) parts.push(t("dash.model_total", { total: fmtInt(total) }));
   return parts.length ? " · " + parts.join(" · ") : "";
 }
 
@@ -1300,7 +1302,7 @@ function renderDash(dir) {
           <div class="rowInfo"><div class="rowTitle" style="font-size:13px">${esc(s.w.split(":")[0])}
             ${s.w.toLowerCase().includes("llama") && d.gpuHigh >= 2 ? `<span class="chip probe" style="margin-left:6px;font-size:9px" id="infBadge">${esc(t("dash.inferenz"))}</span>` : ""}</div>
             <span class="mono">${esc(svcLine(d, s.w))}</span>
-            ${s.p && s.p.models && s.p.models.length && s.p.apiPortOpen ? `<span class="mono">${esc(t("dash.model", { m: s.p.models[0] }) + modelTps(s.p, s.p.models[0]))}${s.p.models.length > 1 ? ` +${s.p.models.length - 1}` : ""}</span>` : ""}
+            ${s.p && s.p.models && s.p.models.length && s.p.apiPortOpen ? `<span class="mono wrap">${esc(t("dash.model", { m: s.p.models[0] }) + modelTps(s.p, s.p.models[0]))}${s.p.models.length > 1 ? ` +${s.p.models.length - 1}` : ""}</span>` : ""}
           </div>
         </div>`).join("")}</div>`
       : `<div class="pageSub">${esc(t("dash.svc.none"))}</div>`}

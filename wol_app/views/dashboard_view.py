@@ -151,10 +151,20 @@ def _model_tps_suffix(info: dict, model_name: str) -> str:
         total = math.nan
     if math.isfinite(total) and total > 0:
         parts.append(Translations.tr(
-            "modern.dashboard.svc.model_total", total=int(total)))
+            "modern.dashboard.svc.model_total",
+            total=_fmt_int_grouped(int(total))))
     if not parts:
         return ""
     return " · " + " · ".join(parts)
+
+
+def _fmt_int_grouped(value: int) -> str:
+    """Integer with non-breaking-space thousands separators (100 000).
+
+    Language-agnostic grouping (no locale dots/commas); U+00A0 keeps the
+    groups together when the label wraps.
+    """
+    return f"{value:,}".replace(",", "\u00a0")
 
 
 def _fmt_bytes_gb(value: int | float | None) -> str:

@@ -491,9 +491,10 @@ Im Dashboard erscheint daraufhin:
 
 - Ein **Status-Chip** pro Prozess im Kopfbereich: **grün** (läuft, API-Port erreichbar bzw. kein Port geprüft), **gelb** (*startet…* – Prozess läuft, Port noch geschlossen) oder **grau** (läuft nicht). Ist das Gerät offline oder der Host Service zu alt (vor Protokoll v3), werden die Chips ausgeblendet.
 - Ein **Service-Panel** mit **PID**, **Uptime**, **Prozess-RAM** und **Prozess-CPU** – bei llama.cpp-Prozessen zusätzlich das **geladene Modell** (aus der Kommandozeile erkannt, 🦙-Symbol).
+- **Token-Ermittlung:** Pro geladenem Modell erscheint eine eigene Zeile (🧠) mit dem **Durchsatz** (*Eingabe-Tokens x t/s – Ausgabe-Tokens y t/s*) und der kumulierten **Gesamt-Tokens**-Anzahl. llama.cpp muss dafür mit dem Parameter **`--metrics`** gestartet werden – dieser aktiviert den Prometheus-Endpunkt `/metrics`, aus dem die Werte gelesen werden. Ohne `--metrics` (oder ohne Port-Suffix am Prozesseintrag) bleibt die Token-Zeile unverändert bzw. ohne Zahlenwerte. Ruht der Server, wird der zuletzt gemessene Durchsatz weiter angezeigt (kein Absturz auf 0).
 - Ein **⚡ Inferenz aktiv**-Abzeichen, wenn ein bereiter Service mit dauerhaft hoher GPU-Auslastung (≥ 60 %) zusammenfällt.
 
-> **Hinweis:** Die Prozess-Beobachtung erfordert den **WOL Host Service ab Protokollversion 3** auf dem Zielsystem. Ältere Dienste ignorieren die Anfrage einfach – es erscheint kein Fehler, das Panel wird nur nicht angezeigt.
+> **Hinweis:** Die Prozess-Beobachtung erfordert den **WOL Host Service ab Protokollversion 3** auf dem Zielsystem. Ältere Dienste ignorieren die Anfrage einfach – es erscheint kein Fehler, das Panel wird nur nicht angezeigt. Die **Token-Ermittlung** (Durchsatz und Gesamt-Tokens) ist zusätzlich ab **Protokollversion 5** verfügbar und setzt voraus, dass `llama-server` mit **`--metrics`** läuft.
 
 ### Batches erstellen und ausführen
 Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
