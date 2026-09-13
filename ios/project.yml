@@ -22,6 +22,11 @@
         "WolManager",
         { "path": "WebApp", "type": "folder" }
       ],
+      # Watch-App ins iPhone-Bundle einbetten (Embed Watch Content) — ohne sie
+      # listet die Watch-App auf dem iPhone keine companion App.
+      "dependencies": [
+        { "target": "WolManagerWatch" }
+      ],
       "configFiles": [],
       "settings": {
         "base": {
@@ -92,6 +97,11 @@
     },
     # Apple-Watch-App (watchOS 10+, SwiftUI). Läuft NUR auf der Watch und
     # kommuniziert via WCSession mit WatchBridgeService auf dem iPhone.
+    # ACHTUNG: type "application.watchapp2" triggert einen XcodeGen-Bug
+    # (CopyAndPreserveArchs-Konflikt, fehlende Build Rules — yonaskolb/XcodeGen#1257).
+    # "application" + Dependency vom iOS-Target erzeugt denselben "Embed Watch
+    # Content"-Phase (Watch/ im iPhone-Bundle) — nur so listet die Watch-App auf
+    # dem iPhone die Companion-App.
     "WolManagerWatch": {
       "type": "application",
       "platform": "watchOS",
@@ -107,6 +117,7 @@
           "WATCHOS_DEPLOYMENT_TARGET": "10.0",
           "SWIFT_VERSION": "5.9",
           "TARGETED_DEVICE_FAMILY": "4",
+          "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
           "CODE_SIGN_STYLE": "Automatic",
           "DEVELOPMENT_TEAM": "",
           "ENABLE_PREVIEWS": "YES",

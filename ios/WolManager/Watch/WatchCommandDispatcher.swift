@@ -16,9 +16,28 @@ final class WatchCommandDispatcher {
     private let actions: WatchActions
     private let repo: Repo
 
+    /// Letzter bekannter Online-Status pro Gerät (aus statusAll / WebView-
+    /// Refresh). Die Watch nutzt ihn als Fallback, wenn statusAll gerade nicht
+    /// durchläuft, und für den applicationContext — sonst zeigt die Watch nach
+    /// jedem Neustart pauschal "offline", obwohl das iPhone die Geräte kennt.
+    /// Zugriff aus mehreren Queues (Delegate-Queue, WebView-Status-Task) → Lock.
+    private let statusLock = NSLock()
+    private var _lastOnline: [String: Bool] = [:]
+
+    var lastOnline: [String: Bool] {
+        statusLock.lock(); defer { statusLock.unlock() }
+        return _lastOnline
+    }
+
     init(actions: WatchActions = AppContainer.shared, repo: Repo = AppContainer.shared.repo) {
         self.actions = actions
         self.repo = repo
+    }
+
+    /// Von außen gemeldete Status (z. B. WebView-Statusrefresh) übernehmen.
+    func noteOnline(_ statuses: [String: Bool]) {
+        statusLock.lock(); defer { statusLock.unlock() }
+        _lastOnline.merge(statuses) { _, new in new }
     }
 
     // ── Einstiegspunkt (WatchBridgeService) ─────────────────────────────────
@@ -78,8 +97,12 @@ final class WatchCommandDispatcher {
         }
     }
 
-    /// Host-Service-Status aller aktivierten Geräte mit IP (parallel).
-    private func statusAllJson() async -> [String: Any] {
+    /// Host-Service-Status aller aktivierten Geräte mit IP (parallel). Jeder
+    /// Check läuft durch (checkStatus checked nicht) — das Ergebnis wird als
+    /// "letzter bekannter Stand" behalten und an den applicationContext der
+    /// Watch weitergegeben, damit sie ohne erreichbares iPhone nicht pauschal
+    /// alles auf "offline" setzt.
+    func statusAllJson() async -> [String: Any] {
         let devices = repo.snapshot.devices.filter { $0.enabled && !$0.ip.isEmpty }
         var online: [String: Bool] = [:]
         await withTaskGroup(of: (String, Bool).self) { group in
@@ -88,6 +111,7 @@ final class WatchCommandDispatcher {
             }
             for await (id, isOnline) in group { online[id] = isOnline }
         }
+        noteOnline(online)
         let statuses = devices.map { d in
             ["id": d.id, "online": online[d.id] ?? false]
         }

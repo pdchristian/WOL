@@ -89,6 +89,18 @@ final class WatchCommandDispatcherTests: XCTestCase {
         XCTAssertEqual(reply["error"] as? String, "unknown_command:deleteAll")
     }
 
+    /// Alle in der iOS-App konfigurierten Geräte erreichen die Watch — auch
+    /// deaktivierte und ohne IP (sie fehlen sonst still in der Liste).
+    func testSnapshotIncludesAllConfiguredDevices() throws {
+        repo.saveDevice(Device(id: "d1", name: "Aktiv", mac: "AA:BB:CC:DD:EE:01", ip: "192.168.1.10"))
+        repo.saveDevice(Device(id: "d2", name: "Ohne IP", mac: "AA:BB:CC:DD:EE:02", ip: ""))
+        repo.saveDevice(Device(id: "d3", name: "Deaktiviert", mac: "AA:BB:CC:DD:EE:03",
+                               ip: "192.168.1.12", enabled: false))
+        let reply = send(["command": "snapshot"])
+        let devices = try XCTUnwrap(reply["devices"] as? [[String: Any]])
+        XCTAssertEqual(Set(devices.compactMap { $0["id"] as? String }), ["d1", "d2", "d3"])
+    }
+
     // ── wake / shutdown ─────────────────────────────────────────────────────
 
     func testWakeDelegatesToActions() throws {
@@ -136,6 +148,14 @@ final class WatchCommandDispatcherTests: XCTestCase {
     }
 
     // ── metrics ─────────────────────────────────────────────────────────────
+
+    /// Status-Letzter-Stand-Merge: späteres "online" überschreibt frühere "false".
+    func testNoteOnlineKeepsLatestStatus() {
+        dispatcher.noteOnline(["d1": false])
+        dispatcher.noteOnline(["d1": true, "d2": false])
+        XCTAssertEqual(dispatcher.lastOnline["d1"], true)
+        XCTAssertEqual(dispatcher.lastOnline["d2"], false)
+    }
 
     func testMetricsReturnsUiFormat() throws {
         repo.saveDevice(Device(id: "d1", name: "PC", mac: "AA", ip: "10.0.0.1",

@@ -140,18 +140,24 @@ final class RepoTests: XCTestCase {
 
     // ── Einstellungen ───────────────────────────────────────────────────────
 
-    func testSettingsRoundtripAndReset() {
+    func testSettingsRoundtripAndReset() throws {
         var s = AppSettings()
         s.broadcastIp = "192.168.9.255"
         s.broadcastPort = 7000
         s.maxLogs = 500
+        s.deviceSort = "status"
         repo.saveSettings(s)
         repo.reload()
         XCTAssertEqual(repo.snapshot.settings.broadcastIp, "192.168.9.255")
         XCTAssertEqual(repo.snapshot.settings.broadcastPort, 7000)
         XCTAssertEqual(repo.snapshot.settings.maxLogs, 500)
+        XCTAssertEqual(repo.snapshot.settings.deviceSort, "status")
+        // Snake-CASE-Key in der Datei (Interface zu Windows/Android identisch).
+        let text = try String(contentsOf: dir.appendingPathComponent("settings.json"), encoding: .utf8)
+        XCTAssertTrue(text.contains("\"device_sort\""))
 
         repo.resetSettings()
         XCTAssertEqual(repo.snapshot.settings, AppSettings())
+        XCTAssertEqual(repo.snapshot.settings.deviceSort, "name")
     }
 }

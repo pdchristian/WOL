@@ -147,6 +147,8 @@ struct AppSettings: Codable, Equatable {
     var interval: String = "168"       // Prüfintervall in Stunden
     var maxLogs: Int = 100
     var defaultShutdownMethod: String = "host_service"
+    /// Sortierung der Geräteliste: name|ip|mac|status — auch für die Watch.
+    var deviceSort: String = "name"
 
     enum CodingKeys: String, CodingKey {
         case broadcastIp = "broadcast_ip"
@@ -157,14 +159,17 @@ struct AppSettings: Codable, Equatable {
         case interval
         case maxLogs = "max_logs"
         case defaultShutdownMethod = "default_shutdown_method"
+        case deviceSort = "device_sort"
     }
 
     init(broadcastIp: String = "255.255.255.255", broadcastPort: Int = 9, language: String = "",
          displayMode: String = "auto", autoUpdate: Bool = true, interval: String = "168",
-         maxLogs: Int = 100, defaultShutdownMethod: String = "host_service") {
+         maxLogs: Int = 100, defaultShutdownMethod: String = "host_service",
+         deviceSort: String = "name") {
         self.broadcastIp = broadcastIp; self.broadcastPort = broadcastPort; self.language = language
         self.displayMode = displayMode; self.autoUpdate = autoUpdate; self.interval = interval
         self.maxLogs = maxLogs; self.defaultShutdownMethod = defaultShutdownMethod
+        self.deviceSort = deviceSort
     }
 
     init(from decoder: Decoder) throws {
@@ -177,6 +182,7 @@ struct AppSettings: Codable, Equatable {
         interval = try c.decodeIfPresent(String.self, forKey: .interval) ?? "168"
         maxLogs = try c.decodeIfPresent(Int.self, forKey: .maxLogs) ?? 100
         defaultShutdownMethod = try c.decodeIfPresent(String.self, forKey: .defaultShutdownMethod) ?? "host_service"
+        deviceSort = try c.decodeIfPresent(String.self, forKey: .deviceSort) ?? "name"
     }
 }
 

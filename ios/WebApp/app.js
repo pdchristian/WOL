@@ -33,6 +33,8 @@ de:{
  "manage.scan.done":"{count} Gerät(e) gefunden",
  "manage.scan.none":"Kein Netzwerk ausgewählt","manage.scan.none.msg":"Bitte wählen Sie mindestens ein Netzwerk zum Scannen aus.",
  "manage.scan.nowifi":"Kein WLAN-Netzwerk gefunden. Bitte verbinden Sie sich mit einem WLAN.",
+ "manage.scan.search":"Suche in Ergebnissen (Name, IP, MAC)…",
+ "manage.scan.noresults":"Keine Ergebnisse entsprechen der Suche.",
  "manage.dns":"  |  DNS: {dns}",
  "edit.title":"Bearbeiten","edit.delete":"Löschen",
  "del.title":"Löschung bestätigen","del.message":'Möchten Sie das Gerät "{name}" wirklich löschen?',
@@ -157,6 +159,8 @@ en:{
  "manage.scan.done":"{count} device(s) found",
  "manage.scan.none":"No network selected","manage.scan.none.msg":"Please select at least one network to scan.",
  "manage.scan.nowifi":"No Wi-Fi network found. Please connect to a Wi-Fi network.",
+ "manage.scan.search":"Search results (name, IP, MAC)…",
+ "manage.scan.noresults":"No results match the search.",
  "manage.dns":"  |  DNS: {dns}",
  "edit.title":"Edit","edit.delete":"Delete",
  "del.title":"Confirm deletion","del.message":'Do you really want to delete the device "{name}"?',
@@ -274,6 +278,8 @@ fr:{
  "manage.scan.done":"{count} appareil(s) trouvé(s)",
  "manage.scan.none":"Aucun réseau sélectionné","manage.scan.none.msg":"Veuillez sélectionner au moins un réseau à analyser.",
  "manage.scan.nowifi":"Aucun réseau Wi-Fi trouvé. Veuillez vous connecter à un réseau Wi-Fi.",
+ "manage.scan.search":"Rechercher dans les résultats (nom, IP, MAC)…",
+ "manage.scan.noresults":"Aucun résultat ne correspond à la recherche.",
  "manage.dns":"  |  DNS : {dns}",
  "edit.title":"Modifier","edit.delete":"Supprimer",
  "del.title":"Confirmer la suppression","del.message":'Voulez-vous vraiment supprimer l\'appareil "{name}" ?',
@@ -391,6 +397,8 @@ es:{
  "manage.scan.done":"{count} dispositivo(s) encontrados",
  "manage.scan.none":"Ninguna red seleccionada","manage.scan.none.msg":"Seleccione al menos una red para escanear.",
  "manage.scan.nowifi":"No se encontró ninguna red Wi-Fi. Conéctese a una red Wi-Fi.",
+ "manage.scan.search":"Buscar en los resultados (nombre, IP, MAC)…",
+ "manage.scan.noresults":"Ningún resultado coincide con la búsqueda.",
  "manage.dns":"  |  DNS: {dns}",
  "edit.title":"Editar","edit.delete":"Eliminar",
  "del.title":"Confirmar eliminación","del.message":'¿Realmente quiere eliminar el dispositivo "{name}"?',
@@ -497,7 +505,7 @@ const state = {
   devices: [],
   schedules: [],
   logs: [],
-  scan: { running:false, results:[], shown:false, ifaces:[] },
+  scan: { running:false, results:[], shown:false, ifaces:[], search:"" },
   con: { lines:[], running:false, exit:null, dur:null, timer:null },
   upd: "",
 };
@@ -675,9 +683,18 @@ function loadIfaces() {
     if (state.ui.screen === "manage") renderManage();
   });
 }
+/* Gefilterte Scan-Ergebnisse als [Original-Index, Eintrag]-Paare — der
+   Original-Index bleibt für "Hinzufügen" (data-i) nötig, da scan-found an
+   state.scan.results anhängt. */
+function scanFiltered() {
+  const q = state.scan.search.trim().toLowerCase();
+  const pairs = state.scan.results.map((r, i) => [i, r]);
+  if (!q) return pairs;
+  return pairs.filter(([, r]) => ((r.host || "") + " " + r.ip + " " + (r.mac || "")).toLowerCase().includes(q));
+}
 function startScan() {
   if (!state.scan.ifaces.some(i => i.checked)) { openAlert(t("manage.scan.none"), t("manage.scan.none.msg")); return; }
-  state.scan.running = true; state.scan.results = []; state.scan.shown = false;
+  state.scan.running = true; state.scan.results = []; state.scan.shown = false; state.scan.search = "";
   renderManage();
   /* Nur die in der UI ausgewählten Netze scannen (Native respektiert die Auswahl). */
   const sel = state.scan.ifaces.filter(i => i.checked)
@@ -1115,19 +1132,20 @@ function renderManage() {
     <div class="toolbar" style="margin-top:10px">
       <button class="btn primary small" data-act="scan" ${sc.running || !state.scan.ifaces.length ? "disabled" : ""}>${esc(t("manage.scan.start"))}</button>
     </div>
+    ${sc.shown && sc.results.length ? `<div class="search" style="margin-top:10px">🔍<input placeholder="${esc(t("manage.scan.search"))}" value="${esc(sc.search)}" data-act="scan-search"></div>` : ""}
     <div class="pageSub">${sc.running ? '<span class="spin"></span> ' + esc(t("manage.scan.running"))
       : sc.shown ? esc(t("manage.scan.done", { count: sc.results.length }))
       : state.scan.ifaces.length ? esc(t("manage.scan.initial")) : ""}</div>
     ${sc.running ? '<div class="progress"><i id="scanProg"></i></div>' : ""}
-    ${sc.shown && sc.results.length ? `<div class="panel" id="scanResults" style="margin-top:10px">${sc.results.map((r, i) => `
-      ${i ? '<div class="sep"></div>' : ""}
+    ${sc.shown && sc.results.length ? (scanFiltered().length ? `<div class="panel" id="scanResults" style="margin-top:10px">${scanFiltered().map(([i, r], p) => `
+      ${p ? '<div class="sep"></div>' : ""}
       <div class="row64">
         <span class="dot dotOnline"></span>
         <div class="rowInfo"><div class="rowTitle">${esc(r.host || "Unknown")}
           <span class="badge ${r.known ? "known" : "new"}">${esc(t(r.known ? "scan.known" : "scan.new"))}</span></div>
           <span class="mono">${esc(r.ip)}${r.mac ? " · " + esc(r.mac) : ""}</span></div>
         <button class="btn small" style="border-color:var(--accent);color:var(--accent)" data-act="scan-add" data-i="${i}">${esc(t("manage.add.btn"))}</button>
-      </div>`).join("")}</div>` : ""}`;
+      </div>`).join("")}</div>` : `<div class="empty">${esc(t("manage.scan.noresults"))}</div>`) : ""}`;
 }
 
 /* ══════════════════════════ Render: Zeitplan ══════════════════════════════ */
@@ -1529,7 +1547,12 @@ document.addEventListener("click", ev => {
 document.addEventListener("change", ev => {
   const el = ev.target.closest("[data-act]"); if (!el) return;
   switch (el.dataset.act) {
-    case "sort": state.ui.sort = el.value; renderDevices(); break;
+    case "sort": {
+      state.ui.sort = el.value; renderDevices();
+      /* Sortierung persistieren → Settings-Snapshot → auch für die Watch. */
+      const s = { ...state.settings, deviceSort: el.value };
+      Native.call("saveSettings", s).then(res => { if (res.ok) state.settings = s; });
+      break; }
     case "log-level": state.ui.logLevel = el.value; renderLogs(); break;
     case "dash-int": state.ui.dashInterval = +el.value; restartDashTimer(); renderDash(); break;
   }
@@ -1542,6 +1565,8 @@ document.addEventListener("input", ev => {
     const n = document.querySelector('[data-act="search"]'); if (n) { n.focus(); n.setSelectionRange(el.selectionStart, el.selectionStart); } }
   if (act === "manage-search") { state.ui.manageSearch = el.value; renderManage();
     const n = document.querySelector('[data-act="manage-search"]'); if (n) { n.focus(); n.setSelectionRange(el.selectionStart, el.selectionStart); } }
+  if (act === "scan-search") { state.scan.search = el.value; renderManage();
+    const n = document.querySelector('[data-act="scan-search"]'); if (n) { n.focus(); n.setSelectionRange(el.selectionStart, el.selectionStart); } }
   if (act === "sched-search") { state.ui.schedSearch = el.value; renderSched();
     const n = document.querySelector('[data-act="sched-search"]'); if (n) { n.focus(); n.setSelectionRange(el.selectionStart, el.selectionStart); } }
   if (act === "log-search") { state.ui.logSearch = el.value; renderLogs();
@@ -1635,6 +1660,10 @@ function applySnapshot(s) {
   state.logs = s.logs || [];
   Object.assign(state.settings, s.settings || {});
   state.lang = state.settings.language || systemLang();
+  /* Persistierte Listensortierung übernehmen (Shared Pref → auch für die Watch). */
+  if (["name", "ip", "mac", "status"].includes(state.settings.deviceSort)) {
+    state.ui.sort = state.settings.deviceSort;
+  }
 }
 function boot() {
   Native.call("info", {}).then(res => {
