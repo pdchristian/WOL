@@ -1,0 +1,258 @@
+{
+  "sourceLanguage" : "de",
+  "strings" : {
+    "nav.devices" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Geräte" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Devices" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Appareils" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Dispositivos" } }
+      }
+    },
+    "devices.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Geräte angelegt." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No devices configured." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucun appareil configuré." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No hay dispositivos configurados." } }
+      }
+    },
+    "devices.wake" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Aufwecken" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Wake" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réveiller" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Despertar" } }
+      }
+    },
+    "devices.shutdown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Herunterfahren" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shut down" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Éteindre" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Apagar" } }
+      }
+    },
+    "devices.viewList" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Listenansicht" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "List view" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Vue liste" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Vista de lista" } }
+      }
+    },
+    "devices.viewCards" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Kartenansicht" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Card view" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Vue cartes" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Vista de tarjetas" } }
+      }
+    },
+    "status.online" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Online" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Online" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "En ligne" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "En línea" } }
+      }
+    },
+    "status.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Offline" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Offline" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Hors ligne" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Desconectado" } }
+      }
+    },
+    "status.waking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Wacht auf" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waking" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réveil" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Despertando" } }
+      }
+    },
+    "shutdown.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Herunterfahren?" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shut down?" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Éteindre ?" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "¿Apagar?" } }
+      }
+    },
+    "shutdown.message %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "%@ sicher herunterfahren?" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Shut down %@?" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Éteindre %@ ?" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "¿Apagar %@?" } }
+      }
+    },
+    "yes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ja" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Yes" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Oui" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Sí" } }
+      }
+    },
+    "no" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Nein" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Non" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No" } }
+      }
+    },
+    "wol.sent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Wake gesendet" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Wake sent" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réveil envoyé" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Despertar enviado" } }
+      }
+    },
+    "iphone_not_reachable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "iPhone nicht erreichbar" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "iPhone not reachable" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "iPhone injoignable" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "iPhone no accesible" } }
+      }
+    },
+    "device_not_found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Gerät nicht gefunden" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Device not found" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Appareil introuvable" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Dispositivo no encontrado" } }
+      }
+    },
+    "host_unreachable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Host nicht erreichbar" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Host not reachable" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Hôte injoignable" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Host no accesible" } }
+      }
+    },
+    "bad_response" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ungültige Antwort" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid response" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réponse invalide" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Respuesta no válida" } }
+      }
+    },
+    "warn.iphone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "iPhone nicht erreichbar – letzter Stand" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "iPhone not reachable – last known state" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "iPhone injoignable – dernier état" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "iPhone no accesible – último estado" } }
+      }
+    },
+    "dash.svc" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Dienste" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Services" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Services" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Servicios" } }
+      }
+    },
+    "dash.svc.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Dienste beobachtet" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No services watched" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucun service surveillé" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Sin servicios observados" } }
+      }
+    },
+    "dash.system" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "System" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "System" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Système" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Sistema" } }
+      }
+    },
+    "dash.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Gerät ist offline." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Device is offline." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L'appareil est hors ligne." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El dispositivo está desconectado." } }
+      }
+    },
+    "dash.unreachable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Antwort vom Host-Service." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No response from host service." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucune réponse du service hôte." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Sin respuesta del servicio de host." } }
+      }
+    },
+    "m.cpu" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "CPU" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "CPU" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "CPU" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "CPU" } }
+      }
+    },
+    "m.ram" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "RAM" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "RAM" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "RAM" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "RAM" } }
+      }
+    },
+    "m.gpu" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "GPU" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GPU" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "GPU" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "GPU" } }
+      }
+    },
+    "m.vram" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "VRAM" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "VRAM" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "VRAM" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "VRAM" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

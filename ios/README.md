@@ -25,9 +25,18 @@ ios/
 │   ├── Model/                  # Models, Repo (JSON-Dateien), SecureStore (Keychain)
 │   ├── Net/                    # MagicPacket, HostServiceClient (TCP 8765), NetworkScanner, Ipv4Resolver
 │   ├── Sched/                  # ScheduleEngine + BGAppRefreshTask
-│   ├── Util/                   # Validation, Csv, UpdateCheck, Haptics, RemoteDesktop
+│   ├── Util/                   # Validation, Csv, UpdateCheck, Haptics, RemoteDesktop, MetricsUI
+│   ├── Watch/                  # WatchBridgeService (WCSession) + WatchCommandDispatcher
 │   └── WebView/                # Bridge (27 Methoden), WebViewController, DocumentPicker
-└── WolManagerTests/            # XCTest-Suite (8 Klassen)
+├── WolManagerWatch/            # Apple-Watch-App (SwiftUI, watchOS 10+)
+│   ├── WatchApp.swift          # @main + AppState (Geräte, Wake/Shutdown, Polling)
+│   ├── Models.swift            # WatchDevice / WatchMetrics / WatchProcess (Codable)
+│   ├── WatchService.swift      # WCSession-Client (sendMessage → Dispatcher)
+│   ├── DeviceListView.swift    # Karten/Liste + Power-Button + Status-Pill
+│   ├── ShutdownConfirmView.swift  # Bestätigungs-Karte (rote Ja/Nein-Buttons)
+│   ├── DashboardView.swift     # Dienste-Chips + 2×2-Ringe (CPU/RAM/GPU/VRAM)
+│   └── Resources/Localizable.xcstrings  # de/en/fr/es
+└── WolManagerTests/            # XCTest-Suite (11 Klassen)
 ```
 
 ## Build auf dem Mac (Apple Silicon)
@@ -112,3 +121,37 @@ Identisch zu `android_html/`: `window.Android.call(callId, method, paramsJson)`
 `{ok, host, username, passwordCopied, hasPassword}` (Fehler
 `remote.notinstalled` / `remote.nohost`). Details: `WolManager/WebView/Bridge.swift`,
 `WolManager/Util/RemoteDesktop.swift`.
+
+## Apple-Watch-App (`WolManagerWatch/`)
+
+Eigene SwiftUI-App (watchOS 10+) — bewusst minimiert gegenüber iPhone/Android:
+Geräte als Karten oder Liste, Power-Icon zum Aufwecken/Herunterfahren,
+vereinfachtes Dashboard. Keine Zeitpläne, Protokolle, Einstellungen, Verwaltung,
+kein Remote Desktop (auf der Watch sinnfrei). Frontend-Referenz:
+`../design_prototype/Watch.html`.
+
+- **Kommunikation**: ausschließlich via `WatchConnectivity` über das iPhone —
+  kein direktes LAN vom Watch. Die Watch sendet Befehle per `sendMessage` an
+  `WatchBridgeService`/`WatchCommandDispatcher` (iPhone-Seite), die über
+  `AppContainer` (Wake/Shutdown/Metriken) ausführen. Passwörter verlassen
+  niemals das iPhone (Keychain); die Watch sieht nur `hasPassword`.
+- **Befehle** (JSON, `{ok:true,…}|{ok:false,error}`):
+  `snapshot` (Geräte), `statusAll` (Online-Flags), `wake {id}`,
+  `shutdown {id}`, `metrics {id}` (Prozent/GB über `MetricsUI`).
+  Verträge: `WolManager/Watch/WatchCommandDispatcher.swift`.
+- **Offline-Fallback**: `applicationContext` hält den letzten Geräte-Snapshot;
+  ist das iPhone nicht erreichbar, zeigt die Watch ihn mit Warnbox
+  („iPhone nicht erreichbar"). Wake-Polling prüft nach dem Magic-Packet bis zu
+  60 s, wann das Gerät online geht.
+- **Aktivierung**: `AppDelegate` ruft `WatchBridgeService.shared.activate()`
+  (nur wenn `WCSession.isSupported()`). Die iPhone-App muss installiert und
+  mindestens einmal geöffnet sein.
+- **Build**: eigenes Schema `WolManagerWatch` (watchOS 10+, Bundle
+  `de.wolmanager.watch`, Companion `de.wolmanager`). Auf dem Mac:
+  `xcodegen generate` (erzeugt auch den Watch-Target aus `project.yml`) oder
+  das mitgeführte `.xcodeproj` öffnen und das Watch-Schema auf einem
+  Watch-Simulator (Ultra/9, watchOS 10) starten.
+- **Tests**: `WolManagerTests/WatchCommandDispatcherTests.swift` prüft den
+  Dispatcher (Passwort-Freiheit im Snapshot, Wake/Shutdown-Delegation,
+  Status-Filter, Metriken, Fehlerpfade) gegen `FakeWatchActions` — ohne
+  Netzwerk/Watch.

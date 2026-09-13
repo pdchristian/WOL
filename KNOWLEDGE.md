@@ -862,6 +862,29 @@ native Compose app in `android/` was removed in 2.3.1.)
   stays unfiltered (also used for WOL directed broadcasts). `scanStart` accepts the
   UI selection like Android; *Manage* tab re-fetches the list before *Start scan*.
   `NetworkScannerTests.swift` covers `isScannable` (re-run `xcodegen` after adding).
+- **Apple Watch app (`ios/WolManagerWatch/`, SwiftUI, watchOS 10+):** deliberately
+  minimal (devices as cards/list with a power icon, simplified dashboard with
+  service chips + CPU/RAM/GPU/VRAM rings, shutdown confirmation). No schedules,
+  logs, settings, management, or Remote Desktop. **All communication goes through
+  the iPhone via WatchConnectivity** — the Watch never touches the LAN directly.
+  iPhone side: `WolManager/Watch/WatchBridgeService.swift` (WCSession delegate,
+  activated from `AppDelegate` when `WCSession.isSupported()`; pushes a
+  password-free `applicationContext` device snapshot on every repo change) and
+  `WatchCommandDispatcher.swift` (commands `snapshot` / `statusAll` / `wake {id}`
+  / `shutdown {id}` / `metrics {id}` → `{ok:true,…}|{ok:false,error}`; delegates
+  to the `WatchActions` protocol implemented by `AppContainer` — passwords never
+  leave the iPhone Keychain, the Watch only sees `hasPassword`). Watch side:
+  `WatchService.swift` (sendMessage with timeout + `applicationContext` offline
+  fallback), `AppState` (wake polling up to 60 s), views mirror
+  `design_prototype/Watch.html`. Metrics reuse `Util/MetricsUI.swift` (extracted
+  from `Bridge.metricsJson` so iPhone and Watch share one UI format). i18n via
+  `WolManagerWatch/Resources/Localizable.xcstrings` (de/en/fr/es; error codes
+  from the iPhone are translated on the Watch). Target/scheme `WolManagerWatch`
+  in `project.yml` (bundle `de.wolmanager.watch`, companion `de.wolmanager`,
+  watchOS 10) + hand-maintained entries in the bundled `.xcodeproj` — run
+  `xcodegen generate` on the Mac to regenerate. Dispatcher covered by
+  `WatchCommandDispatcherTests.swift` (snapshot password-free, delegation,
+  status filter, metrics, error paths) with `FakeWatchActions`.
 
 ---
 

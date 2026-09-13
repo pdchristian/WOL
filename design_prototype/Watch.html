@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WOL Watch">
+<meta name="theme-color" content="#000000">
+<title>WOL Manager watchOS – Interaktiver Prototyp</title>
+<!--
+  ============================================================================
+  WOL Manager watchOS – INTERAKTIVER Prototyp (Simulation, kein Build nötig)
+  ----------------------------------------------------------------------------
+  • Basis: iOS_50.html – reduced auf das, was auf der Apple Watch Sinn macht
+  • Bewusst ENTFALLEN (zu komplex / zu klein für die Watch):
+      Remote Vollbild, Remote Fenster, Bearbeiten, Löschen,
+      Verwalten, Zeitplan, Protokolle, Einstellungen, Über
+  • Geräte als Karten: Statuspunkt + Power-Icon (⏻) direkt auf der Karte –
+      offline → Aufwecken (Akzent), online → Herunterfahren (Rot, mit Bestätigung)
+  • Karten- UND Listenansicht umschaltbar (Symbol oben rechts)
+  • Vereinfachtes Dashboard pro Gerät: Dienste-Chips + 4 Mini-Ringe
+      (CPU, RAM, GPU, VRAM) ohne Sparklines/Konsole/Batches
+  • Navigation: Tippen auf die Karte öffnet das Dashboard, „‹" zurück.
+      Digital Crown = Scrollen (Mausrad oder Crown ziehen), seitlicher
+      Digital-Crown-Drehknopf ist nur Dekoration + Scroll-Target.
+  • i18n de/en/fr/es wie die anderen Prototypen; Dark/Light auto.
+  Öffnen: direkt im Browser. Frame: 45 mm Apple Watch (396 × 484 px).
+  ============================================================================
+-->
+<style>
+  /* watchOS-Farbwelt: reines Schwarz, iOS-Systemtöne; Akzent bleibt Teal */
+  :root{
+    --bg:#000000; --surface:#1c1c1e; --surface-hover:#2c2c2e; --border:#38383a;
+    --text:#ffffff; --text-dim:#98989f; --accent:#00b8a9; --accent-dark:#006b63;
+    --accent-text:#032019;
+    --online:#30d158; --offline:#ff453a; --unknown:#ff9f0a; --danger:#ff453a;
+    --svc:#ff9f0a; --blue:#0a84ff;
+    --gauge-cpu:#00b8a9; --gauge-ram:#0a84ff; --gauge-gpu:#bf5af2; --gauge-vram:#ff9f0a;
+    --sep:rgba(84,84,88,.6); --toast-bg:rgba(46,46,48,.94); --toast-fg:#ffffff;
+    --case:#2a2a2e; --band:#1a1a1c;
+  }
+  .watch[data-theme="light"]{
+    --bg:#f2f2f7; --surface:#ffffff; --surface-hover:#e9e9eb; --border:#d1d1d6;
+    --text:#1c1c1e; --text-dim:#6c6c70; --accent:#009688; --accent-dark:#00695f;
+    --accent-text:#ffffff;
+    --online:#34c759; --offline:#ff3b30; --unknown:#ff9500; --danger:#ff3b30;
+    --svc:#ff9500; --blue:#007aff;
+    --gauge-cpu:#009688; --gauge-ram:#007aff; --gauge-gpu:#af52de; --gauge-vram:#ff9500;
+    --sep:rgba(60,60,67,.29); --toast-bg:rgba(30,30,32,.88); --toast-fg:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;
+    font-family:-apple-system,"SF Pro Text","SF Pro Display","Helvetica Neue",system-ui,sans-serif}
+  body{background:#08080a;display:flex;align-items:center;justify-content:center;
+    min-height:100vh;padding:24px;overflow:auto;-webkit-font-smoothing:antialiased}
+  /* ── Uhren-Gehäuse (45 mm, 396×484 px Display) ─────────────────────────── */
+  .watch{position:relative;width:396px;height:484px;background:var(--bg);color:var(--text);
+    border-radius:96px;border:10px solid var(--case);
+    box-shadow:0 0 0 3px #101012,0 24px 60px rgba(0,0,0,.7)}
+  .band{position:absolute;left:50%;transform:translateX(-50%);width:210px;height:70px;
+    background:var(--band);border-radius:16px;z-index:-1}
+  .band.top{top:-64px}.band.bot{bottom:-64px}
+  /* Digital Crown + Seitentaste (Dekoration; Crown fängt Wheel-Events ab) */
+  .crown{position:absolute;right:-16px;top:118px;width:12px;height:56px;border-radius:6px;
+    background:linear-gradient(90deg,#3a3a3e,#1c1c1e);cursor:ns-resize;
+    box-shadow:inset 0 0 0 1px #000, 2px 0 4px rgba(0,0,0,.5)}
+  .crown::after{content:"";position:absolute;inset:6px 2px;
+    background:repeating-linear-gradient(0deg,#55555a 0 1.5px,transparent 1.5px 4px);border-radius:3px}
+  .sidebtn{position:absolute;right:-13px;top:210px;width:9px;height:80px;border-radius:5px;
+    background:linear-gradient(90deg,#333338,#1a1a1c);box-shadow:inset 0 0 0 1px #000}
+  /* ── Screen-Bereich: Views scrollen unabhängig, Header fix ─────────────── */
+  .screen{position:absolute;inset:0;border-radius:86px;overflow:hidden;display:flex;flex-direction:column}
+  .timebar{flex-shrink:0;text-align:center;font-size:17px;font-weight:700;color:var(--accent);
+    padding:10px 0 2px;letter-spacing:.3px}
+  .view{flex:1;overflow-y:auto;padding:6px 14px 26px;display:none;scrollbar-width:none}
+  .view::-webkit-scrollbar{display:none}
+  .view.active{display:block;animation:fade .18s}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+  /* ── Typografie (watchOS: kompakt, SF) ─────────────────────────────────── */
+  .pageTitle{font-size:23px;font-weight:700;letter-spacing:-.2px}
+  .pageSub{color:var(--text-dim);font-size:15px;margin-top:2px}
+  .toprow{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;
+    position:sticky;top:0;background:linear-gradient(var(--bg) 78%,transparent);padding:2px 0 6px;z-index:5}
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:14.5px;color:var(--text-dim)}
+  /* ── Kopf-Buttons (View-Umschalter / Zurück) ───────────────────────────── */
+  .iconBtn{width:40px;height:40px;flex-shrink:0;border:1px solid var(--border);border-radius:12px;
+    background:var(--surface);color:var(--text);font-size:19px;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center}
+  .iconBtn:active{border-color:var(--accent);color:var(--accent)}
+  .backBtn{border:none;background:rgba(0,184,169,.14);color:var(--accent);border-radius:999px;
+    padding:8px 15px;font-size:16px;font-weight:600;cursor:pointer}
+  .backBtn:active{background:rgba(0,184,169,.3)}
+  /* ── Statuspunkte ──────────────────────────────────────────────────────── */
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0}
+  .dotOnline{background:var(--online);box-shadow:0 0 7px var(--online)}
+  .dotOffline{background:var(--offline)}
+  .dotUnknown{background:var(--unknown)}
+  .dotWaking{background:var(--unknown);animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.3}}
+  /* ── Geräte-Karten (1 Spalte – Watch ist schmal) ───────────────────────── */
+  .wcard{background:var(--surface);border:1px solid var(--border);border-radius:20px;
+    padding:12px 12px 12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;
+    cursor:pointer;transition:transform .1s}
+  .wcard:active{transform:scale(.97)}
+  .wcard.dis{opacity:.5}
+  .wcard .info{flex:1;min-width:0}
+  .wcard .name{font-size:20px;font-weight:600;display:flex;align-items:center;gap:6px}
+  .wcard .name span.n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wcard .mono{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wcard .svcline{display:flex;align-items:center;gap:5px;margin-top:5px;font-size:14.5px;color:var(--text-dim)}
+  .wcard .svcline .sdot{width:6px;height:6px;border-radius:50%;background:var(--online)}
+  /* ── Power-Icon auf der Karte (44 px, touchfreundlich) ─────────────────── */
+  .powerBtn{width:44px;height:44px;flex-shrink:0;border-radius:50%;border:2px solid var(--accent);
+    background:transparent;color:var(--accent);cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;transition:all .15s}
+  .powerBtn svg{width:22px;height:22px}
+  .powerBtn.danger{border-color:var(--danger);color:var(--danger)}
+  .powerBtn:active{transform:scale(.92)}
+  .powerBtn.on:active,.powerBtn.danger:active{background:var(--danger);color:#fff}
+  .powerBtn.off:active{background:var(--accent);color:var(--accent-text)}
+  .powerBtn.waking{border-color:var(--unknown);color:var(--unknown);animation:blink 1s infinite}
+  .powerBtn:disabled{opacity:.35;cursor:default}
+  /* ── Listenansicht (kompakte Zeilen à la watchOS-Liste) ────────────────── */
+  .wlist{background:var(--surface);border:1px solid var(--border);border-radius:20px;overflow:hidden}
+  .wrow{display:flex;align-items:center;gap:9px;min-height:62px;padding:10px 12px;cursor:pointer}
+  .wrow:active{background:var(--surface-hover)}
+  .wrow .info{flex:1;min-width:0}
+  .wrow .name{font-size:18.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wrow .mono{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  .powerBtn.small{width:32px;height:32px;border-width:2px}
+  .powerBtn.small svg{width:16px;height:16px}
+  .sep{height:1px;background:var(--sep);margin-left:12px}
+  .empty{text-align:center;color:var(--text-dim);padding:40px 10px;font-size:16px}
+  /* ── Dashboard (vereinfacht) ───────────────────────────────────────────── */
+  .pill{font-size:14px;font-weight:700;border-radius:999px;padding:4px 12px;flex-shrink:0}
+  .pillOnline{background:rgba(48,209,88,.15);color:var(--online)}
+  .pillOffline{background:rgba(255,69,58,.15);color:var(--offline)}
+  .pillUnknown{background:rgba(255,159,10,.15);color:var(--unknown)}
+  .sectionHeading{font-size:15px;font-weight:700;color:var(--text-dim);letter-spacing:.6px;
+    margin:14px 0 6px;text-transform:uppercase}
+  .chip{display:inline-flex;gap:5px;align-items:center;border-radius:999px;padding:6px 12px;
+    font-size:14.5px;font-weight:600;margin:0 4px 4px 0}
+  .chip.run{background:rgba(48,209,88,.14);color:var(--online)}
+  .chip.probe{background:rgba(255,159,10,.14);color:var(--svc)}
+  .chip.off{background:var(--surface-hover);color:var(--text-dim)}
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .mcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+    padding:8px 6px 7px;text-align:center}
+  .gauge{--v:0;--c:var(--accent);width:82px;height:82px;border-radius:50%;margin:0 auto;
+    background:conic-gradient(var(--c) calc(var(--v)*1%),var(--surface-hover) 0)}
+  .gauge .in{width:62px;height:62px;border-radius:50%;background:var(--surface);margin:10px;
+    display:flex;align-items:center;justify-content:center;flex-direction:column}
+  .gauge b{font-size:18px}
+  .mlabel{font-size:13.5px;font-weight:700;letter-spacing:.8px;color:var(--text-dim);margin-top:5px}
+  .mlabel i{width:8px;height:8px;border-radius:50%;display:inline-block;vertical-align:1px;margin-right:3px}
+  .mdet{font-size:13px;color:var(--text-dim);margin-top:1px}
+  .warnbox{border-radius:14px;padding:11px;font-size:15px;margin:10px 0;line-height:1.4}
+  .warnbox.err{background:rgba(255,69,58,.12);color:var(--danger);border:1px solid rgba(255,69,58,.4)}
+  .warnbox.warn{background:rgba(255,159,10,.12);color:var(--unknown);border:1px solid rgba(255,159,10,.4)}
+  .uptimeRow{display:flex;align-items:center;gap:6px;font-size:14.5px;color:var(--text-dim);margin-top:10px}
+  .spacer{flex:1}
+  /* ── Bestätigungs-Overlay (Herunterfahren, watchOS-Alert-Stil) ──────────── */
+  .confirm{position:absolute;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);display:none;align-items:center;justify-content:center;
+    padding:22px;z-index:40;border-radius:86px;overflow:hidden}
+  .confirm.open{display:flex}
+  .calert{background:var(--surface);border:1px solid var(--sep);border-radius:24px;
+    padding:16px 16px 18px;text-align:center;max-height:100%;overflow-y:auto;
+    animation:pop .25s cubic-bezier(.32,.72,0,1)}
+  @keyframes pop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+  /* Power-Symbol: Lücke durch transparenten oberen Rand = oben mittig, Strich vertikal */
+  .powerIcon{width:44px;height:44px;margin:0 auto 8px;border:3.5px solid var(--danger);
+    border-radius:50%;border-top-color:transparent;position:relative}
+  .powerIcon::after{content:"";position:absolute;left:50%;top:-19px;width:3.5px;height:24px;
+    background:var(--danger);transform:translateX(-50%)}
+  .calert h2{font-size:19px;font-weight:600;margin-bottom:4px}
+  .calert p{font-size:15.5px;color:var(--text-dim);line-height:1.45}
+  .cbtns{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+  .cbtn{border-radius:999px;padding:15px 12px;min-height:54px;font-size:18px;font-weight:600;
+    border:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .cbtn.yes{background:var(--danger);color:#fff}
+  .cbtn.no{background:var(--surface-hover);color:var(--text)}
+  .cbtn:active{opacity:.75}
+  /* ── Toast (kleine HUD-Box) ────────────────────────────────────────────── */
+  .toast{position:absolute;left:24px;right:24px;bottom:26px;background:var(--toast-bg);
+    color:var(--toast-fg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border-radius:14px;padding:11px 13px;font-size:15.5px;text-align:center;z-index:60;
+    opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:1}
+  .toast.err{background:rgba(255,69,58,.92)}
+  .hint{position:fixed;left:16px;bottom:14px;color:#55555c;font-size:11px;max-width:220px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="watch" id="watch" data-theme="dark">
+  <div class="band top"></div>
+  <div class="band bot"></div>
+  <div class="crown" id="crown" title="Digital Crown: scrollen"></div>
+  <div class="sidebtn"></div>
+  <div class="screen">
+    <div class="timebar"><span id="clock">09:41</span></div>
+    <div class="view active" id="v-devices"></div>
+    <div class="view" id="v-dash"></div>
+    <div class="confirm" id="confirm"></div>
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+<div class="hint">Prototyp: Karte antippen = Dashboard · Power-Icon = Aufwecken/Herunterfahren ·
+Mausrad oder Digital Crown = scrollen</div>
+
+<script>
+"use strict";
+/* ══════════════════════════ i18n — Teilmenge der Windows-App-Strings ══════
+   Reduziert: Remote/Bearbeiten/Löschen/Verwalten/Zeitplan/Protokolle/
+   Einstellungen/Über existieren auf der Watch bewusst nicht.            */
+const I18N = {
+de:{
+ "nav.devices":"Geräte","devices.summary":"{online}/{total} online",
+ "devices.viewList":"Zur Listenansicht","devices.viewCards":"Zur Kartenansicht",
+ "devices.empty":"Keine Geräte vorhanden.",
+ "devices.wake":"Aufwecken","devices.shutdown":"Herunterfahren",
+ "status.online":"Online","status.offline":"Offline","status.unknown":"Unbekannt",
+ "device.disabled":"Deaktiviert",
+ "shutdown.title":"Herunterfahren?","shutdown.message":"Gerät wirklich herunterfahren?",
+ "yes":"Ja","no":"Nein",
+ "wol.sent":"Magic Packet an {name}","wol.online":"{name} ist online",
+ "dash.back":"Geräte","dash.svc":"Dienste","dash.svc.none":"Keine Dienste","dash.system":"System",
+ "svc.running":"läuft","svc.ready":"API :{port}","svc.gone":"gestoppt",
+ "m.cpu":"CPU","m.ram":"RAM","m.gpu":"GPU","m.vram":"VRAM",
+ "d.cores":"{n} Kerne","d.gb":"{used}/{total} GB","d.uptime":"Uptime {v}","d.na":"–",
+ "hostv":"Host v{v}"
+},
+en:{
+ "nav.devices":"Devices","devices.summary":"{online}/{total} online",
+ "devices.viewList":"Switch to list","devices.viewCards":"Switch to cards",
+ "devices.empty":"No devices available.",
+ "devices.wake":"Wake","devices.shutdown":"Shut down",
+ "status.online":"Online","status.offline":"Offline","status.unknown":"Unknown",
+ "device.disabled":"Disabled",
+ "shutdown.title":"Shut down?","shutdown.message":"Really shut down the device?",
+ "yes":"Yes","no":"No",
+ "wol.sent":"Magic packet to {name}","wol.online":"{name} is online",
+ "dash.back":"Devices","dash.svc":"Services","dash.svc.none":"No services","dash.system":"System",
+ "svc.running":"running","svc.ready":"API :{port}","svc.gone":"stopped",
+ "m.cpu":"CPU","m.ram":"RAM","m.gpu":"GPU","m.vram":"VRAM",
+ "d.cores":"{n} cores","d.gb":"{used}/{total} GB","d.uptime":"Uptime {v}","d.na":"–",
+ "hostv":"Host v{v}"
+},
+fr:{
+ "nav.devices":"Appareils","devices.summary":"{online}/{total} en ligne",
+ "devices.viewList":"Passer à la liste","devices.viewCards":"Passer aux cartes",
+ "devices.empty":"Aucun appareil.",
+ "devices.wake":"Réveiller","devices.shutdown":"Éteindre",
+ "status.online":"En ligne","status.offline":"Hors ligne","status.unknown":"Inconnu",
+ "device.disabled":"Désactivé",
+ "shutdown.title":"Éteindre ?","shutdown.message":"Vraiment éteindre l'appareil ?",
+ "yes":"Oui","no":"Non",
+ "wol.sent":"Magic packet vers {name}","wol.online":"{name} est en ligne",
+ "dash.back":"Appareils","dash.svc":"Services","dash.svc.none":"Aucun service","dash.system":"Système",
+ "svc.running":"actif","svc.ready":"API :{port}","svc.gone":"arrêté",
+ "m.cpu":"CPU","m.ram":"RAM","m.gpu":"GPU","m.vram":"VRAM",
+ "d.cores":"{n} cœurs","d.gb":"{used}/{total} Go","d.uptime":"Uptime {v}","d.na":"–",
+ "hostv":"Hôte v{v}"
+},
+es:{
+ "nav.devices":"Dispositivos","devices.summary":"{online}/{total} en línea",
+ "devices.viewList":"Cambiar a lista","devices.viewCards":"Cambiar a tarjetas",
+ "devices.empty":"No hay dispositivos.",
+ "devices.wake":"Encender","devices.shutdown":"Apagar",
+ "status.online":"En línea","status.offline":"Fuera de línea","status.unknown":"Desconocido",
+ "device.disabled":"Deshabilitado",
+ "shutdown.title":"¿Apagar?","shutdown.message":"¿Realmente apagar el dispositivo?",
+ "yes":"Sí","no":"No",
+ "wol.sent":"Paquete mágico a {name}","wol.online":"{name} está en línea",
+ "dash.back":"Dispositivos","dash.svc":"Servicios","dash.svc.none":"Sin servicios","dash.system":"Sistema",
+ "svc.running":"activo","svc.ready":"API :{port}","svc.gone":"detenido",
+ "m.cpu":"CPU","m.ram":"RAM","m.gpu":"GPU","m.vram":"VRAM",
+ "d.cores":"{n} núcleos","d.gb":"{used}/{total} GB","d.uptime":"Tiempo activo {v}","d.na":"–",
+ "hostv":"Host v{v}"
+}};
+
+/* ══════════════════════════ State / Datenmodell ═══════════════════════════
+   wie iOS_50.html, aber ohne schedules/logs/settings/scan/batches.      */
+let SEQ = 1;
+const state = {
+  lang: "de", theme: "dark",
+  view: "cards",              /* cards | list */
+  screen: "devices",          /* devices | dash */
+  dashDeviceId: null,
+  dashInterval: 3000,
+  devices: [
+    { id:"d"+(SEQ++), name:"Fractal", mac:"50:EB:F6:B7:8B:0C", ip:"192.168.2.62",
+      enabled:true, watch:["llama-server.exe:8080","backup-sync.exe"],
+      status:"online", sim:{proto:5}, upSeconds:274320,
+      metrics:null, model:"Qwen3.8-Flash-256k-62" },
+    { id:"d"+(SEQ++), name:"A4-H20", mac:"60:CF:84:84:31:29", ip:"192.168.2.50",
+      enabled:true, watch:[],
+      status:"offline", sim:{proto:5}, upSeconds:0, metrics:null, model:"" },
+    { id:"d"+(SEQ++), name:"A4-TV", mac:"A0:AD:9F:1C:09:FF", ip:"192.168.2.111",
+      enabled:true, watch:[],
+      status:"unknown", sim:{proto:2}, upSeconds:53100, metrics:null, model:"" },
+  ],
+};
+
+/* ══════════════════════════ Helpers ═══════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const t = (k, vars) => {
+  let s = (I18N[state.lang] && I18N[state.lang][k]) ?? I18N.de[k] ?? k;
+  for (const [v, r] of Object.entries(vars || {})) s = s.replaceAll("{"+v+"}", r);
+  return s;
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const byId = id => state.devices.find(d => d.id === id);
+const dotCls = d => d.status === "online" ? "dotOnline" : d.status === "offline" ? "dotOffline"
+  : d.status === "waking" ? "dotWaking" : "dotUnknown";
+const statusName = d => t("status." + (d.status === "waking" ? "unknown" : d.status));
+function fmtUptime(s) {
+  const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+  return (d ? d+"d " : "") + String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
+}
+function toast(msg, isErr) {
+  const el = $("#toast"); el.textContent = msg;
+  el.classList.toggle("err", !!isErr); el.classList.add("show");
+  clearTimeout(el._tm); el._tm = setTimeout(() => el.classList.remove("show"), 2400);
+}
+/* Power-Symbol (IEC 5012-artig) als Inline-SVG */
+const POWER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+  stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>`;
+
+/* ══════════════════════════ Aktionen: Wake / Shutdown ═════════════════════ */
+function wakeDevice(d) {
+  if (d.status === "online" || d.status === "waking" || !d.enabled) return;
+  d.status = "waking"; renderAll();
+  setTimeout(() => {
+    d.status = "online"; d.upSeconds = 45; d.metrics = null;
+    toast(t("wol.online", { name: d.name }));
+    renderAll();
+  }, rnd(3500, 6000));
+  toast(t("wol.sent", { name: d.name }));
+}
+function shutdownDevice(d) {
+  toast(t("devices.shutdown") + " …");
+  setTimeout(() => { d.status = "offline"; d.metrics = null; renderAll(); }, 2500);
+}
+/* Bestätigungs-Overlay wie iOS, aber watchOS-Alert (vertikale Buttons) */
+function openShutdownConfirm(d) {
+  $("#confirm").innerHTML = `
+    <div class="calert">
+      <div class="powerIcon"></div>
+      <h2>${esc(t("shutdown.title"))}</h2>
+      <p>${esc(t("shutdown.message"))}<br><b style="color:var(--text)">${esc(d.name)}</b></p>
+      <div class="cbtns">
+        <button class="cbtn yes" data-act="confirm-yes">${esc(t("yes"))}</button>
+        <button class="cbtn no" data-act="sheet-close">${esc(t("no"))}</button>
+      </div>
+    </div>`;
+  $("#confirm").classList.add("open");
+  $("#confirm")._onYes = () => shutdownDevice(d);
+}
+function closeConfirm() { $("#confirm").classList.remove("open"); $("#confirm")._onYes = null; }
+
+/* ══════════════════════════ Dashboard-Metriken (simuliert, 3 s-Tick) ══════ */
+function walk(prev, min, max, vol) {
+  if (prev == null) return clamp(rnd(min, max), min, max);
+  return clamp(prev + rnd(-vol, vol), min, max);
+}
+function seedMetrics(d) {
+  d.metrics = { cpu: Math.round(walk(null,15,70,0)), ram: Math.round(walk(null,30,75,0)),
+    gpu: Math.round(walk(null,5,90,0)), vram: Math.round(walk(null,10,80,0)),
+    cores: 16, ramTotal: 64 };
+}
+function tickMetrics() {
+  const d = byId(state.dashDeviceId);
+  if (!d || d.status !== "online" || state.screen !== "dash") return;
+  if (!d.metrics) seedMetrics(d);
+  const m = d.metrics;
+  m.cpu = Math.round(walk(m.cpu, 2, 98, 9)); m.ram = Math.round(walk(m.ram, 20, 95, 3));
+  m.gpu = Math.round(walk(m.gpu, 0, 99, 14)); m.vram = Math.round(walk(m.vram, 5, 96, 6));
+  d.upSeconds += state.dashInterval / 1000;
+  if (state.screen === "dash") updateDashLive(d);
+}
+setInterval(tickMetrics, state.dashInterval);
+
+function updateDashLive(d) {
+  const m = d.metrics; if (!m) return;
+  for (const k of ["cpu","ram","gpu","vram"]) {
+    const g = document.querySelector(`[data-g="${k}"]`); if (g) g.style.setProperty("--v", m[k]);
+    const b = document.querySelector(`[data-gv="${k}"]`); if (b) b.textContent = m[k] + "%";
+  }
+  const up = $("#dashUptime"); if (up) up.textContent = t("d.uptime", { v: fmtUptime(d.upSeconds) });
+}
+
+/* Dienst-Status (simuliert wie iOS-Prototyp) */
+function serviceState(d, entry) {
+  if (d.status !== "online") return "off";
+  return entry.includes(":") ? "run" : "probe";
+}
+function svcChipText(d, entry) {
+  const st = serviceState(d, entry);
+  const port = entry.split(":")[1] || "8080";
+  if (st === "off") return t("svc.gone");
+  if (entry.toLowerCase().startsWith("backup")) return t("svc.running");
+  return entry.includes(":") ? t("svc.ready", { port }) : t("svc.running");
+}
+
+/* ══════════════════════════ Render: Geräte (Karten / Liste) ═══════════════ */
+function powerBtnHtml(d, small) {
+  const on = d.status === "online";
+  const cls = d.status === "waking" ? "waking" : on ? "danger" : "off";
+  const label = on ? t("devices.shutdown") : t("devices.wake");
+  const dis = d.status === "waking" || !d.enabled;
+  return `<button class="powerBtn ${cls} ${small ? "small" : ""}" data-act="${on ? "shutdown" : "wake"}"
+    data-id="${d.id}" title="${esc(label)}" aria-label="${esc(label)}" ${dis ? "disabled" : ""}>${POWER_SVG}</button>`;
+}
+function renderDevices() {
+  const online = state.devices.filter(d => d.status === "online").length;
+  const cards = state.view === "cards"
+    ? state.devices.map(d => `
+      <div class="wcard ${d.enabled ? "" : "dis"}" data-act="open-dash" data-id="${d.id}">
+        <div class="info">
+          <div class="name"><span class="dot ${dotCls(d)}"></span><span class="n">${esc(d.name)}</span></div>
+          <span class="mono">${esc(d.ip)} · ${esc(statusName(d))}</span>
+          ${d.watch.length && d.status === "online"
+            ? `<div class="svcline"><span class="sdot"></span>${esc(d.watch[0].split(":")[0])}
+               ${d.model ? "· 🧠 " + esc(d.model.split("-").slice(0,2).join("-")) : ""}</div>` : ""}
+        </div>
+        ${powerBtnHtml(d, false)}
+      </div>`).join("")
+    : `<div class="wlist">${state.devices.map((d, i) => `
+        ${i ? '<div class="sep"></div>' : ""}
+        <div class="wrow" data-act="open-dash" data-id="${d.id}">
+          <span class="dot ${dotCls(d)}"></span>
+          <div class="info"><div class="name">${esc(d.name)}</div>
+            <span class="mono">${esc(d.ip)}</span></div>
+          ${powerBtnHtml(d, true)}
+        </div>`).join("")}</div>`;
+  $("#v-devices").innerHTML = `
+    <div class="toprow">
+      <div><div class="pageTitle">${esc(t("nav.devices"))}</div>
+        <div class="pageSub">${esc(t("devices.summary", { total: state.devices.length, online }))}</div></div>
+      <button class="iconBtn" data-act="view" title="${esc(t(state.view === "cards" ? "devices.viewList" : "devices.viewCards"))}">${state.view === "cards" ? "☰" : "▦"}</button>
+    </div>
+    ${state.devices.length === 0 ? `<div class="empty">${esc(t("devices.empty"))}</div>` : cards}`;
+}
+
+/* ══════════════════════════ Render: Dashboard (vereinfacht) ═══════════════ */
+function renderDash() {
+  const d = byId(state.dashDeviceId);
+  if (!d) { $("#v-dash").innerHTML = `<div class="empty">${esc(t("devices.empty"))}</div>`; return; }
+  const on = d.status === "online";
+  const pill = on ? "pillOnline" : d.status === "offline" ? "pillOffline" : "pillUnknown";
+  let warn = "";
+  if (!on) warn = `<div class="warnbox err">${esc(statusName(d))} – ${esc(d.ip)}</div>`;
+  if (on && !d.metrics) seedMetrics(d);
+  const m = on ? d.metrics : null;
+  const metricCard = (key, val) => `
+    <div class="mcard">
+      <div class="gauge" data-g="${key}" style="--v:${val ?? 0};--c:var(--gauge-${key})">
+        <div class="in"><b data-gv="${key}">${val ?? "–"}%</b></div></div>
+      <div class="mlabel"><i style="background:var(--gauge-${key})"></i>${esc(t("m." + key))}</div>
+      <div class="mdet">${key === "cpu" ? esc(t("d.cores", { n: m?.cores ?? "–" }))
+        : key === "ram" ? esc(t("d.gb", { used: m ? (m.ram * m.ramTotal / 100).toFixed(0) : "–", total: m?.ramTotal ?? "–" }))
+        : esc(t("d.na"))}</div>
+    </div>`;
+  $("#v-dash").innerHTML = `
+    <div class="toprow">
+      <div><div class="pageTitle" style="font-size:21px">${esc(d.name)}</div>
+        <div class="mono">${esc(d.ip)} · ${d.sim.proto >= 3 ? esc(t("hostv", { v: d.sim.proto })) : "—"}</div></div>
+      <button class="backBtn" data-act="nav-devices">‹ ${esc(t("dash.back"))}</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+      <span class="pill ${pill}">${esc(statusName(d))}</span>
+      ${on ? `<span class="uptimeRow" id="dashUptime">${esc(t("d.uptime", { v: fmtUptime(d.upSeconds) }))}</span>` : ""}
+      <span class="spacer"></span>
+      ${powerBtnHtml(d, true)}
+    </div>
+    ${warn}
+    ${on ? `
+      <div class="sectionHeading">${esc(t("dash.svc"))}</div>
+      ${d.watch.length ? `<div>${d.watch.map(w => {
+          const st = serviceState(d, w);
+          return `<span class="chip ${st}" title="${esc(w)}">${w.toLowerCase().includes("llama") ? "🦙 " : "⚙️ "}${esc(w.split(":")[0])} · ${esc(svcChipText(d, w))}</span>`;
+        }).join("")}</div>`
+      : `<div class="pageSub">${esc(t("dash.svc.none"))}</div>`}
+      ${m ? `<div class="sectionHeading">${esc(t("dash.system"))}</div>
+      <div class="metrics">
+        ${metricCard("cpu", m.cpu)}${metricCard("ram", m.ram)}${metricCard("gpu", m.gpu)}${metricCard("vram", m.vram)}
+      </div>` : ""}` : ""}`;
+}
+
+/* ══════════════════════════ Theme / Navigation ════════════════════════════ */
+function applyTheme() {
+  const light = matchMedia("(prefers-color-scheme: light)").matches;
+  state.theme = light ? "light" : "dark";
+  $("#watch").dataset.theme = state.theme;
+}
+matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", applyTheme);
+
+function go(screen) {
+  state.screen = screen;
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  $("#v-" + screen).classList.add("active");
+  if (screen === "dash") renderDash(); else renderDevices();
+}
+function renderAll() { applyTheme(); renderDevices(); if (state.screen === "dash") renderDash(); }
+
+/* ══════════════════════════ Event-Delegation ══════════════════════════════ */
+$("#watch").addEventListener("click", ev => {
+  const el = ev.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act, id = el.dataset.id;
+  switch (act) {
+    case "view": state.view = state.view === "cards" ? "list" : "cards"; renderDevices(); break;
+    case "wake": ev.stopPropagation(); wakeDevice(byId(id)); break;
+    case "shutdown": ev.stopPropagation(); openShutdownConfirm(byId(id)); break;
+    case "open-dash": state.dashDeviceId = id; go("dash"); break;
+    case "nav-devices": go("devices"); break;
+    case "sheet-close": closeConfirm(); break;
+    case "confirm-yes": { const fn = $("#confirm")._onYes; closeConfirm(); fn && fn(); break; }
+  }
+});
+
+/* ── Digital Crown = Scrollen (Wheel über Krone/Frame, plus Ziehen) ──────── */
+function crownScroll(deltaY) {
+  const v = document.querySelector(".view.active");
+  if (v) { v.scrollTop += deltaY; rotateCrown(deltaY); }
+}
+function rotateCrown(deltaY) {
+  const c = $("#crown");
+  c._rot = (c._rot || 0) + clamp(deltaY, -30, 30) * 0.6;
+  c.style.transform = `translateY(${Math.sin(c._rot/20)*1.5}px)`;
+}
+document.addEventListener("wheel", ev => {
+  const v = document.querySelector(".view.active");
+  /* innerhalb der Views scrollt der Browser nativ – Krone/Frame = Crown-Scrollen */
+  if (v && !v.contains(ev.target)) crownScroll(ev.deltaY);
+}, { passive: true });
+/* Crown mit gedrückter Maus ziehen = scrollen */
+(() => {
+  const crown = $("#crown"); let dragging = false, lastY = 0;
+  crown.addEventListener("pointerdown", e => { dragging = true; lastY = e.clientY; crown.setPointerCapture(e.pointerId); });
+  crown.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    crownScroll((lastY - e.clientY) * 2.5); lastY = e.clientY;
+  });
+  crown.addEventListener("pointerup", () => { dragging = false; });
+})();
+
+/* ── Uhr (watchOS-Anzeige oben) ──────────────────────────────────────────── */
+function tickClock() {
+  const d = new Date();
+  $("#clock").textContent = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+tickClock(); setInterval(tickClock, 10000);
+
+renderAll();
+</script>
+</body>
+</html>

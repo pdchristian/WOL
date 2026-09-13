@@ -1,4 +1,5 @@
 import UIKit
+import WatchConnectivity
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -11,6 +12,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         ScheduleScheduler.register()
         // Datenverzeichnis + Repo init (Keychain-Migration läuft beim ersten Laden).
         _ = AppContainer.shared
+        // Apple-Watch-Brücke (nur auf dem iPhone verfügbar).
+        if WCSession.isSupported() {
+            WatchBridgeService.shared.activate()
+        }
         return true
     }
 

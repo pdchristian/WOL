@@ -128,7 +128,30 @@ final class AppContainer {
         if case .ok = res { return true }
         return false
     }
+
+    /// Metriken eines Geräts vom Host-Service abrufen (Watch/Dashboard).
+    func metrics(device: Device) async -> Result<MetricsSnapshot, Error> {
+        let host = device.ip
+        guard !host.isEmpty else { return .failure(BridgeError("no ip")) }
+        let pass = repo.getPassword(id: device.id)
+        let (res, snap) = await hostClient.metrics(host: host, username: device.username,
+                                                   password: pass, watch: device.watchProcesses)
+        if case let .error(msg) = res { return .failure(BridgeError(msg)) }
+        guard let m = snap else { return .failure(BridgeError("bad_response")) }
+        return .success(m)
+    }
 }
+
+/// Schmaler Action-Contract, den die Watch-Brücke (und Tests) statt des
+/// konkreten Containers verwenden. AppContainer erfüllt ihn bereits.
+protocol WatchActions: AnyObject {
+    func wake(device: Device) async -> Result<Void, Error>
+    func shutdown(device: Device) async -> Result<Void, Error>
+    func checkStatus(device: Device) async -> Bool
+    func metrics(device: Device) async -> Result<MetricsSnapshot, Error>
+}
+
+extension AppContainer: WatchActions {}
 
 struct BridgeError: Error, LocalizedError {
     let msg: String

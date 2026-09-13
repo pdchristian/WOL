@@ -89,6 +89,33 @@
           "GENERATE_INFOPLIST_FILE": "YES"
         }
       }
+    },
+    # Apple-Watch-App (watchOS 10+, SwiftUI). Läuft NUR auf der Watch und
+    # kommuniziert via WCSession mit WatchBridgeService auf dem iPhone.
+    "WolManagerWatch": {
+      "type": "application",
+      "platform": "watchOS",
+      "sources": [
+        "WolManagerWatch"
+      ],
+      "settings": {
+        "base": {
+          "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager.watch",
+          "PRODUCT_NAME": "WolManagerWatch",
+          "MARKETING_VERSION": "2.3.5",
+          "CURRENT_PROJECT_VERSION": "1",
+          "WATCHOS_DEPLOYMENT_TARGET": "10.0",
+          "SWIFT_VERSION": "5.9",
+          "TARGETED_DEVICE_FAMILY": "4",
+          "CODE_SIGN_STYLE": "Automatic",
+          "DEVELOPMENT_TEAM": "",
+          "ENABLE_PREVIEWS": "YES",
+          "GENERATE_INFOPLIST_FILE": "YES",
+          "INFOPLIST_KEY_CFBundleDisplayName": "Wake-on-LAN",
+          "INFOPLIST_KEY_WKCompanionAppBundleIdentifier": "de.wolmanager",
+          "INFOPLIST_KEY_WKWatchOnly": false
+        }
+      }
     }
   },
   "schemes": {
@@ -105,6 +132,16 @@
       "test": {
         "config": "Debug",
         "targets": ["WolManagerTests"]
+      }
+    },
+    "WolManagerWatch": {
+      "build": {
+        "targets": {
+          "WolManagerWatch": "all"
+        }
+      },
+      "run": {
+        "config": "Debug"
       }
     }
   }
