@@ -162,6 +162,39 @@ class TestThemeDarwinDarkDetection:
             assert _system_uses_dark() is False
 
 
+class TestModernUiFontStackOrder:
+    """Emoji fonts must never precede a family available on the platform.
+
+    Qt picks the first family containing a glyph; the color-emoji fonts
+    contain letters/digits too, which renders huge letter gaps (seen on
+    macOS as "Apple Color Emoji", on Ubuntu as Noto Color Emoji before a
+    macOS-only font was added to the stack).
+    """
+
+    def _families(self):
+        from wol_app.modern_theme import _UI_FONT_STACK
+
+        return [f.strip().strip('"') for f in _UI_FONT_STACK.split(",")]
+
+    def test_emoji_fonts_come_after_platform_text_fonts(self):
+        families = self._families()
+        text = [f for f in families if "Emoji" not in f and f != "sans-serif"]
+        emoji_first = next(
+            i for i, f in enumerate(families) if "Emoji" in f)
+        # At least one text family before the first emoji font on every OS:
+        # Windows (Segoe UI), macOS (SF Pro / .AppleSystemUIFont /
+        # Helvetica Neue), Ubuntu (Noto Sans / Ubuntu).
+        assert {"Segoe UI", "SF Pro Text", ".AppleSystemUIFont",
+                "Helvetica Neue", "Noto Sans", "Ubuntu"} & set(
+                    text[:emoji_first])
+
+    def test_macos_system_font_in_stack(self):
+        families = self._families()
+        assert ".AppleSystemUIFont" in families
+        assert families.index(".AppleSystemUIFont") < families.index(
+            "Apple Color Emoji")
+
+
 class _FakeConfig:
     def __init__(self, device):
         self._device = device
