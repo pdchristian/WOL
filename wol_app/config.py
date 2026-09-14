@@ -327,9 +327,21 @@ class ConfigManager:
         in ``config.json`` — visible, editable, and unambiguous for every
         future start (first run after install or upgrade).
         """
-        ui = self.config.setdefault("ui", {})
-        if "allow_multiple_instances" not in ui:
-            ui["allow_multiple_instances"] = False
+        # The key is part of DEFAULT_CONFIG, so _load's deep merge always
+        # materialises it in memory. A save is only needed when the file on
+        # disk does not carry it yet (config written before v2.3.4). Checking
+        # the file — not the merged dict — is what makes this persist: the
+        # merged dict always contains the key, so a `not in ui` test never
+        # fired and the on-disk default was silently skipped.
+        try:
+            with open(self.config_path, encoding="utf-8") as f:
+                on_disk = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            on_disk = {}
+        disk_ui = on_disk.get("ui")
+        if not isinstance(disk_ui, dict) or "allow_multiple_instances" not in disk_ui:
+            ui = self.config.setdefault("ui", {})
+            ui.setdefault("allow_multiple_instances", False)
             try:
                 self.save()
             except Exception as e:  # pragma: no cover - non-fatal

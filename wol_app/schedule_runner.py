@@ -7,6 +7,7 @@ injected via a ``status_fn(msg, timeout_ms)`` callback.
 """
 
 import subprocess
+import sys
 from typing import Any, Callable
 
 from PyQt6.QtWidgets import QApplication
@@ -96,6 +97,16 @@ def scheduled_shutdown(config: Any, device_id: str, status_fn: StatusFn = _noop_
     # Dispatch on the device's shutdown method
     if config.get_device_shutdown_method(device) == "host_service":
         _scheduled_host_service_shutdown(config, device_name, ip, device, status_fn)
+        return
+
+    # The SMB path (net use + shutdown /m) only exists on Windows.
+    if sys.platform != "win32":
+        msg = Translations.tr(
+            "status.scheduled_shutdown_fail", name=device_name,
+            error=Translations.tr("dialog.shutdown_smb_unsupported.title"),
+        )
+        status_fn(msg, 5000)
+        config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
         return
 
     try:

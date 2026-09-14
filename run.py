@@ -106,8 +106,9 @@ def _main_linux():
 def main():
     """Platform-dispatching entry point.
 
-    Windows keeps the full feature set (classic + modern UI); Linux runs the
-    Modern UI only and never imports the classic ``main_window`` module.
+    Windows keeps the full feature set (classic + modern UI); Linux and
+    macOS run the Modern UI only and never import the classic
+    ``main_window`` module.
     """
     if sys.platform == "win32":
         from wol_app.main_window import main as _main_windows

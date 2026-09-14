@@ -144,6 +144,8 @@
   "dialog.shutdown_error.title": "Error de apagado",
   "dialog.shutdown_failed.message": "No se pudo apagar {name} en {ip}: {error}",
   "dialog.shutdown_failed.title": "Error al apagar",
+  "dialog.shutdown_smb_unsupported.message": "El método de apagado SMB solo funciona desde un ordenador Windows. En este dispositivo, use el método Host Service para {name}.",
+  "dialog.shutdown_smb_unsupported.title": "Apagado SMB no disponible",
   "dialog.shutdown_successful.message": "El dispositivo \"{name}\" en {ip} se ha apagado correctamente.",
   "dialog.shutdown_successful.title": "Apagado exitoso",
   "dialog.shutdown_timeout.message": "El apagado de {name} en {ip} ha expirado.",

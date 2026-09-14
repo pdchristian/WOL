@@ -13,6 +13,7 @@ can pass a no-op.
 """
 
 import subprocess
+import sys
 from typing import Any, Callable
 
 from PyQt6.QtWidgets import (
@@ -186,6 +187,21 @@ def execute_shutdown(
         _host_service_shutdown(
             parent, config, device_name, device_ip, username, password, status_fn
         )
+        return
+
+    # The SMB path (net use + shutdown /m) only exists on Windows.
+    if sys.platform != "win32":
+        config.add_log(
+            device_name, "SHUTDOWN", "ERROR",
+            "SMB shutdown requires a Windows host running this app",
+        )
+        QMessageBox.critical(
+            parent,
+            Translations.tr("dialog.shutdown_smb_unsupported.title"),
+            Translations.tr(
+                "dialog.shutdown_smb_unsupported.message", name=device_name),
+        )
+        status_fn(Translations.tr("status.shutdown_failed", name=device_name), 0)
         return
 
     status_fn(Translations.tr("status.shutting_down", name=device_name), 0)

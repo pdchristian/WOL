@@ -144,6 +144,8 @@
   "dialog.shutdown_error.title": "Erreur d'arrêt",
   "dialog.shutdown_failed.message": "Échec de l'arrêt de {name} sur {ip} : {error}",
   "dialog.shutdown_failed.title": "Échec de l'arrêt",
+  "dialog.shutdown_smb_unsupported.message": "La méthode d'arrêt SMB fonctionne uniquement depuis un ordinateur Windows. Sur cet appareil, utilisez la méthode Host Service pour {name}.",
+  "dialog.shutdown_smb_unsupported.title": "Arrêt SMB non disponible",
   "dialog.shutdown_successful.message": "L'appareil \"{name}\" sur {ip} a été arrêté avec succès.",
   "dialog.shutdown_successful.title": "Arrêt réussi",
   "dialog.shutdown_timeout.message": "L'arrêt de {name} sur {ip} a expiré.",

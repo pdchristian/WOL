@@ -144,6 +144,8 @@
   "dialog.shutdown_error.title": "Herunterfahren Fehler",
   "dialog.shutdown_failed.message": "Herunterfahren von {name} unter {ip} fehlgeschlagen: {error}",
   "dialog.shutdown_failed.title": "Herunterfahren fehlgeschlagen",
+  "dialog.shutdown_smb_unsupported.message": "Die SMB-Shutdown-Methode funktioniert nur von einem Windows-Computer. Verwenden Sie auf diesem Gerät für {name} stattdessen die Host-Service-Methode.",
+  "dialog.shutdown_smb_unsupported.title": "SMB-Shutdown nicht verfügbar",
   "dialog.shutdown_successful.message": "Das Gerät \"{name}\" unter {ip} wurde erfolgreich heruntergefahren.",
   "dialog.shutdown_successful.title": "Herunterfahren erfolgreich",
   "dialog.shutdown_timeout.message": "Herunterfahren von {name} unter {ip} timed out.",

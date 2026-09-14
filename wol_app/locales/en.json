@@ -144,6 +144,8 @@
   "dialog.shutdown_error.title": "Shutdown Error",
   "dialog.shutdown_failed.message": "Failed to shut down {name} at {ip}: {error}",
   "dialog.shutdown_failed.title": "Shutdown Failed",
+  "dialog.shutdown_smb_unsupported.message": "The SMB shutdown method only works from a Windows computer. On this device, use the Host Service shutdown method for {name} instead.",
+  "dialog.shutdown_smb_unsupported.title": "SMB Shutdown Not Available",
   "dialog.shutdown_successful.message": "The device \"{name}\" at {ip} has been successfully shut down.",
   "dialog.shutdown_successful.title": "Shutdown Successful",
   "dialog.shutdown_timeout.message": "Shutdown of {name} at {ip} timed out.",
