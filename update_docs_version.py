@@ -82,6 +82,9 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "Wake-on-LAN Manager.spec": [
         (r"(Version )\d+\.\d+\.\d+", r"\g<1>{version}"),
     ],
+    "Wake-on-LAN Manager-macos.spec": [
+        (r"(Version )\d+\.\d+\.\d+", r"\g<1>{version}"),
+    ],
     "docs/android/html-app.md": [
         (r"(`versionName )\d+\.\d+\.\d+(`)", r"\g<1>{version}\g<2>"),
     ],

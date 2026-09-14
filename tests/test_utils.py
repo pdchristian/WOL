@@ -375,6 +375,10 @@ class TestLaunchRemoteDesktopFastExit(unittest.TestCase):
     """The mstsc process is watched and the callback fires on fast exit."""
 
     def setUp(self):
+        # Exercise the Windows mstsc path regardless of the host OS.
+        platform_patcher = patch("wol_app.utils.sys.platform", "win32")
+        platform_patcher.start()
+        self.addCleanup(platform_patcher.stop)
         patcher = patch("wol_app.utils._RDP_DIR", new=Path(tempfile.mkdtemp()))
         self.mock_rdp_dir = patcher.start()
         self.addCleanup(patcher.stop)
@@ -420,6 +424,9 @@ class TestLaunchRemoteDesktopFastExit(unittest.TestCase):
 
 class TestRetryRemoteDesktopWithoutPassword(unittest.TestCase):
     def setUp(self):
+        platform_patcher = patch("wol_app.utils.sys.platform", "win32")
+        platform_patcher.start()
+        self.addCleanup(platform_patcher.stop)
         patcher = patch("wol_app.utils._RDP_DIR", new=Path(tempfile.mkdtemp()))
         self.mock_rdp_dir = patcher.start()
         self.addCleanup(patcher.stop)
@@ -475,6 +482,10 @@ class TestRetryRemoteDesktopWithoutPassword(unittest.TestCase):
 
 class TestLaunchRemoteDesktop(unittest.TestCase):
     def setUp(self):
+        # Exercise the Windows mstsc path regardless of the host OS.
+        platform_patcher = patch("wol_app.utils.sys.platform", "win32")
+        platform_patcher.start()
+        self.addCleanup(platform_patcher.stop)
         # Isolate writes from the real ~/.wol_app/rdp directory.
         patcher = patch("wol_app.utils._RDP_DIR", new=Path(tempfile.mkdtemp()))
         self.mock_rdp_dir = patcher.start()
@@ -631,7 +642,8 @@ class TestEnsureUserDataDir(unittest.TestCase):
     def test_grants_full_control_when_elevated(self):
         target = self.tmp / "rdp"
         env = {"USERNAME": "testuser", "USERDOMAIN": "TESTDOMAIN"}
-        with patch("wol_app.utils._is_elevated", return_value=True), \
+        with patch("wol_app.utils.os.name", "nt"), \
+             patch("wol_app.utils._is_elevated", return_value=True), \
              patch.dict(os.environ, env), \
              patch("wol_app.utils.subprocess.run") as mock_run:
             ensure_user_data_dir(target)
@@ -667,7 +679,7 @@ class TestIsElevated(unittest.TestCase):
         from wol_app.utils import _is_elevated
 
         with patch("wol_app.utils.os.name", "nt"), \
-             patch("ctypes.windll") as mock_windll:
+             patch("ctypes.windll", create=True) as mock_windll:
             mock_windll.shell32.IsUserAnAdmin.return_value = 1
             self.assertTrue(_is_elevated())
             mock_windll.shell32.IsUserAnAdmin.return_value = 0
@@ -677,7 +689,7 @@ class TestIsElevated(unittest.TestCase):
         from wol_app.utils import _is_elevated
 
         with patch("wol_app.utils.os.name", "nt"), \
-             patch("ctypes.windll") as mock_windll:
+             patch("ctypes.windll", create=True) as mock_windll:
             mock_windll.shell32.IsUserAnAdmin.side_effect = OSError("no api")
             self.assertFalse(_is_elevated())
 

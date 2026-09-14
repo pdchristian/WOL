@@ -8,7 +8,7 @@
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
 | **license**         | Proprietary                                                           |
-| **platform**        | Windows 10/11                                                         |
+| **platform**        | Windows 10/11 · Ubuntu 22.04+ · macOS 11+ (arm64)                    |
 | **runtime**         | Python 3.10+                                                          |
 | **author**          | pdchristian                                                           |
 | **repository**      | https://github.com/pdchristian/WOL                                     |
@@ -18,7 +18,7 @@
 
 ## 1. Project Overview
 
-Wake-on-LAN Manager is a Windows desktop GUI application that enables users to discover, manage, and remotely wake network devices using Wake-on-LAN (WoL) magic packets. The application provides device management with encrypted credential storage, automatic status monitoring via ICMP ping, configurable scheduling for automated wake/shutdown operations, network scanning for device discovery, and an auto-update system integrated with GitHub Releases.
+Wake-on-LAN Manager is a cross-platform desktop GUI application (Windows · Ubuntu · macOS) that enables users to discover, manage, and remotely wake network devices using Wake-on-LAN (WoL) magic packets. The application provides device management with encrypted credential storage, automatic status monitoring via ICMP ping, configurable scheduling for automated wake/shutdown operations, network scanning for device discovery, and an auto-update system integrated with GitHub Releases.
 
 ### Key Capabilities
 - Send WoL magic packets to individual devices or all enabled devices simultaneously
@@ -50,7 +50,7 @@ Wake-on-LAN Manager is a Windows desktop GUI application that enables users to d
 | GUI Framework    | PyQt6 >= 6.6.0                              |
 | Encryption       | cryptography >= 41.0.0 (AES-256-GCM)        |
 | Packaging        | PyInstaller                                 |
-| OS               | Windows 10 / 11                             |
+| OS               | Windows 10 / 11 · Ubuntu 22.04+ · macOS 11+ (arm64)              |
 | Key Protection   | Windows DPAPI (CryptProtectData/UnprotectData via ctypes) |
 
 ### 2.2 Module Dependency Graph
@@ -689,7 +689,7 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 ### 8.0 Version management (single source of truth)
 
 `wol_app/__init__.py` (`__version__`) is the ONE version for ALL variants
-(Windows, Ubuntu, Android, iOS). Never edit the version in a build file by hand.
+(Windows, Ubuntu, macOS, Android, iOS). Never edit the version in a build file by hand.
 
 - **Bump everywhere:** `python update_version.py 2.3.5` — writes
   `__version__`, propagates via `update_docs_version.py` to `setup.iss`,
@@ -700,7 +700,8 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 - **Verify:** `python update_version.py --check` (exit 1 + list on drift) —
   also covered by `tests/test_version_sync.py` (runs with the normal test suite).
 - **Runtime sources:** Windows/Ubuntu read `__version__` directly
-  (`installer.py`, `packaging/build_deb.sh`). Android uses Gradle
+  (`installer.py`, `packaging/build_deb.sh`); the macOS spec reads it at build
+  time for `CFBundleShortVersionString`/`CFBundleVersion`. Android uses Gradle
   `versionName` → `BuildConfig.VERSION_NAME` → bridge `info` call; iOS uses
   `MARKETING_VERSION` → `CFBundleShortVersionString` → bridge `info` call.
   The WebApps display the version from the native `info` call; the literal in
@@ -737,6 +738,8 @@ service bundle). After each service build,
 | Spec File                      | Output                                        | Description                     |
 |--------------------------------|-----------------------------------------------|---------------------------------|
 | `Wake-on-LAN Manager.spec`     | `dist/Wake-on-LAN Manager.exe`                 | Main application                |
+| `Wake-on-LAN Manager-macos.spec` | `dist/Wake-on-LAN Manager.app`              | Main app, macOS .app bundle (arm64, Modern UI) |
+| `wol_host_service_macos.spec`  | `dist/WOL Host Service/`                       | macOS host service (onedir, launchd/PAM) |
 | `wol_host_service.spec`        | `dist/WOL Host Service/`                       | Host service (onedir)           |
 | `wol_host_service_onefile.spec`| `dist_onefile/WOL Host Service.exe`            | Host service (onefile)          |
 | `uninstaller.spec`             | `dist/uninstall.exe`                           | Standalone uninstaller          |
@@ -824,7 +827,59 @@ native Compose app in `android/` was removed in 2.3.1.)
 - **Docs:** `docs/android/html-app.md` (bridge protocol, dev workflow,
   pitfalls — e.g. `addJavascriptInterface` must be called before first load).
 
-### 8.4 iOS App (`ios/`, XcodeGen project)
+### 8.4 macOS Build (`packaging/macos/`, new in 2.3.5)
+
+Apple-Silicon-only port (Modern UI like the Ubuntu build), distribution as an
+**unsigned .dmg** (no Developer ID / notarization — first launch needs
+right-click → Open). Full working docs: `docs/macos/README.md`.
+
+- **Build:** `./packaging/macos/build_macos.sh` → host-service onedir
+  bundle (`dist/WOL Host Service`, version marker included) →
+  `dist/Wake-on-LAN Manager.app` (payload embedded under
+  `Contents/Resources/WOL Host Service`, build aborts if missing) →
+  `dist/Wake-on-LAN Manager_<ver>_arm64.dmg` (UDZO, with an `Applications`
+  symlink). Interpreter: project venv `.venv/bin/python` (abort if missing,
+  same rule as build.ps1). Steps: version sync → icon `.icns` regeneration
+  (`sips` + `iconutil` from `icon_modern.png`) → PyInstaller BUNDLE →
+  ad-hoc `codesign -s -` (required: unsigned arm64 binaries are killed by
+  macOS) → `hdiutil create`.
+- **Bundle identity:** `bundle_identifier='de.wolmanager'`, Info.plist
+  version read dynamically from `wol_app/__init__.py` (no drift);
+  `NSLocalNetworkUsageDescription` set for LAN scanning.
+- **Host Service:** `wol_host_service_macos.py` reuses the Linux core
+  (`import wol_host_service_linux as core`, protocol v5, PAM via `pamela`
+  service `login`, psutil metrics) and overrides only `SHUTDOWN_CMD` /
+  `REBOOT_CMD` (module globals read at request time) plus launchd management
+  (LaunchDaemon `de.wolmanager.hostservice`, `launchctl
+  bootstrap/kickstart/bootout`, socketfilterfw allow-list best effort).
+  End-user install: `packaging/macos/install_host_service.command` (sudo
+  re-exec; prefers the frozen bundle, falls back to `.venv` + repo copy).
+  `--version` prints the build-time marker next to the binary (fallback:
+  system marker, then "0.0.0").
+- **In-app service install (2.3.5):** `wol_app/host_service_installer.py`
+  (Qt-free core + lazily built QObject worker). Discovery: frozen →
+  `Contents/Resources/WOL Host Service`, source → `dist/…` (marker file
+  `service_version.txt` = payload version). State machine
+  `none|install|update|current` drives the **first-start prompt**
+  (`ModernMainWindow._offer_host_service`, only when frozen; "No" remembered
+  per payload version via `ui.hostservice_prompted_version` in config) and
+  the **Settings row** (`settings_view.py`: status + Install/Update +
+  Remove). Privilege escalation: bash script in a 0700 temp file executed
+  via `osascript … with administrator privileges` (Touch ID/password; no
+  Developer ID needed), output tee'd to `/tmp/wol-host-service-install.log`
+  for readable errors, cancel = OSStatus -128 → silent. Root script only
+  copies the payload, clears the quarantine xattr and calls the bundle's own
+  `--install`/`--uninstall` + writes the version marker
+  (`/usr/local/lib/wol-host-service/service_version.txt`; a pre-marker
+  manual install counts as "0.0.0" so it is offered an update).
+- **Tests:** `tests/test_macos_support.py` (ping args, RDP `open` calls,
+  .dmg suffix, dark-mode detection, SMB guard, host-service installer:
+  state matrix, prompt gating, script builders, osascript runner via
+  injectable fake runner, install/remove flows, config marker round-trip);
+  the whole desktop suite is green on
+  macOS (`QT_QPA_PLATFORM=offscreen WOL_HEADLESS=1`).
+
+### 8.5 iOS App (`ios/`, XcodeGen project)
 
 - **Build:** macOS only — `xcodegen generate` (from `ios/project.yml`,
   MARKETING_VERSION tracks the app version) then Xcode/`xcodebuild`. Cannot
@@ -936,7 +991,7 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
-| 2.3.5   | 2026-09-11 | Mobile Refinement Edition  | Current version. 2.3.x series: Android HTML WebView client `android_html/` (2.3.0, native Compose app removed in 2.3.1), iOS app with `Ipv4Resolver`, Remote Desktop via Windows App URI (2.3.3, fullscreen-only on mobile since 2.3.5), Wi-Fi-only network scan (2.3.4), dashboard swipe between devices, password sync for devices sharing a user, `watch_processes` in export, close-to-tray + single-instance settings, token/s display in dashboard |
+| 2.3.5   | 2026-09-11 | Mobile Refinement Edition  | Current version. 2.3.x series: **macOS port (Apple Silicon, unsigned .dmg + launchd/PAM Host Service, section 8.4)**, Android HTML WebView client `android_html/` (2.3.0, native Compose app removed in 2.3.1), iOS app with `Ipv4Resolver`, Remote Desktop via Windows App URI (2.3.3, fullscreen-only on mobile since 2.3.5), Wi-Fi-only network scan (2.3.4), dashboard swipe between devices, password sync for devices sharing a user, `watch_processes` in export, close-to-tray + single-instance settings, token/s display in dashboard |
 | 2.3.0   | 2026-09-08 | Android HTML Edition       | Standalone Android client (`android_html/`): WebView shell + Kotlin bridge, Host Service protocol v4 dashboard, batch console, network scanner, schedules, CSV/JSON log export; `devices.json` compatible with Windows |
 | 2.2.3   | 2026-09-08 | Hostname Fix Edition       | Status ping resolves host names to IPv4 first (`resolve_ipv4_all` in `utils.py`, `ping -4`): Windows preferred AAAA records (IPv6 replies lack `TTL=` → false offline) and a Fritz!Box may return several A records (stale DHCP lease + current) in nondeterministic order — every candidate is now probed until one replies; unresolvable names report `unknown` with a resolve hint; `send_wake_packet` interface selection also resolves names |
 | 2.2.2   | 2026-09-06 | Ubuntu Port Edition        | Native Ubuntu/Linux support: `.deb` package (`packaging/`), systemd/PAM Linux Host Service (protocol v4: metrics, watched processes, llama.cpp models), `xfreerdp` Remote Desktop with fast-exit retry; platform shims for crypto (file master key), theme (gsettings) and RDP dispatch; cross-platform ping reply detection (case-insensitive `ttl=`); fixed UI font stack (color emoji + text) for Qt 6.4 |

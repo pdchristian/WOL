@@ -71,6 +71,11 @@ def _completed(rc=0, stderr=""):
 # --- execute_shutdown (wol_app.shutdown_flow) --------------------------------
 
 class TestExecuteShutdownSmb:
+    @pytest.fixture(autouse=True)
+    def _windows_path(self, monkeypatch):
+        # The SMB (net use + shutdown /m) path is Windows-only.
+        monkeypatch.setattr(shutdown_flow.sys, "platform", "win32")
+
     def test_success_connect_and_shutdown(self, qapp, monkeypatch):
         device = {
             "id": "d1", "name": "PC1", "ip": "192.168.1.10",
@@ -132,6 +137,11 @@ class TestExecuteShutdownSmb:
 # --- scheduled_shutdown (wol_app.schedule_runner) --------------------------
 
 class TestScheduledShutdownSmb:
+    @pytest.fixture(autouse=True)
+    def _windows_path(self, monkeypatch):
+        # The SMB (net use + shutdown /m) path is Windows-only.
+        monkeypatch.setattr(schedule_runner.sys, "platform", "win32")
+
     def test_success_two_commands_and_logs(self, qapp, monkeypatch):
         device = {
             "id": "d2", "name": "Server", "ip": "10.0.0.5",

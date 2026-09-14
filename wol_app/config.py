@@ -273,6 +273,10 @@ DEFAULT_CONFIG = {
         "allow_multiple_instances": False,        # Modern main window rect [x, y, w, h] (normal state, restored on
         # start when it still intersects an attached screen).
         "window_geometry": None,
+        # macOS: bundled host-service version the user was asked about (and
+        # declined) - the first-start prompt appears at most once per service
+        # version. None until the dialog was shown. See host_service_installer.
+        "hostservice_prompted_version": None,
         # Device dashboard: metrics poll interval in milliseconds
         # (clamped to DASHBOARD_INTERVAL_MIN_MS..DASHBOARD_INTERVAL_MAX_MS).
         "dashboard_interval_ms": DEFAULT_DASHBOARD_INTERVAL_MS,
@@ -670,6 +674,19 @@ class ConfigManager:
         """Persist the "allow multiple instances" preference."""
         self.config.setdefault("ui", {})[
             "allow_multiple_instances"] = bool(enabled)
+        self.save()
+
+    # --- macOS host service first-start prompt ---
+
+    def get_hostservice_prompted_version(self) -> str | None:
+        """Bundled service version the user was already asked about (macOS)."""
+        value = self.config.get("ui", {}).get("hostservice_prompted_version")
+        return value if isinstance(value, str) and value else None
+
+    def set_hostservice_prompted_version(self, version: str | None) -> None:
+        """Remember (or clear) the prompted host-service version."""
+        self.config.setdefault("ui", {})[
+            "hostservice_prompted_version"] = version
         self.save()
 
     # --- Modern main window geometry ---
