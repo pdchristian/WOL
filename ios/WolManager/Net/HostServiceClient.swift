@@ -234,36 +234,66 @@ final class HostServiceClient {
     /// Socket probiert (ein fehlgeschlagener connect schließt seinen Socket), damit
     /// ein Gerät mit zusätzlichem IPv6 (AAAA) oder veralteter A-Adresse trotzdem
     /// den IPv4-only Host Service erreicht. Liefert den verbundenen fd oder nil.
+    ///
+    /// WICHTIG: connect() läuft non-blocking mit poll() (wie tcpConnect).
+    /// SO_SNDTIMEO wirkt auf Apple-Plattformen NICHT für connect() — mit
+    /// blockierendem connect() lief ein toter Host (Firewall-Drop, hängender
+    /// PC) gemessen über den gesetzten Timeout hinaus und im Extremfall ins
+    /// komplette SYN-Retransmissions-Fenster (~75 s). Das blockierte statusAll/
+    /// metrics über die Watch-Timeouts hinaus → Online-Status "synced nicht mehr".
     static func connectIpv4(host: String, port: Int, timeoutMs: Int) -> Int32? {
         for ip in Ipv4Resolver.resolveAll(host) {
-            let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
-            guard fd >= 0 else { continue }
-            var tv = timeval(tv_sec: timeoutMs / 1000, tv_usec: __darwin_suseconds_t((timeoutMs % 1000) * 1000))
-            var recvTv = tv
-            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &recvTv, socklen_t(MemoryLayout<timeval>.size))
-
-            var addr = sockaddr_in()
-            addr.sin_family = sa_family_t(AF_INET)
-            addr.sin_port = in_port_t(port).bigEndian
-            var okAddr = false
-            if inet_pton(AF_INET, ip, &addr.sin_addr) == 1 {
-                okAddr = true
-            } else {
-                let n = inet_addr(ip)
-                if n != INADDR_NONE { addr.sin_addr.s_addr = n; okAddr = true }
+            if let fd = connectCandidate(ip: ip, port: port, timeoutMs: timeoutMs) {
+                return fd
             }
-            guard okAddr else { close(fd); continue }
-
-            let connOk: Bool = withUnsafePointer(to: &addr) { p in
-                p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                    connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
-                }
-            }
-            if connOk { return fd }
-            close(fd)
         }
         return nil
+    }
+
+    /// Ein IPv4-Kandidat: non-blocking connect mit hartem poll-Timeout, danach
+    /// zurück in den blockierenden Modus inkl. Sende-/Empfangs-Timeout.
+    private static func connectCandidate(ip: String, port: Int, timeoutMs: Int) -> Int32? {
+        let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        guard fd >= 0 else { return nil }
+        var nonblock: Int32 = 1
+        guard ioctl(fd, fionbio, &nonblock) == 0 else { close(fd); return nil }
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(port).bigEndian
+        if inet_pton(AF_INET, ip, &addr.sin_addr) != 1 {
+            let n = inet_addr(ip)
+            guard n != INADDR_NONE else { close(fd); return nil }
+            addr.sin_addr.s_addr = n
+        }
+
+        let rc = withUnsafePointer(to: &addr) { p -> Int32 in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        if rc != 0 {
+            // EINPROGRESS = normal für non-blocking; alles andere ist endgültig.
+            guard errno == EINPROGRESS || errno == EALREADY || errno == EINTR || errno == EAGAIN else {
+                close(fd)
+                return nil
+            }
+            var pfd = pollfd(fd: fd, events: Int16(POLLIN | POLLOUT), revents: 0)
+            guard poll(&pfd, 1, Int32(max(timeoutMs, 1))) > 0 else { close(fd); return nil }
+            var soErr: Int32 = 0
+            var len = socklen_t(MemoryLayout<Int32>.size)
+            guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &soErr, &len) == 0, soErr == 0 else {
+                close(fd)
+                return nil
+            }
+        }
+        // Handshake durch: blockierender Modus + Timeouts für die Lese-/Schreibphase.
+        var block: Int32 = 0
+        guard ioctl(fd, fionbio, &block) == 0 else { close(fd); return nil }
+        var tv = timeval(tv_sec: timeoutMs / 1000, tv_usec: __darwin_suseconds_t((timeoutMs % 1000) * 1000))
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        return fd
     }
 
     /// Diagnose für die UI: DNS-Auflösung + TCP-Erreichbarkeit pro IPv4-Kandidat.

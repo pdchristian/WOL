@@ -13,6 +13,10 @@ import Foundation
  */
 final class WatchCommandDispatcher {
 
+    /// Zeitfenster pro Geräte-Statuscheck in statusAll (DNS/mDNS + Connect + Read).
+    /// Testbar herabsetzbar; 8 s deckt einen mDNS-Fehlschlag plus Connect ab.
+    var statusCheckWindow: TimeInterval = 8
+
     private let actions: WatchActions
     private let repo: Repo
 
@@ -102,20 +106,53 @@ final class WatchCommandDispatcher {
     /// "letzter bekannter Stand" behalten und an den applicationContext der
     /// Watch weitergegeben, damit sie ohne erreichbares iPhone nicht pauschal
     /// alles auf "offline" setzt.
+    ///
+    /// Jeder Check hat ein hartes Zeitfenster (`statusCheckWindow`, DNS/mDNS +
+    /// Connect + Read): ein einzelner langsamer Host darf statusAll nicht über
+    /// das Watch-Timeout (20 s) halten, sonst friert der Online-Status komplett
+    /// ein. Ein Zeitüberschreiter fehlt in der Antwort — die Watch behält dann
+    /// den letzten bekannten Status des Geräts (statt es falsch als offline zu
+    /// markieren).
     func statusAllJson() async -> [String: Any] {
         let devices = repo.snapshot.devices.filter { $0.enabled && !$0.ip.isEmpty }
         var online: [String: Bool] = [:]
-        await withTaskGroup(of: (String, Bool).self) { group in
+        let window = statusCheckWindow
+        await withTaskGroup(of: (String, Bool?).self) { group in
             for d in devices {
-                group.addTask { (d.id, await self.actions.checkStatus(device: d)) }
+                group.addTask {
+                    let r = await Self.bounded(window) { await self.actions.checkStatus(device: d) }
+                    return (d.id, r)
+                }
             }
-            for await (id, isOnline) in group { online[id] = isOnline }
+            for await (id, result) in group {
+                if let result { online[id] = result }
+            }
         }
         noteOnline(online)
-        let statuses = devices.map { d in
-            ["id": d.id, "online": online[d.id] ?? false]
+        let statuses = devices.compactMap { d -> [String: Any]? in
+            guard let isOnline = online[d.id] else { return nil } // Timeout: letzter Stand behalten
+            return ["id": d.id, "online": isOnline]
         }
         return ok(["statuses": statuses])
+    }
+
+    /// `work` mit Zeitfenster: liefert nil, wenn `work` länger als `seconds`
+    /// braucht. `work` läuft dann als unstrukturierter Task weiter (Ergebnis
+    /// wird verworfen) — nötig, weil blockierende Socket-/DNS-Aufrufe nicht
+    /// abbrechbar sind und ein strukturierter Kind-Task die Antwort sonst
+    /// trotzdem bis zur Fertigkeit blockieren würde.
+    private static func bounded(_ seconds: TimeInterval,
+                                work: @escaping @Sendable () async -> Bool) async -> Bool? {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool?, Never>) in
+            let once = ResumeOnce()
+            Task.detached {
+                let r = await work()
+                if once.claim() { cont.resume(returning: r) }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
+                if once.claim() { cont.resume(returning: nil) }
+            }
+        }
     }
 
     /// Metriken eines Geräts (UI-Format über MetricsUI — Prozent/GB, gerundet).
@@ -155,5 +192,20 @@ final class WatchCommandDispatcher {
 
     private func errorDescription(_ error: Error) -> String {
         (error as? BridgeError)?.msg ?? error.localizedDescription
+    }
+}
+
+/// Fortschritts-Sperre: nur der erste `claim()`-Aufrufer darf eine
+/// Continuation fortsetzen (work vs. Timeout laufen gegeneinander).
+final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+
+    /// true, wenn sich der Aufrufer die Fortsetzung gesichert hat.
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if done { return false }
+        done = true
+        return true
     }
 }

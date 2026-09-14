@@ -592,8 +592,8 @@ function openConfirm(title, msg, onYes, yesCls = "primary") {
   state.ui.confirmFn = onYes;
   openSheet(`<div class="grab"></div><h2>${esc(title)}</h2>
     <p style="font-size:13.5px;line-height:1.55">${escA(msg)}</p>
-    <div class="sheetbtns"><button class="btn" data-act="sheet-close">${esc(t("no"))}</button>
-    <button class="btn ${yesCls}" data-act="confirm-yes">${esc(t("yes"))}</button></div>`);
+    <div class="sheetbtns" style="justify-content:flex-end"><button class="btn ${yesCls}" data-act="confirm-yes">${esc(t("yes"))}</button>
+    <button class="btn" data-act="sheet-close">${esc(t("no"))}</button></div>`);
 }
 function openAlert(title, msg) {
   openSheet(`<div class="grab"></div><h2>${esc(title)}</h2>

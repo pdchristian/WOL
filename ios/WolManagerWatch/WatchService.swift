@@ -70,9 +70,11 @@ final class WatchService: NSObject, WCSessionDelegate, @unchecked Sendable {
         let session = WCSession.default
         // Direkt nach dem App-Start ist die Session oft noch nicht aktiviert —
         // kurz warten, sonst zeigt die Watch beim ersten Öffnen nur den (leeren)
-        // Cache, obwohl alle Geräte auf dem iPhone vorhanden sind.
+        // Cache, obwohl alle Geräte auf dem iPhone vorhanden sind. Bis zu 5 s:
+        // die iPhone-App wird durch die erste Zustellung ggf. erst kalt im
+        // Hintergrund gestartet und aktiviert ihre Session danach.
         if session.activationState != .activated {
-            _ = await waitForActivation(timeout: 2)
+            _ = await waitForActivation(timeout: 5)
         }
         guard session.activationState == .activated else { throw WatchError.notReachable }
         // phoneReachable kann dauern — trotzdem senden: oft antwortet das iPhone
@@ -113,11 +115,21 @@ final class WatchService: NSObject, WCSessionDelegate, @unchecked Sendable {
     /// letzte bekannte Status aus dem applicationContext — sonst würden nach
     /// einem Timeout pauschal alle Geräte als offline erscheinen.
     func loadDevices() async throws -> [WatchDevice] {
-        let snap = try await request(["command": "snapshot"])
+        // Snapshot mit langem Timeout + Retry: liegt die iPhone-App im
+        // Hintergrund oder ist beendet, startet iOS sie für diese Zustellung
+        // automatisch (WCSession-Doku) — der Kaltstart kostet mehrere Sekunden.
+        // Ohne das Geduld-Fenster würde die Watch unnötig auf den Cache fallen.
+        let snap: [String: Any]
+        do {
+            snap = try await request(["command": "snapshot"], timeout: 25)
+        } catch {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            snap = try await request(["command": "snapshot"], timeout: 25)
+        }
         guard let rawDevices = snap["devices"] as? [[String: Any]] else { throw WatchError.badResponse }
         var devices = rawDevices.compactMap { Self.decodeDevice($0) }
         let cached = cachedContext()
-        if let statusReply = try? await request(["command": "statusAll"]),
+        if let statusReply = try? await request(["command": "statusAll"], timeout: 20),
            let statuses = statusReply["statuses"] as? [[String: Any]] {
             let map = Dictionary(uniqueKeysWithValues: statuses.compactMap { s -> (String, Bool)? in
                 guard let id = s["id"] as? String else { return nil }
@@ -133,7 +145,14 @@ final class WatchService: NSObject, WCSessionDelegate, @unchecked Sendable {
     }
 
     func metrics(id: String) async throws -> WatchMetrics {
-        let reply = try await request(["command": "metrics", "id": id])
+        // Langes Zeitfenster: liegt das iPhone im Hintergrund, startet iOS die
+        // Gegenstellen-App für die Zustellung erst kalt (~5-10 s); zusätzlich
+        // brauchen Host-Service-Abfragen mit Watch-Einträgen (Portsonde +
+        // llama-server /v1/models + /metrics) mehrere Sekunden. Mit dem
+        // 12-s-Default schlug genau diese Kombination regelmäßig fehl, während
+        // die iPhone-App (ohne Kaltstart) dieselbe Abfrage problemlos
+        // beantwortete.
+        let reply = try await request(["command": "metrics", "id": id], timeout: 25)
         guard let raw = reply["metrics"] as? [String: Any],
               let data = try? JSONSerialization.data(withJSONObject: raw) else {
             throw WatchError.badResponse

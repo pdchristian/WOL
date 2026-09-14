@@ -38,6 +38,14 @@ final class AppState: ObservableObject {
 
     private var toastTask: Task<Void, Never>?
     private var wakePollTask: Task<Void, Never>?
+    /// Periodischer Statuslauf, solange die Geräteliste sichtbar ist. Ohne ihn
+    /// blieb der Online-Status stehen, bis man manuell neu geladen hat: das
+    /// Wake-Polling endet nach spätestens 60 s, ein PC mit langem POST ist da
+    /// oft noch nicht durch — und danach fragte die Watch nie wieder.
+    private var statusTimer: Timer?
+    /// true, während ein stiller Refresh läuft (Timer + Wake-Polling teilen sich
+    /// den einen Statuslauf).
+    private var quietInFlight = false
 
     init() {
         sort = WatchService.shared.cachedContext().sort
@@ -57,6 +65,12 @@ final class AppState: ObservableObject {
             for i in devices.indices {
                 if let s = ctx.statuses[devices[i].id], devices[i].online != s {
                     devices[i].online = s
+                    changed = true
+                }
+                // Host-Service antwortet wieder → PC ist hochgefahren:
+                // "Wacht auf" beenden, sonst bleibt die Anzeige dauerhaft stehen.
+                if devices[i].online == true, devices[i].waking {
+                    devices[i].waking = false
                     changed = true
                 }
             }
@@ -115,8 +129,12 @@ final class AppState: ObservableObject {
                 let ctx = WatchService.shared.cachedContext()
                 if !ctx.devices.isEmpty {
                     var merged = await mergeLive(devices: ctx.devices)
-                    for i in merged.indices where merged[i].online == nil {
-                        merged[i].online = ctx.statuses[merged[i].id]
+                    for i in merged.indices {
+                        if merged[i].online == nil {
+                            merged[i].online = ctx.statuses[merged[i].id]
+                        }
+                        // Cached-Status kennt das Gerät online → Wake erledigt.
+                        if merged[i].online == true { merged[i].waking = false }
                     }
                     devices = sorted(merged)
                 }
@@ -137,12 +155,14 @@ final class AppState: ObservableObject {
     }
 
     /// Lokale Live-Zustände (waking, bekannt online) über frische Daten legen.
+    /// `waking` wird verworfen, sobald das Gerät online ist: sonst bleibt
+    /// "Wacht auf" stehen, obwohl der PC längst hochgefahren ist.
     private func mergeLive(devices fresh: [WatchDevice]) async -> [WatchDevice] {
         let old = Dictionary(uniqueKeysWithValues: devices.map { ($0.id, $0) })
         return fresh.map { d in
             var m = d
-            m.waking = old[d.id]?.waking ?? false
             if m.online == nil { m.online = old[d.id]?.online }
+            m.waking = (m.online == true) ? false : (old[d.id]?.waking ?? false)
             return m
         }
     }
@@ -208,19 +228,38 @@ final class AppState: ObservableObject {
         devices[i].waking = false
     }
 
-    /// Stiller Refresh ohne Ladezustand (Polling).
+    /// Stiller Refresh ohne Ladezustand (Polling). `quietInFlight` verhindert,
+    /// dass Wake-Polling und der 15-s-Timer dieselbe Statusrunde doppelt starten.
     private func refreshQuiet() async {
+        guard !quietInFlight else { return }
+        quietInFlight = true
+        defer { quietInFlight = false }
         guard let fresh = try? await WatchService.shared.loadDevices() else { return }
         let old = Dictionary(uniqueKeysWithValues: devices.map { ($0.id, $0) })
         devices = sorted(fresh.map { d in
             var m = d
-            m.waking = old[d.id]?.waking ?? false
+            m.waking = (m.online == true) ? false : (old[d.id]?.waking ?? false)
             return m
         })
-        // Online → waking beenden.
-        for i in devices.indices where devices[i].online == true {
-            devices[i].waking = false
+    }
+
+    // MARK: - Periodischer Statuslauf (solange die Liste sichtbar ist)
+
+    /// Startet alle 15 s einen stillen Statuslauf. Läuft nur, wenn die
+    /// Geräteliste sichtbar ist (DeviceListView ruft start/stop auf) — die
+    /// Watch soll das iPhone im Hintergrund nicht dauerhaft wecken.
+    func startStatusPolling() {
+        guard statusTimer == nil else { return }
+        let t = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in await self?.refreshQuiet() }
         }
+        RunLoop.main.add(t, forMode: .common)
+        statusTimer = t
+    }
+
+    func stopStatusPolling() {
+        statusTimer?.invalidate()
+        statusTimer = nil
     }
 
     private func scheduleWakePollingIfNeeded() {

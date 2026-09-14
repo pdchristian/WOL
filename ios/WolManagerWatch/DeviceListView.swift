@@ -28,6 +28,15 @@ struct DeviceListView: View {
             .sheet(item: $state.confirmDevice) { device in
                 ShutdownConfirmView(device: device)
             }
+            // Nach Suspend/Resume ist der Wake-Polling-Task evtl. weg; beim
+            // Sichtbarwerden laufender "Wacht auf"-Vorgang Status neu prüfen,
+            // damit die Anzeige nicht dauerhaft stehen bleibt. Zusätzlich
+            // periodischen Statuslauf, solange die Liste sichtbar ist.
+            .onAppear {
+                state.startStatusPolling()
+                if state.devices.contains(where: { $0.waking }) { state.refresh() }
+            }
+            .onDisappear { state.stopStatusPolling() }
         }
     }
 

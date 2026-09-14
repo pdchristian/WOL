@@ -11,6 +11,8 @@ final class FakeWatchActions: WatchActions {
     var shutdownResult: Result<Void, Error> = .success(())
     var statusOnlineIds: Set<String> = []
     var metricsResult: Result<MetricsSnapshot, Error> = .success(MetricsSnapshot(protocolVersion: 5, hostname: "PC"))
+    /// Geräte-IDs, deren Statuscheck (sekundenlang) blockiert — für Timeout-Tests.
+    var statusBlockIds: Set<String> = []
 
     private(set) var wakeCalls: [Device] = []
     private(set) var shutdownCalls: [Device] = []
@@ -24,7 +26,12 @@ final class FakeWatchActions: WatchActions {
         shutdownCalls.append(device); return shutdownResult
     }
     func checkStatus(device: Device) async -> Bool {
-        statusCalls.append(device); return statusOnlineIds.contains(device.id)
+        statusCalls.append(device)
+        if statusBlockIds.contains(device.id) {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            return false
+        }
+        return statusOnlineIds.contains(device.id)
     }
     func metrics(device: Device) async -> Result<MetricsSnapshot, Error> {
         metricsCalls.append(device); return metricsResult
@@ -144,6 +151,27 @@ final class WatchCommandDispatcherTests: XCTestCase {
         XCTAssertEqual(reply["ok"] as? Bool, true)
         let statuses = try XCTUnwrap(reply["statuses"] as? [[String: Any]])
         XCTAssertEqual(Set(statuses.map { $0["id"] as? String }), Set(["on"]))
+        XCTAssertEqual(statuses.first?["online"] as? Bool, true)
+    }
+
+    /// Ein blockierender Host darf die Statusrunde nicht anhalten: die Antwort
+    /// kommt nach dem Zeitfenster, der Blockierer fehlt (Watch behält seinen
+    /// letzten Stand), die übrigen Geräte werden korrekt gemeldet.
+    func testStatusAllSkipsBlockedDevice() throws {
+        repo.saveDevice(Device(id: "fast", name: "Fast", mac: "AA", ip: "10.0.0.1", enabled: true))
+        repo.saveDevice(Device(id: "slow", name: "Slow", mac: "BB", ip: "10.0.0.2", enabled: true))
+        fake.statusOnlineIds = ["fast"]
+        fake.statusBlockIds = ["slow"]
+        dispatcher.statusCheckWindow = 0.5
+
+        let start = Date()
+        let reply = send(["command": "statusAll"])
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertEqual(reply["ok"] as? Bool, true)
+        XCTAssertLessThan(elapsed, 3, "Antwort muss nach dem Zeitfenster kommen")
+        let statuses = try XCTUnwrap(reply["statuses"] as? [[String: Any]])
+        XCTAssertEqual(statuses.count, 1)
+        XCTAssertEqual(statuses.first?["id"] as? String, "fast")
         XCTAssertEqual(statuses.first?["online"] as? Bool, true)
     }
 
