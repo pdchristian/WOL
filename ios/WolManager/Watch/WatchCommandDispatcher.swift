@@ -156,17 +156,32 @@ final class WatchCommandDispatcher {
     }
 
     /// Metriken eines Geräts (UI-Format über MetricsUI — Prozent/GB, gerundet).
+    ///
+    /// Die Metriken reisen als JSON-STRING (Feld "metrics_json"), nicht als
+    /// Dictionary: WCSession-Antworten müssen Property-Listen sein, und
+    /// MetricsUI.uiJson enthält NSNull für fehlende Werte (fehlende GPU/VRAM,
+    /// Model, nicht gemessene t/s …). NSNull ist KEIN plist-Typ — die Antwort
+    /// ließ sich nicht serialisieren und erreichte die Watch nie
+    /// ("Keine Antwort vom Host-Service"), während das iPhone dieselben Daten
+    /// als JSON an die WebView bekam und deshalb funktionierte.
     private func metricsJson(_ id: String) async -> [String: Any] {
         do {
             let d = try device(id)
             let r = await actions.metrics(device: d)
             switch r {
-            case let .success(m): return ok(["metrics": MetricsUI.uiJson(m)])
+            case let .success(m):
+                return ok(["metrics_json": Self.jsonString(MetricsUI.uiJson(m))])
             case let .failure(e): return err(errorDescription(e))
             }
         } catch {
             return err(errorDescription(error))
         }
+    }
+
+    /// Dictionary → JSON-Text (plist-sicherer Transport für verschachtelte Daten).
+    static func jsonString(_ obj: [String: Any]) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+        return String(data: data, encoding: .utf8) ?? "{}"
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

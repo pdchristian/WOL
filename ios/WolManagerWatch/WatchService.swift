@@ -153,6 +153,12 @@ final class WatchService: NSObject, WCSessionDelegate, @unchecked Sendable {
         // die iPhone-App (ohne Kaltstart) dieselbe Abfrage problemlos
         // beantwortete.
         let reply = try await request(["command": "metrics", "id": id], timeout: 25)
+        // Der Vertrag liefert "metrics_json" (JSON-Text): NSNull-Werte der
+        // UI-Metriken wären keine gültigen WCSession-Property-List-Werte.
+        // "metrics" (Dictionary) bleibt als Altbestand akzeptiert.
+        if let json = reply["metrics_json"] as? String, let data = json.data(using: .utf8) {
+            return try JSONDecoder().decode(WatchMetrics.self, from: data)
+        }
         guard let raw = reply["metrics"] as? [String: Any],
               let data = try? JSONSerialization.data(withJSONObject: raw) else {
             throw WatchError.badResponse

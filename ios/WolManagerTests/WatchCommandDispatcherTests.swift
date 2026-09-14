@@ -193,12 +193,38 @@ final class WatchCommandDispatcherTests: XCTestCase {
                                                       cpu: 42, ramUsed: 8 * gb, ramTotal: 32 * gb))
         let reply = send(["command": "metrics", "id": "d1"])
         XCTAssertEqual(reply["ok"] as? Bool, true)
-        let m = try XCTUnwrap(reply["metrics"] as? [String: Any])
+        // Metriken reisen als JSON-String (WCSession-verträglich, siehe Dispatcher).
+        let json = try XCTUnwrap(reply["metrics_json"] as? String)
+        let m = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
         XCTAssertEqual(m["cpu"] as? Double, 42)
         XCTAssertEqual(m["ram"] as? Double, 25)
         XCTAssertEqual(m["ramUsedGB"] as? Double, 8)
         XCTAssertEqual(m["ramTotalGB"] as? Double, 32)
         XCTAssertEqual(fake.metricsCalls.map(\.id), ["d1"])
+    }
+
+    /// Regression: die Metrics-Antwort MUSS eine Property-List sein — WCSession
+    /// kann Dictionaries mit NSNull nicht serialisieren ("property lists cannot
+    /// contain objects of type 'CFNull'") und liefert dann nichts zurück
+    /// (Watch: "Keine Antwort vom Host-Service"). uiJson enthält fast immer
+    /// NSNull (fehlende GPU/VRAM/model/t/s) → JSON-String-Transport.
+    func testMetricsReplyIsPropertyListSerializable() throws {
+        repo.saveDevice(Device(id: "d1", name: "PC", mac: "AA", ip: "10.0.0.1",
+                               watchProcesses: ["llama-swap.exe:8080"]))
+        // Snapshot ohne GPU/VRAM/Modell → uiJson produziert NSNull-Einträge.
+        let snap = MetricsSnapshot(protocolVersion: 5, hostname: "PC", cpu: 1)
+        fake.metricsResult = .success(snap)
+        let reply = send(["command": "metrics", "id": "d1"])
+        XCTAssertEqual(reply["ok"] as? Bool, true)
+        XCTAssertNotNil(try? PropertyListSerialization.data(fromPropertyList: reply,
+                                                            format: .binary, options: 0),
+                        "WCSession-Antwort muss plist-fähig sein")
+        // uiJson enthält tatsächlich NSNull (GPU/VRAM fehlen) …
+        XCTAssertTrue(MetricsUI.uiJson(snap).values.contains { $0 is NSNull })
+        // … und das alte Dictionary-Format wäre daran gescheitert.
+        let legacy: [String: Any] = ["ok": true, "metrics": MetricsUI.uiJson(snap)]
+        XCTAssertNil(try? PropertyListSerialization.data(fromPropertyList: legacy,
+                                                         format: .binary, options: 0))
     }
 
     func testMetricsErrorPath() {
