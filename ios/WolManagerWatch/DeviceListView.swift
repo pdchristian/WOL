@@ -16,7 +16,7 @@ struct DeviceListView: View {
                 content
                 overlay
             }
-            .navigationTitle(Text("nav.devices", value: "Geräte"))
+            .navigationTitle(Text("nav.devices"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { viewModeButton }
@@ -28,6 +28,15 @@ struct DeviceListView: View {
             .sheet(item: $state.confirmDevice) { device in
                 ShutdownConfirmView(device: device)
             }
+            // Nach Suspend/Resume ist der Wake-Polling-Task evtl. weg; beim
+            // Sichtbarwerden laufender "Wacht auf"-Vorgang Status neu prüfen,
+            // damit die Anzeige nicht dauerhaft stehen bleibt. Zusätzlich
+            // periodischen Statuslauf, solange die Liste sichtbar ist.
+            .onAppear {
+                state.startStatusPolling()
+                if state.devices.contains(where: { $0.waking }) { state.refresh() }
+            }
+            .onDisappear { state.stopStatusPolling() }
         }
     }
 
@@ -289,16 +298,22 @@ struct StatusPill: View {
 
     private var label: LocalizedStringKey {
         if device.waking { return "status.waking" }
-        return device.online == true ? "status.online" : "status.offline"
+        switch device.online {
+        case true: return "status.online"
+        case false: return "status.offline"
+        case nil: return "status.unknown"
+        }
     }
 
     private var dotColor: Color { textColor }
 
     private var textColor: Color {
         if device.waking { return .teal }
-        return device.online == true
-            ? Color(red: 0.3, green: 0.86, blue: 0.37)
-            : Color(white: 0.55)
+        switch device.online {
+        case true: return Color(red: 0.3, green: 0.86, blue: 0.37)
+        case false: return Color(white: 0.55)
+        case nil: return .orange
+        }
     }
 }
 

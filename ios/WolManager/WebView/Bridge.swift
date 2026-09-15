@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import WebKit
+import WatchConnectivity
 
 /* Was die Hülle (WebViewController) der Bridge bereitstellen muss: Document-Picker. */
 protocol BridgeHost: AnyObject {
@@ -263,6 +264,7 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             "broadcastIp": s.broadcastIp, "broadcastPort": s.broadcastPort,
             "language": s.language, "displayMode": s.displayMode,
             "autoUpdate": s.autoUpdate, "interval": s.interval, "maxLogs": s.maxLogs,
+            "deviceSort": s.deviceSort,
         ]
     }
 
@@ -343,7 +345,8 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             displayMode: pStr(p, "displayMode").isEmpty ? cur.displayMode : pStr(p, "displayMode"),
             autoUpdate: pBool(p, "autoUpdate") ?? cur.autoUpdate,
             interval: pStr(p, "interval").isEmpty ? cur.interval : pStr(p, "interval"),
-            maxLogs: (p["maxLogs"] as? Int) ?? cur.maxLogs
+            maxLogs: (p["maxLogs"] as? Int) ?? cur.maxLogs,
+            deviceSort: pStr(p, "deviceSort").isEmpty ? cur.deviceSort : pStr(p, "deviceSort")
         )
     }
 
@@ -435,11 +438,18 @@ final class Bridge: NSObject, WKScriptMessageHandler {
         Task { [weak self] in
             guard let self else { return }
             let devs = self.container.repo.snapshot.devices
+            var collected: [String: Bool] = [:]
             for d in devs {
                 let online = await self.container.checkStatus(device: d)
+                collected[d.id] = online
                 self.emitEvent(["type": "status", "id": d.id, "online": online])
             }
             self.emitEvent(["type": "status-done"])
+            // Letzten Stand der Watch-Brücke melden (Snapshot/Offline-Fallback).
+            if WCSession.isSupported() {
+                WatchBridgeService.shared.noteOnline(collected)
+                WatchBridgeService.shared.syncApplicationContext()
+            }
         }
     }
 

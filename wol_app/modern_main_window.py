@@ -12,6 +12,7 @@ settings dialog); see :func:`wol_app.main_window.main`.
 """
 
 import os
+import sys
 from typing import Any, NoReturn
 
 from PyQt6.QtCore import QEvent, QRect, QSize, Qt, QTimer
@@ -143,6 +144,14 @@ class ModernMainWindow(QMainWindow):
         # Honour the "keep running in the notification area" preference
         # (ui.close_to_tray) from the very first start.
         self._apply_tray_mode()
+
+        # macOS: offer the bundled WOL Host Service shortly after the window
+        # appeared (once per service version; see _offer_host_service).
+        # _hostservice_holder keeps the QThread/worker alive while running.
+        self._hostservice_holder: dict[str, Any] = {}
+        if (sys.platform == "darwin" and not HEADLESS_MODE
+                and getattr(sys, "frozen", False)):
+            QTimer.singleShot(1200, self._offer_host_service)
 
         # Remove the tray icon on EVERY exit path — including the update
         # flow, which leaves via QApplication.exit() without ever calling
@@ -654,6 +663,72 @@ class ModernMainWindow(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    # ── macOS: bundled WOL Host Service ─────────────────────────────
+
+    def _offer_host_service(self) -> None:
+        """Ask once per service version whether to install/update the host
+        service bundled in this .app (macOS first-start flow).
+
+        Silent no-op when the payload is absent, the service is current or
+        the user already declined this bundled version
+        (ui.hostservice_prompted_version).
+        """
+        if self._hostservice_holder:
+            return  # an operation is already in flight
+        from wol_app import host_service_installer as hsi
+
+        if not hsi.is_macos() or not getattr(sys, "frozen", False):
+            return
+        state, payload, _installed = hsi.describe_state()
+        if not hsi.should_prompt(
+                self.config.get_hostservice_prompted_version(),
+                state, payload):
+            return
+        # Remember the answer up-front: the prompt shows at most once per
+        # bundled version, even when the install attempt itself fails.
+        self.config.set_hostservice_prompted_version(payload)
+
+        message_key = ("dialog.hostservice.update.message" if state == "update"
+                       else "dialog.hostservice.install.message")
+        dialog = ModernShutdownConfirmDialog(
+            "", self,
+            title_key="dialog.hostservice.title",
+            message_key=message_key,
+            message_kwargs={"version": payload or ""},
+            yes_object_name="primaryButton",
+            show_icon=False)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._start_host_service_install()
+
+    def _start_host_service_install(self) -> None:
+        """Install/update the bundled service off the UI thread (admin dialog)."""
+        from wol_app import host_service_installer as hsi
+
+        texts = {
+            "prompt_install": Translations.tr("dialog.hostservice.prompt.install"),
+            "prompt_update": Translations.tr("dialog.hostservice.prompt.update"),
+        }
+        hsi.run_privileged_action(
+            "install", texts, self._on_host_service_result,
+            self._hostservice_holder)
+
+    def _on_host_service_result(self, outcome: str, message: str) -> None:
+        """Report the install/update result (worker thread finished)."""
+        if outcome == "cancelled":
+            return  # user dismissed the macOS admin dialog: stays silent
+        if outcome in ("failed", "no_payload") or message:
+            QMessageBox.warning(
+                self, Translations.tr("dialog.hostservice.failed.title"),
+                Translations.tr("dialog.hostservice.failed.message")
+                + "\n\n" + (message or outcome))
+            return
+        # Success: the worker emits the installed version as `outcome`.
+        QMessageBox.information(
+            self, Translations.tr("dialog.hostservice.success.title"),
+            Translations.tr("dialog.hostservice.success.message",
+                            version=outcome))
 
     def _hide_to_tray(self) -> None:
         """Hide the window to the notification area.

@@ -86,6 +86,8 @@ data class AppSettings(
     val interval: String = "168",        // Prüfintervall in Stunden
     @SerialName("max_logs") val maxLogs: Int = 100,
     @SerialName("default_shutdown_method") val defaultShutdownMethod: String = "host_service",
+    /** Sortierung der Geräteliste: name|ip|mac|status — auch für die Watch. */
+    @SerialName("device_sort") val deviceSort: String = "name",
 )
 
 /** Vom Netzwerk-Scanner gefundener Host. */

@@ -25,28 +25,29 @@ struct ShutdownConfirmView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                /* Konvention: links "Ja", rechts daneben "Nein", Buttons mittig */
                 HStack(spacing: 8) {
-                    Button {
-                        state.confirmDevice = nil
-                    } label: {
-                        Text("no")
-                            .font(.system(size: 15, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 44)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.gray)
-
                     Button {
                         state.confirmShutdown()
                     } label: {
                         Text("yes")
                             .font(.system(size: 15, weight: .semibold))
-                            .frame(maxWidth: .infinity)
+                            .frame(minWidth: 56)
                             .frame(minHeight: 44)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color(red: 1.0, green: 0.27, blue: 0.23))
+
+                    Button {
+                        state.confirmDevice = nil
+                    } label: {
+                        Text("no")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(minWidth: 56)
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.gray)
                 }
             }
             .padding(14)

@@ -34,9 +34,20 @@ final class WatchBridgeService: NSObject, WCSessionDelegate {
 
     private func container() -> AppContainer { .shared }
 
+    /// Watch → iPhone: gemeldete Status übernehmen, damit der Snapshot (und
+    /// damit der Offline-Fallback der Watch) den letzten Stand enthält.
+    func noteOnline(_ statuses: [String: Bool]) {
+        dispatcher.noteOnline(statuses)
+    }
+
     // MARK: - applicationContext
 
-    /// Geräte-Snapshot (ohne Passwörter) als Hintergrunddaten für die Watch.
+    /// Geräte-Snapshot (ohne Passwörter) + letzter bekannter Online-Status +
+    /// Listensortierung als Hintergrunddaten für die Watch, damit sie auch ohne
+    /// erreichbares iPhone aktuelle Karten in der richtigen Reihenfolge zeigt.
+    /// Wird auch vom SceneDelegate beim Wechsel in den Vordergrund aufgerufen,
+    /// damit die Watch nach Repo-reload() (fremde Schreibzugriffe) den
+    /// aktuellen Bestand aller konfigurierten Geräte erhält.
     func syncApplicationContext() {
         guard activated, WCSession.default.activationState == .activated else { return }
         let devices = container().repo.snapshot.devices.map { d in
@@ -49,6 +60,8 @@ final class WatchBridgeService: NSObject, WCSessionDelegate {
         }
         let payload: [String: Any] = [
             "devices": devices,
+            "statuses": dispatcher.lastOnline,
+            "sort": container().repo.snapshot.settings.deviceSort,
             "syncedAt": Date().timeIntervalSince1970,
         ]
         do {
@@ -71,7 +84,13 @@ final class WatchBridgeService: NSObject, WCSessionDelegate {
     /// Watch → iPhone: Befehle ausführen und Antwort zurückschicken.
     func session(_ session: WCSession, didReceiveMessage message: [String: Any],
                  replyHandler: @escaping ([String: Any]) -> Void) {
-        dispatcher.handle(message, completion: replyHandler)
+        dispatcher.handle(message) { [weak self] reply in
+            replyHandler(reply)
+            // Nach Statusfragen: letzten Stand sofort als Snapshot nachliefern.
+            if (message["command"] as? String) == "statusAll" {
+                self?.syncApplicationContext()
+            }
+        }
     }
 
     /// Watch → iPhone: fire-and-forget (z. B. Status-Refresh nach Wake).

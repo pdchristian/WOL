@@ -28,8 +28,17 @@ class Translations:
         "es": "Español",
     }
 
+    # Class-level state (the singleton stores it on the class, not the
+    # instance). Initialised here so the static set_language()/tr() work
+    # before the first Translations() is constructed — e.g. from test
+    # fixtures that pin the language without instantiating.
+    _current_language: str = "en"
+    _translations: dict = {}
+    _english_translations: dict = {}
+    _instance: "Translations | None" = None
+
     def __init__(self) -> None:
-        if not hasattr(Translations, "_instance"):
+        if not hasattr(Translations, "_instance") or Translations._instance is None:
             Translations._current_language = "en"
             Translations._translations: dict = {}
             Translations._english_translations: dict = {}

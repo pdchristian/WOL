@@ -1,14 +1,15 @@
-"""Wake-on-LAN Manager - Main Entry Point (Windows + Linux).
+"""Wake-on-LAN Manager - Main Entry Point (Windows + Linux + macOS).
 
 On Windows the classic single-window layout and the modern "Control Center"
 layout are both available; the choice is made via ``ui.layout_mode`` (see
 :func:`wol_app.main_window.main`).
 
-On Linux (the Ubuntu/GNOME port) only the Modern UI ships - the classic
-window and its dialogs are never imported, so no Windows-only code is loaded.
-The WOL Host Service (``wol_host_service_linux.py``, systemd, TCP 8765) is
-installed alongside the app and provides remote shutdown/reboot, dashboard
-metrics and (opt-in) remote script execution.
+On Linux (the Ubuntu/GNOME port) and macOS only the Modern UI ships - the
+classic window and its dialogs are never imported, so no Windows-only code
+is loaded. The WOL Host Service (``wol_host_service_linux.py``, systemd /
+``wol_host_service_macos.py``, launchd; TCP 8765) is installed alongside
+the app and provides remote shutdown/reboot, dashboard metrics and (opt-in)
+remote script execution.
 """
 
 from __future__ import annotations
@@ -106,8 +107,9 @@ def _main_linux():
 def main():
     """Platform-dispatching entry point.
 
-    Windows keeps the full feature set (classic + modern UI); Linux runs the
-    Modern UI only and never imports the classic ``main_window`` module.
+    Windows keeps the full feature set (classic + modern UI); Linux and
+    macOS run the Modern UI only and never import the classic
+    ``main_window`` module.
     """
     if sys.platform == "win32":
         from wol_app.main_window import main as _main_windows

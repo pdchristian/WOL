@@ -273,6 +273,10 @@ DEFAULT_CONFIG = {
         "allow_multiple_instances": False,        # Modern main window rect [x, y, w, h] (normal state, restored on
         # start when it still intersects an attached screen).
         "window_geometry": None,
+        # macOS: bundled host-service version the user was asked about (and
+        # declined) - the first-start prompt appears at most once per service
+        # version. None until the dialog was shown. See host_service_installer.
+        "hostservice_prompted_version": None,
         # Device dashboard: metrics poll interval in milliseconds
         # (clamped to DASHBOARD_INTERVAL_MIN_MS..DASHBOARD_INTERVAL_MAX_MS).
         "dashboard_interval_ms": DEFAULT_DASHBOARD_INTERVAL_MS,
@@ -327,9 +331,21 @@ class ConfigManager:
         in ``config.json`` — visible, editable, and unambiguous for every
         future start (first run after install or upgrade).
         """
-        ui = self.config.setdefault("ui", {})
-        if "allow_multiple_instances" not in ui:
-            ui["allow_multiple_instances"] = False
+        # The key is part of DEFAULT_CONFIG, so _load's deep merge always
+        # materialises it in memory. A save is only needed when the file on
+        # disk does not carry it yet (config written before v2.3.4). Checking
+        # the file — not the merged dict — is what makes this persist: the
+        # merged dict always contains the key, so a `not in ui` test never
+        # fired and the on-disk default was silently skipped.
+        try:
+            with open(self.config_path, encoding="utf-8") as f:
+                on_disk = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            on_disk = {}
+        disk_ui = on_disk.get("ui")
+        if not isinstance(disk_ui, dict) or "allow_multiple_instances" not in disk_ui:
+            ui = self.config.setdefault("ui", {})
+            ui.setdefault("allow_multiple_instances", False)
             try:
                 self.save()
             except Exception as e:  # pragma: no cover - non-fatal
@@ -658,6 +674,19 @@ class ConfigManager:
         """Persist the "allow multiple instances" preference."""
         self.config.setdefault("ui", {})[
             "allow_multiple_instances"] = bool(enabled)
+        self.save()
+
+    # --- macOS host service first-start prompt ---
+
+    def get_hostservice_prompted_version(self) -> str | None:
+        """Bundled service version the user was already asked about (macOS)."""
+        value = self.config.get("ui", {}).get("hostservice_prompted_version")
+        return value if isinstance(value, str) and value else None
+
+    def set_hostservice_prompted_version(self, version: str | None) -> None:
+        """Remember (or clear) the prompted host-service version."""
+        self.config.setdefault("ui", {})[
+            "hostservice_prompted_version"] = version
         self.save()
 
     # --- Modern main window geometry ---

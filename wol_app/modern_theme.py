@@ -38,10 +38,15 @@ _ARROW_DIR = os.path.join(tempfile.gettempdir(), "wol_modern_arrows")
 #    contain digits and letters. On Ubuntu "Segoe UI" is not installed, so an
 #    emoji font listed directly after it becomes the primary font and every
 #    digit/letter renders in the (wide, monospaced-looking) emoji face.
-#    Therefore the concrete text families come first and the emoji fonts only
-#    after them; "sans-serif" stays last as the platform fallback.
+#    Same trap on macOS: none of "Segoe UI" / "Noto Sans" / "Ubuntu" exists
+#    there either, so without macOS families in the stack Qt resolves to
+#    "Apple Color Emoji" and every label gets huge letter gaps. The concrete
+#    text families (incl. the macOS system fonts) therefore come first and
+#    the emoji fonts only after them; "sans-serif" stays last as the
+#    platform fallback.
 _UI_FONT_STACK = (
-    '"Segoe UI", "Noto Sans", "Ubuntu", '
+    '"Segoe UI", "SF Pro Text", ".AppleSystemUIFont", "Helvetica Neue", '
+    '"Noto Sans", "Ubuntu", '
     '"Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", '
     'sans-serif'
 )

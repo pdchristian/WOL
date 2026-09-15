@@ -15,8 +15,10 @@ and answers with a single-line JSON response:
 
 Authentication: the supplied system credentials are validated through PAM
 (``pamela``, service ``login``) - the Linux equivalent of the Windows
-``LogonUserW`` path. A username of the form ``DOMAIN\\User`` is reduced to
-the user part before authentication.
+``LogonUserW`` path. The macOS variant reuses this core: /etc/pam.d/login
+there routes to ``pam_opendirectory``, so the same code authenticates local
+and directory accounts. A username of the form ``DOMAIN\\User`` is reduced
+to the user part before authentication.
 
 Commands (identical to the Windows service):
     status    - no authentication required, answers ``{"status": "ok", ...}``
@@ -87,6 +89,12 @@ MAX_REQUEST_BYTES = 65536
 #    llamacpp:prompt_tokens_seconds / llamacpp:predicted_tokens_seconds
 #    Prometheus gauges).
 PROTOCOL_VERSION = 5
+
+# Platform shutdown/reboot commands used by the TCP handler. The macOS
+# variant (wol_host_service_macos.py) reuses this module as its core and
+# overrides these before serving; the Linux default stays systemctl.
+SHUTDOWN_CMD = ["systemctl", "poweroff"]
+REBOOT_CMD = ["systemctl", "reboot"]
 
 # Max number of entries in a "watch" list (client configures e.g.
 # ["llama-server", "ollama:11434"] - keep the loop bounded).
@@ -922,9 +930,9 @@ class _CommandHandler(socketserver.BaseRequestHandler):
             self._respond({"status": "ok", "message": f"{command} accepted"})
             time.sleep(1.0)
             if command == "shutdown":
-                subprocess.run(["systemctl", "poweroff"], capture_output=True)
+                subprocess.run(SHUTDOWN_CMD, capture_output=True)
             else:
-                subprocess.run(["systemctl", "reboot"], capture_output=True)
+                subprocess.run(REBOOT_CMD, capture_output=True)
         except Exception:
             # Never let a handler exception kill the server thread.
             pass

@@ -163,6 +163,28 @@ def run_subprocess_safe(command, timeout: int = 5, **kwargs):
     except Exception as e:
         raise RuntimeError(f"Command failed: {' '.join(command)} - {str(e)}") from e
 
+
+# ── Ping (status checks + scanner) ─────────────────────────────────────────
+
+def build_ping_args(host: str, count: int = 1, timeout_ms: int = 1000) -> list[str]:
+    """Platform-correct ``ping`` argv for a bounded reachability probe.
+
+    The three OSes disagree on every relevant flag:
+
+    * Windows: ``-4`` (force IPv4 - IPv6 replies carry no ``TTL=`` token),
+      ``-n`` count, ``-w`` per-reply wait in **milliseconds**.
+    * macOS/BSD: no ``-4`` (IPv4 literals need none), ``-c`` count,
+      ``-W`` per-reply wait in **milliseconds**; without ``-W`` an
+      unreachable host blocks for ~10 s.
+    * Linux: ``-c`` count, ``-w`` total deadline in **seconds**.
+    """
+    if sys.platform == "win32":
+        return ["ping", "-4", "-n", str(count), "-w", str(int(timeout_ms)), host]
+    if sys.platform == "darwin":
+        return ["ping", "-c", str(count), "-W", str(int(timeout_ms)), host]
+    return ["ping", "-c", str(count), "-w", str(max(1, int(timeout_ms) // 1000)), host]
+
+
 # ── Remote Desktop ──────────────────────────────────────────────────────────
 
 def _build_rdp_content(
@@ -930,6 +952,103 @@ def _retry_remote_desktop_linux(
     subprocess.Popen(cmd)
 
 
+# ── Remote Desktop: macOS (Microsoft Remote Desktop) ────────────────────────
+
+#: Bundle id of the Microsoft Remote Desktop app on the Mac App Store.
+MACOS_RD_BUNDLE_ID = "com.microsoft.rdc.macos"
+#: Install pointer used in error messages when the app is missing.
+MACOS_RD_INSTALL_URL = "https://aka.ms/rdmac/mac"
+
+
+def macos_remote_desktop_available() -> bool:
+    """True when the Microsoft Remote Desktop app is installed (macOS).
+
+    Looks the app up by bundle id via Spotlight (``mdfind``); when Spotlight
+    is disabled or has no index, falls back to the well-known install
+    locations.
+    """
+    try:
+        result = subprocess.run(
+            ["mdfind", f"kMDItemCFBundleIdentifier == '{MACOS_RD_BUNDLE_ID}'"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.stdout.strip():
+            return True
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    for candidate in (
+        "/Applications/Microsoft Remote Desktop.app",
+        str(Path.home() / "Applications/Microsoft Remote Desktop.app"),
+    ):
+        if os.path.isdir(candidate):
+            return True
+    return False
+
+
+def build_macos_rdp_url(ip: str, username: str = "") -> str:
+    """Build the ``rdp://`` URI for the Microsoft Remote Desktop client.
+
+    Uses the legacy RDP URI scheme (``rdp://key=type:value&...``) that the
+    macOS client registers; the username is pre-filled when given. The
+    password can never travel in the URL — the user types it into the
+    Microsoft Remote Desktop prompt.
+    """
+    from urllib.parse import quote
+
+    url = f"rdp://full%20address=s:{quote(ip, safe='')}"
+    if username:
+        url += f"&username=s:{quote(username, safe='')}"
+    return url
+
+
+def _launch_remote_desktop_macos(
+    ip: str,
+    username: str = "",
+    password: str = "",  # noqa: ARG001 - the client never accepts a CLI password
+    **_ignored,
+) -> None:
+    """Open a Remote Desktop session via the Microsoft Remote Desktop app.
+
+    The app is launched through its ``rdp://`` URL scheme (username
+    pre-filled). Passwords cannot be handed to the client, so the user types
+    it into the Microsoft Remote Desktop prompt; fast-exit monitoring is not
+    available for LaunchServices launches and is silently skipped.
+
+    Raises:
+        ValueError: if *ip* is empty.
+        RuntimeError: if Microsoft Remote Desktop is not installed.
+        OSError: if ``open`` could not run at all.
+    """
+    if not ip:
+        raise ValueError("IP address is empty")
+    if not macos_remote_desktop_available():
+        raise RuntimeError(
+            "Microsoft Remote Desktop not found. "
+            f"Install it from {MACOS_RD_INSTALL_URL}"
+        )
+    url = build_macos_rdp_url(ip, username)
+    result = subprocess.run(["open", url], capture_output=True, timeout=15)
+    if result.returncode != 0:
+        # URL scheme not registered (older/newer client builds vary) — at
+        # least bring the app to the front so the user can connect manually.
+        subprocess.run(
+            ["open", "-b", MACOS_RD_BUNDLE_ID], capture_output=True, timeout=15,
+        )
+
+
+def _retry_remote_desktop_macos(
+    ip: str,
+    username: str = "",
+    **_ignored,
+) -> None:
+    """Re-open the Microsoft Remote Desktop session for *ip*.
+
+    The first attempt already prompts for the password on macOS (the client
+    never receives it), so this is the same launch without credentials.
+    """
+    _launch_remote_desktop_macos(ip, username)
+
+
 def launch_remote_desktop(
     ip: str,
     username: str = "",
@@ -942,17 +1061,27 @@ def launch_remote_desktop(
     on_fast_exit=None,
     fast_exit_window: float = 10.0,
 ):
-    """Launch a Remote Desktop session to *ip* (mstsc on Windows, xfreerdp on Linux).
+    """Launch a Remote Desktop session to *ip*.
 
-    Platform dispatch over the shared fast-exit contract: both backends watch
-    the process when a *password* is set and invoke *on_fast_exit* (from a
-    background thread) when the session dies within *fast_exit_window* seconds.
-    Returns the ``.rdp`` file path on Windows, ``None`` on Linux.
+    Backends: ``mstsc`` (Windows), ``xfreerdp`` (Linux) and the Microsoft
+    Remote Desktop app via its ``rdp://`` URL scheme (macOS).
+
+    Platform dispatch over the shared fast-exit contract: the Windows and
+    Linux backends watch the process when a *password* is set and invoke
+    *on_fast_exit* (from a background thread) when the session dies within
+    *fast_exit_window* seconds. macOS cannot watch a LaunchServices launch
+    and always prompts for the password in the client.
+    Returns the ``.rdp`` file path on Windows, ``None`` on Linux/macOS.
     """
     if sys.platform == "win32":
         return _launch_remote_desktop_windows(
             ip, username, password, fullscreen, width, height,
             cleanup_delay, device_name, on_fast_exit, fast_exit_window,
+        )
+    if sys.platform == "darwin":
+        return _launch_remote_desktop_macos(
+            ip, username, password, fullscreen=fullscreen,
+            width=width, height=height, device_name=device_name,
         )
     return _launch_remote_desktop_linux(
         ip, username, password, fullscreen, width, height,
@@ -973,12 +1102,18 @@ def retry_remote_desktop_without_password(
 
     Windows: deletes the ``TERMSRV/<host>`` Credential Manager entry and
     re-launches mstsc without a password. Linux: re-launches xfreerdp without
-    ``/p:`` so it prompts. Returns the ``.rdp`` path on Windows, ``None`` on
-    Linux.
+    ``/p:`` so it prompts. macOS: re-opens the Microsoft Remote Desktop app
+    (which always prompts for the password anyway). Returns the ``.rdp`` path
+    on Windows, ``None`` on Linux/macOS.
     """
     if sys.platform == "win32":
         return _retry_remote_desktop_windows(
             ip, username, fullscreen, width, height, device_name, cleanup_delay,
+        )
+    if sys.platform == "darwin":
+        return _retry_remote_desktop_macos(
+            ip, username, fullscreen=fullscreen, width=width, height=height,
+            device_name=device_name,
         )
     return _retry_remote_desktop_linux(
         ip, username, fullscreen, width, height, device_name,

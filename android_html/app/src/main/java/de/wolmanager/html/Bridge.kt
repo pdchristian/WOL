@@ -217,6 +217,7 @@ class Bridge(
         put("broadcastIp", s.broadcastIp); put("broadcastPort", s.broadcastPort)
         put("language", s.language); put("displayMode", s.displayMode)
         put("autoUpdate", s.autoUpdate); put("interval", s.interval); put("maxLogs", s.maxLogs)
+        put("deviceSort", s.deviceSort)
     }
 
     private fun infoJson(): JsonObject = buildJsonObject {
@@ -282,6 +283,7 @@ class Bridge(
             autoUpdate = p.opt("autoUpdate")?.jsonPrimitive?.booleanOrNull ?: cur.autoUpdate,
             interval = p.str("interval").ifBlank { cur.interval },
             maxLogs = p.opt("maxLogs")?.jsonPrimitive?.intOrNull ?: cur.maxLogs,
+            deviceSort = p.str("deviceSort").ifBlank { cur.deviceSort },
         )
     }
 

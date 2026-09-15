@@ -5,6 +5,7 @@ buttons to download, dismiss, or skip the update.
 """
 
 import os
+import sys
 import tempfile
 import threading
 from datetime import datetime
@@ -27,8 +28,28 @@ from PyQt6.QtWidgets import (
 from .translations import Translations
 
 
+def _installer_suffix() -> str:
+    """Platform-native update artifact extension (Windows .exe, macOS .dmg)."""
+    return ".dmg" if sys.platform == "darwin" else ".exe"
+
+
 def _launch_installer_safe(temp_path: str) -> bool:
-    """Try to launch the installer with admin rights. Returns True on success."""
+    """Try to launch the installer with admin rights. Returns True on success.
+
+    Windows: ``ShellExecuteW`` with the ``runas`` verb (UAC elevation).
+    macOS: ``open`` mounts the downloaded ``.dmg`` — Gatekeeper shows its
+    prompt for unsigned builds, which is the intended flow.
+    """
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ["open", temp_path], capture_output=True, timeout=30,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
     try:
         import ctypes
         import os
@@ -125,20 +146,21 @@ class UpdateAvailableDialog(QDialog):
         self.reject()
 
     def _download_and_install(self) -> None:
-        """Download the latest installer .exe and launch it."""
+        """Download the latest installer (.exe on Windows, .dmg on macOS) and launch it."""
         assets = self.release_info.get("assets", [])
+        suffix = _installer_suffix()
         installer_asset = None
 
         for asset in assets:
             name = asset["name"]
-            if "installer" in name.lower() and name.endswith(".exe"):
+            if "installer" in name.lower() and name.endswith(suffix):
                 installer_asset = asset
                 break
 
         if not installer_asset:
-            # Fallback: find any .exe
+            # Fallback: find any native installer artifact
             for asset in assets:
-                if asset["name"].endswith(".exe"):
+                if asset["name"].endswith(suffix):
                     installer_asset = asset
                     break
 
@@ -181,7 +203,7 @@ class UpdateAvailableDialog(QDialog):
                     total = int(response.headers.get("Content-Length", 0))
                     downloaded = 0
 
-                    fd, temp_path = tempfile.mkstemp(suffix=".exe")
+                    fd, temp_path = tempfile.mkstemp(suffix=_installer_suffix())
                     try:
                         with os.fdopen(fd, "wb") as f:
                             fd = -1  # fd now owned by the file object

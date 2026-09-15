@@ -26,6 +26,7 @@ After a successful save the view emits ``settings_saved`` so the main
 window can re-apply the modern theme and retranslate every screen.
 """
 
+import sys
 from typing import Any
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -231,6 +232,36 @@ class SettingsView(QWidget):
             Translations.tr("settings.label.allow_multiple_instances"))
         grid.addWidget(self.allow_multiple_toggle, 6, 1)
 
+        # ── macOS only: bundled WOL Host Service (install / update / remove)
+        # Status text + action button in one field; the heavy lifting (admin
+        # dialog, launchd registration) lives in wol_app.host_service_installer.
+        self.hostservice_status: QLabel | None = None
+        self.hostservice_btn: QPushButton | None = None
+        self.hostservice_remove_btn: QPushButton | None = None
+        self._hostservice_holder: dict[str, Any] = {}
+        if sys.platform == "darwin":
+            row_host = QHBoxLayout()
+            row_host.setSpacing(10)
+            self.hostservice_status = QLabel("")
+            self.hostservice_status.setObjectName("placeholderText")
+            self.hostservice_status.setWordWrap(True)
+            row_host.addWidget(self.hostservice_status, 1)
+            self.hostservice_btn = QPushButton("")
+            self.hostservice_btn.setObjectName("primaryButton")
+            self.hostservice_btn.clicked.connect(self._on_hostservice_action)
+            row_host.addWidget(self.hostservice_btn, 0)
+            self.hostservice_remove_btn = QPushButton("")
+            self.hostservice_remove_btn.setObjectName("dangerButton")
+            self.hostservice_remove_btn.clicked.connect(
+                self._on_hostservice_remove)
+            row_host.addWidget(self.hostservice_remove_btn, 0)
+            host_container = QWidget()
+            host_container.setLayout(row_host)
+            self.field_hostservice = Field(
+                "settings.label.hostservice", host_container)
+            grid.addWidget(self.field_hostservice, 7, 1)
+            self._refresh_hostservice_row()
+
         layout.addLayout(grid)
 
         # ── Info label ──
@@ -261,6 +292,10 @@ class SettingsView(QWidget):
         """Reload values whenever the page becomes visible."""
         super().showEvent(event)
         self._load_settings()
+        # The service state may have changed since the last visit (first-start
+        # prompt, terminal install): always re-read it from disk.
+        if getattr(self, "hostservice_status", None) is not None:
+            self._refresh_hostservice_row()
 
     def _select_combo_data(self, combo: QComboBox, value: Any) -> None:
         for idx in range(combo.count()):
@@ -452,3 +487,93 @@ class SettingsView(QWidget):
 
         self.reset_btn.setText(Translations.tr("modern.settings.button.reset"))
         self.save_btn.setText(Translations.tr("settings.button.save"))
+
+        # macOS host service row (labels follow the language switch too)
+        if getattr(self, "hostservice_btn", None) is not None:
+            self.field_hostservice.retranslate("settings.label.hostservice")
+            self._refresh_hostservice_row()
+
+    # ── macOS: bundled WOL Host Service row ──────────────────────────
+
+    def _refresh_hostservice_row(self) -> None:
+        """Update the status text and the button captions of the service row."""
+        from wol_app import host_service_installer as hsi
+
+        state, payload, installed = hsi.describe_state()
+        if state == "none":
+            # No payload (dev checkout) and nothing installed: nothing to do.
+            self.hostservice_status.setText(
+                Translations.tr("settings.hostservice.none"))
+            self.hostservice_btn.setEnabled(False)
+            self.hostservice_btn.setText("")
+            self.hostservice_remove_btn.setVisible(False)
+            return
+        if state == "install":
+            self.hostservice_status.setText(
+                Translations.tr("settings.hostservice.not_installed"))
+            self.hostservice_btn.setText(
+                Translations.tr("settings.hostservice.install"))
+            self.hostservice_remove_btn.setVisible(False)
+        elif state == "update":
+            self.hostservice_status.setText(
+                Translations.tr("settings.hostservice.update_available",
+                                version=payload, installed=installed or ""))
+            self.hostservice_btn.setText(
+                Translations.tr("settings.hostservice.update"))
+            self.hostservice_remove_btn.setVisible(True)
+        else:  # current
+            self.hostservice_status.setText(
+                Translations.tr("settings.hostservice.installed",
+                                version=installed or ""))
+            self.hostservice_btn.setText(
+                Translations.tr("settings.hostservice.current"))
+            self.hostservice_remove_btn.setVisible(True)
+        self.hostservice_btn.setEnabled(
+            state in ("install", "update") and not self._hostservice_holder)
+        self.hostservice_remove_btn.setEnabled(not self._hostservice_holder)
+
+    def _hostservice_texts(self) -> dict:
+        """Localized prompt strings for the privileged admin dialogs."""
+        return {
+            "prompt_install": Translations.tr("dialog.hostservice.prompt.install"),
+            "prompt_update": Translations.tr("dialog.hostservice.prompt.update"),
+            "prompt_remove": Translations.tr("dialog.hostservice.prompt.remove"),
+        }
+
+    def _on_hostservice_action(self) -> None:
+        from wol_app import host_service_installer as hsi
+
+        hsi.run_privileged_action(
+            "install", self._hostservice_texts(),
+            self._on_hostservice_result, self._hostservice_holder)
+        self.hostservice_btn.setEnabled(False)
+
+    def _on_hostservice_remove(self) -> None:
+        from wol_app import host_service_installer as hsi
+
+        hsi.run_privileged_action(
+            "remove", self._hostservice_texts(),
+            self._on_hostservice_result, self._hostservice_holder)
+        self.hostservice_remove_btn.setEnabled(False)
+
+    def _on_hostservice_result(self, outcome: str, message: str) -> None:
+        """Show the outcome of the admin operation and refresh the row."""
+        if outcome == "cancelled":
+            pass  # macOS admin dialog dismissed by the user: stays silent
+        elif outcome == "removed":
+            QMessageBox.information(
+                self, Translations.tr("dialog.hostservice.removed.title"),
+                Translations.tr("dialog.hostservice.removed.message"))
+        elif outcome == "not_installed":
+            pass
+        elif outcome in ("failed", "no_payload") or message:
+            QMessageBox.warning(
+                self, Translations.tr("dialog.hostservice.failed.title"),
+                Translations.tr("dialog.hostservice.failed.message")
+                + "\n\n" + (message or outcome))
+        else:  # installed / updated -> outcome carries the version
+            QMessageBox.information(
+                self, Translations.tr("dialog.hostservice.success.title"),
+                Translations.tr("dialog.hostservice.success.message",
+                                version=outcome))
+        self._refresh_hostservice_row()

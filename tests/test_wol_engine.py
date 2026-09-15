@@ -164,9 +164,17 @@ class TestCheckDeviceStatusHostname(unittest.TestCase):
         resolve.assert_called_once_with("blade-18.fritz.box")
         self.assertEqual(status, "online")
         cmd = run.call_args.args[0]
-        # The resolved IPv4 is pinged, and IPv4 is enforced via "-4"
+        # The resolved IPv4 is pinged with the platform-correct argv
+        # (build_ping_args: "-4" forced on Windows, "-c"/"-W" on macOS,
+        # "-c"/"-w" on Linux).
+        from wol_app.utils import build_ping_args
+
+        self.assertEqual(cmd, build_ping_args("192.168.2.150", 1, 5000))
         self.assertEqual(cmd[-1], "192.168.2.150")
-        self.assertIn("-4", cmd)
+        import sys as _sys
+
+        if _sys.platform == "win32":
+            self.assertIn("-4", cmd)
 
     def test_second_address_rescues_stale_first_record(self):
         engine = self._engine(

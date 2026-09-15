@@ -2,7 +2,7 @@
 
 **Version 2.3.5 - Service Watch Edition**
 
-A modern Windows GUI application for sending Wake-on-LAN magic packets to devices on your local network.
+A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN magic packets to devices on your local network.
 
 > **New in 2.2.3:** **Hostname status fix** — devices configured with a host name (e.g. `blade-18` or `blade-18.fritz.box`) are now resolved to IPv4 before the status ping. Windows preferred the AAAA record when the router (e.g. a Fritz!Box) publishes IPv6, and IPv6 replies carry no `TTL=` token the reply detector relies on; additionally every A record is probed, so a stale DHCP lease next to the current address no longer masks an online device. Unresolvable names report *unknown* with an explicit hint instead of a misleading *offline*.
 > **New in 2.2.2:** **Ubuntu / Linux support** — the app now runs natively on Ubuntu (Modern UI) with a `.deb` package, a systemd-based **Linux Host Service** (protocol v4: metrics, watched processes, llama.cpp models — PAM-authenticated), and `xfreerdp`-based Remote Desktop with the same fast-exit retry. Also: cross-platform ping reply detection (case-insensitive TTL) and a fixed UI font stack so emoji icons and text render correctly on Qt 6.4.
@@ -32,7 +32,7 @@ A modern Windows GUI application for sending Wake-on-LAN magic packets to device
 
 ## Requirements
 
-- Windows 10/11 (64-Bit)
+- Windows 10/11 (64-Bit) — or — Ubuntu 22.04+ (Modern UI) — or — macOS 11+ (Apple Silicon, Modern UI)
 - Python 3.10+ (only for source installation)
 
 ## Installation
@@ -48,6 +48,17 @@ Download `Wake-on-LAN Manager Installer.exe` and double-click to run. The instal
 - On reinstall, asks whether to **keep or remove** existing device entries and settings
 - Asks whether to install the **WOL Host Service** (default: yes) — enables other Wake-on-LAN Manager instances (Windows/Android) to shut down this PC remotely
 - The uninstaller asks whether to remove the host service (default: yes)
+
+### macOS (Apple Silicon, new in 2.3.5)
+
+Download `Wake-on-LAN Manager_<version>_arm64.dmg` from the GitHub Releases, open it and drag
+*Wake-on-LAN Manager* into **Applications**. The build is **unsigned** (no Apple Developer account):
+macOS Gatekeeper blocks the first start — open the app via **right-click → Open** once (or run
+`xattr -dr com.apple.quarantine "/Applications/Wake-on-LAN Manager.app"` after copying).
+
+- Modern UI (like the Ubuntu port); Remote Desktop uses the free **Microsoft Remote Desktop** app (`rdp://` URI, credentials pre-filled)
+- Auto-Update downloads the `.dmg` and opens it (drag to Applications to finish the update)
+- **macOS Host Service** (launchd daemon, TCP 8765, PAM-authenticated — lets the app remotely control this Mac): the `.app` **embeds the service** — on first start the app asks whether to install it (password or Touch ID dialog), and **Settings → WOL Host Service** installs, updates or removes it later. For manual/CI installs use `packaging/macos/install_host_service.command`; see [docs/macos/README.md](docs/macos/README.md)
 
 ### From Source
 
@@ -84,7 +95,7 @@ python run.py
 
 ## Configuration
 
-All data is stored in `%USERPROFILE%\.wol_app\`.
+All data is stored in `%USERPROFILE%\.wol_app\` (Windows) or `~/.wol_app/` (Linux / macOS).
 
 ## Documentation
 
@@ -108,9 +119,27 @@ Windows app. Build with `.\build_html.ps1` (requires JDK 21 + Android SDK);
 see [docs/android/html-app.md](docs/android/html-app.md) for architecture,
 the bridge protocol and a browser demo mode.
 
+### macOS Port (new in 2.3.5)
+
+The desktop app ships an Apple-Silicon build (`.app` + `.dmg`, unsigned, Modern
+UI like the Ubuntu port) with a launchd-based **macOS Host Service** embedded in
+the `.app` — installed on first start after an admin confirmation (or later from
+Settings). Build and installation details, platform decisions and known
+limitations: [docs/macos/README.md](docs/macos/README.md).
+
 ## 📝 Changelog
 
 ### Unreleased
+
+#### 🍎 macOS port (Apple Silicon)
+- **The desktop app now runs natively on macOS 11+ (arm64)** with the Modern UI — same feature set as the Ubuntu port: WOL magic packets, ping status, network scanner (BSD `ping`/`arp`/`ndp`), schedules, logs, dark/light mode (follows the system via `AppleInterfaceStyle`), DE/EN/FR/ES
+- **Remote Desktop** opens the free **Microsoft Remote Desktop** app with device IP + username pre-filled via the documented `rdp://` URI scheme (password is not transferable — same limitation as iOS/Android); the fast-exit retry reopens the session without the stored password
+- **Auto-Update** fetches the `.dmg` asset from GitHub Releases and opens the disk image on macOS
+- **macOS Host Service** (`wol_host_service_macos.py`): reuses the Linux core (protocol v5, PAM auth via `pamela`, service `login`) with a LaunchDaemon (`de.wolmanager.hostservice`), `shutdown -h/-r now` power commands, firewall allow-listing — install via `packaging/macos/install_host_service.command` or from inside the app (see next bullet)
+- **One-click service install from the app**: the `.app` embeds the frozen host-service bundle (`Contents/Resources/WOL Host Service`), asks on **first start** whether to install/update it ("No" is remembered per app version), and **Settings** offers *Installieren / Aktualisieren / Entfernen* with a live status line — privilege escalation via the built-in macOS admin dialog (`osascript … with administrator privileges`, password or Touch ID), no Developer ID needed
+- **Fixed (2.3.5): macOS UI font resolved to Apple Color Emoji** — none of the stack's text families (Segoe UI / Noto Sans / Ubuntu) exists on macOS, so Qt fell through to the color-emoji font and every label rendered with huge letter gaps; the stack now lists the macOS system fonts (`.AppleSystemUIFont` / SF Pro / Helvetica Neue) before the emoji fonts
+- **SMB remote shutdown is Windows-only** and shows a clear localized hint on macOS/Linux (use the Host Service instead)
+- Packaging: `Wake-on-LAN Manager-macos.spec` (PyInstaller `.app` bundle with embedded service payload, ad-hoc signed), `packaging/macos/build_macos.sh` (builds the service bundle first, then `.app` + `.dmg`), `icon_macos.icns` generated from `icon_modern.png`; distribution is **unsigned** → first launch via right-click → Open. Working docs: [docs/macos/README.md](docs/macos/README.md)
 
 #### 📏 Dashboard model line wraps on mobile (Android & iOS)
 - **The model / token-throughput line under a watched service no longer gets cut off** with an ellipsis when it is too long for the screen width — on *Android* and *iOS* it now wraps onto additional lines instead, so the full model name and the throughput / total-token figures stay readable

@@ -12,6 +12,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from wol_app.network_scanner import find_interface_for_device
 from wol_app.utils import (
+    build_ping_args,
     resolve_ipv4_all,
     run_subprocess_safe,
     validate_ip,
@@ -226,8 +227,6 @@ class WOLEngine(QObject):
                     "Check the host name or enter an IP address."
                 )
             else:
-                param = "-n" if subprocess.os.name == "nt" else "-c"
-                # Suppress console window on Windows
                 kwargs = {}
                 if subprocess.os.name == "nt":
                     kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -235,10 +234,12 @@ class WOLEngine(QObject):
                 message = f"{name} did not respond. May be off or sleeping."
                 for candidate in candidates:
                     try:
-                        # Forced to IPv4 (-4) so a broken IPv6 route can
-                        # never mask the IPv4 reply
+                        # Platform-correct argv: IPv4 forced on Windows
+                        # (IPv6 replies carry no "TTL=" token), bounded wait
+                        # on macOS (-W) and Linux (-w) so an unreachable
+                        # host never blocks the status refresh.
                         result = run_subprocess_safe(
-                            ["ping", "-4", param, "1", candidate],
+                            build_ping_args(candidate, 1, 5000),
                             timeout=5,
                             **kwargs,
                         )

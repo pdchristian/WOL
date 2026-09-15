@@ -1,4 +1,5 @@
 import UIKit
+import WatchConnectivity
 
 /*
  * Szene: ein Fenster, Vollbild, WebViewController als Root.
@@ -29,6 +30,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneWillEnterForeground(_ scene: UIScene) {
         AppContainer.shared.repo.reload()
+        // Watch-Cache ebenfalls auffrischen: reload() löst kein onChange aus,
+        // sonst zeigt die Watch nach Änderungen im Hintergrund veraltete Geräte.
+        if WCSession.isSupported() {
+            WatchBridgeService.shared.syncApplicationContext()
+        }
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {

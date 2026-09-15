@@ -7,7 +7,12 @@ import subprocess
 import threading
 
 from wol_app.translations import Translations
-from wol_app.utils import run_subprocess_safe, validate_ip, validate_mac
+from wol_app.utils import (
+    build_ping_args,
+    run_subprocess_safe,
+    validate_ip,
+    validate_mac,
+)
 
 # Safety constants
 MAX_CONCURRENT_THREADS = 16
@@ -151,10 +156,9 @@ def ping_host(ip: str, timeout: int = 1) -> bool:
     if timeout > MAX_SCAN_TIMEOUT:
         timeout = MAX_SCAN_TIMEOUT
     try:
-        param = "-n" if platform.system() == "Windows" else "-c"
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         result = run_subprocess_safe(
-            ["ping", param, "1", "-w", str(timeout * 1000), ip],
+            build_ping_args(ip, 1, timeout * 1000),
             timeout=timeout + 1,
             creationflags=creation_flags,
             stdout=subprocess.DEVNULL,
@@ -350,15 +354,27 @@ def resolve_hostname(ip: str) -> str | None:
 
 
 def get_ipv6_from_nd(mac: str) -> str | None:
-    """Look up IPv6 address for a MAC from the Neighbor Discovery cache."""
+    """Look up IPv6 address for a MAC from the Neighbor Discovery cache.
+
+    ``netsh`` on Windows, ``ndp -an`` on macOS (BSD output:
+    ``? (fe80::1%en0) at aa:bb:... on en0 [routeable]``), ``ip -6 neigh``
+    on Linux.
+    """
     if not mac or mac == "Unknown":
         return None
     if not validate_mac(mac):
         return None
+    system = platform.system()
+    if system == "Windows":
+        cmd = ["netsh", "interface", "ipv6", "show", "neighbors"]
+    elif system == "Darwin":
+        cmd = ["ndp", "-an"]
+    else:
+        cmd = ["ip", "-6", "neigh", "show"]
     try:
-        creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+        creation_flags = subprocess.CREATE_NO_WINDOW if system == "Windows" else 0
         result = run_subprocess_safe(
-            ["netsh", "interface", "ipv6", "show", "neighbors"],
+            cmd,
             timeout=5,
             creationflags=creation_flags,
             capture_output=True,
@@ -370,8 +386,12 @@ def get_ipv6_from_nd(mac: str) -> str | None:
             if mac_normalized in line.upper().replace(":", "").replace("-", ""):
                 parts = line.split()
                 for part in parts:
-                    # IPv6 addresses contain colons and hex digits
+                    # IPv6 addresses contain colons and hex digits;
+                    # BSD tools wrap the address in parentheses with an
+                    # optional %scope suffix.
+                    part = part.strip("()")
                     if ":" in part and len(part) >= 8:
+                        part = part.split("%", 1)[0]
                         try:
                             socket.inet_pton(socket.AF_INET6, part)
                             return part
@@ -388,10 +408,9 @@ def get_mac_from_arp(ip: str) -> str | None:
         return None
     # First ping to ensure ARP entry exists
     try:
-        param = "-n" if platform.system() == "Windows" else "-c"
         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         run_subprocess_safe(
-            ["ping", param, "1", "-w", "1000", ip],
+            build_ping_args(ip, 1, 1000),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2,
             creationflags=creation_flags
         )
@@ -410,12 +429,21 @@ def get_mac_from_arp(ip: str) -> str | None:
         )
         for line in result.stdout.splitlines():
             if ip.lower() in line.lower():
-                # Extract MAC address (format: xx-xx-xx-xx-xx-xx)
+                # Extract MAC address. Windows: "... (ip) at xx-xx-...";
+                # macOS/BSD: "? (ip) at xx:xx:.. on en0 ..." — the IP sits
+                # inside parentheses, so compare tokens stripped of them.
                 parts = line.split()
                 for i, part in enumerate(parts):
-                    if part.lower() == ip.lower():
+                    if part.strip("()").lower() == ip.lower():
                         if i + 1 < len(parts):
-                            mac = parts[i + 1].replace("-", ":")
+                            nxt = parts[i + 1].lower()
+                            if nxt == "at" and i + 2 < len(parts):
+                                candidate = parts[i + 2]
+                            else:
+                                candidate = parts[i + 1]
+                            if candidate in ("(incomplete)", "(expired)"):
+                                continue
+                            mac = candidate.replace("-", ":").strip("()")
                             return mac.upper()
     except Exception:
         pass

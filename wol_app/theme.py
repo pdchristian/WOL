@@ -10,9 +10,11 @@ def _system_uses_dark() -> bool:
     """Detect the OS color scheme.
 
     On Windows the registry value ``AppsUseLightTheme`` is authoritative.
-    On GNOME/GTK the freedesktop portal setting (``gsettings
-    org.gnome.desktop.interface color-scheme``) is consulted. Falls back to
-    Qt's default palette hint on other platforms or when the lookup fails.
+    On macOS the global ``AppleInterfaceStyle`` default is set (to ``Dark``)
+    only while Dark Mode is active. On GNOME/GTK the freedesktop portal
+    setting (``gsettings org.gnome.desktop.interface color-scheme``) is
+    consulted. Falls back to Qt's default palette hint on other platforms or
+    when the lookup fails.
     """
     if sys.platform == "win32":
         try:
@@ -25,6 +27,21 @@ def _system_uses_dark() -> bool:
             value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
             return value == 0
         except OSError:
+            pass
+    elif sys.platform == "darwin":
+        # AppleInterfaceStyle exists (value "Dark") only in Dark Mode; in
+        # Light Mode the key is absent and `defaults` exits non-zero.
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                capture_output=True, text=True, timeout=3,
+            )
+            if result.returncode == 0:
+                return (result.stdout or "").strip().lower() == "dark"
+            return False
+        except Exception:
             pass
     else:
         # 1) GNOME: org.gnome.desktop.interface color-scheme ('prefer-dark')

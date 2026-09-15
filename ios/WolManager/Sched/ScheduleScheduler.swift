@@ -1,10 +1,13 @@
 import Foundation
 import BackgroundTasks
+import WatchConnectivity
 
 /*
  * Hintergrund-Zeitplan-Refresh (BGAppRefreshTask) — iOS-Äquivalent zu
  * ScheduleWorker (WorkManager, 15 min). Best-Effort: iOS entscheidet über den
  * Zeitpunkt. Solange die App lebt, übernimmt der In-App-Ticker (AppContainer).
+ * Zusätzlich: Geräte-Status im Hintergrund prüfen und als letzter Stand zur
+ * Watch pushen — die Watch zeigt dann auch ohne aktiven Abruf aktuellen Stand.
  */
 enum ScheduleScheduler {
 
@@ -24,6 +27,26 @@ enum ScheduleScheduler {
         let request = BGAppRefreshTaskRequest(identifier: taskIdentifier)
         request.earliestBeginDate = Date().addingTimeInterval(15 * 60)
         try? BGTaskScheduler.shared.submit(request)
+    }
+
+    /// Kurzer Statuslauf: alle aktivierten Geräte mit IP gegen den Host-Service
+    /// prüfen und das Ergebnis als letzten Stand an die Watch-Brücke übergeben.
+    /// Läuft im Hintergrund-Fenster, damit der Watch-Snapshot nie deutlich
+    /// älter ist als das BGTask-Intervall (~15 min) — ganz ohne iPhone-Nutzung.
+    static func refreshStatusForWatch(container: AppContainer) async {
+        let devs = container.repo.snapshot.devices.filter { $0.enabled && !$0.ip.isEmpty }
+        guard !devs.isEmpty else { return }
+        var statuses: [String: Bool] = [:]
+        await withTaskGroup(of: (String, Bool).self) { group in
+            for d in devs {
+                group.addTask { (d.id, await container.checkStatus(device: d)) }
+            }
+            for await (id, isOnline) in group { statuses[id] = isOnline }
+        }
+        if WCSession.isSupported() {
+            WatchBridgeService.shared.noteOnline(statuses)
+            WatchBridgeService.shared.syncApplicationContext()
+        }
     }
 
     private static func handle(_ task: BGAppRefreshTask) {
@@ -47,6 +70,8 @@ enum ScheduleScheduler {
                 container.repo.updateScheduleLastRun(id: sched.id, ts: nowMs)
                 await AppContainer.runAction(container: container, device: device, sched: sched)
             }
+            // Watch: aktuellen Gerätestatus als letzten Stand nachliefern.
+            await refreshStatusForWatch(container: container)
             task.setTaskCompleted(success: true)
         }
 

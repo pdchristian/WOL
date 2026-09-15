@@ -10,7 +10,16 @@ struct DashboardView: View {
     let device: WatchDevice
 
     @State private var metrics: WatchMetrics?
-    @State private var loadFailed = false
+    /// Zählt Fehlschläge in Folge; die Warnbox erscheint erst ab 2, damit ein
+    /// einzelner Timeout (llama-server ausgelastet) nicht sofort das Dashboard
+    /// ersetzt — auch die iPhone-App behält bei flüchtigen Fehlern den letzten
+    /// Stand.
+    @State private var failCount = 0
+    /// true, während eine Metrik-Anfrage läuft; verhindert überlappende
+    /// Anfragen im 5-s-Takt (die Watch schickt sonst mehrere parallele
+    /// metrics-Kommandos, die den Host-Service blockieren und in die
+    /// Timeout-Falle laufen).
+    @State private var inFlight = false
     @State private var timer: Timer?
 
     private var live: WatchDevice {
@@ -27,7 +36,9 @@ struct DashboardView: View {
                         if let metrics {
                             serviceChips(metrics)
                             gaugeGrid(metrics)
-                        } else if loadFailed {
+                        } else if failCount >= 2 {
+                            // Erst nach zwei Fehlschlägen in Folge warnen — ein
+                            // einzelner Timeout (ausgelasteter Host) ist normal.
                             warnBox(Text("dash.unreachable"))
                         } else {
                             HStack {
@@ -143,14 +154,19 @@ struct DashboardView: View {
     }
 
     private func tick() {
-        guard live.online == true else { return }
+        guard live.online == true, !inFlight else { return }
         let id = device.id
+        inFlight = true
         Task { @MainActor in
+            defer { inFlight = false }
             do {
                 metrics = try await WatchService.shared.metrics(id: id)
-                loadFailed = false
+                failCount = 0
             } catch {
-                loadFailed = true
+                // Vorübergehender Fehler (Watch oft: Timeout, während das iPhone
+                // im Hintergrund kalt startet): letzten Stand behalten und erst
+                // nach zwei Fehlschlägen in Folge warnen.
+                failCount += 1
             }
         }
     }
@@ -159,40 +175,59 @@ struct DashboardView: View {
 // MARK: - Bausteine
 
 /// Mini-Ring mit Prozentwert und Beschriftung.
+///
+/// Layout: Ring zentriert über der Beschriftung. Der Wert wird immer als
+/// Ganzzahl-Prozent dargestellt ("9%"), damit die Kacheln auf der schmalen
+/// Watch-Anzeige lesbar bleiben; Ring und Label skalieren mit, statt
+/// umzubrechen (Zeilenumbruch ließ die Beschriftung zuvor vertikal stehen).
 struct GaugeTile: View {
     let labelKey: LocalizedStringKey
     let value: Double?
     let detail: String?
 
     var body: some View {
-        HStack(spacing: 7) {
+        VStack(spacing: 5) {
             ZStack {
                 Circle()
-                    .stroke(Color.white.opacity(0.12), lineWidth: 4)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 5)
                 Circle()
                     .trim(from: 0, to: min(max((value ?? 0) / 100, 0), 1))
-                    .stroke(ringColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .stroke(ringColor, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                Text(value.map { "\($0.rounded())%" } ?? "—")
-                    .font(.system(size: 11, weight: .bold))
+                Text(Self.percent(value))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .padding(8)
             }
-            .frame(width: 42, height: 42)
+            .frame(width: 56, height: 56)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(labelKey)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text(detail ?? " ")
+            Text(labelKey)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if let detail {
+                Text(detail)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-            Spacer(minLength: 0)
         }
-        .padding(7)
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
         .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// Ganzzahliges Prozent ohne Nachkommastellen ("9%", "—"). `Int(rounded)`
+    /// statt `Double`-Interpolation, damit nie "9.0" oder lokalisiert
+    /// "9,0000" erscheint.
+    static func percent(_ value: Double?) -> String {
+        guard let value, value.isFinite else { return "—" }
+        return "\(Int(value.rounded()))%"
     }
 
     private var ringColor: Color {

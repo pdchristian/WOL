@@ -3,5 +3,5 @@ cryptography>=41.0.0
 psutil>=5.9.0
 # WOL Host Service (Windows service for remote shutdown, port 8765)
 pywin32>=306; sys_platform == "win32"
-# WOL Host Service (Linux/systemd variant, PAM credential auth)
-pamela>=1.2.0; sys_platform == "linux"
+# WOL Host Service (Linux/systemd + macOS/launchd variant, PAM credential auth)
+pamela>=1.2.0; sys_platform == "linux" or sys_platform == "darwin"
