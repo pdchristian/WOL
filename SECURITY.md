@@ -276,7 +276,7 @@ Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Mana
 
 | **Version** | **Datum** | **Sicherheitsverbesserungen** | **Status** |
 |-------------|-----------|--------------------------------|------------|
-| **2.3.5** | 2026-09-12 | Aktuelle Version; keine über 1.6.0 hinausgehenden neuen Sicherheitsrisiken bekannt. Seither: Linux-Host-Service (systemd, PAM-Authentifizierung, Protokoll v4) mit identischer Befehls-Whitelist, Android/iOS-WebView-Clients (verschlüsselte Gerätespeicher-Passwörter), Single-Instance-Lock, ACL-Härtung | ✅ **AKTUELL** |
+| **2.3.6** | 2026-09-12 | Aktuelle Version; keine über 1.6.0 hinausgehenden neuen Sicherheitsrisiken bekannt. Seither: Linux-Host-Service (systemd, PAM-Authentifizierung, Protokoll v4) mit identischer Befehls-Whitelist, Android/iOS-WebView-Clients (verschlüsselte Gerätespeicher-Passwörter), Single-Instance-Lock, ACL-Härtung | ✅ **AKTUELL** |
 | **1.6.0** | 2026-08-05 | Lazy-Permissions-Fix, Logging-Modul, Auto-Re-Encryption von Klartext-Passwörtern | ⚠️ Veraltet |
 | **1.3.3** | 2026-07-18 | Console-Flash behoben (CREATE_NO_WINDOW für takeown/icacls) | ⚠️ Veraltet |
 | **1.3.2** | 2026-07-15 | Installer-Berechtigungslogik optimiert (Fast-Path, korrekte icacls-Syntax) | ⚠️ Veraltet |

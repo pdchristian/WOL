@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.3.5                                                                 |
+| **version**         | 2.3.6                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -520,7 +520,7 @@ Professional Windows installer with registry-based Add/Remove Programs integrati
 | Field          | Value                                |
 |----------------|--------------------------------------|
 | App Name       | "Wake-on-LAN Manager"                |
-| Version        | 2.3.5 (from `wol_app.__version__`)   |
+| Version        | 2.3.6 (from `wol_app.__version__`)   |
 | Publisher      | "pdchristian"                        |
 | Install Dir    | `%ProgramFiles%\Wake-on-LAN Manager` |
 | Registry Key   | `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN` |
@@ -528,7 +528,7 @@ Professional Windows installer with registry-based Add/Remove Programs integrati
 **Registry Values Written:**
 ```
 DisplayName     = "Wake-on-LAN Manager"
-DisplayVersion  = "2.3.5"
+DisplayVersion  = "2.3.6"
 Publisher       = "pdchristian"
 InstallLocation = <actual path>
 UninstallString = "<path>\uninstall.exe"
@@ -991,7 +991,7 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
-| 2.3.5   | 2026-09-11 | Mobile Refinement Edition  | Current version. 2.3.x series: **macOS port (Apple Silicon, unsigned .dmg + launchd/PAM Host Service, section 8.4)**, Android HTML WebView client `android_html/` (2.3.0, native Compose app removed in 2.3.1), iOS app with `Ipv4Resolver`, Remote Desktop via Windows App URI (2.3.3, fullscreen-only on mobile since 2.3.5), Wi-Fi-only network scan (2.3.4), dashboard swipe between devices, password sync for devices sharing a user, `watch_processes` in export, close-to-tray + single-instance settings, token/s display in dashboard |
+| 2.3.6   | 2026-09-11 | Mobile Refinement Edition  | Current version. 2.3.x series: **macOS port (Apple Silicon, unsigned .dmg + launchd/PAM Host Service, section 8.4)**, Android HTML WebView client `android_html/` (2.3.0, native Compose app removed in 2.3.1), iOS app with `Ipv4Resolver`, Remote Desktop via Windows App URI (2.3.3, fullscreen-only on mobile since 2.3.5), Wi-Fi-only network scan (2.3.4), dashboard swipe between devices, password sync for devices sharing a user, `watch_processes` in export, close-to-tray + single-instance settings, token/s display in dashboard |
 | 2.3.0   | 2026-09-08 | Android HTML Edition       | Standalone Android client (`android_html/`): WebView shell + Kotlin bridge, Host Service protocol v4 dashboard, batch console, network scanner, schedules, CSV/JSON log export; `devices.json` compatible with Windows |
 | 2.2.3   | 2026-09-08 | Hostname Fix Edition       | Status ping resolves host names to IPv4 first (`resolve_ipv4_all` in `utils.py`, `ping -4`): Windows preferred AAAA records (IPv6 replies lack `TTL=` → false offline) and a Fritz!Box may return several A records (stale DHCP lease + current) in nondeterministic order — every candidate is now probed until one replies; unresolvable names report `unknown` with a resolve hint; `send_wake_packet` interface selection also resolves names |
 | 2.2.2   | 2026-09-06 | Ubuntu Port Edition        | Native Ubuntu/Linux support: `.deb` package (`packaging/`), systemd/PAM Linux Host Service (protocol v4: metrics, watched processes, llama.cpp models), `xfreerdp` Remote Desktop with fast-exit retry; platform shims for crypto (file master key), theme (gsettings) and RDP dispatch; cross-platform ping reply detection (case-insensitive `ttl=`); fixed UI font stack (color emoji + text) for Qt 6.4 |

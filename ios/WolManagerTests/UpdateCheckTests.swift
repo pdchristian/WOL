@@ -21,4 +21,20 @@ final class UpdateCheckTests: XCTestCase {
         XCTAssertFalse(UpdateCheck.isNewer("2.3.beta", "2.3.0")) // "beta" → 0
         XCTAssertTrue(UpdateCheck.isNewer("2.4.beta", "2.3.9"))
     }
+
+    func testNormalizeTag() {
+        XCTAssertEqual(UpdateCheck.normalizeTag("v2.3.5"), "2.3.5")
+        // Real existierender GitHub-Tag mit Punkt nach dem v.
+        XCTAssertEqual(UpdateCheck.normalizeTag("v.2.3.5"), "2.3.5")
+        XCTAssertEqual(UpdateCheck.normalizeTag("V2.3.5"), "2.3.5")
+        XCTAssertEqual(UpdateCheck.normalizeTag("  v.2.3.5  "), "2.3.5")
+        XCTAssertEqual(UpdateCheck.normalizeTag("2.3.5"), "2.3.5")
+        XCTAssertEqual(UpdateCheck.normalizeTag(""), "")
+    }
+
+    func testDotTagIsDetectedAsUpdate() {
+        XCTAssertTrue(UpdateCheck.isNewer(UpdateCheck.normalizeTag("v.2.3.5"), "2.3.0"))
+        XCTAssertFalse(UpdateCheck.isNewer(UpdateCheck.normalizeTag("v.2.3.5"), "2.3.5"))
+        XCTAssertFalse(UpdateCheck.isNewer(UpdateCheck.normalizeTag("v.2.3.5"), "2.4.0"))
+    }
 }

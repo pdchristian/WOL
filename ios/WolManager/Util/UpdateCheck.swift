@@ -12,6 +12,13 @@ enum UpdateCheck {
 
     private static let api = "https://api.github.com/repos/pdchristian/WOL/releases/latest"
 
+    /* GitHub-Tag ("v2.3.5" oder "v.2.3.5") → "2.3.5". */
+    static func normalizeTag(_ tag: String) -> String {
+        var s = tag.trimmingCharacters(in: .whitespaces)
+        while let f = s.first, f == "v" || f == "V" || f == "." { s.removeFirst() }
+        return s.trimmingCharacters(in: .whitespaces)
+    }
+
     static func check(current: String) async -> UpdResult {
         guard let url = URL(string: api) else { return .failed }
         var req = URLRequest(url: url, timeoutInterval: 8)
@@ -20,9 +27,7 @@ enum UpdateCheck {
             let (data, _) = try await URLSession.shared.data(for: req)
             guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tag = obj["tag_name"] as? String else { return .failed }
-            var latest = tag.trimmingCharacters(in: .whitespaces)
-            if latest.hasPrefix("v") { latest.removeFirst() }
-            if latest.hasPrefix("V") { latest.removeFirst() }
+            var latest = normalizeTag(tag)
             if latest.isEmpty { return .failed }
             return isNewer(latest, current) ? .new(version: latest) : .latest
         } catch {

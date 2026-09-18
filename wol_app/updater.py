@@ -16,6 +16,18 @@ GITHUB_RELEASES_URL = "https://api.github.com/repos/pdchristian/WOL/releases/lat
 USER_AGENT = "Wake-on-LAN-Manager"
 
 
+def normalize_tag(tag: str) -> str:
+    """Normalize a GitHub release tag like 'v2.3.5' or 'v.2.3.5' to '2.3.5'.
+
+    GitHub-Tags können sowohl ``v2.3.5`` als auch ``v.2.3.5`` lauten; neben dem
+    ``v``/``V``-Präfix müssen daher auch führende Punkte entfernt werden, sonst
+    zerfällt die Versionsnummer beim Vergleich in ein leading-leeres Segment.
+    """
+    if not tag or not isinstance(tag, str):
+        return ""
+    return tag.strip().lstrip("vV").lstrip(".")
+
+
 def _parse_version(version_str: str) -> tuple:
     """Parse a version string like '1.2.3' or 'v1.2.3' into a comparable tuple.
 
@@ -26,7 +38,7 @@ def _parse_version(version_str: str) -> tuple:
     if not version_str or not isinstance(version_str, str):
         return (0,)
     try:
-        clean: str = version_str.strip().lstrip("v")
+        clean: str = normalize_tag(version_str)
         parts: list[int] = [int(part) for part in clean.split(".")]
         # Reject any non-numeric segment (e.g. "1.2.3-beta")
         if len(parts) == 0:
@@ -77,7 +89,7 @@ class UpdateChecker(QObject):
                     return
                 release = json.loads(response.read().decode("utf-8"))
 
-            latest_version = release.get("tag_name", "").lstrip("v")
+            latest_version = normalize_tag(release.get("tag_name", ""))
             has_update: bool = _parse_version(latest_version) > _parse_version(self.current_version)
             self.finished.emit(release, has_update)
         except (URLError, OSError, json.JSONDecodeError, Exception):
@@ -148,7 +160,7 @@ def check_for_updates_sync(current_version: str) -> tuple[Any, bool] | tuple[Non
         with urlopen(req, timeout=15) as response:
             release = json.loads(response.read().decode("utf-8"))
 
-        latest_version = release.get("tag_name", "").lstrip("v")
+        latest_version = normalize_tag(release.get("tag_name", ""))
         has_update: bool = _parse_version(latest_version) > _parse_version(current_version)
         return release, has_update
     except Exception:

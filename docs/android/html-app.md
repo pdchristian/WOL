@@ -25,7 +25,7 @@ Installation auf dem Gerät: APK kopieren und öffnen (Debug-Signatur), z. B.
 `adb install -r dist_onefile\wolmanager-android-html-<version>-debug.apk`
 (`<version>` = `versionName` unten).
 
-Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.5`,
+Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.6`,
 minSdk 26, compileSdk 34, AGP 8.5.2, Kotlin 2.0.21 – **kein Compose**.
 
 ## Architektur

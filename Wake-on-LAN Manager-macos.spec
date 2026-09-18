@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 2.3.5 - Service Watch Edition
+# Wake-on-LAN Manager Version 2.3.6 - Service Watch Edition
 # macOS application bundle (Apple Silicon / arm64), unsigned
 
 import os

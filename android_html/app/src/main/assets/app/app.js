@@ -515,7 +515,7 @@ const Native = (typeof window !== "undefined" && window.Native) ? window.Native 
 
 /* Versionsname kommt von nativ ("info" → BuildConfig); Fallback nur für Browser-Vorschau.
    Die verbindliche Nummer steht in wol_app/__init__.py (wird beim Build synchronisiert). */
-let APP_VERSION = "2.3.5";
+let APP_VERSION = "2.3.6";
 
 /* Reine Laufzeit-Felder pro Gerät (nie persistiert). */
 function rtDefaults() {

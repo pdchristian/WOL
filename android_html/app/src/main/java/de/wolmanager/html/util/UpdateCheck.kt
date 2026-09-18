@@ -20,6 +20,9 @@ object UpdateCheck {
 
     private const val API = "https://api.github.com/repos/pdchristian/WOL/releases/latest"
 
+    /** GitHub-Tag ("v2.3.5" oder "v.2.3.5") → "2.3.5". */
+    fun normalizeTag(tag: String): String = tag.trim().trimStart('v', 'V', '.').trim()
+
     suspend fun check(current: String): UpdResult = withContext(Dispatchers.IO) {
         try {
             val conn = URL(API).openConnection() as HttpURLConnection
@@ -29,7 +32,7 @@ object UpdateCheck {
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             val tag = (Json.parseToJsonElement(body) as? kotlinx.serialization.json.JsonObject)
                 ?.get("tag_name")?.jsonPrimitive?.content ?: ""
-            val latest = tag.removePrefix("v").removePrefix("V")
+            val latest = normalizeTag(tag)
             when {
                 latest.isBlank() -> UpdResult.Failed
                 isNewer(latest, current) -> UpdResult.New(latest)
