@@ -137,6 +137,19 @@ class ModernDeviceDialog(QDialog):
         self._add_field(grid, 3, 0, "device_dialog.label.shutdown_method",
                         self.method_combo, col_span=2)
 
+        # RDP certificate validation (mstsc "authentication level") used when
+        # this device is opened with Remote Desktop. Default 1 = warn on an
+        # unexpected certificate; 0 = connect without verifying (legacy),
+        # 2 = connect only on an exact certificate match.
+        self.rdp_auth_combo = QComboBox()
+        for level in (1, 2, 0):
+            self.rdp_auth_combo.addItem(
+                Translations.tr(f"device_dialog.rdp_auth.{level}"), level)
+        self.rdp_auth_combo.setToolTip(
+            Translations.tr("device_dialog.rdp_auth.tooltip"))
+        self._add_field(grid, 4, 0, "device_dialog.label.rdp_auth",
+                        self.rdp_auth_combo, col_span=2)
+
         # Watched processes (dashboard service chips, host service v3) -
         # comma separated, entries may carry ":port" for the API check.
         self.watch_input = QLineEdit()
@@ -144,7 +157,7 @@ class ModernDeviceDialog(QDialog):
             Translations.tr("device_dialog.placeholder.watch"))
         self.watch_input.setToolTip(
             Translations.tr("device_dialog.tooltip.watch"))
-        self._add_field(grid, 4, 0, "device_dialog.label.watch",
+        self._add_field(grid, 5, 0, "device_dialog.label.watch",
                         self.watch_input, col_span=2)
 
         grid.setColumnStretch(0, 1)
@@ -206,6 +219,12 @@ class ModernDeviceDialog(QDialog):
             if self.method_combo.itemData(idx) == method:
                 self.method_combo.setCurrentIndex(idx)
                 break
+        # Set RDP certificate-validation level (default 1)
+        rdp_level = self.config.get_device_rdp_auth_level(device)
+        for idx in range(self.rdp_auth_combo.count()):
+            if self.rdp_auth_combo.itemData(idx) == rdp_level:
+                self.rdp_auth_combo.setCurrentIndex(idx)
+                break
 
     def _save(self) -> None:
         name: str = self.name_input.text().strip()
@@ -242,6 +261,7 @@ class ModernDeviceDialog(QDialog):
             return
 
         shutdown_method = self.method_combo.currentData()
+        rdp_auth_level = self.rdp_auth_combo.currentData()
         watch_entries = self.config.get_device_watch_processes(
             {"watch_processes": self.watch_input.text().replace(";", ",").split(",")})
 
@@ -251,6 +271,7 @@ class ModernDeviceDialog(QDialog):
                 "mac": mac,
                 "enabled": self.enabled_toggle.isChecked(),
                 "shutdown_method": shutdown_method,
+                "rdp_auth_level": rdp_auth_level,
             }
             if ip:
                 updates["ip"] = ip
@@ -282,6 +303,9 @@ class ModernDeviceDialog(QDialog):
                 # user's explicit selection (may differ from the default)
                 if shutdown_method != device.get("shutdown_method"):
                     self.config.update_device(device["id"], shutdown_method=shutdown_method)
+                # Persist a non-default RDP certificate-validation level.
+                if rdp_auth_level != 1:
+                    self.config.update_device(device["id"], rdp_auth_level=rdp_auth_level)
                 if watch_entries:
                     self.config.set_device_watch_processes(
                         device["id"], watch_entries)

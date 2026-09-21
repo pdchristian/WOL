@@ -528,6 +528,21 @@ class ConfigManager:
         method = device.get("shutdown_method", SHUTDOWN_METHOD_SMB)
         return method if method in VALID_SHUTDOWN_METHODS else SHUTDOWN_METHOD_SMB
 
+    @staticmethod
+    def get_device_rdp_auth_level(device: dict) -> int:
+        """mstsc ``authentication level`` to use when RDP-connecting to *device*.
+
+        ``0`` connect without verifying the server certificate, ``1`` warn on
+        an unexpected certificate (default), ``2`` connect only on an exact
+        match. Devices predating this setting — or with an out-of-range value
+        — fall back to the secure default of ``1``.
+        """
+        try:
+            level = int(device.get("rdp_auth_level", 1))
+        except (TypeError, ValueError):
+            return 1
+        return level if level in (0, 1, 2) else 1
+
     def get_default_shutdown_method(self) -> str:
         """Return the default shutdown method for newly added devices."""
         method = self.config.get("default_shutdown_method", SHUTDOWN_METHOD_HOST_SERVICE)

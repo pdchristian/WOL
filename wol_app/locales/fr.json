@@ -536,5 +536,10 @@
   "settings.label.allow_privileged_public_network": "Autoriser arrêt/redémarrage/lots sur réseaux publics",
   "network.public_blocked.title": "Réseau public",
   "network.public_blocked.message": "L'ordinateur est connecté à un réseau public. Par sécurité, l'arrêt, le redémarrage et les commandes par lot sont désactivés. Vous pouvez les autoriser dans les paramètres.",
-  "status.scheduled_shutdown_public_network": "Arrêt programmé ignoré : connexion à un réseau public."
+  "status.scheduled_shutdown_public_network": "Arrêt programmé ignoré : connexion à un réseau public.",
+  "device_dialog.label.rdp_auth": "Vérification du certificat (Bureau à distance)",
+  "device_dialog.rdp_auth.0": "Connecter sans vérifier (non sûr)",
+  "device_dialog.rdp_auth.1": "Avertir en cas de certificat inattendu",
+  "device_dialog.rdp_auth.2": "Connecter seulement si correspondance exacte",
+  "device_dialog.rdp_auth.tooltip": "Comment mstsc valide le certificat du serveur (authentication level). « Avertir » est recommandé ; « correspondance exacte » est le plus sûr mais bloque les certificats auto-signés."
 }

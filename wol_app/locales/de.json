@@ -536,5 +536,10 @@
   "settings.label.allow_privileged_public_network": "Herunterfahren/Neustart/Batch in öffentlichen Netzen erlauben",
   "network.public_blocked.title": "Öffentliches Netzwerk",
   "network.public_blocked.message": "Der Computer ist mit einem öffentlichen Netzwerk verbunden. Sicherheitshalber sind Herunterfahren, Neustart und Batch-Befehle deaktiviert. Sie können sie in den Einstellungen erlauben.",
-  "status.scheduled_shutdown_public_network": "Geplantes Herunterfahren übersprungen: Verbindung mit einem öffentlichen Netzwerk."
+  "status.scheduled_shutdown_public_network": "Geplantes Herunterfahren übersprungen: Verbindung mit einem öffentlichen Netzwerk.",
+  "device_dialog.label.rdp_auth": "Zertifikatsprüfung (Remote Desktop)",
+  "device_dialog.rdp_auth.0": "Ohne Prüfung verbinden (unsicher)",
+  "device_dialog.rdp_auth.1": "Warnen bei unbekanntem Zertifikat",
+  "device_dialog.rdp_auth.2": "Nur bei passendem Zertifikat verbinden",
+  "device_dialog.rdp_auth.tooltip": "Wie mstsc das Serverzertifikat prüft (authentication level). „Warnen“ ist empfohlen; „passendes Zertifikat“ ist am sichersten, blockiert aber selbstsignierte Zertifikate."
 }

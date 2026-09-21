@@ -109,6 +109,19 @@ class DeviceDialog(QDialog):
         )
         method_layout.addRow(Translations.tr("device_dialog.label.shutdown_method"), self.method_combo)
 
+        # RDP certificate validation (mstsc "authentication level") used when
+        # this device is opened with Remote Desktop. Default 1 = warn on an
+        # unexpected certificate; 0 = connect without verifying (legacy),
+        # 2 = connect only on an exact certificate match.
+        self.rdp_auth_combo = QComboBox()
+        for level in (1, 2, 0):
+            self.rdp_auth_combo.addItem(
+                Translations.tr(f"device_dialog.rdp_auth.{level}"), level)
+        self.rdp_auth_combo.setToolTip(
+            Translations.tr("device_dialog.rdp_auth.tooltip"))
+        method_layout.addRow(
+            Translations.tr("device_dialog.label.rdp_auth"), self.rdp_auth_combo)
+
         # Enabled toggle (same switch widget as in the modern network scan)
         self.enabled_check = ToggleWithLabel(
             Translations.tr("device_dialog.enabled"), checked=True
@@ -146,6 +159,12 @@ class DeviceDialog(QDialog):
             if self.method_combo.itemData(idx) == method:
                 self.method_combo.setCurrentIndex(idx)
                 break
+        # Set RDP certificate-validation level (default 1)
+        rdp_level = self.config.get_device_rdp_auth_level(device)
+        for idx in range(self.rdp_auth_combo.count()):
+            if self.rdp_auth_combo.itemData(idx) == rdp_level:
+                self.rdp_auth_combo.setCurrentIndex(idx)
+                break
 
     def _save(self) -> None:
         name: str = self.name_input.text().strip()
@@ -182,6 +201,7 @@ class DeviceDialog(QDialog):
             return
 
         shutdown_method = self.method_combo.currentData()
+        rdp_auth_level = self.rdp_auth_combo.currentData()
 
         if self.editing_device:
             updates = {
@@ -189,6 +209,7 @@ class DeviceDialog(QDialog):
                 "mac": mac,
                 "enabled": self.enabled_check.isChecked(),
                 "shutdown_method": shutdown_method,
+                "rdp_auth_level": rdp_auth_level,
             }
             if ip:
                 updates["ip"] = ip
@@ -214,6 +235,9 @@ class DeviceDialog(QDialog):
                 # user's explicit selection (may differ from the default)
                 if shutdown_method != device.get("shutdown_method"):
                     self.config.update_device(device["id"], shutdown_method=shutdown_method)
+                # Persist a non-default RDP certificate-validation level.
+                if rdp_auth_level != 1:
+                    self.config.update_device(device["id"], rdp_auth_level=rdp_auth_level)
                 saved = self.config.get_device_by_id(device["id"])
             else:
                 QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.save_failed"))

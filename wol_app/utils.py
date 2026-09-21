@@ -4,7 +4,6 @@ Central location for validation helpers, subprocess wrappers, and common
 utility functions used across multiple modules.
 """
 
-import base64
 import os
 import re
 import shutil
@@ -195,12 +194,25 @@ def _build_rdp_content(
     width: int,
     height: int,
     prompt_for_password: bool = False,
+    auth_level: int = 1,
 ) -> str:
     """Build the content of a temporary ``.rdp`` file for *ip*.
 
-    mstsc cannot take credentials on the command line, so the username and
-    password are embedded in the file. ``password:54:`` is base64-encoded
-    UTF-16LE — the exact format mstsc expects.
+    The password is **never** written to the file. Windows 10/11 ``mstsc``
+    ignores an embedded ``password:54:`` field anyway, and keeping it out of
+    the file closes the local credential leak (the temp file lives in the
+    user profile). Credentials reach mstsc through the Windows Credential
+    Manager entry registered by :func:`_register_rdp_credentials`; when that
+    registration failed, *prompt_for_password* makes mstsc ask the user
+    instead of connecting with an empty password.
+
+    *auth_level* maps to mstsc's ``authentication level``:
+
+    * ``0`` — connect without verifying the server certificate (insecure,
+      legacy; typical for xrdp hosts that ship a self-signed certificate).
+    * ``1`` — warn on an unexpected certificate (default; the user sees a
+      MITM warning instead of silently trusting a spoofed host).
+    * ``2`` — connect only when the server certificate matches exactly.
 
     *prompt_for_password* forces mstsc's credential prompt even when a
     password is set. Used as a fallback when the password could not be
@@ -208,15 +220,24 @@ def _build_rdp_content(
     is not a graceful failure — Windows hosts re-prompt, but xrdp hosts
     (Linux) drop the connection immediately.
     """
+    try:
+        level = int(auth_level)
+    except (TypeError, ValueError):
+        level = 1
+    if level not in (0, 1, 2):
+        level = 1
+
     prompt = (not password) or prompt_for_password
     lines = [
         f"full address:s:{ip}",
-        # Use the embedded password instead of prompting when one is set.
+        # Use the Credential Manager entry instead of prompting when the
+        # password was registered; the password itself is never in this file.
         f"prompt for password:i:{1 if prompt else 0}",
-        # Self-signed server certificates (typical for xrdp/Linux hosts) would
-        # otherwise trigger the "unknown publisher" security dialog on every
-        # connect. Level 0 connects without verifying the server certificate.
-        "authentication level:i:0",
+        # Server certificate validation. Default 1 = warn on an unexpected
+        # certificate so a spoofed host cannot connect silently. 0 disables
+        # verification (legacy, for self-signed xrdp hosts); 2 requires an
+        # exact certificate match.
+        f"authentication level:i:{level}",
         # Keep the address we connected to as the server identity after an
         # RDP redirection/broker hop. Required for xrdp (Ubuntu) hosts, which
         # otherwise present a redirection name the client cannot match or
@@ -225,9 +246,9 @@ def _build_rdp_content(
     ]
     if username:
         lines.append(f"username:s:{username}")
-    if password:
-        encoded = base64.b64encode(password.encode("utf-16-le")).decode("ascii")
-        lines.append(f"password:54:{encoded}")
+    # NOTE: the password is intentionally NOT embedded (no "password:54:").
+    # It is supplied via the Windows Credential Manager (cmdkey) or, when
+    # that is unavailable, by mstsc's own prompt (prompt_for_password).
     if fullscreen:
         lines.append("fullscreen:i:1")
     else:
@@ -697,12 +718,13 @@ def _launch_remote_desktop_windows(
     device_name: str = "",
     on_fast_exit=None,
     fast_exit_window: float = 10.0,
+    auth_level: int = 1,
 ) -> str:
     """Launch Windows Remote Desktop (``mstsc``) to *ip*.
 
-    A temporary ``.rdp`` file carrying the credentials is written and passed
-    to mstsc; it is deleted *cleanup_delay* seconds later so the password
-    does not linger on disk.
+    A temporary ``.rdp`` file is written and passed to mstsc; it never
+    contains the password (see :func:`_build_rdp_content`) and is deleted
+    *cleanup_delay* seconds later.
 
     The session geometry is forced via **command-line arguments**, because
     mstsc is known to ignore ``fullscreen:i:0`` inside an .rdp file (it then
@@ -760,7 +782,7 @@ def _launch_remote_desktop_windows(
 
     content = _build_rdp_content(
         ip, username, password, fullscreen, width, height,
-        prompt_for_password=not credentials_ready,
+        prompt_for_password=not credentials_ready, auth_level=auth_level,
     )
 
     # Take the timestamp before launching so the monitor measures the full
@@ -1060,11 +1082,17 @@ def launch_remote_desktop(
     device_name: str = "",
     on_fast_exit=None,
     fast_exit_window: float = 10.0,
+    auth_level: int = 1,
 ):
     """Launch a Remote Desktop session to *ip*.
 
     Backends: ``mstsc`` (Windows), ``xfreerdp`` (Linux) and the Microsoft
     Remote Desktop app via its ``rdp://`` URL scheme (macOS).
+
+    *auth_level* (Windows) maps to mstsc's ``authentication level``: ``0``
+    connect without verifying the server certificate, ``1`` warn on an
+    unexpected certificate (default), ``2`` connect only on an exact match.
+    It is ignored by the Linux/macOS backends.
 
     Platform dispatch over the shared fast-exit contract: the Windows and
     Linux backends watch the process when a *password* is set and invoke
@@ -1077,6 +1105,7 @@ def launch_remote_desktop(
         return _launch_remote_desktop_windows(
             ip, username, password, fullscreen, width, height,
             cleanup_delay, device_name, on_fast_exit, fast_exit_window,
+            auth_level=auth_level,
         )
     if sys.platform == "darwin":
         return _launch_remote_desktop_macos(

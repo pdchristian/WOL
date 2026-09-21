@@ -536,5 +536,10 @@
   "settings.label.allow_privileged_public_network": "Permitir apagar/reiniciar/lotes en redes públicas",
   "network.public_blocked.title": "Red pública",
   "network.public_blocked.message": "El equipo está conectado a una red pública. Por seguridad, apagar, reiniciar y los comandos por lotes están desactivados. Puede permitirlos en la configuración.",
-  "status.scheduled_shutdown_public_network": "Apagado programado omitido: conectado a una red pública."
+  "status.scheduled_shutdown_public_network": "Apagado programado omitido: conectado a una red pública.",
+  "device_dialog.label.rdp_auth": "Comprobación del certificado (Escritorio remoto)",
+  "device_dialog.rdp_auth.0": "Conectar sin verificar (inseguro)",
+  "device_dialog.rdp_auth.1": "Advertir si el certificado es inesperado",
+  "device_dialog.rdp_auth.2": "Conectar solo con coincidencia exacta",
+  "device_dialog.rdp_auth.tooltip": "Cómo mstsc valida el certificado del servidor (authentication level). «Advertir» es lo recomendado; «coincidencia exacta» es lo más seguro pero bloquea certificados autofirmados."
 }

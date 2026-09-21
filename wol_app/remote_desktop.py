@@ -212,6 +212,17 @@ def start_remote_desktop(
             fullscreen, width, height,
         )
 
+    # Per-device mstsc certificate-validation level (default 1 = warn on an
+    # unexpected certificate). Read defensively so a config without the key
+    # — or a stub config in tests — keeps working.
+    auth_level = 1
+    getter = getattr(config, "get_device_rdp_auth_level", None)
+    if callable(getter):
+        try:
+            auth_level = getter(device)
+        except Exception:  # noqa: BLE001 - never block the connection on config
+            auth_level = 1
+
     try:
         launch_remote_desktop(
             ip=device_ip,
@@ -222,6 +233,7 @@ def start_remote_desktop(
             height=height,
             device_name=device_name,
             on_fast_exit=on_fast_exit,
+            auth_level=auth_level,
         )
     except Exception:
         QMessageBox.critical(

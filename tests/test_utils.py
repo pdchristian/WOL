@@ -229,11 +229,14 @@ class TestBuildRdpContent(unittest.TestCase):
         self.assertNotIn("2103", content)
         self.assertNotIn("1183", content)
 
-    def test_password_is_base64_utf16le(self):
+    def test_password_never_written_to_file(self):
+        # SEC-002: the password is supplied via the Windows Credential
+        # Manager (cmdkey), never embedded in the .rdp file. With a password
+        # set (and registered) mstsc must NOT prompt.
         content = _build_rdp_content("10.0.0.5", "", "pw", True, 1920, 1080)
-        expected = base64.b64encode("pw".encode("utf-16-le")).decode("ascii")
-        self.assertIn(f"password:54:{expected}", content)
-        # mstsc must be told to use the embedded password, not prompt
+        self.assertNotIn("password:54:", content)
+        self.assertNotIn("pw", content)
+        # mstsc uses the Credential Manager entry, so no prompt.
         self.assertIn("prompt for password:i:0", content)
 
     def test_no_credentials_no_credential_lines(self):
@@ -242,11 +245,26 @@ class TestBuildRdpContent(unittest.TestCase):
         self.assertNotIn("username:s:", content)
         self.assertIn("prompt for password:i:1", content)
 
-    def test_authentication_level_suppresses_cert_warning(self):
-        # xrdp hosts use self-signed certs; level 0 avoids the per-connect
-        # "unknown publisher" security dialog.
+    def test_authentication_level_defaults_to_warn(self):
+        # SEC-002: default level 1 warns on an unexpected certificate instead
+        # of silently trusting a spoofed host (the old level 0 behaviour).
         content = _build_rdp_content("10.0.0.5", "user", "pw", True, 1920, 1080)
-        self.assertIn("authentication level:i:0", content)
+        self.assertIn("authentication level:i:1", content)
+
+    def test_authentication_level_override(self):
+        # Per-device override: 0 = no verification (legacy), 2 = exact match.
+        content0 = _build_rdp_content(
+            "10.0.0.5", "user", "pw", True, 1920, 1080, auth_level=0)
+        self.assertIn("authentication level:i:0", content0)
+        content2 = _build_rdp_content(
+            "10.0.0.5", "user", "pw", True, 1920, 1080, auth_level=2)
+        self.assertIn("authentication level:i:2", content2)
+
+    def test_authentication_level_invalid_falls_back(self):
+        # An out-of-range level must fall back to the secure default (1).
+        content = _build_rdp_content(
+            "10.0.0.5", "user", "pw", True, 1920, 1080, auth_level=7)
+        self.assertIn("authentication level:i:1", content)
 
     def test_redirection_server_name_enabled(self):
         # xrdp (Ubuntu) needs the connected address kept as the server
@@ -420,6 +438,31 @@ class TestLaunchRemoteDesktopFastExit(unittest.TestCase):
             )
         time.sleep(0.2)
         proc.wait.assert_not_called()
+
+    def test_auth_level_reaches_rdp_file(self):
+        # The per-device certificate level is threaded through the public
+        # launcher into the written .rdp file (SEC-002). Default = warn (1).
+        proc = MagicMock()
+        with patch("wol_app.utils.subprocess.Popen", return_value=proc):
+            launch_remote_desktop(
+                "10.0.0.5", "user", "pw", cleanup_delay=60.0,
+                device_name="LvlDefault",
+            )
+            content_default = (self.mock_rdp_dir / "LvlDefault.rdp").read_text(
+                encoding="utf-8")
+            launch_remote_desktop(
+                "10.0.0.5", "user", "pw", cleanup_delay=60.0,
+                device_name="LvlExact", auth_level=2,
+            )
+            content_exact = (self.mock_rdp_dir / "LvlExact.rdp").read_text(
+                encoding="utf-8")
+        self.assertIn("authentication level:i:1", content_default)
+        self.assertIn("authentication level:i:2", content_exact)
+        # The password is never written to disk on the real launch path.
+        self.assertNotIn("password:54:", content_default)
+        self.assertNotIn("password:54:", content_exact)
+        (self.mock_rdp_dir / "LvlDefault.rdp").unlink(missing_ok=True)
+        (self.mock_rdp_dir / "LvlExact.rdp").unlink(missing_ok=True)
 
 
 class TestRetryRemoteDesktopWithoutPassword(unittest.TestCase):

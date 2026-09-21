@@ -2,8 +2,8 @@
 
 ## 📋 Dokumentinformationen
 
-- **Version:** 2.3.5
-- **Datum:** 2026-08-22
+- **Version:** 2.3.6
+- **Datum:** 2026-09-20
 - **Status:** alle kritischen Sicherheitsrisiken behoben
 - **Verantwortlicher:** GitHub Copilot (automatisierte Sicherheitsanalyse)
 
@@ -13,7 +13,7 @@
 
 Diese Dokumentation beschreibt die umfassenden Sicherheitsmaßnahmen und -verbesserungen, die in **Wake-on-LAN Manager Version 2.3.5** implementiert wurden (Ausgangspunkt war die Überarbeitung in Version 1.6.0). 
 
-Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert. Seit **Version 1.7.0** kommt der optionale **WOL Host Service** hinzu (siehe unten). Seit **Version 1.10.0** kann die Anwendung **Remote Desktop**-Sitzungen starten; dabei werden die Geräte-Anmeldedaten in einer temporären `.rdp`-Datei unter `~/.wol_app/rdp/` abgelegt (benannt nach dem Gerät), die nach wenigen Sekunden automatisch gelöscht wird, damit Passwörter nicht auf der Festplatte verbleiben. Da aktuelle Windows-Versionen (10/11) ein eingebettetes Passwort in der `.rdp`-Datei aus Sicherheitsgründen ignorieren, registriert die Anwendung die Anmeldedaten beim Start einer Sitzung zusätzlich über `cmdkey` im **Windows-Anmeldeinformations-Manager**; der Eintrag ist auf den Benutzer und den Ziel-Host beschränkt und wird bei jeder Verbindung aktualisiert. Schließt sich `mstsc` innerhalb von 10 Sekunden wieder (xrdp/Ubuntu verwirft die Session bei falschem Passwort), fragt die Anwendung nach dem besten Vorgehen und löscht bei Bestätigung ausschließlich den `TERMSRV/<Host>`-Eintrag über `cmdkey /delete:`, um eine Verbindung ohne gespeichertes Passwort zu ermöglichen — das Geräte-Passwort selbst bleibt unverändert in der verschlüsselten Konfiguration.
+Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfolgreich behoben wurden. Seit Version 1.6.0 werden zusätzlich Legacy-Klartext-Passwörter beim Laden automatisch neu verschlüsselt und sicherheitsrelevante Fehler über das `logging`-Modul in `~/.wol_app/app.log` protokolliert. Seit **Version 1.7.0** kommt der optionale **WOL Host Service** hinzu (siehe unten). Seit **Version 1.10.0** kann die Anwendung **Remote Desktop**-Sitzungen starten. Die Anmeldedaten werden dabei **nicht** in die temporäre `.rdp`-Datei geschrieben; diese enthält ausschließlich den Hostnamen und Sitzungsparameter und liegt unter `~/.wol_app/rdp/` (benannt nach dem Gerät), die nach wenigen Sekunden automatisch gelöscht wird. Da aktuelle Windows-Versionen (10/11) ein eingebettetes Passwort ohnehin ignorieren, übergibt die Anwendung die Anmeldedaten über `cmdkey` an den **Windows-Anmeldeinformations-Manager**; der Eintrag ist auf den Benutzer und den Ziel-Host (`TERMSRV/<Host>`) beschränkt und wird bei jeder Verbindung aktualisiert. Die Zertifikatsprüfung von `mstsc` ist standardmäßig aktiv (Warnung bei unbekanntem Zertifikat); sie ist pro Gerät konfigurierbar. Schließt sich `mstsc` innerhalb von 10 Sekunden wieder (xrdp/Ubuntu verwirft die Session bei falschem Passwort), fragt die Anwendung nach dem besten Vorgehen und löscht bei Bestätigung ausschließlich den `TERMSRV/<Host>`-Eintrag über `cmdkey /delete:`, um eine Verbindung ohne gespeichertes Passwort zu ermöglichen — das Geräte-Passwort selbst bleibt unverändert in der verschlüsselten Konfiguration.
 
 ---
 
@@ -22,20 +22,24 @@ Die Analyse identifizierte **15 potenzielle Sicherheitsrisiken**, die alle erfol
 Mit Version 1.7.0 wird ein optionaler **WOL Host Service** eingeführt, der auf dem Zielsystem läuft und Remote-Shutdown-Befehle über **TCP-Port 8765** (JSON) annimmt. Diese neue Angriffsfläche wird wie folgt behandelt:
 
 ### Bekannte Trade-offs
-- **Klartext-Anmeldedaten im LAN:** Das JSON-Protokoll überträgt Benutzername und Passwort unverschlüsselt (kein TLS in v1.7.0). Der Dienst läuft nur im lokalen Netzwerk; ein TLS-basiertes Protokoll ist für eine spätere Version vorgesehen.
-- **Port 8765 offen:** Der Dienst lauscht auf `0.0.0.0:8765`. Die Firewall-Regel erlaubt eingehenden TCP-Verkehr auf diesem Port – nur in Netzwerken einsetzen, denen Sie vertrauen.
+- **Klartext-Anmeldedaten im LAN:** Das JSON-Protokoll überträgt Benutzername und Passwort unverschlüsselt (kein TLS). Der Dienst ist für das lokale Netzwerk bestimmt; ein TLS-basiertes Protokoll ist für eine spätere Version vorgesehen.
+- **Port 8765:** Der Dienst lauscht auf `0.0.0.0:8765`. Die Firewall-Regel beschränkt die **Quell-Adressen** standardmäßig auf das lokale Subnetz (`LocalSubnet`); ein Vollzugriff auf alle Quellen ist bewusst über `--firewall-scope any` nötig. Nur in Netzwerken einsetzen, denen Sie vertrauen.
 
 ### Mitigations
-- **Authentifizierung:** Der Dienst validiert die übermittelten Windows-Anmeldedaten mit `LogonUserW` (interaktives Logon) **vor** der Ausführung. Ohne gültige Anmeldedaten wird kein Befehl ausgeführt.
-- **Befehls-Whitelist:** Es werden nur `shutdown`, `reboot` und `status` akzeptiert; unbekannte Kommandos werden abgelehnt.
-- **Request-Limit:** JSON-Anfragen sind auf 4 KB begrenzt.
+- **Authentifizierung:** Der Dienst validiert die übermittelten Windows-Anmeldedaten mit `LogonUserW` (interaktives Logon) **vor** der Ausführung (Linux: PAM). Ohne gültige Anmeldedaten wird kein Befehl ausgeführt.
+- **Befehls-Whitelist:** Akzeptiert werden nur `status`, `metrics`, `shutdown`, `reboot` und `run_batch`; unbekannte Kommandos werden abgelehnt. `run_batch` (Skriptausführung) ist zusätzlich pro Maschine per `--enable-batch` freizuschalten.
+- **Brute-Force-Throttling:** Fehlgeschlagene Anmeldungen werden pro (Client-IP, Benutzer) gezählt; nach der Schwelle (Standard 5 in 15 Minuten) greift ein exponentieller Lockout (60 s, verdoppelt, max. 1 Stunde).
+- **Replay-Schutz:** Die privilegierten Kommandos (`shutdown`/`reboot`/`run_batch`) können einen Zeitstempel (`ts`) und eine einmalige `nonce` tragen; der Dienst lehnt zu weit entfernte Zeitstempel und bereits gesehene Nonces ab. Über `--require-replay` wird das Erzwingen aktiviert.
+- **Netzwerk-Profil-Gate:** Befindet sich der Host in einem öffentlich klassifizierten Netzwerk, sind die privilegierten Kommandos gesperrt (Fehler `network_untrusted`); `status`/`metrics` bleiben verfügbar. Der Override `--allow-public on` schaltet ihn pro Maschine frei.
+- **Audit-Log:** Auth-Fehler, Lockouts, Replay-Verwürfe und akzeptierte privilegierte Kommandos werden als `AUTH …`-Zeilen protokolliert (ohne Passwörter).
+- **Request-Limit:** JSON-Anfragen sind auf 64 KB begrenzt (`MAX_REQUEST_BYTES`).
 - **Status ohne Auth:** Das Kommando `status` erfordert keine Anmeldedaten (Erreichbarkeits-Probe) und liefert keinerlei Systemdaten.
 - **Bestätigung vor Ausführung:** Der Dienst antwortet erst, nachdem die Anmeldedaten geprüft wurden; die eigentliche Shutdown-Ausführung erfolgt anschließend.
-- **Service-Berechtigungen:** Der Dienst läuft als **LocalSystem**; die Firewall-Regel wird bei Installation/Deinstallation automatisch verwaltet.
+- **Service-Berechtigungen:** Der Dienst läuft als **LocalSystem** (Linux: root); die Firewall-Regel wird bei Installation/Deinstallation automatisch verwaltet und auf das lokale Subnetz beschränkt.
 - **Client-seitig:** Die Anmeldedaten werden weiterhin **AES-256-GCM verschlüsselt** in `~/.wol_app/config.json` gespeichert und nur entschlüsselt, wenn ein Shutdown ausgelöst wird.
 
 ### Empfehlung
-Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Manager-Instanzen in Ihrem lokalen Netzwerk remote heruntergefahren werden sollen. In Netzwerken mit unvertrauten Geräten empfiehlt es sich, die Firewall-Regel nur für die benötigten Quell-IPs zu öffnen.
+Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Manager-Instanzen in Ihrem lokalen Netzwerk remote heruntergefahren werden sollen. In Netzwerken mit unvertrauten Geräten empfiehlt es sich, die Firewall-Regel nur für die benötigten Quell-IPs zu öffnen und `--require-replay` zu aktivieren.
 
 ---
 
@@ -47,11 +51,11 @@ Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Mana
 - **Risiko:** Ausführung beliebiger Shell-Kommandos durch manipulierte Benutzereingaben
 - **Schweregrad:** KRITISCH (CVSS: 9.8)
 - **Lösung:**
-  - Alle `subprocess.run()` Aufrufe verwenden explizit `shell=False`
+  - Externe Kommandos laufen über die Hilfsfunktion `run_subprocess_safe()` (`wol_app/utils.py`), die `shell=False` erzwingt und ein Timeout-Handling besitzt
   - Strikte Input-Validierung für IP-Adressen und MAC-Adressen
-  - Neue Sicherheitsfunktion `_run_subprocess_safe()` mit Timeout-Handling
+  - Alle Aufrufstellen (Netzwerk-Scanner, Wake-on-LAN-Engine, Shutdown-/Schedule-Flow) übergeben Argumentlisten statt Shell-Strings
   - Validierung aller Benutzereingaben vor Subprocess-Ausführung
-- **Betroffene Dateien:** `network_scanner.py`, `wol_engine.py`
+- **Betroffene Dateien:** `network_scanner.py`, `wol_engine.py`, `shutdown_flow.py`, `schedule_runner.py`, `utils.py`
 - **Teststatus:** ✅ Verifiziert
 
 #### 2. Path Traversal (CWE-73, CWE-22) - **BEHOBEN**
@@ -60,8 +64,8 @@ Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Mana
 - **Lösung:**
   - `_sanitize_path()` Funktion zur Pfadnormalisierung und Validierung
   - Überprüfung, dass Konfigurationsverzeichnis innerhalb von `Path.home()` liegt
-  - Sichere Berechtigungen: Verzeichnisse 0o700, Dateien 0o600
-  - Überschreiben sensitiver Dateien mit Nullen vor dem Löschen
+  - Sichere Berechtigungen: Verzeichnisse 0o700, Dateien 0o600 (Windows: ACL-Absicherung auf den interaktiven Benutzer)
+  - Temporäre `.rdp`-Dateien werden nach wenigen Sekunden automatisch gelöscht
 - **Betroffene Dateien:** `config.py`, `installer.py`
 - **Teststatus:** ✅ Verifiziert
 
@@ -69,11 +73,10 @@ Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Mana
 - **Risiko:** Passwörter im Klartext im Speicher und auf der Festplatte
 - **Schweregrad:** HOCH (CVSS: 7.5)
 - **Lösung:**
-  - AES-256-GCM Verschlüsselung mit Windows DPAPI Master Key Schutz
-  - `_secure_clear_memory()` zum Überschreiben von Passwörtern im Speicher (Best Effort)
+  - AES-256-GCM Verschlüsselung mit Windows DPAPI Master Key Schutz (Linux: Master-Key-Datei mit Besitzerrechten 0o600)
+  - Passwort-Eingabefelder werden nach dem Speichern geleert (`password_input.clear()`), damit sie nicht im Widget-Text zwischengespeichert bleiben
   - Strikte Passwortvalidierung: max 128 Zeichen, keine Steuerzeichen (0-31, >126)
-  - Passwortfelder werden nach Verwendung gelöscht
-- **Betroffene Dateien:** `crypto.py`, `device_dialog.py`
+- **Betroffene Dateien:** `crypto.py`, `device_dialog.py`, `views/device_edit_dialog.py`
 - **Teststatus:** ✅ Verifiziert
 
 #### 4. Denial of Service (CWE-250, CWE-200) - **BEHOBEN**
@@ -244,8 +247,8 @@ Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Mana
 - **Sicherheit:** Abhängig von der Sicherheit des Windows-Benutzerkontos
 
 ### 4. Speichersicherheit
-- **Best Effort:** `_secure_clear_memory()` überschreibt Passwörter im Speicher
-- ** individualized:** Abhängig von Python's Speicherverwaltung
+- **Best Effort:** Python stellt keine garantierte Speicherbereinigung bereit; mutierbare `bytes`/`str` können nach Gebrauch temporär im Speicher verbleiben
+- **Eingabefelder:** Passwort-Widgets werden nach dem Speichern geleert, verbleiben aber ggf. kurz im Qt-Speicher
 - **Kein perfekter Schutz:** In niedrigen Speicherzufällen können Daten temporär erhalten bleiben
 
 ---
@@ -276,7 +279,7 @@ Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Mana
 
 | **Version** | **Datum** | **Sicherheitsverbesserungen** | **Status** |
 |-------------|-----------|--------------------------------|------------|
-| **2.3.6** | 2026-09-12 | Aktuelle Version; keine über 1.6.0 hinausgehenden neuen Sicherheitsrisiken bekannt. Seither: Linux-Host-Service (systemd, PAM-Authentifizierung, Protokoll v4) mit identischer Befehls-Whitelist, Android/iOS-WebView-Clients (verschlüsselte Gerätespeicher-Passwörter), Single-Instance-Lock, ACL-Härtung | ✅ **AKTUELL** |
+| **2.3.6** | 2026-09-20 | Aktuelle Version; keine über 1.6.0 hinausgehenden neuen Sicherheitsrisiken bekannt. Seither: Linux-Host-Service (systemd, PAM-Authentifizierung, Protokoll v4) mit identischer Befehls-Whitelist, Android/iOS-WebView-Clients (verschlüsselte Gerätespeicher-Passwörter), Single-Instance-Lock, ACL-Härtung. **Protokoll v6:** Brute-Force-Throttling (exponentieller Lockout), Replay-Schutz (ts/nonce), Netzwerk-Profil-Gate (öffentliche Netze read-only), Audit-Log, Firewall-Quellscope (Default `LocalSubnet`); RDP: Passwort nicht mehr in `.rdp`-Datei, Zertifikatsprüfung Default „Warnung" (pro Gerät konfigurierbar) | ✅ **AKTUELL** |
 | **1.6.0** | 2026-08-05 | Lazy-Permissions-Fix, Logging-Modul, Auto-Re-Encryption von Klartext-Passwörtern | ⚠️ Veraltet |
 | **1.3.3** | 2026-07-18 | Console-Flash behoben (CREATE_NO_WINDOW für takeown/icacls) | ⚠️ Veraltet |
 | **1.3.2** | 2026-07-15 | Installer-Berechtigungslogik optimiert (Fast-Path, korrekte icacls-Syntax) | ⚠️ Veraltet |
