@@ -10,7 +10,7 @@
                "vram_total", "gpu_name"],
   "properties": {
     "status": { "const": "ok" },
-    "protocol": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "protocol": { "type": "integer", "minimum": 1, "maximum": 6 },
     "hostname": { "type": "string" },
     "cpu": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
     "cpu_count": { "type": ["integer", "null"], "minimum": 1 },

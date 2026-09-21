@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 
 from wol_app.host_service_client import send_host_command
 from wol_app.translations import Translations
+from wol_app.utils import run_subprocess_safe
 
 # Signature: (message, timeout_ms) -> None
 StatusFn = Callable[[str, int], None]
@@ -210,29 +211,34 @@ def execute_shutdown(
     # Step 1: Connect to remote IPC$
     if username:
         # Delete any existing connection first
-        delete_cmd: str = f'net use \\\\{device_ip} /delete /y'
         status_fn(Translations.tr("status.deleting_connection", name=device_name), 0)
         QApplication.processEvents()
         try:
-            subprocess.run(
-                delete_cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=15
+            run_subprocess_safe(
+                ["net", "use", f"\\\\{device_ip}", "/delete", "/y"],
+                timeout=15, capture_output=True,
             )
         except Exception:
             pass  # Ignore errors from delete — connection may not exist yet
 
-        # Connect with username and password
-        cmd: str = f'net use \\\\{device_ip}\\IPC$ /user:{username} {password}'
+        # Connect with username and password (argv list, shell=False:
+        # special characters in user/password cannot break out into a shell)
+        cmd: list[str] = [
+            "net", "use", f"\\\\{device_ip}\\IPC$",
+            f"/user:{username}", password,
+        ]
         status_fn(Translations.tr("status.connecting", name=device_name, ip=device_ip), 0)
         QApplication.processEvents()
     else:
         # Connect without credentials
-        cmd: str = f'net use \\\\{device_ip}\\IPC$'
+        cmd: list[str] = ["net", "use", f"\\\\{device_ip}\\IPC$"]
         status_fn(Translations.tr("status.connecting", name=device_name, ip=device_ip), 0)
         QApplication.processEvents()
 
     try:
-        result: subprocess.CompletedProcess[str] = subprocess.run(
-            cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=30
+        result: subprocess.CompletedProcess[str] = run_subprocess_safe(
+            cmd, timeout=30, capture_output=True,
+            encoding='utf-8', errors='replace',
         )
         if result.returncode != 0:
             error_msg: str = result.stderr.strip() or result.stdout.strip()
@@ -243,7 +249,7 @@ def execute_shutdown(
             )
             status_fn(Translations.tr("status.shutdown_failed", name=device_name), 0)
             return
-    except subprocess.TimeoutExpired:
+    except TimeoutError:
         config.add_log(device_name, "SHUTDOWN", "ERROR", "Connection timed out")
         QMessageBox.critical(
             parent, Translations.tr("dialog.connection_timeout.title"),
@@ -261,12 +267,15 @@ def execute_shutdown(
         return
 
     # Step 2: Shutdown the remote PC
-    shutdown_cmd: str = f'shutdown /m \\\\{device_ip} /s /t 0 /f'
+    shutdown_cmd: list[str] = [
+        "shutdown", "/m", f"\\\\{device_ip}", "/s", "/t", "0", "/f",
+    ]
     status_fn(Translations.tr("status.shutting_down_remote", name=device_name), 0)
     QApplication.processEvents()
     try:
-        result: subprocess.CompletedProcess[str] = subprocess.run(
-            shutdown_cmd, shell=True, capture_output=True, encoding='utf-8', errors='replace', timeout=30
+        result: subprocess.CompletedProcess[str] = run_subprocess_safe(
+            shutdown_cmd, timeout=30, capture_output=True,
+            encoding='utf-8', errors='replace',
         )
         if result.returncode != 0:
             error_msg: str = result.stderr.strip() or result.stdout.strip()
@@ -277,7 +286,7 @@ def execute_shutdown(
             )
             status_fn(Translations.tr("status.shutdown_failed", name=device_name), 0)
             return
-    except subprocess.TimeoutExpired:
+    except TimeoutError:
         config.add_log(device_name, "SHUTDOWN", "ERROR", "Shutdown command timed out")
         QMessageBox.critical(
             parent, Translations.tr("dialog.shutdown_timeout.title"),

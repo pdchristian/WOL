@@ -6,7 +6,6 @@ identically in either layout. The UI feedback (status bar messages) is
 injected via a ``status_fn(msg, timeout_ms)`` callback.
 """
 
-import subprocess
 import sys
 from typing import Any, Callable
 
@@ -14,6 +13,7 @@ from PyQt6.QtWidgets import QApplication
 
 from wol_app.host_service_client import send_host_command
 from wol_app.translations import Translations
+from wol_app.utils import run_subprocess_safe
 
 # Signature: (message, timeout_ms) -> None
 StatusFn = Callable[[str, int], None]
@@ -115,13 +115,15 @@ def scheduled_shutdown(config: Any, device_id: str, status_fn: StatusFn = _noop_
         password = device.get("password", "")
 
         if username:
-            cmd = rf'net use \\{ip}\IPC$ "{password}" /user:"{username}"'
+            # argv list, shell=False: special characters in user/password
+            # cannot break out into a shell (command-injection hardening).
+            cmd = ["net", "use", f"\\\\{ip}\\IPC$", f"/user:{username}", password]
         else:
-            cmd = rf"net use \\{ip}\IPC$"
+            cmd = ["net", "use", f"\\\\{ip}\\IPC$"]
 
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=15,
+        result = run_subprocess_safe(
+            cmd, timeout=15, capture_output=True,
+            encoding="utf-8", errors="replace",
         )
 
         if result.returncode != 0:
@@ -135,10 +137,10 @@ def scheduled_shutdown(config: Any, device_id: str, status_fn: StatusFn = _noop_
             return
 
         # Step 2: Execute remote shutdown
-        cmd = rf"shutdown /m \\{ip} /s /t 0 /f"
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=30,
+        cmd = ["shutdown", "/m", f"\\\\{ip}", "/s", "/t", "0", "/f"]
+        result = run_subprocess_safe(
+            cmd, timeout=30, capture_output=True,
+            encoding="utf-8", errors="replace",
         )
 
         if result.returncode == 0:
@@ -153,7 +155,7 @@ def scheduled_shutdown(config: Any, device_id: str, status_fn: StatusFn = _noop_
             status_fn(msg, 5000)
             config.add_log(device_name, "SHUTDOWN", "FAILED", msg)
 
-    except subprocess.TimeoutExpired:
+    except TimeoutError:
         msg = Translations.tr("status.scheduled_shutdown_timeout", name=device_name)
         status_fn(msg, 5000)
         config.add_log(device_name, "SHUTDOWN", "TIMEOUT", msg)

@@ -579,6 +579,11 @@ class TestCommandDispatch:
         handler = wol_host_service._CommandHandler.__new__(
             wol_host_service._CommandHandler)
         handler.request = self._Sock(request)
+        # handler.handle() reads self.client_address for the auth throttle /
+        # audit log; __new__ skips socketserver's constructor, so fake it.
+        handler.client_address = ("127.0.0.1", 12345)
+        # Each dispatch starts from a clean throttle state.
+        wol_host_service.auth_reset_state()
         ctx = (mock.patch.multiple(wol_host_service, **patches)
                if patches else contextlib.nullcontext())
         with ctx:
@@ -627,3 +632,303 @@ class TestCommandDispatch:
         response = self._handle(b'{"command":"nuke"}\n')
         assert response["status"] == "error"
         assert "Unknown command" in response["message"]
+
+
+class TestAuthThrottling:
+    """auth_check_allowed/record_* exponential lockout logic."""
+
+    def setup_method(self):
+        wol_host_service.auth_reset_state()
+
+    def test_no_failures_allows(self):
+        allowed, retry = wol_host_service.auth_check_allowed("1.2.3.4", "u")
+        assert (allowed, retry) == (True, 0)
+
+    def test_below_threshold_allows(self):
+        for _ in range(wol_host_service.auth_max_attempts() - 1):
+            wol_host_service.auth_record_failure("1.2.3.4", "u")
+        allowed, _ = wol_host_service.auth_check_allowed("1.2.3.4", "u")
+        assert allowed is True
+
+    def test_at_threshold_locks_out(self):
+        for _ in range(wol_host_service.auth_max_attempts()):
+            wol_host_service.auth_record_failure("1.2.3.4", "u")
+        allowed, retry = wol_host_service.auth_check_allowed("1.2.3.4", "u")
+        assert allowed is False
+        assert retry > 0
+
+    def test_lockout_is_per_ip_and_user(self):
+        for _ in range(wol_host_service.auth_max_attempts()):
+            wol_host_service.auth_record_failure("1.2.3.4", "u")
+        # A different IP or user is unaffected.
+        assert wol_host_service.auth_check_allowed("5.6.7.8", "u")[0] is True
+        assert wol_host_service.auth_check_allowed("1.2.3.4", "other")[0] is True
+
+    def test_success_resets_state(self):
+        for _ in range(wol_host_service.auth_max_attempts()):
+            wol_host_service.auth_record_failure("1.2.3.4", "u")
+        wol_host_service.auth_record_success("1.2.3.4", "u")
+        assert wol_host_service.auth_check_allowed("1.2.3.4", "u")[0] is True
+
+    def test_lockout_scales_exponentially(self, monkeypatch):
+        # After the base threshold, each additional failure doubles the window.
+        base = wol_host_service.AUTH_LOCKOUT_BASE_SECONDS
+        n = wol_host_service.auth_max_attempts()
+        for _ in range(n):
+            wol_host_service.auth_record_failure("1.2.3.4", "u")
+        first = wol_host_service.auth_check_allowed("1.2.3.4", "u")[1]
+        wol_host_service.auth_record_failure("1.2.3.4", "u")
+        second = wol_host_service.auth_check_allowed("1.2.3.4", "u")[1]
+        assert first <= base + 1
+        assert second > first  # strictly longer after another failure
+
+
+class TestHandlerAudit:
+    """_CommandHandler emits AUTH audit lines and enforces the lockout."""
+
+    class _Sock:
+        def __init__(self, request: bytes):
+            self._request = request
+            self.sent = b""
+
+        def recv(self, _size):
+            data, self._request = self._request, b""
+            return data
+
+        def sendall(self, data):
+            self.sent += data
+
+    def _handle(self, request: bytes, audit, *, seed=None, **patches):
+        import contextlib
+        import json
+
+        handler = wol_host_service._CommandHandler.__new__(
+            wol_host_service._CommandHandler)
+        handler.request = self._Sock(request)
+        handler.client_address = ("10.0.0.9", 40000)
+        wol_host_service.auth_reset_state()
+        # *seed* runs after the reset so a test can pre-load throttle state.
+        if seed is not None:
+            seed()
+        patches.setdefault("_auth_audit", audit)
+        ctx = (mock.patch.multiple(wol_host_service, **patches)
+               if patches else contextlib.nullcontext())
+        with ctx:
+            handler.handle()
+        return json.loads(handler.request.sent.decode("utf-8").strip())
+
+    def test_auth_failure_is_audited(self):
+        lines = []
+        resp = self._handle(
+            b'{"command":"shutdown","username":"u","password":"x"}\n',
+            lines.append,
+            validate_credentials=lambda u, p: False,
+        )
+        assert resp["status"] == "error"
+        assert any("FAILED" in ln and "shutdown" in ln for ln in lines)
+
+    def test_privileged_command_is_audited(self):
+        lines = []
+        self._handle(
+            b'{"command":"reboot","username":"admin","password":"p"}\n',
+            lines.append,
+            validate_credentials=lambda u, p: True,
+            # Never let the real shutdown/reboot run in tests.
+            subprocess=mock.MagicMock(),
+        )
+        assert any("REBOOT" in ln and "admin" in ln for ln in lines)
+
+    def test_status_never_audited_or_throttled(self):
+        lines = []
+        resp = self._handle(b'{"command":"status"}\n', lines.append)
+        assert resp["status"] == "ok"
+        assert lines == []
+
+    def test_locked_out_pair_rejected_before_auth(self):
+        lines = []
+        n = wol_host_service.auth_max_attempts()
+
+        def _seed_lockout():
+            # Seed the lockout after the reset, then confirm auth is never
+            # consulted for a throttled (ip, user) pair.
+            for _ in range(n):
+                wol_host_service.auth_record_failure("10.0.0.9", "u")
+
+        called = {"v": False}
+
+        def _vc(u, p):
+            called["v"] = True
+            return True
+
+        resp = self._handle(
+            b'{"command":"shutdown","username":"u","password":"p"}\n',
+            lines.append,
+            seed=_seed_lockout,
+            validate_credentials=_vc,
+        )
+        assert resp["status"] == "error"
+        assert "retry_after" in resp
+        assert called["v"] is False  # throttled before touching OS auth
+        assert any("LOCKED" in ln for ln in lines)
+
+
+class TestReplayProtection:
+    """replay_check(): timestamp skew + nonce reuse for privileged commands."""
+
+    def setup_method(self):
+        wol_host_service.replay_reset_state()
+
+    def _fresh(self, command="shutdown", skew=0.0):
+        import secrets
+        import time
+        return {
+            "command": command,
+            "ts": time.time() + skew,
+            "nonce": secrets.token_hex(16),
+        }
+
+    def test_unprotected_command_never_checked(self):
+        # metrics/status carry no replay fields and must pass untouched.
+        assert wol_host_service.replay_check({"command": "metrics"}, "metrics") is None
+
+    def test_legacy_request_allowed_when_not_required(self, monkeypatch):
+        monkeypatch.setattr(wol_host_service, "require_replay", lambda: False)
+        assert wol_host_service.replay_check(
+            {"command": "shutdown"}, "shutdown") is None
+
+    def test_missing_fields_rejected_when_required(self, monkeypatch):
+        monkeypatch.setattr(wol_host_service, "require_replay", lambda: True)
+        err = wol_host_service.replay_check({"command": "shutdown"}, "shutdown")
+        assert err and "Missing replay protection" in err
+
+    def test_timestamp_only_rejected(self):
+        import time
+        err = wol_host_service.replay_check(
+            {"command": "shutdown", "ts": time.time()}, "shutdown")
+        assert err and "nonce" in err
+
+    def test_nonce_only_rejected(self):
+        err = wol_host_service.replay_check(
+            {"command": "shutdown", "nonce": "abc"}, "shutdown")
+        assert err and "timestamp" in err
+
+    def test_stale_timestamp_rejected(self):
+        req = self._fresh(skew=-(wol_host_service.REPLAY_MAX_SKEW_SECONDS + 10))
+        err = wol_host_service.replay_check(req, "shutdown")
+        assert err and "timestamp out of range" in err
+
+    def test_future_timestamp_rejected(self):
+        req = self._fresh(skew=wol_host_service.REPLAY_MAX_SKEW_SECONDS + 10)
+        err = wol_host_service.replay_check(req, "shutdown")
+        assert err and "timestamp out of range" in err
+
+    def test_overlong_nonce_rejected(self):
+        import time
+        err = wol_host_service.replay_check(
+            {"command": "shutdown", "ts": time.time(), "nonce": "x" * 65},
+            "shutdown")
+        assert err and "nonce" in err
+
+    def test_bool_timestamp_rejected(self):
+        # ts must be a real number, not a JSON true/false.
+        err = wol_host_service.replay_check(
+            {"command": "shutdown", "ts": True, "nonce": "abc"}, "shutdown")
+        assert err and "timestamp" in err
+
+    def test_valid_request_passes(self):
+        assert wol_host_service.replay_check(self._fresh(), "shutdown") is None
+
+    def test_nonce_reuse_detected(self):
+        req = self._fresh()
+        assert wol_host_service.replay_check(dict(req), "shutdown") is None
+        err = wol_host_service.replay_check(dict(req), "shutdown")
+        assert err and "Replay detected" in err
+
+    def test_nonce_scoped_per_request_not_command(self):
+        # A fresh nonce for run_batch is accepted even after shutdown used one.
+        assert wol_host_service.replay_check(
+            self._fresh("run_batch"), "run_batch") is None
+
+
+class TestHandlerReplay:
+    """The handler enforces replay_check before authentication."""
+
+    class _Sock:
+        def __init__(self, request: bytes):
+            self._request = request
+            self.sent = b""
+
+        def recv(self, _size):
+            data, self._request = self._request, b""
+            return data
+
+        def sendall(self, data):
+            self.sent += data
+
+    def _handle(self, request: bytes, *, seed=None, **patches):
+        import contextlib
+        import json
+
+        handler = wol_host_service._CommandHandler.__new__(
+            wol_host_service._CommandHandler)
+        handler.request = self._Sock(request)
+        handler.client_address = ("10.0.0.9", 40000)
+        wol_host_service.auth_reset_state()
+        if seed is not None:
+            seed()
+        ctx = (mock.patch.multiple(wol_host_service, **patches)
+               if patches else contextlib.nullcontext())
+        with ctx:
+            handler.handle()
+        return json.loads(handler.request.sent.decode("utf-8").strip())
+
+    def test_replayed_request_rejected_before_auth(self):
+        import secrets
+        import time
+
+        called = {"v": False}
+
+        def _vc(u, p):
+            called["v"] = True
+            return True
+
+        # Fresh nonce + valid ts; the nonce is registered in seed() so it
+        # survives the auth_reset_state() that _handle runs first (which also
+        # clears the replay cache).
+        nonce = secrets.token_hex(16)
+        request = (
+            '{"command":"shutdown","username":"u","password":"p",'
+            f'"nonce":"{nonce}","ts":{time.time()}}}\n'
+        ).encode("utf-8")
+
+        resp = self._handle(
+            request,
+            seed=lambda: wol_host_service._nonce_known(nonce),
+            validate_credentials=_vc,
+            require_replay=lambda: True,
+        )
+        assert resp["status"] == "error"
+        assert "Replay detected" in resp["message"]
+        assert called["v"] is False  # replay rejected before OS auth
+
+    def test_missing_replay_rejected_when_required(self):
+        resp = self._handle(
+            b'{"command":"reboot","username":"u","password":"p"}\n',
+            validate_credentials=lambda u, p: True,
+            require_replay=lambda: True,
+        )
+        assert resp["status"] == "error"
+        assert "Missing replay protection" in resp["message"]
+
+    def test_valid_replay_reaches_auth(self):
+        import secrets
+        import time
+        nonce = secrets.token_hex(16)
+        resp = self._handle(
+            ('{"command":"reboot","username":"u","password":"p",'
+             f'"nonce":"{nonce}","ts":{time.time()}}}\n').encode("utf-8"),
+            validate_credentials=lambda u, p: True,
+            require_replay=lambda: True,
+            subprocess=mock.MagicMock(),
+        )
+        assert resp["status"] == "ok"

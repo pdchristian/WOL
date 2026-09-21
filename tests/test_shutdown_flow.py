@@ -1,12 +1,13 @@
 """Regression tests for the remote-shutdown subprocess calls.
 
-Covers the exact command strings built by ``wol_app.shutdown_flow.execute_shutdown``
-and ``wol_app.schedule_runner.scheduled_shutdown`` plus their success/failure log
-paths. ``subprocess.run`` is monkeypatched so nothing is executed on the host.
+Covers the exact argv lists built by ``wol_app.shutdown_flow.execute_shutdown``
+and ``wol_app.schedule_runner.scheduled_shutdown`` plus their success/failure
+log paths. ``run_subprocess_safe`` is monkeypatched so nothing is executed on
+the host.
 
-NOTE: these tests assert the *command strings* as-is. The ``shell=True`` usage is
-deliberately left in place (out of scope) — the regression here is that the
-commands and the log/status side effects stay correct.
+NOTE: the SMB path runs with ``shell=False`` via argv lists (command
+injection hardening, 2026-09) — the tests assert the argv form so a
+regression back to shell strings fails here.
 """
 
 import os
@@ -90,16 +91,16 @@ class TestExecuteShutdownSmb:
             commands.append(cmd)
             return results.pop(0)
 
-        monkeypatch.setattr(shutdown_flow.subprocess, "run", fake_run)
+        monkeypatch.setattr(shutdown_flow, "run_subprocess_safe", fake_run)
         mock_qmb = MagicMock()
         monkeypatch.setattr(shutdown_flow, "QMessageBox", mock_qmb)
 
         shutdown_flow.execute_shutdown(None, cfg, device, None, status)
 
         assert commands == [
-            "net use \\\\192.168.1.10 /delete /y",
-            "net use \\\\192.168.1.10\\IPC$ /user:admin pw123",
-            "shutdown /m \\\\192.168.1.10 /s /t 0 /f",
+            ["net", "use", "\\\\192.168.1.10", "/delete", "/y"],
+            ["net", "use", "\\\\192.168.1.10\\IPC$", "/user:admin", "pw123"],
+            ["shutdown", "/m", "\\\\192.168.1.10", "/s", "/t", "0", "/f"],
         ]
         assert any(log[2] == "SUCCESS" for log in cfg.logs)
         mock_qmb.information.assert_called_once()
@@ -119,7 +120,7 @@ class TestExecuteShutdownSmb:
             commands.append(cmd)
             return results.pop(0)
 
-        monkeypatch.setattr(shutdown_flow.subprocess, "run", fake_run)
+        monkeypatch.setattr(shutdown_flow, "run_subprocess_safe", fake_run)
         mock_qmb = MagicMock()
         monkeypatch.setattr(shutdown_flow, "QMessageBox", mock_qmb)
 
@@ -127,8 +128,8 @@ class TestExecuteShutdownSmb:
 
         # Only delete + connect ran; the shutdown command was never issued.
         assert commands == [
-            "net use \\\\192.168.1.10 /delete /y",
-            "net use \\\\192.168.1.10\\IPC$ /user:admin pw123",
+            ["net", "use", "\\\\192.168.1.10", "/delete", "/y"],
+            ["net", "use", "\\\\192.168.1.10\\IPC$", "/user:admin", "pw123"],
         ]
         assert any(log[2] == "ERROR" for log in cfg.logs)
         mock_qmb.critical.assert_called_once()
@@ -156,13 +157,13 @@ class TestScheduledShutdownSmb:
             commands.append(cmd)
             return results.pop(0)
 
-        monkeypatch.setattr(schedule_runner.subprocess, "run", fake_run)
+        monkeypatch.setattr(schedule_runner, "run_subprocess_safe", fake_run)
 
         schedule_runner.scheduled_shutdown(cfg, "d2", status)
 
         assert commands == [
-            'net use \\\\10.0.0.5\\IPC$ "s3cret" /user:"svc"',
-            "shutdown /m \\\\10.0.0.5 /s /t 0 /f",
+            ["net", "use", "\\\\10.0.0.5\\IPC$", "/user:svc", "s3cret"],
+            ["shutdown", "/m", "\\\\10.0.0.5", "/s", "/t", "0", "/f"],
         ]
         statuses = [log[2] for log in cfg.logs]
         assert "IN_PROGRESS" in statuses
@@ -183,11 +184,11 @@ class TestScheduledShutdownSmb:
             commands.append(cmd)
             return results.pop(0)
 
-        monkeypatch.setattr(schedule_runner.subprocess, "run", fake_run)
+        monkeypatch.setattr(schedule_runner, "run_subprocess_safe", fake_run)
 
         schedule_runner.scheduled_shutdown(cfg, "d2", status)
 
-        assert commands == ['net use \\\\10.0.0.5\\IPC$ "s3cret" /user:"svc"']
+        assert commands == [["net", "use", "\\\\10.0.0.5\\IPC$", "/user:svc", "s3cret"]]
         statuses = [log[2] for log in cfg.logs]
         assert "IN_PROGRESS" in statuses
         assert "FAILED" in statuses
@@ -201,7 +202,7 @@ class TestScheduledShutdownSmb:
             ran["called"] = True
             return _completed(0)
 
-        monkeypatch.setattr(schedule_runner.subprocess, "run", fake_run)
+        monkeypatch.setattr(schedule_runner, "run_subprocess_safe", fake_run)
 
         schedule_runner.scheduled_shutdown(cfg, "does-not-exist", status)
 

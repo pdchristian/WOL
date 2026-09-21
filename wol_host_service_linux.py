@@ -45,6 +45,8 @@ CLI usage (run with sudo for install/uninstall/start/stop):
     wol_host_service.py --status         Show service status
     wol_host_service.py --enable-batch   Allow run_batch on this machine
     wol_host_service.py --disable-batch  Forbid run_batch (default)
+    wol_host_service.py --require-replay Require ts/nonce on privileged commands
+    wol_host_service.py --replay-optional Accept legacy requests without ts/nonce
     wol_host_service.py --run            Run in the foreground (debugging)
     wol_host_service.py --port N         Port override for --run (default 8765)
 
@@ -88,7 +90,11 @@ MAX_REQUEST_BYTES = 65536
 #    tokens/s per model (llama.cpp GET /metrics?model=<name> -> the
 #    llamacpp:prompt_tokens_seconds / llamacpp:predicted_tokens_seconds
 #    Prometheus gauges).
-PROTOCOL_VERSION = 5
+# v6 adds optional anti-replay fields on the privileged commands
+#    (shutdown/reboot/run_batch): "ts" (Unix seconds) + "nonce" (random
+#    string). The service rejects stale timestamps and reused nonces; with
+#    require_replay enabled (service.json) unsigned requests are refused.
+PROTOCOL_VERSION = 6
 
 # Platform shutdown/reboot commands used by the TCP handler. The macOS
 # variant (wol_host_service_macos.py) reuses this module as its core and
@@ -267,6 +273,193 @@ def is_batch_allowed() -> bool:
 
 def set_batch_allowed(allowed: bool) -> bool:
     return _write_config({"allow_batch": bool(allowed)})
+
+
+# --- Auth throttling (brute-force protection) + auth audit log ---
+#
+# validate_credentials() checks real OS accounts via PAM, so unlimited
+# attempts from the LAN are a brute-force risk. Failed attempts are counted
+# per (client IP, username) with an exponential lockout; every auth failure
+# and every accepted privileged command goes to the service log (audit
+# trail - passwords are NEVER logged). Metrics polls are not audit-logged
+# (they would flood the log on a dashboard refresh every few seconds).
+
+AUTH_MAX_ATTEMPTS = 5            # failures per window before the lockout starts
+AUTH_WINDOW_SECONDS = 900        # failures older than this are forgotten
+AUTH_LOCKOUT_BASE_SECONDS = 60   # first lockout, doubles with every extra failure
+AUTH_LOCKOUT_MAX_SECONDS = 3600  # cap for the exponential backoff
+
+_auth_lock = threading.Lock()
+_auth_failures: dict[tuple[str, str], list[float]] = {}
+
+
+def _auth_audit(message: str) -> None:
+    """Append an AUTH audit line to the service log (never contains secrets)."""
+    _log(f"AUTH {message}")
+
+
+def auth_reset_state() -> None:
+    """Drop all throttling and replay state (tests / service start)."""
+    with _auth_lock:
+        _auth_failures.clear()
+    replay_reset_state()
+
+
+def auth_max_attempts() -> int:
+    """Configurable failure threshold (``auth_max_attempts`` in service.json)."""
+    try:
+        value = int(_read_config().get("auth_max_attempts", AUTH_MAX_ATTEMPTS))
+        return max(1, value)
+    except (TypeError, ValueError):
+        return AUTH_MAX_ATTEMPTS
+
+
+def auth_check_allowed(client_ip: str, username: str) -> tuple[bool, int]:
+    """Whether *username* from *client_ip* may attempt authentication now.
+
+    Returns ``(allowed, retry_after_seconds)``. After the threshold of
+    failures within the window is exceeded, the pair is locked out for an
+    exponentially growing period (60 s, 120 s, ... capped at 1 h). When a
+    lockout expires, exactly one probe attempt passes; a further failure
+    re-locks immediately with the next (doubled) period.
+    """
+    key = (client_ip or "", username or "")
+    now = time.monotonic()
+    with _auth_lock:
+        fails = _auth_failures.get(key)
+        if not fails:
+            return True, 0
+        fails = [t for t in fails if now - t < AUTH_WINDOW_SECONDS]
+        if not fails:
+            _auth_failures.pop(key, None)
+            return True, 0
+        _auth_failures[key] = fails
+        if len(fails) < auth_max_attempts():
+            return True, 0
+        excess = len(fails) - auth_max_attempts()
+        lockout = min(
+            AUTH_LOCKOUT_BASE_SECONDS * (2 ** excess), AUTH_LOCKOUT_MAX_SECONDS
+        )
+        elapsed = now - fails[-1]
+        if elapsed >= lockout:
+            return True, 0
+        return False, int(lockout - elapsed) + 1
+
+
+def auth_record_failure(client_ip: str, username: str) -> None:
+    with _auth_lock:
+        _auth_failures.setdefault((client_ip or "", username or ""), []).append(
+            time.monotonic()
+        )
+
+
+def auth_record_success(client_ip: str, username: str) -> None:
+    with _auth_lock:
+        _auth_failures.pop((client_ip or "", username or ""), None)
+
+
+# --- Replay protection (timestamp + nonce) --------------------------------
+#
+# Every request carries credentials, so a captured request can be replayed
+# verbatim by anyone able to observe the (unencrypted) LAN traffic - the
+# service cannot tell a replay from the original. For the privileged,
+# one-shot commands (shutdown / reboot / run_batch) the client therefore
+# adds:
+#
+#   ts    - Unix timestamp (seconds, UTC) at the moment of sending
+#   nonce - a fresh random value, unique per request
+#
+# The service rejects a request whose timestamp is too far from its own
+# clock (bounds the replay window) or whose nonce it has already seen
+# (kills replays inside that window).
+#
+# "metrics" is deliberately NOT covered: it is read-only, has no one-shot
+# side effect, and a dashboard polls it every few seconds - replaying it
+# gains an attacker nothing while a per-poll nonce would only grow state.
+#
+# Rollout: with require_replay off (the default) unsigned requests are still
+# accepted, so an older client keeps working against a newer service. Turn
+# the requirement on with --require-replay once every client is updated.
+
+REPLAY_PROTECTED_COMMANDS = ("shutdown", "reboot", "run_batch")
+REPLAY_MAX_SKEW_SECONDS = 120   # max |service clock - request ts|
+NONCE_TTL_SECONDS = 300         # a nonce stays known for >= the skew window
+NONCE_CACHE_MAX = 4096
+
+_nonce_lock = threading.Lock()
+_seen_nonces: dict[str, float] = {}
+
+
+def replay_reset_state() -> None:
+    """Forget all known nonces (used by tests and on service start)."""
+    with _nonce_lock:
+        _seen_nonces.clear()
+
+
+def require_replay() -> bool:
+    """True when privileged commands must carry ts + nonce.
+
+    Configured via ``"require_replay"`` in service.json (default False so a
+    service update never breaks an older client).
+    """
+    return bool(_read_config().get("require_replay", False))
+
+
+def set_require_replay(enabled: bool) -> bool:
+    return _write_config({"require_replay": bool(enabled)})
+
+
+def _nonce_known(nonce: str) -> bool:
+    """True when *nonce* was already used; otherwise record it."""
+    now = time.monotonic()
+    with _nonce_lock:
+        if len(_seen_nonces) > NONCE_CACHE_MAX:
+            for stale in [k for k, exp in _seen_nonces.items() if exp <= now]:
+                _seen_nonces.pop(stale, None)
+            if len(_seen_nonces) > NONCE_CACHE_MAX:
+                # Still full of live nonces - drop the oldest quarter.
+                for stale, _exp in sorted(_seen_nonces.items(),
+                                          key=lambda kv: kv[1],
+                                          )[: NONCE_CACHE_MAX // 4]:
+                    _seen_nonces.pop(stale, None)
+        if nonce in _seen_nonces:
+            return True
+        _seen_nonces[nonce] = now + NONCE_TTL_SECONDS
+        return False
+
+
+def replay_check(request: dict, command: str) -> str | None:
+    """Validate the anti-replay fields of *request*.
+
+    Returns an error message when the request must be rejected, or ``None``
+    when it may proceed. The nonce is only registered on success, so a
+    request that later fails authentication does not burn its nonce.
+    Commands outside :data:`REPLAY_PROTECTED_COMMANDS` are never checked.
+    """
+    if command not in REPLAY_PROTECTED_COMMANDS:
+        return None
+
+    ts = request.get("ts")
+    nonce = request.get("nonce")
+    has_ts = isinstance(ts, (int, float)) and not isinstance(ts, bool)
+    has_nonce = isinstance(nonce, str) and bool(nonce.strip())
+
+    if not has_ts and not has_nonce:
+        if require_replay():
+            return ("Missing replay protection (ts/nonce): update the "
+                    "Wake-on-LAN Manager client")
+        return None  # legacy client, replay protection not enforced yet
+    if not has_ts:
+        return "Invalid request timestamp (ts)"
+    if not has_nonce:
+        return "Invalid request nonce"
+    if abs(time.time() - float(ts)) > REPLAY_MAX_SKEW_SECONDS:
+        return f"Request timestamp out of range (>{REPLAY_MAX_SKEW_SECONDS}s skew)"
+    if len(nonce) > 64:
+        return "Invalid request nonce"
+    if _nonce_known(nonce):
+        return "Replay detected (nonce already used)"
+    return None
 
 
 # --- Metrics collection (psutil + nvidia-smi) ---
@@ -847,6 +1040,28 @@ def run_batch_script(script: str, timeout: float = BATCH_TIMEOUT_DEFAULT) -> dic
             pass
 
 
+# --- Power action (shutdown / reboot) ---
+
+def _execute_power(command: str) -> None:
+    """Run the OS power command for an accepted shutdown/reboot request.
+
+    ``SHUTDOWN_CMD``/``REBOOT_CMD`` are read at call time so the macOS
+    variant can override them.
+
+    SAFETY GUARD: when the environment variable ``WOL_TEST_NO_POWER`` is
+    set, the OS command is NOT executed. The test suite sets this variable
+    (see tests/conftest.py) so a unit/integration test that drives the
+    handler in-process can never shut down or reboot the machine running
+    the tests — even if a future test forgets to mock ``subprocess.run``.
+    """
+    if os.environ.get("WOL_TEST_NO_POWER"):
+        return
+    if command == "shutdown":
+        subprocess.run(SHUTDOWN_CMD, capture_output=True)
+    else:
+        subprocess.run(REBOOT_CMD, capture_output=True)
+
+
 # --- TCP command handler ---
 
 class _CommandHandler(socketserver.BaseRequestHandler):
@@ -876,17 +1091,56 @@ class _CommandHandler(socketserver.BaseRequestHandler):
             command = str(request.get("command", "")).strip().lower()
             username = str(request.get("username", ""))
             password = str(request.get("password", ""))
+            try:
+                client_ip = self.client_address[0]
+            except Exception:
+                client_ip = ""
 
             if command == "status":
                 # Reachability probe - no authentication required.
                 self._respond({"status": "ok", "message": "online"})
                 return
 
+            if command not in ("metrics", "shutdown", "reboot", "run_batch"):
+                self._respond(
+                    {"status": "error", "message": f"Unknown command: {command}"}
+                )
+                return
+
+            # Brute-force throttling: reject before touching the PAM path.
+            allowed, retry_after = auth_check_allowed(client_ip, username)
+            if not allowed:
+                _auth_audit(
+                    f"LOCKED {command} user={username!r} from {client_ip} "
+                    f"(retry in {retry_after}s)"
+                )
+                self._respond({
+                    "status": "error",
+                    "message": f"Too many failed attempts. Try again in {retry_after}s.",
+                    "retry_after": retry_after,
+                })
+                return
+
+            # Replay protection for the privileged one-shot commands.
+            replay_error = replay_check(request, command)
+            if replay_error is not None:
+                _auth_audit(
+                    f"REPLAY-REJECT {command} user={username!r} from {client_ip}: "
+                    f"{replay_error}"
+                )
+                self._respond({"status": "error", "message": replay_error})
+                return
+
+            if not validate_credentials(username, password):
+                auth_record_failure(client_ip, username)
+                _auth_audit(f"FAILED {command} user={username!r} from {client_ip}")
+                self._respond({"status": "error", "message": "Authentication failed"})
+                return
+            auth_record_success(client_ip, username)
+
             if command == "metrics":
-                # Dashboard metrics - authentication required.
-                if not validate_credentials(username, password):
-                    self._respond({"status": "error", "message": "Authentication failed"})
-                    return
+                # Dashboard metrics - authenticated. Not audit-logged (a live
+                # dashboard polls every few seconds and would flood the log).
                 watch = request.get("watch")
                 if isinstance(watch, list) and watch:
                     self._respond(collect_metrics(watch=watch))
@@ -895,11 +1149,8 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                 return
 
             if command == "run_batch":
-                # Arbitrary script execution - authentication AND the
-                # per-machine opt-in (--enable-batch) are required.
-                if not validate_credentials(username, password):
-                    self._respond({"status": "error", "message": "Authentication failed"})
-                    return
+                # Arbitrary script execution - the per-machine opt-in
+                # (--enable-batch) is required in addition to auth.
                 if not is_batch_allowed():
                     self._respond({
                         "status": "error",
@@ -907,6 +1158,7 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                                    "(run: wol_host_service.py --enable-batch)",
                     })
                     return
+                _auth_audit(f"RUN_BATCH user={username!r} from {client_ip}")
                 script = str(request.get("script", ""))
                 try:
                     batch_timeout = float(request.get("timeout", BATCH_TIMEOUT_DEFAULT))
@@ -915,24 +1167,14 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                 self._respond(run_batch_script(script, batch_timeout))
                 return
 
-            if command not in ("shutdown", "reboot"):
-                self._respond(
-                    {"status": "error", "message": f"Unknown command: {command}"}
-                )
-                return
-
-            if not validate_credentials(username, password):
-                self._respond({"status": "error", "message": "Authentication failed"})
-                return
+            # shutdown / reboot - privileged, always audit-logged.
+            _auth_audit(f"{command.upper()} user={username!r} from {client_ip}")
 
             # Acknowledge first, then execute - the client must receive the
             # confirmation before the machine goes down.
             self._respond({"status": "ok", "message": f"{command} accepted"})
             time.sleep(1.0)
-            if command == "shutdown":
-                subprocess.run(SHUTDOWN_CMD, capture_output=True)
-            else:
-                subprocess.run(REBOOT_CMD, capture_output=True)
+            _execute_power(command)
         except Exception:
             # Never let a handler exception kill the server thread.
             pass
@@ -1005,8 +1247,49 @@ def packaged_unit_installed() -> bool:
     return any(os.path.exists(path) for path in PACKAGED_UNIT_PATHS)
 
 
+def _local_subnet_cidrs() -> list[str]:
+    """CIDR strings of all local IPv4 networks (interface address + netmask).
+
+    Used to scope the ufw rule to the machine's own subnets. Best effort:
+    returns an empty list when no usable address is found, in which case
+    :func:`add_firewall_rule` falls back to the previous unrestricted rule.
+    """
+    import ipaddress
+    import socket as _socket
+
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        return []
+    cidrs: list[str] = []
+    try:
+        addrs = psutil.net_if_addrs()
+    except Exception:
+        return []
+    for name, entries in addrs.items():
+        if name.lower().startswith("lo"):
+            continue
+        for entry in entries:
+            if entry.family != _socket.AF_INET or not entry.address:
+                continue
+            try:
+                net = ipaddress.ip_network(
+                    f"{entry.address}/{entry.netmask or ''}", strict=False)
+                if net.prefixlen >= 8:  # reject nonsensical /0../7 scopes
+                    cidrs.append(str(net))
+            except ValueError:
+                continue
+    return cidrs
+
+
 def add_firewall_rule() -> bool:
-    """Allow inbound TCP 8765 through ufw (skipped when ufw is inactive)."""
+    """Allow inbound TCP 8765 through ufw, scoped to the local subnets.
+
+    The rule is limited to traffic from this machine's own networks
+    (``from <CIDR>``) so a routable interface on an untrusted network cannot
+    reach the service. When the scope cannot be determined the previous
+    unrestricted rule is used as fallback.
+    """
     if shutil.which("ufw") is None:
         return True  # no ufw on this machine - nothing to do
     try:
@@ -1015,11 +1298,22 @@ def add_firewall_rule() -> bool:
         )
         if "active" not in status.stdout.lower():
             return True  # ufw installed but inactive - ports are open anyway
-        result = subprocess.run(
-            ["ufw", "allow", f"{DEFAULT_PORT}/tcp"],
-            capture_output=True, text=True, timeout=15,
-        )
-        return result.returncode == 0
+        cidrs = _local_subnet_cidrs()
+        if not cidrs:
+            result = subprocess.run(
+                ["ufw", "allow", f"{DEFAULT_PORT}/tcp"],
+                capture_output=True, text=True, timeout=15,
+            )
+            return result.returncode == 0
+        for cidr in cidrs:
+            result = subprocess.run(
+                ["ufw", "allow", "from", cidr, "to", "any",
+                 f"port {DEFAULT_PORT}/tcp"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                return False
+        return True
     except Exception:
         return False
 
@@ -1205,6 +1499,21 @@ def main() -> int:
     if "--disable-batch" in args:
         if set_batch_allowed(False):
             print("Batch execution DISABLED on this machine (default).")
+            return 0
+        print("ERROR: Could not write the service config file "
+              f"({_CONFIG_FILE}). Run with sudo when the service runs as root.")
+        return 1
+    if "--require-replay" in args:
+        if set_require_replay(True):
+            print("Replay protection REQUIRED for shutdown/reboot/run_batch "
+                  "(clients without ts/nonce are rejected).")
+            return 0
+        print("ERROR: Could not write the service config file "
+              f"({_CONFIG_FILE}). Run with sudo when the service runs as root.")
+        return 1
+    if "--replay-optional" in args:
+        if set_require_replay(False):
+            print("Replay protection OPTIONAL (legacy clients still accepted).")
             return 0
         print("ERROR: Could not write the service config file "
               f"({_CONFIG_FILE}). Run with sudo when the service runs as root.")

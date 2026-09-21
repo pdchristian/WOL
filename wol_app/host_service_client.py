@@ -13,7 +13,9 @@ the host via LogonUserW).
 """
 
 import json
+import secrets
 import socket
+import time
 
 # Default TCP port of the WOL Host Service
 HOST_SERVICE_PORT = 8765
@@ -26,6 +28,17 @@ _MAX_BATCH_BYTES = 131_072
 # Protocol version that introduced "metrics" / "run_batch" (host service
 # responses without a "protocol" field are older than that).
 _MIN_PROTOCOL_DASHBOARD = 2
+
+
+def _replay_fields() -> dict:
+    """Anti-replay fields (protocol v6) for the privileged commands.
+
+    ``ts`` (Unix seconds) lets the host bound the replay window, ``nonce``
+    (fresh random value) lets it reject duplicates inside that window. The
+    host service ignores both fields when it is older than v6, so sending
+    them unconditionally is safe.
+    """
+    return {"ts": time.time(), "nonce": secrets.token_hex(16)}
 
 
 def _request(
@@ -102,13 +115,17 @@ def send_host_command(
     if command not in ("shutdown", "reboot", "status"):
         return False, f"Unknown command: {command}"
 
+    payload: dict = {
+        "command": command,
+        "username": username or "",
+        "password": password or "",
+    }
+    if command in ("shutdown", "reboot"):
+        payload.update(_replay_fields())
+
     ok, response = _request(
         ip,
-        {
-            "command": command,
-            "username": username or "",
-            "password": password or "",
-        },
+        payload,
         port,
         timeout,
         _MAX_LINE_BYTES,
@@ -192,15 +209,17 @@ def run_batch(
         ``duration_ms``/``truncated`` on success.
         (False, error_message) on transport/auth/gating errors.
     """
+    payload: dict = {
+        "command": "run_batch",
+        "username": username or "",
+        "password": password or "",
+        "script": script,
+        "timeout": timeout,
+    }
+    payload.update(_replay_fields())
     ok, response = _request(
         ip,
-        {
-            "command": "run_batch",
-            "username": username or "",
-            "password": password or "",
-            "script": script,
-            "timeout": timeout,
-        },
+        payload,
         port,
         timeout + 5.0,
         _MAX_BATCH_BYTES,

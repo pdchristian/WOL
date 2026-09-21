@@ -18,7 +18,17 @@
       "items": { "type": "string", "minLength": 1, "maxLength": 128 }
     },
     "script": { "type": "string", "maxLength": 32000 },
-    "timeout": { "type": "number", "minimum": 5, "maximum": 3600 }
+    "timeout": { "type": "number", "minimum": 5, "maximum": 3600 },
+    "ts": {
+      "type": "number",
+      "description": "v6 anti-replay: Unix timestamp (seconds, UTC) when the request was sent. Optional unless the host sets require_replay. Checked for shutdown/reboot/run_batch only."
+    },
+    "nonce": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "v6 anti-replay: fresh random value, unique per request. The host rejects a nonce it has already seen. Checked for shutdown/reboot/run_batch only."
+    }
   },
   "additionalProperties": true,
   "allOf": [

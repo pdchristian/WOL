@@ -1,6 +1,6 @@
 {
   "status": "ok",
-  "protocol": 5,
+  "protocol": 6,
   "hostname": "FRACTAL",
   "cpu": 63.4,
   "cpu_count": 16,

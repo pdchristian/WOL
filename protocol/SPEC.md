@@ -1,6 +1,6 @@
 # WOL Host Service — Wire Protocol Specification
 
-**Version:** 5 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
+**Version:** 6 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
 
 Referenzimplementierungen:
 
@@ -38,6 +38,8 @@ Referenzimplementierungen:
 | `command` | string | `status` \| `metrics` \| `shutdown` \| `reboot` \| `run_batch` (case-insensitive, wird getrimmt) |
 | `username` | string | Für alle Kommandos außer `status` erforderlich (`DOMAIN\User` oder lokal). |
 | `password` | string | Passwort zu `username`. |
+| `ts` | number | **v6** Anti-Replay: Unix-Timestamp (Sekunden, UTC) beim Senden. Nur für `shutdown`/`reboot`/`run_batch` geprüft. |
+| `nonce` | string | **v6** Anti-Replay: frischer Zufallswert (1–64 Zeichen), pro Request eindeutig. Host lehnt bereits gesehene Nonces ab. |
 | *command-spezifisch* | — | `watch` (metrics), `script`/`timeout` (run_batch) — siehe unten. |
 
 Schema: [`schema/request.json`](schema/request.json)
@@ -68,6 +70,8 @@ Jede Antwort enthält mindestens:
 | JSON ist kein Objekt | `{"status":"error","message":"Invalid request"}` |
 | `command` unbekannt | `{"status":"error","message":"Unknown command: <cmd>"}` |
 | Auth fehlgeschlagen | `{"status":"error","message":"Authentication failed"}` |
+| **v6** Brute-Force-Lockout aktiv | `{"status":"error","message":"Too many failed attempts. Try again in <n>s.","retry_after":<n>}` |
+| **v6** Replay/Zeitstempel abgelehnt | `{"status":"error","message":"Replay detected (nonce already used)"}` / `"Request timestamp out of range (>120s skew)"` / `"Missing replay protection (ts/nonce): update the Wake-on-LAN Manager client"` |
 
 Schema: [`schema/response-error.json`](schema/response-error.json)
 
@@ -101,7 +105,7 @@ Antwort (`status: "ok"`):
 ```json
 {
   "status": "ok",
-  "protocol": 5,
+  "protocol": 6,
   "hostname": "FRACTAL",
   "cpu": 63.4,
   "cpu_count": 16,
@@ -183,7 +187,8 @@ Schema: [`schema/response-metrics.json`](schema/response-metrics.json)
 ### 4.3 `shutdown` / `reboot` (mit Auth)
 
 ```json
-→ {"command": "shutdown", "username": "u", "password": "p"}
+→ {"command": "shutdown", "username": "u", "password": "p",
+   "ts": 1761234567.89, "nonce": "3f9a2c1e..."}
 ← {"status": "ok", "message": "shutdown accepted"}
 ```
 
@@ -191,12 +196,18 @@ Schema: [`schema/response-metrics.json`](schema/response-metrics.json)
   bevor der Host herunterfährt — 1 s Verzögerung eingebaut).
 * `message` = `"<command> accepted"`.
 * Auth-Fehler ⇒ `"Authentication failed"` (Standard).
+* **v6 Anti-Replay** (`ts` + `nonce`, siehe §2): der Host verwirft Requests
+  mit Clock-Skew > `REPLAY_MAX_SKEW_SECONDS` oder bereits verwendetem Nonce
+  (Fehlermeldungen siehe §3). Ohne `ts`/`nonce` verhält sich der Host wie
+  v5, solange `require_replay` aus ist (Default); ist sie an
+  (`--require-replay`), fehlen dann zwingend die Felder ⇒ Fehler.
 
 ### 4.4 `run_batch` (mit Auth + Maschinen-Freischaltung)
 
 ```json
 → {"command": "run_batch", "username": "u", "password": "p",
-   "script": "@echo off\r\necho hello", "timeout": 60}
+   "script": "@echo off\r\necho hello", "timeout": 60,
+   "ts": 1761234567.89, "nonce": "3f9a2c1e..."}
 ← {"status": "ok", "exit_code": 0, "stdout": "hello\r\n", "stderr": "",
    "duration_ms": 152, "truncated": false}
 ```
@@ -204,6 +215,8 @@ Schema: [`schema/response-metrics.json`](schema/response-metrics.json)
 * **Doppeltes Opt-in:** Auth **und** pro Maschine per
   `--enable-batch` (sonst `status: "error"`,
   `message: "Batch execution disabled on host ..."`).
+* **v6 Anti-Replay:** `ts`/`nonce` werden wie bei `shutdown`/`reboot`
+  geprüft (§4.3).
 * `script` (string, max **32 000** Zeichen) wird als temporäre `.cmd`
   ausgeführt (Windows) bzw. über die Shell (Linux).
 * `timeout` (Sekunden, optional, Default **120**, hart auf **5–3600** begrenzt).
@@ -220,7 +233,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 |---|---|---|
 | `DEFAULT_PORT` | 8765 | beide Services |
 | `MAX_REQUEST_BYTES` | 65536 | beide |
-| `PROTOCOL_VERSION` | 5 | beide |
+| `PROTOCOL_VERSION` | 6 | beide |
 | `WATCH_MAX_ENTRIES` | 8 | beide |
 | `WATCH_PORT_TIMEOUT_S` | 0.25 | beide |
 | `WATCH_MODELS_TIMEOUT_S` | 0.6 | beide |
@@ -230,6 +243,13 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | `BATCH_TIMEOUT_DEFAULT` / MIN / MAX | 120 / 5 / 3600 | beide |
 | `MAX_BATCH_OUTPUT_CHARS` | 64000 | beide |
 | `GPU_CACHE_SECONDS` | 1.5 | beide |
+| `REPLAY_PROTECTED_COMMANDS` | shutdown, reboot, run_batch | beide |
+| `REPLAY_MAX_SKEW_SECONDS` | 120 | beide |
+| `NONCE_TTL_SECONDS` | 300 | beide |
+| `NONCE_CACHE_MAX` | 4096 | beide |
+| `AUTH_MAX_ATTEMPTS` | 5 (config: `auth_max_attempts`) | beide |
+| `AUTH_WINDOW_SECONDS` | 900 | beide |
+| `AUTH_LOCKOUT_BASE_SECONDS` / MAX | 60 / 3600 | beide |
 
 ## 6. Sicherheitsmodell
 
@@ -241,6 +261,22 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 * `run_batch` führt Code als SYSTEM (Win) / root (Linux) aus — deshalb
   standardmäßig deaktiviert und nur per `--enable-batch` auf der Zielmaschine
   scharf. Clients müssen den Fehlerfall „disabled“ abfangen.
+* **Brute-Force-Throttling (v6):** fehlgeschlagene Auths zählen pro
+  (Client-IP, Benutzer); nach `AUTH_MAX_ATTEMPTS` im Fenster folgt ein
+  exponentieller Lockout (60 s, verdoppelt, max. 1 h). Antwort enthält
+  `retry_after` (siehe §3).
+* **Audit-Log (v6):** Auth-Fehler, Lockouts, Replay-Verwürfe sowie
+  akzeptierte `shutdown`/`reboot`/`run_batch`-Kommandos schreibt der Host
+  als `AUTH …`-Zeilen ins Service-Log (ohne Passwörter). `metrics` wird
+  nicht protokolliert (Polling-Flut).
+* **Anti-Replay (v6):** `ts` + `nonce` auf den privilegierten Kommandos
+  (§4.3/§4.4). `require_replay` (service.json, Default `false`; CLI
+  `--require-replay` / `--replay-optional`) entscheidet, ob Requests ohne
+  die Felder abgelehnt werden.
+* **Firewall-Scope (v6):** die Windows-Inbound-Regel beschränkt die
+  Quell-Adressen standardmäßig auf `LocalSubnet` (config:
+  `firewall_remote_ips`, CLI `--firewall-scope`); `any` öffnet die Regel
+  wie früher. Linux: ufw-Regeln auf die lokalen Subnetze (CIDR) begrenzt.
 
 ## 7. Protokoll-Versionierung
 
@@ -253,6 +289,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | 3 | `watch` → `processes` | Dienste-Panel ausblenden |
 | 4 | `models` pro Watch-Eintrag | argv-`model`-Fallback zeigen |
 | 5 | `model_metrics` pro Watch-Eintrag (`prompt_tps`/`predicted_tps` latchen zuletzt gueltige Werte; `total_tokens` = `prompt_tokens_total` + `n_decode_total`) | Modell-Zeile ohne t/s anzeigen |
+| 6 | Anti-Replay `ts`/`nonce` auf `shutdown`/`reboot`/`run_batch` (§4.3/§4.4); Auth-Throttling mit `retry_after` (§3); Audit-Log; Firewall-Quellscope | Requests ohne `ts`/`nonce` senden (Host-Accept solange `require_replay` aus); `retry_after` ignorieren |
 
 Regel: **Nur additive Änderungen.** Neue Felder müssen für ältere Clients
 ignorierbar sein. Neue Pflichtfelder oder Semantic-Änderungen ⇒ neue Major-
