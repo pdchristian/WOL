@@ -270,7 +270,12 @@ DEFAULT_CONFIG = {
         # Default False: a second start signals the running instance to
         # bring its window to the front and exits itself (per config file,
         # see wol_app/single_instance.py).
-        "allow_multiple_instances": False,        # Modern main window rect [x, y, w, h] (normal state, restored on
+        "allow_multiple_instances": False,
+        # Public-network protection: on a PUBLIC network profile the app keeps
+        # privileged host-service commands (shutdown/reboot/batch) disabled.
+        # True overrides that client-side check (the host service gates too).
+        "allow_privileged_public_network": False,
+        # Modern main window rect [x, y, w, h] (normal state, restored on
         # start when it still intersects an attached screen).
         "window_geometry": None,
         # macOS: bundled host-service version the user was asked about (and
@@ -674,6 +679,24 @@ class ConfigManager:
         """Persist the "allow multiple instances" preference."""
         self.config.setdefault("ui", {})[
             "allow_multiple_instances"] = bool(enabled)
+        self.save()
+
+    # --- Public-network protection (privileged host-service commands) ---
+
+    def get_allow_privileged_public_network(self) -> bool:
+        """Allow shutdown/reboot/batch while the PC is on a PUBLIC network.
+
+        Default False: on a public network profile the app stays read-only
+        (status + metrics). The host service gates independently; this
+        setting controls the client-side check (wol_app/network_profile).
+        """
+        return bool(self.config.get("ui", {}).get(
+            "allow_privileged_public_network", False))
+
+    def set_allow_privileged_public_network(self, enabled: bool) -> None:
+        """Persist the public-network override (privileged commands)."""
+        self.config.setdefault("ui", {})[
+            "allow_privileged_public_network"] = bool(enabled)
         self.save()
 
     # --- macOS host service first-start prompt ---

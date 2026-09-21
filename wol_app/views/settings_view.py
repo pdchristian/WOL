@@ -232,6 +232,14 @@ class SettingsView(QWidget):
             Translations.tr("settings.label.allow_multiple_instances"))
         grid.addWidget(self.allow_multiple_toggle, 6, 1)
 
+        # Public-network protection: privileged host-service commands
+        # (shutdown/reboot/batch) stay disabled on a PUBLIC network unless
+        # the user explicitly allows them here.
+        self.allow_privileged_public_toggle = ToggleWithLabel(
+            Translations.tr(
+                "settings.label.allow_privileged_public_network"))
+        grid.addWidget(self.allow_privileged_public_toggle, 7, 1)
+
         # ── macOS only: bundled WOL Host Service (install / update / remove)
         # Status text + action button in one field; the heavy lifting (admin
         # dialog, launchd registration) lives in wol_app.host_service_installer.
@@ -259,7 +267,7 @@ class SettingsView(QWidget):
             host_container.setLayout(row_host)
             self.field_hostservice = Field(
                 "settings.label.hostservice", host_container)
-            grid.addWidget(self.field_hostservice, 7, 1)
+            grid.addWidget(self.field_hostservice, 8, 1)
             self._refresh_hostservice_row()
 
         layout.addLayout(grid)
@@ -332,6 +340,8 @@ class SettingsView(QWidget):
         self.close_to_tray_toggle.setChecked(self.config.get_close_to_tray())
         self.allow_multiple_toggle.setChecked(
             self.config.get_allow_multiple_instances())
+        self.allow_privileged_public_toggle.setChecked(
+            self.config.get_allow_privileged_public_network())
 
     def _save(self) -> None:
         ip: str = self.broadcast_ip_input.text().strip()
@@ -394,6 +404,9 @@ class SettingsView(QWidget):
         # Takes effect on the next start (the lock is acquired at startup).
         self.config.set_allow_multiple_instances(
             self.allow_multiple_toggle.isChecked())
+        # Applies immediately (checked per privileged command).
+        self.config.set_allow_privileged_public_network(
+            self.allow_privileged_public_toggle.isChecked())
 
         QMessageBox.information(
             self, Translations.tr("dialog.saved.title"),
@@ -431,6 +444,8 @@ class SettingsView(QWidget):
         ui["close_to_tray"] = DEFAULT_CONFIG["ui"]["close_to_tray"]
         ui["allow_multiple_instances"] = DEFAULT_CONFIG[
             "ui"]["allow_multiple_instances"]
+        ui["allow_privileged_public_network"] = DEFAULT_CONFIG[
+            "ui"]["allow_privileged_public_network"]
         self.config.save()
 
         Translations.set_language(DEFAULT_CONFIG["ui"]["language"])
@@ -479,6 +494,9 @@ class SettingsView(QWidget):
             Translations.tr("settings.label.close_to_tray"))
         self.allow_multiple_toggle.setText(
             Translations.tr("settings.label.allow_multiple_instances"))
+        self.allow_privileged_public_toggle.setText(
+            Translations.tr(
+                "settings.label.allow_privileged_public_network"))
         self.remote_desktop_resolution_combo.setItemText(
             0, Translations.tr("settings.label.remote_desktop_resolution_auto"))
         for idx, key in enumerate(

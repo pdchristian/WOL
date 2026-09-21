@@ -72,6 +72,7 @@ Jede Antwort enthält mindestens:
 | Auth fehlgeschlagen | `{"status":"error","message":"Authentication failed"}` |
 | **v6** Brute-Force-Lockout aktiv | `{"status":"error","message":"Too many failed attempts. Try again in <n>s.","retry_after":<n>}` |
 | **v6** Replay/Zeitstempel abgelehnt | `{"status":"error","message":"Replay detected (nonce already used)"}` / `"Request timestamp out of range (>120s skew)"` / `"Missing replay protection (ts/nonce): update the Wake-on-LAN Manager client"` |
+| **v6** Host in öffentlichem Netzwerk (Gate aktiv) | `{"status":"error","message":"Blocked: host is connected to a public network (enable on the host with --allow-public on)","error":"network_untrusted"}` |
 
 Schema: [`schema/response-error.json`](schema/response-error.json)
 
@@ -273,6 +274,16 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
   (§4.3/§4.4). `require_replay` (service.json, Default `false`; CLI
   `--require-replay` / `--replay-optional`) entscheidet, ob Requests ohne
   die Felder abgelehnt werden.
+* **Netzwerk-Profil-Gate (v6):** Auf einem öffentlich klassifizierten
+  Netzwerk (Windows: NLM-Kategorie `Public`; Linux: alle aktiven
+  firewalld-Zonen `public`) sind `shutdown`/`reboot`/`run_batch`
+  standardmäßig gesperrt (Antwort mit `error: "network_untrusted"`,
+  Audit-Zeile `NETWORK-REJECT`); `status`/`metrics` bleiben verfügbar.
+  Undetektierbare Profile sperren nie. Steuerung host-seitig:
+  `--network-gate on|off` (Default on) und `--allow-public on|off`
+  (Override pro Maschine). Der Client prüft zusätzlich client-seitig
+  (read-only-Modus im UI, abschaltbar in den Einstellungen) — die
+  Host-Prüfung ist maßgeblich.
 * **Firewall-Scope (v6):** die Windows-Inbound-Regel beschränkt die
   Quell-Adressen standardmäßig auf `LocalSubnet` (config:
   `firewall_remote_ips`, CLI `--firewall-scope`); `any` öffnet die Regel

@@ -27,6 +27,12 @@ if ROOT not in sys.path:
 # Block real OS power actions (shutdown/reboot) for the entire test session.
 os.environ["WOL_TEST_NO_POWER"] = "1"
 
+# Deterministic client-side network gate: the detector always reports a
+# PRIVATE network unless a test overrides WOL_FORCE_NETWORK itself. Without
+# this, tests touching the privileged-command gate would depend on how the
+# developer machine happens to be connected.
+os.environ.setdefault("WOL_FORCE_NETWORK", "private")
+
 # --- Socket guard: never connect to the local host service in tests --------
 
 # Host-service TCP port (mirrors wol_host_service.DEFAULT_PORT / client).

@@ -532,5 +532,9 @@
   "modern.dashboard.svc.model_total": "Tokens totaux {total}",
   "tray.tooltip": "{app} continue de s'exécuter dans la zone de notification",
   "tray.menu.open": "Ouvrir la fenêtre",
-  "tray.menu.quit": "Quitter"
+  "tray.menu.quit": "Quitter",
+  "settings.label.allow_privileged_public_network": "Autoriser arrêt/redémarrage/lots sur réseaux publics",
+  "network.public_blocked.title": "Réseau public",
+  "network.public_blocked.message": "L'ordinateur est connecté à un réseau public. Par sécurité, l'arrêt, le redémarrage et les commandes par lot sont désactivés. Vous pouvez les autoriser dans les paramètres.",
+  "status.scheduled_shutdown_public_network": "Arrêt programmé ignoré : connexion à un réseau public."
 }

@@ -52,6 +52,10 @@ class _FakeConfig:
         # Force the classic SMB path (not the host service).
         return "smb"
 
+    def get_allow_privileged_public_network(self):
+        # Public-network override off: the gate consults the detector.
+        return False
+
 
 def _recorder():
     calls = []

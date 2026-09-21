@@ -88,6 +88,17 @@ def scheduled_shutdown(config: Any, device_id: str, status_fn: StatusFn = _noop_
     device_name = device.get("name", Translations.tr("device.unknown"))
     ip = device.get("ip", "")
 
+    # Public-network protection: skip privileged commands on a PUBLIC
+    # network unless the user opted in (settings). The host service gates
+    # independently - this avoids pointless failed attempts.
+    from wol_app.network_profile import is_privileged_command_blocked
+    if is_privileged_command_blocked(
+            config.get_allow_privileged_public_network()):
+        msg = Translations.tr("status.scheduled_shutdown_public_network")
+        status_fn(msg, 5000)
+        config.add_log(device_name, "SHUTDOWN", "SKIPPED", msg)
+        return
+
     status_fn(Translations.tr("status.scheduled_shutdown_starting", name=device_name, ip=ip), 0)
     config.add_log(
         device_name, "SHUTDOWN", "IN_PROGRESS",

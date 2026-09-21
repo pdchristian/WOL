@@ -216,6 +216,14 @@ class SettingsDialog(QDialog):
             Translations.tr("settings.label.allow_multiple_instances"))
         app_layout.addWidget(self.allow_multiple_checkbox)
 
+        # Public-network protection: privileged host-service commands
+        # (shutdown/reboot/batch) stay disabled on a PUBLIC network unless
+        # the user explicitly allows them here.
+        self.allow_privileged_public_checkbox = QCheckBox(
+            Translations.tr(
+                "settings.label.allow_privileged_public_network"))
+        app_layout.addWidget(self.allow_privileged_public_checkbox)
+
         app_group.setLayout(app_layout)
         right_col.addWidget(app_group)
 
@@ -295,6 +303,10 @@ class SettingsDialog(QDialog):
         self.allow_multiple_checkbox.setChecked(
             self.config.get_allow_multiple_instances())
 
+        # Load public-network override
+        self.allow_privileged_public_checkbox.setChecked(
+            self.config.get_allow_privileged_public_network())
+
     def _save(self) -> None:
         ip: str = self.broadcast_ip_input.text().strip()
         port: int = self.broadcast_port_input.value()
@@ -364,6 +376,10 @@ class SettingsDialog(QDialog):
         # Save multi-instance setting (takes effect on the next start)
         self.config.set_allow_multiple_instances(
             self.allow_multiple_checkbox.isChecked())
+
+        # Save public-network override (applies immediately)
+        self.config.set_allow_privileged_public_network(
+            self.allow_privileged_public_checkbox.isChecked())
 
         QMessageBox.information(self, Translations.tr("dialog.saved.title"), Translations.tr("dialog.saved.message"))
         self.accept()

@@ -532,5 +532,9 @@
   "modern.dashboard.svc.model_total": "Total Tokens {total}",
   "tray.tooltip": "{app} keeps running in the notification area",
   "tray.menu.open": "Open Window",
-  "tray.menu.quit": "Quit"
+  "tray.menu.quit": "Quit",
+  "settings.label.allow_privileged_public_network": "Allow shutdown/reboot/batch on public networks",
+  "network.public_blocked.title": "Public network",
+  "network.public_blocked.message": "The computer is connected to a public network. For safety, shutdown, reboot and batch commands are disabled. You can allow them in the settings.",
+  "status.scheduled_shutdown_public_network": "Scheduled shutdown skipped: connected to a public network."
 }

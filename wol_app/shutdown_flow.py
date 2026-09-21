@@ -57,6 +57,19 @@ def confirm_shutdown(
         )
         return
 
+    # Public-network protection: privileged commands (shutdown/reboot/batch)
+    # stay disabled on a PUBLIC network unless the user opted in (settings).
+    # The host service gates independently - this keeps the UI honest.
+    from wol_app.network_profile import is_privileged_command_blocked
+    if is_privileged_command_blocked(
+            config.get_allow_privileged_public_network()):
+        QMessageBox.warning(
+            parent,
+            Translations.tr("network.public_blocked.title"),
+            Translations.tr("network.public_blocked.message"),
+        )
+        return
+
     # Determine the shutdown method for this device
     method = config.get_device_shutdown_method(device)
 

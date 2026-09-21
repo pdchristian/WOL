@@ -47,6 +47,8 @@ CLI usage (run with sudo for install/uninstall/start/stop):
     wol_host_service.py --disable-batch  Forbid run_batch (default)
     wol_host_service.py --require-replay Require ts/nonce on privileged commands
     wol_host_service.py --replay-optional Accept legacy requests without ts/nonce
+    wol_host_service.py --network-gate on|off  Public-network gate (default on)
+    wol_host_service.py --allow-public on|off  Privileged commands on public networks
     wol_host_service.py --run            Run in the foreground (debugging)
     wol_host_service.py --port N         Port override for --run (default 8765)
 
@@ -459,6 +461,99 @@ def replay_check(request: dict, command: str) -> str | None:
         return "Invalid request nonce"
     if _nonce_known(nonce):
         return "Replay detected (nonce already used)"
+    return None
+
+
+# --- Network-profile gate (public networks are read-only) -----------------
+#
+# On a public network (firewalld zone "public" - hotel/conference Wi-Fi,
+# ...) the machine may be reachable from strangers, so the privileged
+# one-shot commands (shutdown / reboot / run_batch) are refused even with
+# valid credentials - defense in depth. status/metrics stay available.
+#
+# Controlled on the host:
+#   --network-gate on|off    enable/disable the check (default on)
+#   --allow-public on|off    permit privileged commands despite "public"
+# Detection failures (no firewalld, unknown zone) do NOT block - only an
+# explicitly public zone does.
+
+NETWORK_GATE_COMMANDS = ("shutdown", "reboot", "run_batch")
+NETWORK_GATE_CACHE_SECONDS = 10.0
+
+CATEGORY_PUBLIC = 0
+CATEGORY_PRIVATE = 1
+CATEGORY_UNKNOWN = -1
+
+_net_cache: tuple[float, int] = (0.0, CATEGORY_UNKNOWN)
+_net_cache_lock = threading.Lock()
+
+
+def network_gate_enabled() -> bool:
+    """True when the public-network gate is active (default on)."""
+    return bool(_read_config().get("network_gate", True))
+
+
+def set_network_gate(enabled: bool) -> bool:
+    return _write_config({"network_gate": bool(enabled)})
+
+
+def allow_in_public_network() -> bool:
+    """Per-machine override: privileged commands despite a public zone."""
+    return bool(_read_config().get("allow_in_public_network", False))
+
+
+def set_allow_in_public(allowed: bool) -> bool:
+    return _write_config({"allow_in_public_network": bool(allowed)})
+
+
+def _network_category() -> int:
+    """Network category from firewalld's active zones (cached, best effort).
+
+    All active zones "public" -> PUBLIC; any other (trusted) zone ->
+    PRIVATE; firewalld absent/inactive -> UNKNOWN (never blocks).
+    """
+    global _net_cache
+    now = time.monotonic()
+    with _net_cache_lock:
+        if now - _net_cache[0] < NETWORK_GATE_CACHE_SECONDS:
+            return _net_cache[1]
+        category = CATEGORY_UNKNOWN
+        try:
+            state = subprocess.run(
+                ["firewall-cmd", "--state"],
+                capture_output=True, text=True, timeout=3,
+            )
+            if state.returncode == 0 and state.stdout.strip() == "running":
+                zones = subprocess.run(
+                    ["firewall-cmd", "--active-zones"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                parts = zones.stdout.replace("active zones:", " ").split()
+                if parts:
+                    if all(p.strip().lower() == "public" for p in parts):
+                        category = CATEGORY_PUBLIC
+                    else:
+                        category = CATEGORY_PRIVATE
+        except (OSError, subprocess.SubprocessError):
+            category = CATEGORY_UNKNOWN
+        _net_cache = (now, category)
+        return category
+
+
+def network_gate_check(command: str) -> str | None:
+    """Reject privileged commands while the host sits on a PUBLIC zone.
+
+    Returns an error message to respond with, or ``None`` when the command
+    may proceed. Only an explicitly public zone blocks; unknown/undetectable
+    profiles never do (availability over paranoia).
+    """
+    if command not in NETWORK_GATE_COMMANDS:
+        return None
+    if not network_gate_enabled() or allow_in_public_network():
+        return None
+    if _network_category() == CATEGORY_PUBLIC:
+        return ("Blocked: host is connected to a public network "
+                "(enable on the host with --allow-public on)")
     return None
 
 
@@ -1138,6 +1233,20 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                 return
             auth_record_success(client_ip, username)
 
+            # Public-network gate: privileged commands are refused while the
+            # host sits on a public firewalld zone (read-only mode).
+            network_error = network_gate_check(command)
+            if network_error is not None:
+                _auth_audit(
+                    f"NETWORK-REJECT {command} user={username!r} from {client_ip}"
+                )
+                self._respond({
+                    "status": "error",
+                    "message": network_error,
+                    "error": "network_untrusted",
+                })
+                return
+
             if command == "metrics":
                 # Dashboard metrics - authenticated. Not audit-logged (a live
                 # dashboard polls every few seconds and would flood the log).
@@ -1518,6 +1627,42 @@ def main() -> int:
         print("ERROR: Could not write the service config file "
               f"({_CONFIG_FILE}). Run with sudo when the service runs as root.")
         return 1
+    if "--network-gate" in args:
+        idx = args.index("--network-gate")
+        try:
+            mode = args[idx + 1].strip().lower()
+        except IndexError:
+            print("ERROR: --network-gate requires on or off.")
+            return 1
+        if mode not in ("on", "off"):
+            print("ERROR: --network-gate requires on or off.")
+            return 1
+        if not set_network_gate(mode == "on"):
+            print("ERROR: Could not write the service config file "
+                  f"({_CONFIG_FILE}). Run with sudo when the service runs as root.")
+            return 1
+        print(f"Public-network gate {'ENABLED' if mode == 'on' else 'DISABLED'}.")
+        return 0
+    if "--allow-public" in args:
+        idx = args.index("--allow-public")
+        try:
+            mode = args[idx + 1].strip().lower()
+        except IndexError:
+            print("ERROR: --allow-public requires on or off.")
+            return 1
+        if mode not in ("on", "off"):
+            print("ERROR: --allow-public requires on or off.")
+            return 1
+        if not set_allow_in_public(mode == "on"):
+            print("ERROR: Could not write the service config file "
+                  f"({_CONFIG_FILE}). Run with sudo when the service runs as root.")
+            return 1
+        if mode == "on":
+            print("WARNING: Privileged commands (shutdown/reboot/run_batch) are "
+                  "now allowed on PUBLIC networks.")
+        else:
+            print("Privileged commands are blocked on public networks (default).")
+        return 0
     if "--run" in args:
         run_foreground(port)
         return 0

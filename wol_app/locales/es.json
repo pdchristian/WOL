@@ -532,5 +532,9 @@
   "modern.dashboard.svc.model_total": "Tokens totales {total}",
   "tray.tooltip": "{app} sigue ejecutándose en el área de notificación",
   "tray.menu.open": "Abrir ventana",
-  "tray.menu.quit": "Salir"
+  "tray.menu.quit": "Salir",
+  "settings.label.allow_privileged_public_network": "Permitir apagar/reiniciar/lotes en redes públicas",
+  "network.public_blocked.title": "Red pública",
+  "network.public_blocked.message": "El equipo está conectado a una red pública. Por seguridad, apagar, reiniciar y los comandos por lotes están desactivados. Puede permitirlos en la configuración.",
+  "status.scheduled_shutdown_public_network": "Apagado programado omitido: conectado a una red pública."
 }

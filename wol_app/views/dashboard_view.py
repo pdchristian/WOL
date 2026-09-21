@@ -1463,6 +1463,18 @@ class DeviceDashboardView(QWidget):
         device = self._device
         if device is None or self._batch_thread is not None:
             return
+        # Public-network protection: run_batch is a privileged host-service
+        # command and stays disabled on a PUBLIC network unless the user
+        # opted in (settings). The host service gates independently.
+        from wol_app.network_profile import is_privileged_command_blocked
+        if is_privileged_command_blocked(
+                self.config.get_allow_privileged_public_network()):
+            QMessageBox.warning(
+                self,
+                Translations.tr("network.public_blocked.title"),
+                Translations.tr("network.public_blocked.message"),
+            )
+            return
         # Run the editor content (even unsaved), after committing to the library
         self._commit_editor()
         script = self.script_edit.toPlainText()
