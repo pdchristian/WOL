@@ -544,7 +544,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = F2W9M4SR79;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = WolManager/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -552,7 +552,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.3.5;
+				MARKETING_VERSION = 2.3.6;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
@@ -573,7 +573,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = de.wolmanager;
 				INFOPLIST_KEY_WKWatchOnly = NO;
-				MARKETING_VERSION = 2.3.5;
+				MARKETING_VERSION = 2.3.6;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager.watch;
 				PRODUCT_NAME = WolManagerWatch;
 				SDKROOT = watchos;
@@ -596,7 +596,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = de.wolmanager;
 				INFOPLIST_KEY_WKWatchOnly = NO;
-				MARKETING_VERSION = 2.3.5;
+				MARKETING_VERSION = 2.3.6;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager.watch;
 				PRODUCT_NAME = WolManagerWatch;
 				SDKROOT = watchos;
@@ -664,7 +664,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.3.5;
+				MARKETING_VERSION = 2.3.6;
 				PRODUCT_BUNDLE_IDENTIFIER = de.wolmanager;
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;

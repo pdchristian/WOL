@@ -55,7 +55,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "6AC4F56CA2506C6AC36964AE"
             BuildableName = "WolManagerWatch.app"
-            BlueprintName = "WolManagerWatch"
             ReferencedContainer = "container:WolManager.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -72,7 +71,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "6AC4F56CA2506C6AC36964AE"
             BuildableName = "WolManagerWatch.app"
-            BlueprintName = "WolManagerWatch"
             ReferencedContainer = "container:WolManager.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

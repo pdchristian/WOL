@@ -85,6 +85,37 @@ xcodebuild -scheme WolManager -destination 'platform=iOS Simulator,name=iPhone 1
 Gerät anschließen, in Xcode Team + Bundle-ID `de.wolmanager` setzen,
 „Trust" auf dem Gerät bestätigen, ▶ drücken.
 
+### TestFlight-Build
+
+Voraussetzung: **kostenpflichtiges Apple-Developer-Konto**, in
+Xcode → Settings → Accounts angemeldet (das Gratis-Personal-Team kann
+keine TestFlight-Builds hochladen). Das Development-Zertifikat
+("Apple Development") wird automatisch ergänzt; für den Export benötigt
+Xcode ein "Apple Distribution"-Zertifikat des gewählten Teams
+(wird bei automatischer Signierung automatisch angelegt).
+
+```bash
+cd ios
+# 1. Build-Nummer prüfen/hochzählen: CURRENT_PROJECT_VERSION in project.yml
+#    (jede Version 2.3.6 (1) darf nur EINMAL hochgeladen werden)
+# 2. Archive + Export + direkter Upload zu App Store Connect:
+TEAM_ID=<TeamID> ./build_testflight.sh --upload
+#    ohne --upload: nur build/export/WolManager.ipa erzeugen; Upload dann
+#    manuell über Xcode → Window → Organizer → Distribute App
+```
+
+Danach in App Store Connect → App "Wake-on-LAN Manager" → TestFlight:
+Build wird verarbeitet (1–15 min, E-Mail bei Abschluss), Testinfo
+ausfüllen und interne / öffentliche Tester einladen.
+Das Watch-Target wird über die Dependency des iOS-Targets automatisch
+mit eingebettet (`WolManager.app/Watch/WolManagerWatch.app`) — eine
+Watch-App wird nie separat hochgeladen.
+
+Die App-Information (Name, Beschreibung, Screenshots) muss einmalig in
+App Store Connect unter "App Information" / "TestFlight" gepflegt werden;
+der Bundle `de.wolmanager` muss dort als App angelegt sein
+(beim ersten Upload sonst per "Create App"-Link in den Upload-Warnungen möglich).
+
 ## Berechtigungen / Hinweise
 
 - **Lokales Netzwerk**: Beim ersten Wake/Scan/Status fragt iOS
