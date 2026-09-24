@@ -67,10 +67,13 @@ Das Projekt ist bereits checkt; nur das Signing-Team eintragen.
 ### App-Icon
 
 `WolManager/Assets.xcassets/AppIcon.appiconset/AppIcon1024.png` übernimmt das
-Android-Icon (Teal-Verlauf + weißes Steckersymbol) und wird generiert mit:
+Watch-Icon (Teal-Kreis mit großem weißem Steckersymbol — die iOS-Maske
+schneidet die Ecken ab, sodass es wie ein full-bleed Teal-Hintergrund wirkt)
+und wird generiert mit:
 
 ```bash
-python generate_ios_icon.py   # Quellen: android_html/.../drawable-nodpi/
+python generate_watch_icon.py   # erzeugt zuerst das Watch-Icon
+python generate_ios_icon.py     # kopiert es (opak, 1024px) in den iOS-Assets
 ```
 
 ### Tests
