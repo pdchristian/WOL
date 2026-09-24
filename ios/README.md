@@ -64,6 +64,15 @@ open WolManager.xcodeproj
 
 Das Projekt ist bereits checkt; nur das Signing-Team eintragen.
 
+### App-Icon
+
+`WolManager/Assets.xcassets/AppIcon.appiconset/AppIcon1024.png` übernimmt das
+Android-Icon (Teal-Verlauf + weißes Steckersymbol) und wird generiert mit:
+
+```bash
+python generate_ios_icon.py   # Quellen: android_html/.../drawable-nodpi/
+```
+
 ### Tests
 
 ```bash
