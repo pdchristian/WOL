@@ -14,3 +14,16 @@ build/
 *.pyc
 *.log
 .DS_Store
+
+# Android (android_html WebView-Shell)
+.gradle/
+.kotlin/
+local.properties
+
+# Tool-/Debug-Caches
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+.firecrawl/
+_dbg_out*.txt
+_*_icon_check.png
