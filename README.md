@@ -4,6 +4,7 @@
 
 A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.3.6:** **Apple Watch app** (watchOS 10+, companion to the iOS app) and **security hardening** — Remote Desktop credentials are never written to the temporary `.rdp` file again (Windows Credential Manager / `mstsc` prompt only) with a per-device **certificate-verification level** (default *warn*), and **privileged host-service commands are read-only on public networks**. Plus: **token throughput (tokens/s)** in the dashboard model line, a **power button on the list view** and dashboard navigation buttons, **unified version numbering** across all apps, and assorted fixes.
 > **New in 2.2.3:** **Hostname status fix** — devices configured with a host name (e.g. `blade-18` or `blade-18.fritz.box`) are now resolved to IPv4 before the status ping. Windows preferred the AAAA record when the router (e.g. a Fritz!Box) publishes IPv6, and IPv6 replies carry no `TTL=` token the reply detector relies on; additionally every A record is probed, so a stale DHCP lease next to the current address no longer masks an online device. Unresolvable names report *unknown* with an explicit hint instead of a misleading *offline*.
 > **New in 2.2.2:** **Ubuntu / Linux support** — the app now runs natively on Ubuntu (Modern UI) with a `.deb` package, a systemd-based **Linux Host Service** (protocol v4: metrics, watched processes, llama.cpp models — PAM-authenticated), and `xfreerdp`-based Remote Desktop with the same fast-exit retry. Also: cross-platform ping reply detection (case-insensitive TTL) and a fixed UI font stack so emoji icons and text render correctly on Qt 6.4.
 > **New in 2.2.1:** **Remote Desktop auto-retry for xrdp/Ubuntu hosts** — if a session with a stored password closes within 10 seconds (black screen, window vanishes), the app offers to reconnect **without the stored password** so it can be typed directly into the Remote Desktop prompt.
@@ -133,7 +134,38 @@ limitations: [docs/macos/README.md](docs/macos/README.md).
 
 ## 📝 Changelog
 
-### Unreleased
+### Version 2.3.6 - Service Watch Edition (2026-09-26)
+
+#### 🕐 Apple Watch app (watchOS 10+)
+- **New Apple Watch companion app** (`ios/WolManagerWatch/`, watchOS 10+, SwiftUI, bundle `de.wolmanager.watch`): device list (card / list toggle), wake & remote shutdown with confirmation, and a per-device dashboard (service chips + 2×2 metric rings, 5 s refresh while visible and online). Passwords never leave the iPhone — the Watch only ever sees `hasPassword`
+- **No direct LAN access from the Watch:** everything is routed over `WCSession` to the iPhone (commands `snapshot`, `statusAll`, `wake`, `shutdown`, `metrics` → `{ok:true,…}|{ok:false,error}`); the iPhone-side `WatchBridgeService` + `WatchCommandDispatcher` delegate to the existing wake/shutdown/status/metrics actions, so a stale snapshot can be recovered from the `applicationContext`
+- **Shared UI formatting:** the Watch reuses the same metrics rendering as the iPhone (`MetricsUI.swift`), and i18n (DE/EN/FR/ES) covers the Watch UI — iPhone error codes are translated on the Watch (`String.LocalizationValue`)
+- **Wake polling** refreshes the device list every 60 s while the Watch app is open; tested with `WatchCommandDispatcherTests` (8 tests, no network)
+
+#### 🔒 Security hardening
+- **RDP credentials are never written to the temporary `.rdp` file** anymore (SEC-002): the generated file carries no `password:` line and no `prompt:i:0`; the stored credentials are delivered exclusively via the Windows Credential Manager (`TERMSRV/<host>`) or the `mstsc` login prompt, so no plaintext password ever touches disk
+- **Per-device Remote Desktop certificate-verification level** (`rdp_auth_level`): *Warn* (default, `i:1`), *Exact match* (`i:2`) or *No verification* (`i:0`), configurable in both device editors (modern + classic); invalid values fall back to *Warn*. *Warn* is the default so self-signed LAN / xrdp hosts are not blocked
+- **Public-network gate (read-only on untrusted networks):** privileged Host Service commands (*shutdown / reboot / run_batch*) are blocked on a network classified as **public** (hotel / conference Wi-Fi) on both the client (UX) and the host service (authoritative, audited as `NETWORK-REJECT`) — status and metrics still work. Undetectable profiles never block (availability over paranoia). Settings: *Allow privileged commands on public networks* (default off); host service: `--network-gate on|off`, `--allow-public on|off`
+- **`SECURITY.md` accuracy fixes** and the security-check results are now in line with the shipped behaviour
+
+#### 📊 Token throughput in the dashboard model line
+- The **tokens/s throughput** (`prompt_tps` / `predicted_tps` from Host Service v5) is now shown in the dashboard model line next to the total token count — desktop and both WebView apps (*Android* / *iOS*)
+
+#### ⚡ Power button on the list view (mobile apps)
+- The **list view** of *Android* and *iOS* now carries the same **power button** (wake / shutdown, teal/red, blinking while waking) as the card view — previously the list rows had no quick action; the remote-desktop window tile is hidden in the mobile list (no remote window on phones)
+
+#### 🧭 Dashboard navigation (all platforms)
+- **Buttons to flip between devices** on the dashboard (prev / next in sorted order, wrapping around), complementing the swipe gesture on mobile and available on desktop too; plus **Wi-Fi-only mobile network scan after network selection** and assorted *iOS* fixes (layout, full-size, host-name scan)
+
+#### 🐛 Fixes
+- **Token counter fix** — total token figures in the dashboard model line were off; the cumulative prompt+decode counter is now displayed correctly
+- **Unified version numbering** — *iOS* (and the Watch target) and the desktop app now report one consistent version; a version-check fix ensures the update check compares the right fields
+- **Remote Desktop window scaling** — the remote *windowed* mode scaling factor was corrected (`0.88` → `0.84`) so the windowed session matches the intended geometry
+- **Android host-detection fix** and an **Ubuntu icon bugfix**; the **Android HTML app** is final (APK built and verified)
+
+#### 📚 Documentation
+- **Build Guide** (`BUILD.md`) added/expanded — full build & packaging walkthrough for desktop, host services and the mobile clients
+- **User guide updated** (`Bedienungsanleitung.md` / PDF)
 
 #### 🍎 macOS port (Apple Silicon)
 - **The desktop app now runs natively on macOS 11+ (arm64)** with the Modern UI — same feature set as the Ubuntu port: WOL magic packets, ping status, network scanner (BSD `ping`/`arp`/`ndp`), schedules, logs, dark/light mode (follows the system via `AppleInterfaceStyle`), DE/EN/FR/ES

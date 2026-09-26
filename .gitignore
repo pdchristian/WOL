@@ -1,5 +1,6 @@
 /device*.json
 /venv
+/venv_ubuntu
 .vscode
 .venv
 *graphify*
