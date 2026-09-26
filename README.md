@@ -104,6 +104,10 @@ A detailed user manual is available in German:
 - [Bedienungsanleitung.md](Bedienungsanleitung.md)
 - [Bedienungsanleitung.pdf](Bedienungsanleitung.pdf)
 
+### Build Documentation
+
+- [BUILD.md](BUILD.md) - How to compile the app for Windows, Ubuntu, macOS, Android and iOS
+
 ### Security Documentation
 
 - [SECURITY.md](SECURITY.md) - Comprehensive security measures and improvements
