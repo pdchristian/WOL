@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1430"
+   LastUpgradeVersion = "2700"
    version = "1.3">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -55,7 +55,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "6AC4F56CA2506C6AC36964AE"
             BuildableName = "WolManagerWatch.app"
-            BlueprintName = "WolManagerWatch"
             ReferencedContainer = "container:WolManager.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -72,7 +71,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "6AC4F56CA2506C6AC36964AE"
             BuildableName = "WolManagerWatch.app"
-            BlueprintName = "WolManagerWatch"
             ReferencedContainer = "container:WolManager.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

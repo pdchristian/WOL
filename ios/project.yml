@@ -30,7 +30,7 @@
       "configFiles": [],
       "settings": {
         "base": {
-          "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager",
+          "PRODUCT_BUNDLE_IDENTIFIER": "de.wake-on-lan.manager",
           "PRODUCT_NAME": "WolManager",
           "MARKETING_VERSION": "2.3.6",
           "CURRENT_PROJECT_VERSION": "1",
@@ -41,7 +41,7 @@
           "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
           "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
           "CODE_SIGN_STYLE": "Automatic",
-          "DEVELOPMENT_TEAM": "",
+          "DEVELOPMENT_TEAM": "CH9M2M9R7N",
           "ENABLE_PREVIEWS": "YES",
           "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks"
         },
@@ -51,7 +51,7 @@
             "DEBUG_INFORMATION_FORMAT": "dwarf"
           },
           "Release": {
-            "CODE_SIGN_IDENTITY": "Apple Distribution",
+            "CODE_SIGN_IDENTITY": "Apple Development",
             "DEBUG_INFORMATION_FORMAT": "dwarf-with-dsym"
           }
         }
@@ -87,7 +87,7 @@
       ],
       "settings": {
         "base": {
-          "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager.tests",
+          "PRODUCT_BUNDLE_IDENTIFIER": "de.wake-on-lan.manager.tests",
           "PRODUCT_NAME": "WolManagerTests",
           "SWIFT_VERSION": "5.9",
           "IPHONEOS_DEPLOYMENT_TARGET": "16.0",
@@ -110,7 +110,7 @@
       ],
       "settings": {
         "base": {
-          "PRODUCT_BUNDLE_IDENTIFIER": "de.wolmanager.watch",
+          "PRODUCT_BUNDLE_IDENTIFIER": "de.wake-on-lan.manager.watch",
           "PRODUCT_NAME": "WolManagerWatch",
           "MARKETING_VERSION": "2.3.6",
           "CURRENT_PROJECT_VERSION": "1",
@@ -119,11 +119,11 @@
           "TARGETED_DEVICE_FAMILY": "4",
           "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
           "CODE_SIGN_STYLE": "Automatic",
-          "DEVELOPMENT_TEAM": "",
+          "DEVELOPMENT_TEAM": "CH9M2M9R7N",
           "ENABLE_PREVIEWS": "YES",
           "GENERATE_INFOPLIST_FILE": "YES",
           "INFOPLIST_KEY_CFBundleDisplayName": "Wake-on-LAN",
-          "INFOPLIST_KEY_WKCompanionAppBundleIdentifier": "de.wolmanager",
+          "INFOPLIST_KEY_WKCompanionAppBundleIdentifier": "de.wake-on-lan.manager",
           "INFOPLIST_KEY_WKWatchOnly": false
         }
       }
