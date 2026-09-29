@@ -482,11 +482,8 @@ QMessageBox QLabel {{ color: {t['text']}; background: transparent; }}
 #codeEdit:focus {{ border-color: {t['accent']}; }}
 #consoleEdit {{ color: {t['text']}; }}
 #statusLine {{ color: {t['text_dim']}; font-size: 12px; }}
-#batchItem {{ background: transparent; border: none; text-align: left; padding: 10px 14px; border-radius: 10px; }}
+#batchItem {{ background: transparent; border: none; text-align: left; padding: 0px; border-radius: 10px; }}
 #batchItem:hover {{ background: {t['surface_hover']}; }}
-#batchItem:checked {{
-    background: rgba(0, 184, 169, 0.14);
-}}
 #batchItemTitle {{ color: {t['text']}; font-size: 13px; font-weight: 600; }}
 #batchItemMeta {{ color: {t['text_dim']}; font-size: 11px; font-family: Consolas, monospace; }}
 QListWidget#batchList {{
@@ -500,6 +497,18 @@ QListWidget#batchList::item:hover {{ background: {t['surface_hover']}; }}
 QListWidget#batchList::item:selected {{
     background: rgba(0, 184, 169, 0.14); color: {t['accent']};
 }}
+/* Batch-copy dialog picker: bordered box with master row + scrollable rows.
+   Padding of #batchItem is 0 — insets come from the row layouts so the
+   master checkbox and every row checkbox line up vertically. */
+#batchListBox {{
+    background: {t['surface']}; border: 1px solid {t['border']};
+    border-radius: 10px;
+}}
+#batchMasterRow {{ background: transparent; border: none; }}
+#batchListSep {{ background: {t['border']}; max-height: 1px; border: none; }}
+QScrollArea#batchScroll {{ background: transparent; border: none; }}
+QScrollArea#batchScroll > QWidget {{ background: transparent; }}
+#batchListInner {{ background: transparent; }}
 
 /* ── Status tiles (badges) ───────────────────────────────────────────── */
 #badgeOnline, #badgeOffline, #badgeUnknown {{

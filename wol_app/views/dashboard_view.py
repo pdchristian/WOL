@@ -50,6 +50,7 @@ from wol_app.config import (
     BATCH_TIMEOUT_MAX_S,
     BATCH_TIMEOUT_MIN_S,
     DEFAULT_BATCH_TIMEOUT_S,
+    MAX_BATCHES_PER_DEVICE,
     ConfigManager,
 )
 from wol_app.app_core import HEADLESS_MODE
@@ -57,6 +58,7 @@ from wol_app.metrics_worker import BatchWorker, MetricsWorker
 from wol_app.modern_theme import current_tokens
 from wol_app.translations import Translations
 from wol_app.utils import ip_sort_key
+from wol_app.views.batch_copy_dialog import BatchCopyDialog
 
 # Ring gauge geometry (prototype .gauge: 86 px, stroke 8)
 GAUGE_SIZE = 86
@@ -742,11 +744,14 @@ class DeviceDashboardView(QWidget):
         batch_row = QHBoxLayout()
         batch_row.setSpacing(16)
 
-        # Left: batch library panel
+        # Left: batch library panel. Width is driven by the action buttons:
+        # "Duplizieren" (~158 px) + "Neu" (~62 px) in the header and
+        # "Kopieren nach" (~185 px) + "Löschen" (~110 px) in the footer,
+        # plus margins/spacing. Anything below ~350 px clips their text.
         lib_panel = QFrame()
         lib_panel.setObjectName("panel")
         lib_panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        lib_panel.setFixedWidth(250)
+        lib_panel.setFixedWidth(360)
         lib_layout = QVBoxLayout(lib_panel)
         lib_layout.setContentsMargins(0, 0, 0, 0)
         lib_layout.setSpacing(0)
@@ -758,6 +763,12 @@ class DeviceDashboardView(QWidget):
         self.lib_title.setObjectName("sectionHeading")
         lib_head.addWidget(self.lib_title)
         lib_head.addStretch()
+        # "Duplizieren" lives in the header: three compact buttons never fit
+        # side by side in this panel, and the footer keeps copy + delete.
+        self.dup_btn = QPushButton(Translations.tr("modern.dashboard.batch.duplicate"))
+        self.dup_btn.setObjectName("smallButton")
+        self.dup_btn.clicked.connect(self._duplicate_batch)
+        lib_head.addWidget(self.dup_btn)
         self.new_btn = QPushButton(Translations.tr("modern.dashboard.batch.new"))
         self.new_btn.setObjectName("smallButton")
         self.new_btn.clicked.connect(self._new_batch)
@@ -772,13 +783,13 @@ class DeviceDashboardView(QWidget):
         lib_foot = QHBoxLayout()
         lib_foot.setContentsMargins(10, 6, 10, 10)
         lib_foot.setSpacing(6)
-        self.dup_btn = QPushButton(Translations.tr("modern.dashboard.batch.duplicate"))
-        self.dup_btn.setObjectName("smallButton")
-        self.dup_btn.clicked.connect(self._duplicate_batch)
+        self.copy_btn = QPushButton(Translations.tr("modern.dashboard.batch.copy"))
+        self.copy_btn.setObjectName("smallButton")
+        self.copy_btn.clicked.connect(self._copy_batches)
         self.delete_btn = QPushButton(Translations.tr("modern.dashboard.batch.delete"))
         self.delete_btn.setObjectName("smallDanger")
         self.delete_btn.clicked.connect(self._delete_batch)
-        lib_foot.addWidget(self.dup_btn)
+        lib_foot.addWidget(self.copy_btn)
         lib_foot.addWidget(self.delete_btn)
         lib_layout.addLayout(lib_foot)
         batch_row.addWidget(lib_panel)
@@ -1030,6 +1041,7 @@ class DeviceDashboardView(QWidget):
         self.lib_title.setText(Translations.tr("modern.dashboard.batch.title"))
         self.new_btn.setText(Translations.tr("modern.dashboard.batch.new"))
         self.dup_btn.setText(Translations.tr("modern.dashboard.batch.duplicate"))
+        self.copy_btn.setText(Translations.tr("modern.dashboard.batch.copy"))
         self.delete_btn.setText(Translations.tr("modern.dashboard.batch.delete"))
         self.save_btn.setText(Translations.tr("modern.dashboard.batch.save"))
         self.run_btn.setText(Translations.tr("modern.dashboard.batch.run"))
@@ -1319,6 +1331,10 @@ class DeviceDashboardView(QWidget):
                                    Translations.tr("modern.dashboard.batch.untitled"))
             self.batch_list.addItem(item)
         self.batch_list.blockSignals(False)
+        # Copying needs at least one batch AND another device to copy to.
+        others = [d for d in self._ordered_devices()
+                  if d.get("id") != self._device_id]
+        self.copy_btn.setEnabled(bool(self._batches()) and bool(others))
         if self._batch_active >= len(self._batches()):
             self._batch_active = -1
         if self._batches() and self._batch_active < 0:
@@ -1327,6 +1343,13 @@ class DeviceDashboardView(QWidget):
             self.batch_list.setCurrentRow(self._batch_active)
         else:
             self._show_batch(None)
+        self._update_batch_actions()
+
+    def _update_batch_actions(self) -> None:
+        """Duplizieren/Löschen need a selected batch to have a target."""
+        has_current = 0 <= self._batch_active < len(self._batches())
+        self.dup_btn.setEnabled(has_current)
+        self.delete_btn.setEnabled(has_current)
 
     def _on_batch_selected(self, row: int) -> None:
         # Store pending edits of the previous batch before switching
@@ -1334,6 +1357,7 @@ class DeviceDashboardView(QWidget):
         self._batch_active = row
         batches = self._batches()
         self._show_batch(batches[row] if 0 <= row < len(batches) else None)
+        self._update_batch_actions()
 
     def _show_batch(self, batch: dict | None) -> None:
         self._batch_dirty = False
@@ -1433,6 +1457,73 @@ class DeviceDashboardView(QWidget):
 
     def _save_batches(self) -> None:
         self._commit_editor()
+
+    def _copy_batches(self) -> None:
+        """Copy the selected batches onto another device (replace policy).
+
+        Like the ``device_io`` file import, the copy REPLACES the target's
+        batch list — the dialog warns about that and a confirmation names
+        the number of batches lost. Fresh ids are generated (same pattern
+        as :meth:`_duplicate_batch`) so no id ever appears twice. This is
+        pure local config work: no host command, hence no network-profile
+        gating; execution on the target still needs its own opt-in.
+        """
+        if self._device is None or self._device_id is None:
+            return
+        self._commit_editor()
+        batches = self._batches()
+        targets = [d for d in self._ordered_devices()
+                   if d.get("id") != self._device_id]
+        if not batches or not targets:
+            return
+        dialog = BatchCopyDialog(self._device, batches, targets,
+                                 self._nav_statuses, parent=self)
+        if dialog.exec() != BatchCopyDialog.DialogCode.Accepted:
+            return
+        target_id = dialog.target_device_id
+        target = next((d for d in targets if d.get("id") == target_id), None)
+        if target is None:
+            return
+        selected = dialog.selected_batches()
+        if not selected:
+            return
+        existing = len(ConfigManager.get_device_batches(target))
+        if existing:
+            answer = QMessageBox.question(
+                self,
+                Translations.tr("modern.dashboard.batch.copy.title"),
+                Translations.tr("modern.dashboard.batch.copy.confirm_replace",
+                                name=target.get("name", ""), count=existing),
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        now = datetime.now().strftime("%H%M%S")
+        copied = []
+        for i, batch in enumerate(selected):
+            clone = dict(batch)
+            clone["id"] = f"b{i + 1}-{now}"
+            copied.append(clone)
+        if len(copied) > MAX_BATCHES_PER_DEVICE:
+            self._log(Translations.tr("modern.dashboard.batch.copy.limit",
+                                      limit=MAX_BATCHES_PER_DEVICE))
+            return
+        try:
+            self.config.set_device_batches(target_id, copied)
+        except (ValueError, RuntimeError):
+            self._log(Translations.tr("modern.dashboard.batch.copy.failed"))
+            return
+        if dialog.allow_batch_enabled():
+            self.config.set_device_allow_batch(target_id, True)
+        if existing:
+            message = Translations.tr("modern.dashboard.batch.copy.done_replaced",
+                                      name=target.get("name", ""),
+                                      count=len(copied), replaced=existing)
+        else:
+            message = Translations.tr("modern.dashboard.batch.copy.done",
+                                      name=target.get("name", ""),
+                                      count=len(copied))
+        self._log(message)
+        self.status_line.setText(message)
 
     def _on_allow_batch_toggled(self, allowed: bool) -> None:
         if self._device_id is None:

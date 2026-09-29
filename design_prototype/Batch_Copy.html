@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototyp – Batches zwischen Geräten kopieren</title>
+<style>
+  /* ══ Tokens = modern_theme.py DARK (L204) / LIGHT (L236) ══════════════ */
+  html[data-theme="dark"]{
+    --bg:#0f1115; --surface:#1a1d24; --surface-hover:#232733; --border:#2c303a;
+    --text:#e6e8ee; --text-dim:#9aa0ab; --accent:#00b8a9; --accent-dark:#006b63;
+    --accent-text:#032019;
+    --online:#22c55e; --offline:#ef4444; --unknown:#f59e0b; --danger:#e0485a;
+    --console-bg:#12141a; --svc:#f97316;
+    --gauge-cpu:#00b8a9; --gauge-ram:#60a5fa; --gauge-gpu:#a78bfa; --gauge-vram:#f59e0b;
+  }
+  html[data-theme="light"]{
+    --bg:#f3f4f7; --surface:#ffffff; --surface-hover:#eef0f4; --border:#d8dbe2;
+    --text:#1b1e24; --text-dim:#5b6270; --accent:#009688; --accent-dark:#00695f;
+    --accent-text:#ffffff;
+    --online:#16a34a; --offline:#dc2626; --unknown:#d97706; --danger:#dc2637;
+    --console-bg:#f7f8fa; --svc:#ea580c;
+    --gauge-cpu:#009688; --gauge-ram:#2563eb; --gauge-gpu:#7c3aed; --gauge-vram:#d97706;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"Segoe UI",system-ui,sans-serif}
+  body{background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden;font-size:13px}
+  .mono{font-family:Consolas,monospace}
+
+  .themeToggle{position:fixed;top:14px;right:180px;display:flex;gap:6px;background:var(--surface);
+    border:1px solid var(--border);border-radius:10px;padding:4px;z-index:60}
+  .themeToggle button{border:none;background:none;color:var(--text-dim);font-size:12px;
+    padding:6px 12px;border-radius:7px;cursor:pointer;font-weight:600}
+  .themeToggle button.on{background:var(--accent);color:var(--accent-text)}
+
+  /* ══ Sidebar (Kontext, wie Sidebar.html) ══════════════════════════════ */
+  .sidebar{width:230px;background:var(--surface);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;padding:20px 12px;flex-shrink:0}
+  .logo{display:flex;align-items:center;gap:12px;padding:6px 10px;margin-bottom:22px}
+  .logo .mark{width:40px;height:40px;border-radius:12px;
+    background:linear-gradient(135deg,var(--accent),var(--accent-dark));display:flex;
+    align-items:center;justify-content:center;font-weight:700;font-size:17px;color:#fff}
+  .logo span{font-weight:600;font-size:15px}
+  .section-label{color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:1px;
+    padding:8px 12px;margin-top:8px}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;
+    color:var(--text-dim);font-size:14px;margin-bottom:4px;cursor:pointer;border:none;
+    background:none;text-align:left;width:100%}
+  .nav-item:hover{background:var(--surface-hover);color:var(--text)}
+  .nav-item.active{background:rgba(0,184,169,.14);color:var(--accent);font-weight:600}
+  .nav-spacer{flex:1}
+
+  /* ══ Main + Dashboard-Header (wie dashboard_view.py) ══════════════════ */
+  .main{flex:1;overflow:auto;padding:18px 26px 40px}
+  .dashHeader{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .backBtn{border:1px solid var(--border);background:var(--surface);color:var(--text);
+    border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .backBtn:hover{background:var(--surface-hover)}
+  .navArrow{min-width:34px;border:1px solid var(--border);background:var(--surface);color:var(--text);
+    border-radius:9px;padding:8px 10px;font-size:14px;cursor:pointer}
+  .navArrow:hover{background:var(--surface-hover)}
+  .devTitle{font-size:20px;font-weight:700}
+  .posBadge{background:var(--surface-hover);border-radius:10px;padding:3px 10px;font-size:11px;
+    font-family:Consolas,monospace;color:var(--text-dim)}
+  .statusChip{font-size:11px;font-weight:700;border-radius:6px;padding:3px 10px;
+    background:rgba(34,197,94,.15);color:var(--online)}
+  .monoLine{color:var(--text-dim);font-family:Consolas,monospace;font-size:12px;margin:-8px 0 16px 58px}
+  .interval{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--text-dim);font-size:12px}
+  .interval select{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    color:var(--text);padding:6px 10px;font-size:12px}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px}
+  .panelHead{display:flex;align-items:center;justify-content:space-between;
+    padding:12px 16px;border-bottom:1px solid var(--border)}
+  .sectionHeading{font-size:14px;font-weight:600;color:var(--text-dim)}
+
+  /* Dienste + Metrik-Karten (Kontext, kompakt) */
+  .svcPanel{padding:14px 16px;margin-bottom:16px}
+  .svcRow{display:flex;align-items:center;gap:12px}
+  .svcIcon{width:38px;height:38px;border-radius:10px;background:var(--surface-hover);
+    display:flex;align-items:center;justify-content:center;font-size:18px}
+  .svcName{font-weight:600;font-size:14px}
+  .svcStatus{color:var(--text-dim);font-size:12px}
+  .svcChip{margin-left:auto;font-size:11px;font-weight:700;border-radius:6px;padding:3px 10px;
+    background:rgba(249,115,22,.15);color:var(--svc)}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
+  .mCard{padding:14px 16px}
+  .mHead{display:flex;justify-content:space-between;align-items:center;font-size:11px;
+    font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px}
+  .mDot{width:8px;height:8px;border-radius:2px}
+  .mBody{display:flex;align-items:center;gap:14px}
+  .ring{width:74px;height:74px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    position:relative;flex-shrink:0}
+  .ring::after{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--surface)}
+  .ring b{position:relative;font-size:19px;font-weight:700}
+  .mMeta{color:var(--text-dim);font-size:12px;line-height:1.6}
+  .spark{width:100%;height:26px;margin-top:8px}
+
+  /* ══ Batch-Sektion: Bibliothek links (250px) + Editor rechts ══════════ */
+  .batchRow{display:flex;gap:16px;align-items:stretch}
+  .libPanel{width:250px;flex-shrink:0;display:flex;flex-direction:column}
+  .libHead{display:flex;align-items:center;justify-content:space-between;padding:10px 14px}
+  .libHead .sectionHeading{font-size:14px}
+  .smallBtn{border:1px solid var(--border);background:var(--surface);color:var(--text);
+    border-radius:7px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;min-height:24px}
+  .smallBtn:hover{background:var(--surface-hover)}
+  .smallDanger{border:1px solid var(--border);background:var(--surface);color:var(--danger);
+    border-radius:7px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;min-height:24px}
+  .smallDanger:hover{background:var(--danger);color:#fff;border-color:var(--danger)}
+  .primaryBtn{background:var(--accent);color:var(--accent-text);border:none;border-radius:9px;
+    padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .primaryBtn:hover{background:var(--accent-dark)}
+  .primaryBtn:disabled{opacity:.45;cursor:default}
+
+  /* NEU: Checkbox-Zeilen in der Batch-Liste (#batchList / #batchItem) */
+  .batchList{flex:1;overflow:auto;padding:4px 6px;min-height:150px}
+  .batchItem{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer}
+  .batchItem:hover{background:var(--surface-hover)}
+  .batchItem.sel{background:rgba(0,184,169,.14)}
+  .batchItem .t{flex:1;min-width:0}
+  .batchItemTitle{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .batchItemMeta{font-size:11px;font-family:Consolas,monospace;color:var(--text-dim);margin-top:1px}
+  .libFoot{display:flex;gap:6px;padding:10px;border-top:1px solid var(--border);flex-wrap:wrap}
+  /* NEU: Kopieren-Button hervorgehoben */
+  .copyBtn{border:1px solid var(--accent);background:transparent;color:var(--accent);
+    border-radius:7px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;min-height:24px}
+  .copyBtn:hover{background:var(--accent);color:var(--accent-text)}
+  .copyBtn:disabled{opacity:.4;cursor:default;border-color:var(--border);color:var(--text-dim)}
+  .newPill{margin-left:6px;font-size:10px;font-weight:700;border-radius:5px;padding:1px 6px;
+    background:rgba(0,184,169,.15);color:var(--accent);vertical-align:1px}
+
+  /* Custom-Checkbox (accent, wie .day input im Settings-Dialog) */
+  .cb{appearance:none;width:16px;height:16px;border-radius:4px;border:1px solid var(--border);
+    background:var(--surface);cursor:pointer;margin:0;flex-shrink:0;position:relative}
+  .cb:checked{background:var(--accent);border-color:var(--accent)}
+  .cb:checked::after{content:"";position:absolute;left:4.5px;top:1.5px;width:5px;height:9px;
+    border:solid var(--accent-text);border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .cb:indeterminate{background:var(--accent);border-color:var(--accent)}
+  .cb:indeterminate::after{content:"";position:absolute;left:3px;top:6.5px;width:8px;height:2px;
+    background:var(--accent-text)}
+
+  .rightCol{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0}
+  .editPanel{padding:0}
+  .nameLine{padding:12px 16px;border-bottom:1px solid var(--border);font-weight:600}
+  .code{background:var(--console-bg);border-radius:10px;margin:12px 16px;padding:12px 14px;
+    font-family:Consolas,monospace;font-size:12.5px;color:var(--text-dim);min-height:96px;
+    border:1px solid var(--border);white-space:pre}
+  .editFoot{display:flex;align-items:center;gap:10px;padding:10px 16px 14px}
+  .pageSubtitle{color:var(--text-dim);font-size:12px}
+  .consolePanel .code{margin:12px 16px 14px;min-height:110px}
+
+  /* ══ Modal: „Batches kopieren“ (Muster dark_control_center_full) ══════ */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;
+    justify-content:center;z-index:50}
+  .overlay.open{display:flex}
+  .modal{background:var(--bg);border:1px solid var(--border);border-radius:16px;width:560px;
+    max-width:calc(100vw - 40px);max-height:calc(100vh - 40px);overflow:auto;padding:22px 24px;
+    box-shadow:0 24px 60px rgba(0,0,0,.5);animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .modal-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+  .modal-head h2{font-size:20px;font-weight:600}
+  .modal-close{background:none;border:none;color:var(--text-dim);font-size:16px;cursor:pointer;
+    border-radius:8px;padding:4px 8px}
+  .modal-close:hover{background:var(--surface-hover);color:var(--text)}
+  .srcInfo{color:var(--text-dim);font-size:12.5px;margin-bottom:16px}
+  .srcInfo b{color:var(--text)}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:6px}
+  .field select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    color:var(--text);padding:9px 12px;font-size:13px;outline:none;cursor:pointer}
+  .field select:focus{border-color:var(--accent)}
+  .warnBox{display:none;background:rgba(224,72,90,.12);border:1px solid rgba(224,72,90,.4);
+    color:var(--danger);border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:14px;
+    line-height:1.5}
+  .warnBox.show{display:block}
+  .infoBox{display:none;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.35);
+    color:var(--gauge-ram);border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:14px}
+  .infoBox.show{display:block}
+  .errBox{display:none;background:rgba(224,72,90,.12);border:1px solid rgba(224,72,90,.4);
+    color:var(--danger);border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:14px}
+  .errBox.show{display:block}
+  .pickHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .pickHead .lbl{font-size:12px;font-weight:600;color:var(--text-dim)}
+  .pickAll{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer}
+  .pickList{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    max-height:190px;overflow:auto;padding:4px 6px}
+  .allowRow{display:flex;align-items:flex-start;gap:10px;margin:14px 2px 4px;cursor:pointer}
+  .allowRow .cb{margin-top:2px}
+  .allowRow .t{font-size:13px}
+  .allowRow .tip{display:block;color:var(--text-dim);font-size:11.5px;margin-top:2px;line-height:1.5}
+  .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+  .ghostBtn{background:var(--surface);border:1px solid var(--border);color:var(--text);
+    border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .ghostBtn:hover{background:var(--surface-hover)}
+
+  /* Erfolgs-Zustand im Modal */
+  .success{display:none;text-align:center;padding:14px 0 6px}
+  .success.show{display:block}
+  .success .big{font-size:40px;margin-bottom:10px}
+  .success h3{font-size:17px;font-weight:600;margin-bottom:6px}
+  .success p{color:var(--text-dim);font-size:13px;line-height:1.6}
+  .modal.done .modalBody,.modal.done .actions .ghostBtn,.modal.done .copyAction{display:none}
+  .modal.done .success{display:block}
+
+  /* Toast */
+  .toast{position:fixed;right:22px;bottom:22px;background:var(--surface);border:1px solid var(--accent);
+    border-radius:12px;padding:12px 16px;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,.4);
+    display:none;z-index:70;max-width:360px}
+  .toast.show{display:block;animation:fade .2s ease}
+  .toast b{color:var(--accent)}
+
+  /* Demo-Leiste (nur Prototyp) */
+  .demoBar{display:flex;gap:8px;align-items:center;margin-top:22px;padding:12px 16px;
+    border:1px dashed var(--border);border-radius:12px;color:var(--text-dim);font-size:12px;flex-wrap:wrap}
+  .demoBar button{border:1px solid var(--border);background:var(--surface);color:var(--text-dim);
+    border-radius:7px;padding:4px 10px;font-size:11.5px;cursor:pointer}
+  .demoBar button:hover{color:var(--text);background:var(--surface-hover)}
+</style>
+</head>
+<body>
+<div class="themeToggle">
+  <button id="btnDark" class="on" onclick="setTheme('dark')">Dunkel</button>
+  <button id="btnLight" onclick="setTheme('light')">Hell</button>
+</div>
+
+<!-- ═══ Sidebar (Kontext) ═══ -->
+<aside class="sidebar">
+  <div class="logo"><div class="mark">W</div><span>Wake-on-LAN</span></div>
+  <div class="section-label">Bereiche</div>
+  <button class="nav-item active"><span>💻</span> Geräte</button>
+  <button class="nav-item"><span>🔧</span> Verwalten</button>
+  <button class="nav-item"><span>🕒</span> Zeitplan</button>
+  <button class="nav-item"><span>📋</span> Protokolle</button>
+  <div class="nav-spacer"></div>
+  <div class="section-label">Applikation</div>
+  <button class="nav-item"><span>⚙️</span> Einstellungen</button>
+  <button class="nav-item"><span>ℹ️</span> Über</button>
+</aside>
+
+<!-- ═══ Main: Dashboard des Quelargeräts ═══ -->
+<div class="main">
+  <div class="dashHeader">
+    <button class="backBtn">← Geräte</button>
+    <button class="navArrow">‹</button>
+    <button class="navArrow">›</button>
+    <span class="devTitle" id="srcTitle">A4-N2U</span>
+    <span class="posBadge">4 / 5</span>
+    <span class="statusChip">online</span>
+    <span class="interval">Intervall
+      <select><option>10 s</option><option>3 s</option><option>30 s</option></select>
+    </span>
+  </div>
+  <div class="monoLine" id="srcMono">192.168.2.50 · 60:CF:84:84:31:29 · Host Service v5</div>
+
+  <!-- Dienste + Metriken (Kontext, unverändert) -->
+  <div class="panel svcPanel">
+    <div class="svcRow">
+      <div class="svcIcon">🦙</div>
+      <div>
+        <div class="svcName">llama-server</div>
+        <div class="svcStatus">🧠 Qwen3.8-27B · Eingabe 812 t/s – Ausgabe 31 t/s</div>
+      </div>
+      <span class="svcChip">⚡ Inferenz aktiv</span>
+    </div>
+  </div>
+  <div class="cards" id="cards"></div>
+
+  <!-- ═══ Batch-Sektion ═══ -->
+  <div class="batchRow">
+    <div class="panel libPanel">
+      <div class="libHead">
+        <span class="sectionHeading">Batches</span>
+        <button class="smallBtn">Neu</button>
+      </div>
+      <div class="batchList" id="srcBatchList"></div>
+      <div class="libFoot">
+        <button class="smallBtn">Duplizieren</button>
+        <button class="copyBtn" id="openCopy" title="Ausgewählte Batches auf ein anderes Gerät kopieren">
+          ⧉ Kopieren nach</button><span class="newPill">NEU</span>
+        <button class="smallDanger">Löschen</button>
+      </div>
+    </div>
+
+    <div class="rightCol">
+      <div class="panel editPanel">
+        <div class="nameLine">Start llama</div>
+        <div class="code">cd C:\Users\cp\AppData\Local\llama.cpp
+call C:\Users\cp\llama.cpp\build\bin\Release\llama-server.exe --models-max 1 --models-preset presets_16GB.ini --metrics --host 0.0.0.0 --sleep-idle-seconds 240</div>
+        <div class="editFoot">
+          <span class="pageSubtitle">Timeout (s)</span>
+          <span class="mono" style="border:1px solid var(--border);border-radius:8px;padding:5px 10px">120</span>
+          <span style="flex:1"></span>
+          <button class="smallBtn">Speichern</button>
+          <button class="primaryBtn">Ausführen</button>
+        </div>
+      </div>
+      <div class="panel consolePanel">
+        <div class="panelHead"><span class="sectionHeading">Ausgabe</span>
+          <button class="smallBtn">Leeren</button></div>
+        <div class="code" id="console">[14:32:07] Start: Start llama
+[14:32:11] main: model loaded (Qwen3.8-27B)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Demo-Umschalter für die vier Zustände (nur Prototyp) -->
+  <div class="demoBar">
+    <b style="color:var(--text)">Prototyp-Demo:</b>
+    <button onclick="demoEmptySource()">Quelle leeren (Button disabled)</button>
+    <button onclick="demoRestoreSource()">Quelle wiederherstellen</button>
+    <span>Zielzustände im Dialog: NAS-Backup = ohne Bestände · RTX-Server = ersetzt 2 · VOLL-PC = Limit 50</span>
+  </div>
+</div>
+
+<!-- ═══ Modal: Batches kopieren ═══ -->
+<div class="overlay" id="copyOverlay">
+  <div class="modal" id="copyModal">
+    <div class="modal-head">
+      <h2>Batches kopieren</h2>
+      <button class="modal-close" data-close title="Schließen">✕</button>
+    </div>
+
+    <div class="modalBody">
+      <div class="srcInfo">Quelle: <b id="mSrcName">A4-N2U (192.168.2.50)</b> ·
+        <span id="mSrcCount">3 Batches</span></div>
+
+      <div class="field">
+        <label for="targetSel">Zielgerät</label>
+        <select id="targetSel"></select>
+      </div>
+
+      <div class="warnBox" id="replaceWarn"></div>
+      <div class="infoBox" id="offlineInfo">Zielgerät ist aktuell offline – die Batches werden gespeichert
+        und können ausgeführt werden, sobald das Gerät online ist.</div>
+      <div class="errBox" id="limitErr"></div>
+
+      <div class="pickHead">
+        <span class="lbl">Zu kopierende Batches</span>
+        <label class="pickAll"><input type="checkbox" class="cb" id="pickAll" checked> Alle</label>
+      </div>
+      <div class="pickList" id="pickList"></div>
+
+      <label class="allowRow">
+        <input type="checkbox" class="cb" id="allowBatch">
+        <span class="t">„Batches erlauben“ auf dem Zielgerät aktivieren
+          <span class="tip">Sicherheitsfreigabe: Batches werden auf dem Zielrechner als SYSTEM ausgeführt.
+            Der Zielrechner muss den Hostdienst zusätzlich mit --enable-batch starten.</span>
+        </span>
+      </label>
+
+      <div class="actions">
+        <button class="ghostBtn" data-close>Abbrechen</button>
+        <button class="primaryBtn copyAction" id="doCopy">Kopieren (3)</button>
+      </div>
+    </div>
+
+    <div class="success">
+      <div class="big">✅</div>
+      <h3 id="okTitle">3 Batches nach RTX-Server kopiert</h3>
+      <p id="okDetail">2 bestehende Batches auf RTX-Server wurden ersetzt.</p>
+      <div class="actions"><button class="ghostBtn" data-close>Fertig</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══ Demo-Daten (Batch-Shape wie config.py: id/name/script/timeout) ══ */
+const devices = [
+  {id:"d1", name:"A4-N2U",      ip:"192.168.2.50", status:"online",  allowBatch:true,  batches:[
+    {id:"b1-1401", name:"Start llama",   timeout:120, lines:3},
+    {id:"b2-1402", name:"Update llama.cpp", timeout:900, lines:8},
+    {id:"b3-1403", name:"CCleaner",      timeout:60,  lines:4},
+  ]},
+  {id:"d2", name:"RTX-Server",  ip:"192.168.2.62", status:"online",  allowBatch:true,  batches:[
+    {id:"b1-0901", name:"ollama serve", timeout:300, lines:2},
+    {id:"b2-0902", name:"Neustart GPU", timeout:30,  lines:5},
+  ]},
+  {id:"d3", name:"NAS-Backup",  ip:"192.168.2.10", status:"offline", allowBatch:false, batches:[]},
+  {id:"d4", name:"VOLL-PC",     ip:"192.168.2.80", status:"online",  allowBatch:true,
+   batches:Array.from({length:50},(_,i)=>({id:"x"+i,name:"Batch "+(i+1),timeout:120,lines:1}))},
+];
+const SRC = devices[0];
+const MAX_BATCHES = 50; // MAX_BATCHES_PER_DEVICE
+
+/* ══ Metrik-Karten (reine Deko) ══ */
+const METRICS=[["CPU-AUSLASTUNG",0,"32 Kerne\nUptime 2 h 17 m","--gauge-cpu"],["RAM-NUTZUNG",67,"63,9 / 95,1 GB","--gauge-ram"],
+  ["GPU-AUSLASTUNG",0,"NVIDIA GeForce\nRTX 5080","--gauge-gpu"],["VRAM-NUTZUNG",89,"14,2 / 15,9 GB","--gauge-vram"]];
+document.getElementById("cards").innerHTML = METRICS.map(([l,v,meta,tok])=>`
+  <div class="panel mCard">
+    <div class="mHead">${l}<span class="mDot" style="background:var(${tok})"></span></div>
+    <div class="mBody">
+      <div class="ring" style="background:conic-gradient(var(${tok}) ${v*3.6}deg, var(--border) 0)"><b>${v}</b></div>
+      <div class="mMeta">${meta.replace(/\n/g,"<br>")}</div>
+    </div>
+    <svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none">
+      <polyline points="0,20 15,18 30,21 45,12 60,14 75,8 90,10 105,6 120,9"
+        fill="none" stroke="var(${tok})" stroke-width="1.5"/></svg>
+  </div>`).join("");
+
+/* ══ Quell-Batch-Liste mit Checkboxen (Auswahl = was kopiert wird) ══ */
+function renderSrcList(){
+  const el=document.getElementById("srcBatchList");
+  if(!SRC.batches.length){el.innerHTML='<div style="padding:14px;color:var(--text-dim);font-size:12px">Noch keine Batches. „Neu“ erstellt einen neuen Batch.</div>';}
+  else el.innerHTML=SRC.batches.map(b=>`
+    <label class="batchItem" data-id="${b.id}">
+      <input type="checkbox" class="cb srcCb" checked>
+      <span class="t"><div class="batchItemTitle">${esc(b.name)}</div>
+        <div class="batchItemMeta">${b.timeout} s · ${b.lines} Zeilen</div></span>
+    </label>`).join("");
+  document.getElementById("openCopy").disabled=!SRC.batches.length;
+  el.querySelectorAll(".srcCb").forEach(c=>c.addEventListener("change",()=>{
+    if(pickOverlayOpen) syncPickFromSource();
+  }));
+}
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+renderSrcList();
+
+/* ══ Modal-Logik ══ */
+let pickOverlayOpen=false, targetId=null;
+const overlay=document.getElementById("copyOverlay"), modal=document.getElementById("copyModal");
+const targetSel=document.getElementById("targetSel"), pickList=document.getElementById("pickList");
+const pickAll=document.getElementById("pickAll"), doCopy=document.getElementById("doCopy");
+const replaceWarn=document.getElementById("replaceWarn"), limitErr=document.getElementById("limitErr");
+const offlineInfo=document.getElementById("offlineInfo"), allowBatch=document.getElementById("allowBatch");
+
+function openModal(){
+  pickOverlayOpen=true;
+  modal.classList.remove("done");
+  allowBatch.checked=false;
+  buildTargets();
+  syncPickFromSource();
+  overlay.classList.add("open");
+}
+function closeModal(){pickOverlayOpen=false;overlay.classList.remove("open");}
+document.getElementById("openCopy").addEventListener("click",openModal);
+overlay.addEventListener("click",e=>{if(e.target===overlay)closeModal();});
+overlay.querySelectorAll("[data-close]").forEach(b=>b.addEventListener("click",closeModal));
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+
+function buildTargets(){
+  const others=devices.filter(d=>d.id!==SRC.id);
+  targetSel.innerHTML=others.map(d=>{
+    const n=d.batches.length;
+    return `<option value="${d.id}">${esc(d.name)} · ${d.ip} · ${n} ${n===1?"Batch":"Batches"}${d.status==="offline"?" · offline":""}</option>`;
+  }).join("");
+  targetId=others[0].id;
+  updateTargetState();
+}
+targetSel.addEventListener("change",()=>{targetId=targetSel.value;updateTargetState();});
+
+function updateTargetState(){
+  const t=devices.find(d=>d.id===targetId);
+  replaceWarn.classList.remove("show"); limitErr.classList.remove("show");
+  offlineInfo.classList.remove("show");
+  if(t.batches.length){
+    replaceWarn.textContent=`⚠ Ziel „${t.name}“: ${t.batches.length} bestehende ${t.batches.length===1?"Batch":"Batches"} werden ersetzt.`;
+    replaceWarn.classList.add("show");
+  }
+  if(t.status==="offline")offlineInfo.classList.add("show");
+  const room=MAX_BATCHES-t.batches.length; // Ersetzen → Platz ist immer, außer Quelle > Limit
+  if(SRC.batches.length>MAX_BATCHES){
+    limitErr.textContent=`Zielgerät erlaubt maximal ${MAX_BATCHES} Batches – die Auswahl passt nicht.`;
+    limitErr.classList.add("show");
+  }
+  allowBatch.checked=t.allowBatch; // Vorschau: aktueller Freigabe-Status des Ziels
+  allowBatch.disabled=t.allowBatch;
+  updateCopyBtn();
+}
+
+/* Auswahl im Dialog spiegelt die Checkboxen der Quell-Liste */
+function syncPickFromSource(){
+  pickList.innerHTML=SRC.batches.map(b=>`
+    <label class="batchItem" data-id="${b.id}">
+      <input type="checkbox" class="cb pickCb" ${b._pick===false?"":"checked"}>
+      <span class="t"><div class="batchItemTitle">${esc(b.name)}</div>
+        <div class="batchItemMeta">${b.timeout} s · ${b.lines} Zeilen</div></span>
+    </label>`).join("");
+  pickList.querySelectorAll(".pickCb").forEach((c,i)=>c.addEventListener("change",()=>{
+    SRC.batches[i]._pick=c.checked;
+    syncAllCheckbox();updateCopyBtn();
+  }));
+  syncAllCheckbox();updateCopyBtn();
+}
+function syncAllCheckbox(){
+  const cbs=[...pickList.querySelectorAll(".pickCb")];
+  const on=cbs.filter(c=>c.checked).length;
+  pickAll.checked=on===cbs.length&&cbs.length>0;
+  pickAll.indeterminate=on>0&&on<cbs.length;
+}
+pickAll.addEventListener("change",()=>{
+  pickList.querySelectorAll(".pickCb").forEach((c,i)=>{c.checked=pickAll.checked;SRC.batches[i]._pick=pickAll.checked;});
+  updateCopyBtn();
+});
+function selectedCount(){return SRC.batches.filter(b=>b._pick!==false).length;}
+function updateCopyBtn(){
+  const n=selectedCount();
+  doCopy.textContent=`Kopieren (${n})`;
+  doCopy.disabled=n===0||SRC.batches.length>MAX_BATCHES;
+}
+
+/* ══ Kopieren ausführen (Demo: Datenmodell aktualisieren) ══ */
+doCopy.addEventListener("click",()=>{
+  const t=devices.find(d=>d.id===targetId);
+  const sel=SRC.batches.filter(b=>b._pick!==false);
+  const replaced=t.batches.length;
+  t.batches=sel.map((b,i)=>({...b,id:`b${i+1}-copy`,_pick:undefined})); // Ersetzen + neue IDs
+  if(!allowBatch.disabled&&allowBatch.checked)t.allowBatch=true;
+  document.getElementById("okTitle").textContent=`${sel.length} ${sel.length===1?"Batch":"Batches"} nach ${t.name} kopiert`;
+  document.getElementById("okDetail").textContent=replaced
+    ? `${replaced} bestehende ${replaced===1?"Batch":"Batches"} auf ${t.name} wurden ersetzt.`
+    : `${t.name} hatte bisher keine Batches.`;
+  modal.classList.add("done");
+  logConsole(`Batches nach ${t.name} kopiert (${sel.length}${replaced?", "+replaced+" ersetzt":""})`);
+  toast(`<b>Kopiert:</b> ${sel.length} ${sel.length===1?"Batch":"Batches"} → ${esc(t.name)}`);
+});
+function logConsole(msg){
+  const c=document.getElementById("console");
+  const t=new Date().toTimeString().slice(0,8);
+  c.textContent+=`\n[${t}] ${msg}`;
+}
+let toastTimer;
+function toast(html){
+  const el=document.getElementById("toast");
+  el.innerHTML=html;el.classList.add("show");
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove("show"),4000);
+}
+
+/* ══ Demo-Zustände ══ */
+function demoEmptySource(){SRC.batches=[];renderSrcList();if(pickOverlayOpen)closeModal();}
+function demoRestoreSource(){
+  SRC.batches=[{id:"b1-1401",name:"Start llama",timeout:120,lines:3},
+    {id:"b2-1402",name:"Update llama.cpp",timeout:900,lines:8},
+    {id:"b3-1403",name:"CCleaner",timeout:60,lines:4}];
+  renderSrcList();
+}
+
+function setTheme(t){
+  document.documentElement.dataset.theme=t;
+  document.getElementById("btnDark").classList.toggle("on",t==="dark");
+  document.getElementById("btnLight").classList.toggle("on",t==="light");
+}
+</script>
+</body>
+</html>

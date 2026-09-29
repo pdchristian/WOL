@@ -7,7 +7,7 @@ from wol_app.translations import Translations
 
 pytest.importorskip("PyQt6")
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from wol_app.views.dashboard_view import (  # noqa: E402
     DeviceDashboardView,
@@ -178,6 +178,8 @@ class TestDashboardView:
         v._new_batch()
         batches = ConfigManager.get_device_batches(cfg.get_device_by_id(dev_id))
         assert len(batches) == 1
+        # New batches start at the product default of 10 s (not the old 120).
+        assert batches[0]["timeout"] == 10
         # Edit + save through the editor
         v.name_edit.setText("Cleanup")
         v.script_edit.setPlainText("@echo off\necho hi")
@@ -602,3 +604,288 @@ class TestDeviceNavigation:
         v.set_device(ids[0])
         # Dev1 is now known offline → next from Dev0 skips it.
         assert v.neighbour_device_id(1) == ids[2]
+
+
+class _FakeCopyDialog:
+    """Stand-in for BatchCopyDialog with a scripted selection/exec result."""
+
+    class DialogCode:
+        Accepted = 1
+        Rejected = 0
+
+    def __init__(self, source_device, batches, targets, statuses=None,
+                 parent=None):
+        self.source = source_device
+        self.batches = batches
+        self.targets = targets
+        self.accept = True
+        self.target_index = 0
+        self.pick = None      # None = all batches, else set of names
+        self.allow = False
+
+    def exec(self):
+        return self.DialogCode.Accepted if self.accept else self.DialogCode.Rejected
+
+    @property
+    def target_device_id(self):
+        return self.targets[self.target_index].get("id")
+
+    def selected_batches(self):
+        if self.pick is None:
+            return [dict(b) for b in self.batches]
+        return [dict(b) for b in self.batches if b.get("name") in self.pick]
+
+    def allow_batch_enabled(self):
+        return self.allow
+
+
+def _patch_copy_dialog(monkeypatch, configure=None):
+    """Replace the dialog class in dashboard_view; returns an instances list."""
+    created: list[_FakeCopyDialog] = []
+
+    def factory(*args, **kwargs):
+        dlg = _FakeCopyDialog(*args, **kwargs)
+        if configure:
+            configure(dlg)
+        created.append(dlg)
+        return dlg
+
+    factory.DialogCode = _FakeCopyDialog.DialogCode
+    monkeypatch.setattr("wol_app.views.dashboard_view.BatchCopyDialog", factory)
+    return created
+
+
+class TestBatchCopy:
+    """Copying stored batches from the open device to another device."""
+
+    def _copy_config(self, qapp, tmp_path, monkeypatch, target_batches=None):
+        cfg = ConfigManager(config_path=str(tmp_path / "copy.json"))
+        cfg.add_device("Src", "AA:BB:CC:00:22:01")
+        cfg.add_device("Tgt", "AA:BB:CC:00:22:02")
+        ids = {d["name"]: d["id"] for d in cfg.get_devices()}
+        cfg.set_device_batches(ids["Src"], [
+            {"id": "s1", "name": "A", "script": "echo a", "timeout": 10},
+            {"id": "s2", "name": "B", "script": "echo b", "timeout": 20},
+        ])
+        if target_batches:
+            cfg.set_device_batches(ids["Tgt"], target_batches)
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics",
+                            lambda self: None)
+        v = DeviceDashboardView(cfg)
+        return v, cfg, ids["Src"], ids["Tgt"]
+
+    def _confirm(self, monkeypatch, answer):
+        monkeypatch.setattr(
+            "wol_app.views.dashboard_view.QMessageBox.question",
+            staticmethod(lambda *a, **k: answer))
+
+    def test_copy_btn_disabled_without_other_devices(self, view, tmp_config):
+        _, dev_id = tmp_config  # single-device config
+        view.set_device(dev_id)
+        assert not view.copy_btn.isEnabled()
+
+    def test_copy_btn_disabled_without_batches(self, qapp, tmp_path, monkeypatch):
+        v, cfg, src_id, _ = self._copy_config(qapp, tmp_path, monkeypatch)
+        cfg.set_device_batches(src_id, [])
+        v.set_device(src_id)
+        assert not v.copy_btn.isEnabled()
+        v.cancel_workers()
+
+    def test_copy_btn_enabled_with_batches_and_target(self, qapp, tmp_path,
+                                                      monkeypatch):
+        v, _, src_id, _ = self._copy_config(qapp, tmp_path, monkeypatch)
+        v.set_device(src_id)
+        assert v.copy_btn.isEnabled()
+        v.cancel_workers()
+
+    def test_full_copy_replaces_target_list(self, qapp, tmp_path, monkeypatch):
+        v, cfg, src_id, tgt_id = self._copy_config(
+            qapp, tmp_path, monkeypatch,
+            target_batches=[{"id": "t1", "name": "Old", "script": "x",
+                             "timeout": 5}])
+        self._confirm(monkeypatch, QMessageBox.StandardButton.Yes)
+        _patch_copy_dialog(monkeypatch)
+        v.set_device(src_id)
+        v._copy_batches()
+        tgt = ConfigManager.get_device_batches(cfg.get_device_by_id(tgt_id))
+        assert [b["name"] for b in tgt] == ["A", "B"]  # "Old" replaced
+        # Fresh ids: no collision with the source batches
+        assert all(b["id"] not in ("s1", "s2") for b in tgt)
+        # Source untouched
+        src = ConfigManager.get_device_batches(cfg.get_device_by_id(src_id))
+        assert [b["id"] for b in src] == ["s1", "s2"]
+        v.cancel_workers()
+
+    def test_partial_selection_copies_only_checked(self, qapp, tmp_path,
+                                                   monkeypatch):
+        v, cfg, src_id, tgt_id = self._copy_config(qapp, tmp_path, monkeypatch)
+        _patch_copy_dialog(monkeypatch,
+                           configure=lambda d: setattr(d, "pick", {"B"}))
+        v.set_device(src_id)
+        v._copy_batches()
+        tgt = ConfigManager.get_device_batches(cfg.get_device_by_id(tgt_id))
+        assert [b["name"] for b in tgt] == ["B"]
+        v.cancel_workers()
+
+    def test_cancel_keeps_target_untouched(self, qapp, tmp_path, monkeypatch):
+        v, cfg, src_id, tgt_id = self._copy_config(
+            qapp, tmp_path, monkeypatch,
+            target_batches=[{"id": "t1", "name": "Old", "script": "x",
+                             "timeout": 5}])
+        _patch_copy_dialog(monkeypatch,
+                           configure=lambda d: setattr(d, "accept", False))
+        v.set_device(src_id)
+        v._copy_batches()
+        tgt = ConfigManager.get_device_batches(cfg.get_device_by_id(tgt_id))
+        assert [b["id"] for b in tgt] == ["t1"]
+        v.cancel_workers()
+
+    def test_replace_confirm_declined_aborts(self, qapp, tmp_path, monkeypatch):
+        v, cfg, src_id, tgt_id = self._copy_config(
+            qapp, tmp_path, monkeypatch,
+            target_batches=[{"id": "t1", "name": "Old", "script": "x",
+                             "timeout": 5}])
+        self._confirm(monkeypatch, QMessageBox.StandardButton.No)
+        _patch_copy_dialog(monkeypatch)
+        v.set_device(src_id)
+        v._copy_batches()
+        tgt = ConfigManager.get_device_batches(cfg.get_device_by_id(tgt_id))
+        assert [b["id"] for b in tgt] == ["t1"]
+        v.cancel_workers()
+
+    def test_allow_batch_checkbox_sets_target_opt_in(self, qapp, tmp_path,
+                                                     monkeypatch):
+        v, cfg, src_id, tgt_id = self._copy_config(qapp, tmp_path, monkeypatch)
+        _patch_copy_dialog(monkeypatch,
+                           configure=lambda d: setattr(d, "allow", True))
+        v.set_device(src_id)
+        v._copy_batches()
+        assert cfg.get_device_by_id(tgt_id).get("allow_batch") is True
+        # Source opt-in untouched
+        assert not cfg.get_device_by_id(src_id).get("allow_batch")
+        v.cancel_workers()
+
+    def test_no_allow_batch_leaves_target_opt_in_off(self, qapp, tmp_path,
+                                                     monkeypatch):
+        v, cfg, src_id, tgt_id = self._copy_config(qapp, tmp_path, monkeypatch)
+        _patch_copy_dialog(monkeypatch)
+        v.set_device(src_id)
+        v._copy_batches()
+        assert not cfg.get_device_by_id(tgt_id).get("allow_batch")
+        v.cancel_workers()
+
+    def test_oversized_source_hits_limit_message(self, qapp, tmp_path,
+                                                 monkeypatch):
+        """Hand-edited source with > MAX batches: target stays untouched."""
+        v, cfg, src_id, tgt_id = self._copy_config(qapp, tmp_path, monkeypatch)
+        dev = cfg.get_device_by_id(src_id)
+        dev["batches"] = [{"id": f"s{i}", "name": f"N{i}", "script": "x",
+                           "timeout": 10}
+                          for i in range(51)]
+        cfg.save()
+        _patch_copy_dialog(monkeypatch)
+        v.set_device(src_id)
+        v._copy_batches()
+        assert ConfigManager.get_device_batches(cfg.get_device_by_id(tgt_id)) == []
+        assert Translations.tr("modern.dashboard.batch.copy.limit",
+                               limit=50) in v.console_edit.toPlainText()
+        v.cancel_workers()
+
+    def test_copy_logs_done_message(self, qapp, tmp_path, monkeypatch):
+        v, cfg, src_id, tgt_id = self._copy_config(qapp, tmp_path, monkeypatch)
+        _patch_copy_dialog(monkeypatch)
+        v.set_device(src_id)
+        v._copy_batches()
+        done = Translations.tr("modern.dashboard.batch.copy.done",
+                               name="Tgt", count=2)
+        assert done in v.console_edit.toPlainText()
+        assert v.status_line.text() == done
+        v.cancel_workers()
+
+
+class TestBatchCopyDialog:
+    """The real BatchCopyDialog widget (target list, warnings, selection)."""
+
+    def _make(self, qapp, tmp_path):
+        from wol_app.views.batch_copy_dialog import BatchCopyDialog
+        cfg = ConfigManager(config_path=str(tmp_path / "dlg.json"))
+        cfg.add_device("Src", "AA:BB:CC:00:33:01")
+        cfg.add_device("Tgt", "AA:BB:CC:00:33:02")
+        cfg.add_device("Empty", "AA:BB:CC:00:33:03")
+        ids = {d["name"]: d["id"] for d in cfg.get_devices()}
+        cfg.set_device_batches(ids["Tgt"], [
+            {"id": "t1", "name": "Old", "script": "x", "timeout": 5}])
+        cfg.set_device_allow_batch(ids["Tgt"], True)
+        source = cfg.get_device_by_id(ids["Src"])
+        targets = [d for d in cfg.get_devices() if d["id"] != ids["Src"]]
+        batches = ConfigManager.get_device_batches(source) or [
+            {"id": "s1", "name": "A", "script": "echo a\necho b", "timeout": 10},
+            {"id": "s2", "name": "B", "script": "echo b", "timeout": 20},
+        ]
+        return BatchCopyDialog(source, batches, targets, None), cfg, ids
+
+    def test_target_combo_lists_all_other_devices(self, qapp, tmp_path):
+        dlg, _, ids = self._make(qapp, tmp_path)
+        names = [dlg.target_combo.itemText(i) for i in range(dlg.target_combo.count())]
+        assert len(names) == 2
+        assert dlg.target_combo.currentData() in (ids["Tgt"], ids["Empty"])
+        dlg.close()
+
+    def test_replace_warning_only_for_targets_with_batches(self, qapp, tmp_path):
+        dlg, _, ids = self._make(qapp, tmp_path)
+        idx_tgt = next(i for i in range(dlg.target_combo.count())
+                       if dlg.target_combo.itemData(i) == ids["Tgt"])
+        idx_empty = next(i for i in range(dlg.target_combo.count())
+                         if dlg.target_combo.itemData(i) == ids["Empty"])
+        dlg.target_combo.setCurrentIndex(idx_tgt)
+        assert dlg.warn_label.isVisibleTo(dlg)
+        dlg.target_combo.setCurrentIndex(idx_empty)
+        assert not dlg.warn_label.isVisibleTo(dlg)
+        dlg.close()
+
+    def test_allow_batch_prefilled_and_locked_when_already_on(self, qapp,
+                                                              tmp_path):
+        dlg, _, ids = self._make(qapp, tmp_path)
+        idx_tgt = next(i for i in range(dlg.target_combo.count())
+                       if dlg.target_combo.itemData(i) == ids["Tgt"])
+        dlg.target_combo.setCurrentIndex(idx_tgt)
+        assert dlg.allow_check.isChecked()
+        assert not dlg.allow_check.isEnabled()
+        idx_empty = next(i for i in range(dlg.target_combo.count())
+                         if dlg.target_combo.itemData(i) == ids["Empty"])
+        dlg.target_combo.setCurrentIndex(idx_empty)
+        assert not dlg.allow_check.isChecked()
+        assert dlg.allow_check.isEnabled()
+        dlg.close()
+
+    def test_selection_defaults_to_all_and_updates_count(self, qapp, tmp_path):
+        dlg, _, _ = self._make(qapp, tmp_path)
+        assert dlg.selected_count() == 2
+        assert dlg.copy_btn.isEnabled()
+        dlg._rows[0].check.setChecked(False)
+        assert dlg.selected_count() == 1
+        assert Translations.tr("modern.dashboard.batch.copy.action",
+                               count=1) == dlg.copy_btn.text()
+        for row in dlg._rows:
+            row.check.setChecked(False)
+        assert dlg.selected_count() == 0
+        assert not dlg.copy_btn.isEnabled()
+        dlg.close()
+
+    def test_select_all_toggles_every_row(self, qapp, tmp_path):
+        dlg, _, _ = self._make(qapp, tmp_path)
+        dlg.all_check.setChecked(False)  # clicked-equivalent via setChecked? no:
+        # setChecked does not emit clicked; call the handler directly:
+        dlg._on_all_clicked(False)
+        assert dlg.selected_count() == 0
+        dlg._on_all_clicked(True)
+        assert dlg.selected_count() == 2
+        dlg.close()
+
+    def test_selected_batches_are_copies_in_source_order(self, qapp, tmp_path):
+        dlg, _, _ = self._make(qapp, tmp_path)
+        sel = dlg.selected_batches()
+        assert [b["name"] for b in sel] == ["A", "B"]
+        sel[0]["name"] = "mutated"
+        assert dlg._rows[0].batch["name"] == "A"  # original untouched
+        dlg.close()

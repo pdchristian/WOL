@@ -183,7 +183,7 @@ MAX_BATCH_SCRIPT_CHARS = 32_000  # must match the host service limit
 # Entries: "name.exe" or "name.exe:port" (port = "running AND API reachable").
 MAX_WATCH_PROCESSES_PER_DEVICE = 8
 MAX_WATCH_ENTRY_CHARS = 128
-DEFAULT_BATCH_TIMEOUT_S = 120
+DEFAULT_BATCH_TIMEOUT_S = 10
 BATCH_TIMEOUT_MIN_S = 5
 BATCH_TIMEOUT_MAX_S = 3600
 
