@@ -25,8 +25,8 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
-from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PyQt6.QtCore import QPointF, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap, QCursor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -566,6 +566,38 @@ class ServiceRow(QWidget):
             self.live.setVisible(False)
 
 
+def _grip_pixmap(size: int = 16, color: str | None = None,
+                 dpr: float = 1.0) -> QPixmap:
+    """Drag handle glyph: 6 dots (2 columns × 3 rows) rendered as a QPixmap.
+
+    Drawn with QPainter so it picks up the current theme's dim text color
+    and stays crisp on HiDPI screens (same pattern as the power glyph in
+    shutdown_confirm_dialog.py).
+    """
+    dpr = dpr or 1.0
+    pixmap = QPixmap(int(size * dpr), int(size * dpr))
+    if dpr != 1.0:
+        pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color or current_tokens()["text_dim"]))
+        r = size * 0.09                      # dot radius
+        col_dx = size * 0.19                 # half distance between columns
+        # Slightly left of the icon slot's center so the grip hugs the
+        # row's left edge instead of floating in the middle.
+        cx = size * 0.35
+        for cy in (size * 0.26, size * 0.5, size * 0.74):
+            painter.drawEllipse(QPointF(cx - col_dx, cy), r, r)
+            painter.drawEllipse(QPointF(cx + col_dx, cy), r, r)
+    finally:
+        painter.end()
+    return pixmap
+
+
 class BatchListWidget(QListWidget):
     """Batch library list with internal drag & drop reordering.
 
@@ -579,6 +611,10 @@ class BatchListWidget(QListWidget):
 
     ``setDefaultDropAction(MoveAction)`` prevents a Ctrl modifier (or a
     mis-drag) from silently COPYING items and producing duplicate batch ids.
+
+    The grip icon (6 dots) is only shown on the row under the cursor:
+    ``entered`` (mouse tracking, invalid index on leave) toggles the item
+    icon, so the list stays clean until a drag is actually possible.
     """
 
     def __init__(self, view: "DeviceDashboardView") -> None:
@@ -591,6 +627,55 @@ class BatchListWidget(QListWidget):
         self.setDragDropOverwriteMode(False)
         self.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection)
+        # Hover-only grip: the icon appears on the row under the cursor.
+        # QAbstractItemView emits entered() on every hover change and with
+        # an INVALID index when the pointer leaves the viewport (leaveEvent).
+        self._grip = QIcon(_grip_pixmap(16, dpr=self.devicePixelRatioF()))
+        self._hover_row = -1
+        self.setMouseTracking(True)
+        self.entered.connect(self._on_row_entered)
+
+    # ── hover-only grip icon ─────────────────────────────────────────
+
+    def _apply_grip(self, row: int, show: bool) -> None:
+        if 0 <= row < self.count():
+            self.item(row).setIcon(self._grip if show else QIcon())
+
+    def _on_row_entered(self, index) -> None:
+        row = index.row() if index.isValid() else -1
+        if row == self._hover_row:
+            return
+        self._apply_grip(self._hover_row, False)
+        self._hover_row = row
+        self._apply_grip(row, True)
+
+    def reset_hover(self) -> None:
+        """Forget the hover row (list rebuilt) — re-shown on next move."""
+        self._hover_row = -1
+
+    def rebuild_grip_icon(self) -> None:
+        """Re-render the grip glyph (dark/light switch re-colors it)."""
+        self._grip = QIcon(_grip_pixmap(16, dpr=self.devicePixelRatioF()))
+        self._apply_grip(self._hover_row, True)
+
+    def sync_hover_after_move(self) -> None:
+        """Re-establish the hover grip after an InternalMove drop.
+
+        The dropped item is re-created from the mime payload (icon
+        included), so every row could now show a grip. Clear them all and
+        re-show only the row currently under the cursor.
+        """
+        self.reset_hover()
+        for i in range(self.count()):
+            self.item(i).setIcon(QIcon())
+        if not self.underMouse():
+            return
+        pos = self.viewport().mapFromGlobal(QCursor.pos())
+        under = (self.itemAt(pos)
+                 if self.viewport().rect().contains(pos) else None)
+        if under is not None:
+            self._hover_row = under.row()
+            self._apply_grip(self._hover_row, True)
 
     def startDrag(self, supportedActions) -> None:
         # The whole move happens inside super().startDrag(), so the config
@@ -601,6 +686,7 @@ class BatchListWidget(QListWidget):
         finally:
             self._view._commit_batch_reorder()
             self._view._end_batch_drag()
+            self.sync_hover_after_move()
 
 
 class DeviceDashboardView(QWidget):
@@ -1086,6 +1172,9 @@ class DeviceDashboardView(QWidget):
         self._update_nav_ui()
         self.lib_title.setText(Translations.tr("modern.dashboard.batch.title"))
         self.batch_list.setToolTip(Translations.tr("modern.dashboard.batch.reorder_tip"))
+        # Re-render the grip glyph so its color follows a dark/light switch
+        # (apply_modern_theme runs right before retranslate()).
+        self.batch_list.rebuild_grip_icon()
         self.new_btn.setText(Translations.tr("modern.dashboard.batch.new"))
         self.dup_btn.setText(Translations.tr("modern.dashboard.batch.duplicate"))
         self.copy_btn.setText(Translations.tr("modern.dashboard.batch.copy"))
@@ -1373,9 +1462,13 @@ class DeviceDashboardView(QWidget):
     def _load_batches(self) -> None:
         self.batch_list.blockSignals(True)
         self.batch_list.clear()
+        self.batch_list.reset_hover()
         for index, batch in enumerate(self._batches()):
-            item = QListWidgetItem(batch.get("name") or
-                                   Translations.tr("modern.dashboard.batch.untitled"))
+            # No grip icon here: BatchListWidget shows the 6-dot handle
+            # only on the row under the mouse (entered/left signals).
+            item = QListWidgetItem(
+                batch.get("name") or
+                Translations.tr("modern.dashboard.batch.untitled"))
             # Config index travels with the item through drag & drop (it is
             # part of the mime payload), which makes the visual order a
             # permutation _commit_batch_reorder can apply.

@@ -1064,3 +1064,46 @@ class TestBatchReorder:
         self._move_row(v, 2, 0)
         assert self._names(cfg, dev_id) == ["One", "Two", "Three"]
         v.cancel_workers()
+
+    def test_grip_hidden_without_hover(self, qapp, tmp_path, monkeypatch):
+        # The 6-dot handle only appears on the row under the mouse, so a
+        # freshly loaded list carries no icons at all.
+        v, _, _ = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                          ["One", "Two", "Three"])
+        for i in range(v.batch_list.count()):
+            assert v.batch_list.item(i).icon().isNull()
+        v.cancel_workers()
+
+    def test_grip_shown_only_on_hovered_row(self, qapp, tmp_path,
+                                            monkeypatch):
+        # entered is the same signal Qt fires from mouse tracking —
+        # driving it directly simulates a hover move offscreen.
+        v, _, _ = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                          ["One", "Two", "Three"])
+        lst = v.batch_list
+        lst._on_row_entered(lst.model().index(1, 0))
+        assert not lst.item(1).icon().isNull()
+        assert lst.item(0).icon().isNull() and lst.item(2).icon().isNull()
+        # Moving to another row clears the previous one.
+        lst._on_row_entered(lst.model().index(0, 0))
+        assert not lst.item(0).icon().isNull()
+        assert lst.item(1).icon().isNull()
+        # Leaving the viewport: entered() fires with an invalid index.
+        lst._on_row_entered(lst.model().index(-1, 0))
+        for i in range(lst.count()):
+            assert lst.item(i).icon().isNull()
+        v.cancel_workers()
+
+    def test_grip_state_reset_after_reorder(self, qapp, tmp_path,
+                                            monkeypatch):
+        v, _, _ = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                          ["One", "Two", "Three"])
+        v.batch_list._on_row_entered(v.batch_list.model().index(0, 0))
+        assert not v.batch_list.item(0).icon().isNull()
+        self._move_row(v, 0, 2)
+        # moveRow keeps the icon on the moved item — the post-drag sync
+        # (startDrag's finally) clears it; offscreen no row is hovered.
+        v.batch_list.sync_hover_after_move()
+        for i in range(v.batch_list.count()):
+            assert v.batch_list.item(i).icon().isNull()
+        v.cancel_workers()

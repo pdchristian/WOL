@@ -68,13 +68,8 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "Bedienungsanleitung.md": [
         (r"\*Version (\d+\.\d+\.\d+)([^\n]*)\*", r"*Version {version}\2*"),
     ],
-    "KNOWLEDGE.md": [
-        # Keep the column padding: only the version digits are replaced.
-        (r"(\| \*\*version\*\*\s+\| )\d+\.\d+\.\d+", r"\g<1>{version}"),
-    ],
-    "SECURITY.md": [
-        (r"- \*\*Version:\*\* (\d+\.\d+\.\d+)", r"- **Version:** {version}"),
-    ],
+    # NOTE: KNOWLEDGE.md and SECURITY.md each have a single consolidated entry
+    # further below — a duplicate dict key here would silently override it.
     "build.ps1": [
         (r"(Version: )\d+\.\d+\.\d+", r"\g<1>{version}"),
         (r"(Manager v)\d+\.\d+\.\d+", r"\g<1>{version}"),
@@ -101,6 +96,8 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
         (r"(Version: auf \*\*)\d+\.\d+\.\d+(\*\* angleichen)", r"\g<1>{version}\g<2>"),
     ],
     "SECURITY.md": [
+        # Document header line tracks the current release.
+        (r"- \*\*Version:\*\* (\d+\.\d+\.\d+)", r"- **Version:** {version}"),
         # Only the "AKTUELL" row of the version history tracks the release;
         # historical rows keep their version numbers.
         (r"(\| \*\*)\d+\.\d+\.\d+(?=\*\*[^\n]*AKTUELL)", r"\g<1>{version}"),

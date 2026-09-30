@@ -491,7 +491,7 @@ QListWidget#batchList {{
 }}
 QListWidget#batchList::item {{
     background: transparent; border: none; border-radius: 10px;
-    padding: 6px 8px; margin: 1px 4px;
+    padding: 6px 8px 6px 12px; margin: 1px 4px;
 }}
 QListWidget#batchList::item:hover {{ background: {t['surface_hover']}; }}
 QListWidget#batchList::item:selected {{

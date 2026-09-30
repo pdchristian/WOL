@@ -2,7 +2,7 @@
 
 ## 📋 Dokumentinformationen
 
-- **Version:** 2.3.6
+- **Version:** 2.3.7
 - **Datum:** 2026-09-20
 - **Status:** alle kritischen Sicherheitsrisiken behoben
 - **Verantwortlicher:** GitHub Copilot (automatisierte Sicherheitsanalyse)
