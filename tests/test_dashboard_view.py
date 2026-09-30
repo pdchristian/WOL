@@ -625,6 +625,7 @@ class _FakeCopyDialog:
         self.targets = targets
         self.accept = True
         self.target_index = 0
+        self.target_indexes = None  # None = only target_index, else list
         self.pick = None      # None = all batches, else set of names
         self.allow = False
 
@@ -632,8 +633,10 @@ class _FakeCopyDialog:
         return self.DialogCode.Accepted if self.accept else self.DialogCode.Rejected
 
     @property
-    def target_device_id(self):
-        return self.targets[self.target_index].get("id")
+    def target_device_ids(self):
+        if self.target_indexes is None:
+            return [self.targets[self.target_index].get("id")]
+        return [self.targets[i].get("id") for i in self.target_indexes]
 
     def selected_batches(self):
         if self.pick is None:
@@ -820,8 +823,36 @@ class TestBatchCopy:
         v.set_device(src_id)
         v._copy_batches()
         assert ConfigManager.get_device_batches(cfg.get_device_by_id(tgt_id)) == []
-        assert Translations.tr("modern.dashboard.batch.copy.limit",
-                               limit=50) in v.console_edit.toPlainText()
+        assert Translations.tr("modern.dashboard.batch.copy.limit_target",
+                               name="Tgt", limit=50) in v.console_edit.toPlainText()
+        v.cancel_workers()
+
+    def test_copy_to_multiple_targets_at_once(self, qapp, tmp_path,
+                                              monkeypatch):
+        """Both checked targets receive the batches independently."""
+        cfg = ConfigManager(config_path=str(tmp_path / "multi.json"))
+        cfg.add_device("Src", "AA:BB:CC:00:22:11")
+        cfg.add_device("Tgt1", "AA:BB:CC:00:22:12")
+        cfg.add_device("Tgt2", "AA:BB:CC:00:22:13")
+        ids = {d["name"]: d["id"] for d in cfg.get_devices()}
+        cfg.set_device_batches(ids["Src"], [
+            {"id": "s1", "name": "A", "script": "echo a", "timeout": 10}])
+        cfg.set_device_batches(ids["Tgt2"], [
+            {"id": "t9", "name": "Keep", "script": "x", "timeout": 5}])
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics",
+                            lambda self: None)
+        v = DeviceDashboardView(cfg)
+        _patch_copy_dialog(monkeypatch,
+                           configure=lambda d: setattr(
+                               d, "target_indexes", [0, 1]))
+        v.set_device(ids["Src"])
+        v._copy_batches()
+        for name in ("Tgt1", "Tgt2"):
+            tgt = ConfigManager.get_device_batches(cfg.get_device_by_id(ids[name]))
+            assert "A" in [b["name"] for b in tgt]
+        # Tgt2's untouched batch stays
+        tgt2 = ConfigManager.get_device_batches(cfg.get_device_by_id(ids["Tgt2"]))
+        assert "Keep" in [b["name"] for b in tgt2]
         v.cancel_workers()
 
     def test_copy_logs_done_message(self, qapp, tmp_path, monkeypatch):
@@ -858,21 +889,44 @@ class TestBatchCopyDialog:
         ]
         return BatchCopyDialog(source, batches, targets, None), cfg, ids
 
-    def test_target_combo_lists_all_other_devices(self, qapp, tmp_path):
+    def test_target_list_lists_all_other_devices(self, qapp, tmp_path):
         dlg, _, ids = self._make(qapp, tmp_path)
-        names = [dlg.target_combo.itemText(i) for i in range(dlg.target_combo.count())]
-        assert len(names) == 2
-        assert dlg.target_combo.currentData() in (ids["Tgt"], ids["Empty"])
+        rows = {r.device.get("id"): r for r in dlg._target_rows}
+        assert set(rows) == {ids["Tgt"], ids["Empty"]}
         dlg.close()
 
-    def test_replace_warning_only_for_targets_with_batches(self, qapp, tmp_path):
+    def test_no_target_preselected_and_copy_disabled(self, qapp, tmp_path):
+        """The dialog opens with nothing checked so nothing is copied
+        accidentally; the copy button stays disabled until a target is set."""
+        dlg, _, _ = self._make(qapp, tmp_path)
+        assert dlg.target_device_ids == []
+        assert not dlg.copy_btn.isEnabled()
+        assert dlg.selected_count() == 2  # batches preselected, targets not
+        dlg.close()
+
+    def test_multiple_targets_can_be_checked(self, qapp, tmp_path):
         dlg, _, ids = self._make(qapp, tmp_path)
-        idx_tgt = next(i for i in range(dlg.target_combo.count())
-                       if dlg.target_combo.itemData(i) == ids["Tgt"])
-        idx_empty = next(i for i in range(dlg.target_combo.count())
-                         if dlg.target_combo.itemData(i) == ids["Empty"])
-        dlg.target_combo.setCurrentIndex(idx_tgt)
+        for row in dlg._target_rows:
+            row.check.setChecked(True)
+        assert set(dlg.target_device_ids) == {ids["Tgt"], ids["Empty"]}
+        assert dlg.copy_btn.isEnabled()
+        # Unchecking again disables the button (no target left).
+        for row in dlg._target_rows:
+            row.check.setChecked(False)
+        assert dlg.target_device_ids == []
+        assert not dlg.copy_btn.isEnabled()
+        dlg.close()
+
+    def test_replace_warning_only_for_checked_targets_with_batches(
+            self, qapp, tmp_path):
+        dlg, _, ids = self._make(qapp, tmp_path)
+        rows = {r.device.get("id"): r for r in dlg._target_rows}
+        # No target checked → no warning
+        assert not dlg.warn_label.isVisibleTo(dlg)
+        rows[ids["Empty"]].check.setChecked(True)
+        assert not dlg.warn_label.isVisibleTo(dlg)
         # "A" collides with a target batch, "B" does not → warning counts 1
+        rows[ids["Tgt"]].check.setChecked(True)
         assert dlg.warn_label.isVisibleTo(dlg)
         assert "1" in dlg.warn_label.text()
         # Unchecking the colliding batch makes the warning disappear
@@ -880,27 +934,14 @@ class TestBatchCopyDialog:
         assert not dlg.warn_label.isVisibleTo(dlg)
         dlg._rows[0].check.setChecked(True)
         assert dlg.warn_label.isVisibleTo(dlg)
-        dlg.target_combo.setCurrentIndex(idx_empty)
+        rows[ids["Tgt"]].check.setChecked(False)
         assert not dlg.warn_label.isVisibleTo(dlg)
-        dlg.close()
-
-    def test_allow_batch_prefilled_and_locked_when_already_on(self, qapp,
-                                                              tmp_path):
-        dlg, _, ids = self._make(qapp, tmp_path)
-        idx_tgt = next(i for i in range(dlg.target_combo.count())
-                       if dlg.target_combo.itemData(i) == ids["Tgt"])
-        dlg.target_combo.setCurrentIndex(idx_tgt)
-        assert dlg.allow_check.isChecked()
-        assert not dlg.allow_check.isEnabled()
-        idx_empty = next(i for i in range(dlg.target_combo.count())
-                         if dlg.target_combo.itemData(i) == ids["Empty"])
-        dlg.target_combo.setCurrentIndex(idx_empty)
-        assert not dlg.allow_check.isChecked()
-        assert dlg.allow_check.isEnabled()
         dlg.close()
 
     def test_selection_defaults_to_all_and_updates_count(self, qapp, tmp_path):
         dlg, _, _ = self._make(qapp, tmp_path)
+        # A target has to be checked before copying is possible at all.
+        dlg._target_rows[0].check.setChecked(True)
         assert dlg.selected_count() == 2
         assert dlg.copy_btn.isEnabled()
         dlg._rows[0].check.setChecked(False)
@@ -1076,20 +1117,22 @@ class TestBatchReorder:
 
     def test_grip_shown_only_on_hovered_row(self, qapp, tmp_path,
                                             monkeypatch):
-        # entered is the same signal Qt fires from mouse tracking —
+        # _set_hover_row is what the viewport MouseMove/Leave filter calls
+        # with the row under the pointer (-1 over empty space or on leave) —
         # driving it directly simulates a hover move offscreen.
         v, _, _ = self._view_with_batches(qapp, tmp_path, monkeypatch,
                                           ["One", "Two", "Three"])
         lst = v.batch_list
-        lst._on_row_entered(lst.model().index(1, 0))
+        lst._set_hover_row(1)
         assert not lst.item(1).icon().isNull()
         assert lst.item(0).icon().isNull() and lst.item(2).icon().isNull()
         # Moving to another row clears the previous one.
-        lst._on_row_entered(lst.model().index(0, 0))
+        lst._set_hover_row(0)
         assert not lst.item(0).icon().isNull()
         assert lst.item(1).icon().isNull()
-        # Leaving the viewport: entered() fires with an invalid index.
-        lst._on_row_entered(lst.model().index(-1, 0))
+        # Pointer over the empty area below the rows (or leaving the list):
+        # itemAt() returns None → row -1 → every grip disappears.
+        lst._set_hover_row(-1)
         for i in range(lst.count()):
             assert lst.item(i).icon().isNull()
         v.cancel_workers()
@@ -1098,7 +1141,7 @@ class TestBatchReorder:
                                             monkeypatch):
         v, _, _ = self._view_with_batches(qapp, tmp_path, monkeypatch,
                                           ["One", "Two", "Three"])
-        v.batch_list._on_row_entered(v.batch_list.model().index(0, 0))
+        v.batch_list._set_hover_row(0)
         assert not v.batch_list.item(0).icon().isNull()
         self._move_row(v, 0, 2)
         # moveRow keeps the icon on the moved item — the post-drag sync

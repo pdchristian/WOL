@@ -25,8 +25,8 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
-from PyQt6.QtCore import QPointF, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap, QCursor
+from PyQt6.QtCore import QEvent, QPointF, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -613,8 +613,11 @@ class BatchListWidget(QListWidget):
     mis-drag) from silently COPYING items and producing duplicate batch ids.
 
     The grip icon (6 dots) is only shown on the row under the cursor:
-    ``entered`` (mouse tracking, invalid index on leave) toggles the item
-    icon, so the list stays clean until a drag is actually possible.
+    the viewport's ``MouseMove``/``Leave`` events toggle the item icon, so
+    the list stays clean until a drag is actually possible. ``entered()``
+    alone is not enough — it only fires when the cursor moves ONTO an
+    item, so the grip would linger when the pointer moves to the empty
+    area below the rows or leaves the list without a final item hover.
     """
 
     def __init__(self, view: "DeviceDashboardView") -> None:
@@ -628,21 +631,35 @@ class BatchListWidget(QListWidget):
         self.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection)
         # Hover-only grip: the icon appears on the row under the cursor.
-        # QAbstractItemView emits entered() on every hover change and with
-        # an INVALID index when the pointer leaves the viewport (leaveEvent).
+        # MouseMove on the viewport reports the row under the pointer (or
+        # -1 over empty space), Leave fires when the pointer exits.
         self._grip = QIcon(_grip_pixmap(16, dpr=self.devicePixelRatioF()))
         self._hover_row = -1
         self.setMouseTracking(True)
-        self.entered.connect(self._on_row_entered)
+        self.viewport().installEventFilter(self)
 
     # ── hover-only grip icon ─────────────────────────────────────────
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.viewport():
+            etype = event.type()
+            if etype == QEvent.Type.MouseMove:
+                self._set_hover_row(self._row_at(event.position().toPoint()))
+            elif etype == QEvent.Type.Leave:
+                self._set_hover_row(-1)
+        return super().eventFilter(watched, event)
+
+    def _row_at(self, pos) -> int:
+        # itemAt() returns a QListWidgetItem, which has no .row() (unlike
+        # QTableWidgetItem) — the row comes from the list widget itself.
+        item = self.itemAt(pos)
+        return self.row(item) if item is not None else -1
 
     def _apply_grip(self, row: int, show: bool) -> None:
         if 0 <= row < self.count():
             self.item(row).setIcon(self._grip if show else QIcon())
 
-    def _on_row_entered(self, index) -> None:
-        row = index.row() if index.isValid() else -1
+    def _set_hover_row(self, row: int) -> None:
         if row == self._hover_row:
             return
         self._apply_grip(self._hover_row, False)
@@ -674,7 +691,7 @@ class BatchListWidget(QListWidget):
         under = (self.itemAt(pos)
                  if self.viewport().rect().contains(pos) else None)
         if under is not None:
-            self._hover_row = under.row()
+            self._hover_row = self.row(under)
             self._apply_grip(self._hover_row, True)
 
     def startDrag(self, supportedActions) -> None:
@@ -1651,9 +1668,9 @@ class DeviceDashboardView(QWidget):
         self._commit_editor()
 
     def _copy_batches(self) -> None:
-        """Copy the selected batches onto another device (merge by name).
+        """Copy the selected batches onto one or more other devices.
 
-        The copy MERGES into the target's batch list: only target batches
+        The copy MERGES into each target's batch list: only target batches
         whose name matches a copied batch are overwritten, every other
         target batch stays untouched. The dialog warns about the number of
         name collisions and a confirmation precedes the write. Fresh ids
@@ -1674,63 +1691,86 @@ class DeviceDashboardView(QWidget):
                                  self._nav_statuses, parent=self)
         if dialog.exec() != BatchCopyDialog.DialogCode.Accepted:
             return
-        target_id = dialog.target_device_id
-        target = next((d for d in targets if d.get("id") == target_id), None)
-        if target is None:
+        chosen_ids = set(dialog.target_device_ids)
+        chosen = [d for d in targets if d.get("id") in chosen_ids]
+        if not chosen:
             return
         selected = dialog.selected_batches()
         if not selected:
             return
-        existing_batches = ConfigManager.get_device_batches(target)
         selected_names = {b.get("name", "") for b in selected}
-        colliding = sum(1 for b in existing_batches
-                        if b.get("name", "") in selected_names)
-        if colliding:
+        # (target, existing batches, same-name collision count) per target
+        plan = []
+        for target in chosen:
+            existing = ConfigManager.get_device_batches(target)
+            colliding = sum(1 for b in existing
+                            if b.get("name", "") in selected_names)
+            plan.append((target, existing, colliding))
+        total_colliding = sum(c for _, _, c in plan)
+        if total_colliding:
+            if len(chosen) == 1:
+                message = Translations.tr(
+                    "modern.dashboard.batch.copy.confirm_replace",
+                    name=chosen[0].get("name", ""),
+                    count=total_colliding)
+            else:
+                names = ", ".join(t.get("name", "") for t in chosen)
+                message = Translations.tr(
+                    "modern.dashboard.batch.copy.confirm_replace_multi",
+                    name=names, count=total_colliding)
             answer = QMessageBox.question(
                 self,
                 Translations.tr("modern.dashboard.batch.copy.title"),
-                Translations.tr("modern.dashboard.batch.copy.confirm_replace",
-                                name=target.get("name", ""), count=colliding),
+                message,
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        now = datetime.now().strftime("%H%M%S")
-        # Merge by name: a copied batch replaces the target batch with the
-        # same name in place (keeping its id); the rest are appended with
-        # fresh ids. Target batches with a different name stay untouched.
-        merged = [dict(b) for b in existing_batches]
-        by_name = {b.get("name", ""): i for i, b in enumerate(merged)}
-        for batch in selected:
-            clone = dict(batch)
-            name = clone.get("name", "")
-            if name in by_name:
-                clone["id"] = merged[by_name[name]]["id"]
-                merged[by_name[name]] = clone
+        for target, existing_batches, colliding in plan:
+            target_id = target.get("id")
+            now = datetime.now().strftime("%H%M%S")
+            # Merge by name: a copied batch replaces the target batch with
+            # the same name in place (keeping its id); the rest are
+            # appended with fresh ids. Target batches with a different
+            # name stay untouched.
+            merged = [dict(b) for b in existing_batches]
+            by_name = {b.get("name", ""): i for i, b in enumerate(merged)}
+            for batch in selected:
+                clone = dict(batch)
+                name = clone.get("name", "")
+                if name in by_name:
+                    clone["id"] = merged[by_name[name]]["id"]
+                    merged[by_name[name]] = clone
+                else:
+                    clone["id"] = f"b{len(merged) + 1}-{now}"
+                    by_name[name] = len(merged)
+                    merged.append(clone)
+            if len(merged) > MAX_BATCHES_PER_DEVICE:
+                self._log(Translations.tr(
+                    "modern.dashboard.batch.copy.limit_target",
+                    name=target.get("name", ""),
+                    limit=MAX_BATCHES_PER_DEVICE))
+                continue
+            try:
+                self.config.set_device_batches(target_id, merged)
+            except (ValueError, RuntimeError):
+                self._log(Translations.tr(
+                    "modern.dashboard.batch.copy.failed_target",
+                    name=target.get("name", "")))
+                continue
+            if dialog.allow_batch_enabled():
+                self.config.set_device_allow_batch(target_id, True)
+            if colliding:
+                message = Translations.tr(
+                    "modern.dashboard.batch.copy.done_replaced",
+                    name=target.get("name", ""),
+                    count=len(selected), replaced=colliding)
             else:
-                clone["id"] = f"b{len(merged) + 1}-{now}"
-                by_name[name] = len(merged)
-                merged.append(clone)
-        if len(merged) > MAX_BATCHES_PER_DEVICE:
-            self._log(Translations.tr("modern.dashboard.batch.copy.limit",
-                                      limit=MAX_BATCHES_PER_DEVICE))
-            return
-        try:
-            self.config.set_device_batches(target_id, merged)
-        except (ValueError, RuntimeError):
-            self._log(Translations.tr("modern.dashboard.batch.copy.failed"))
-            return
-        if dialog.allow_batch_enabled():
-            self.config.set_device_allow_batch(target_id, True)
-        if colliding:
-            message = Translations.tr("modern.dashboard.batch.copy.done_replaced",
-                                      name=target.get("name", ""),
-                                      count=len(selected), replaced=colliding)
-        else:
-            message = Translations.tr("modern.dashboard.batch.copy.done",
-                                      name=target.get("name", ""),
-                                      count=len(selected))
-        self._log(message)
-        self.status_line.setText(message)
+                message = Translations.tr(
+                    "modern.dashboard.batch.copy.done",
+                    name=target.get("name", ""),
+                    count=len(selected))
+            self._log(message)
+            self.status_line.setText(message)
 
     def _on_allow_batch_toggled(self, allowed: bool) -> None:
         if self._device_id is None:

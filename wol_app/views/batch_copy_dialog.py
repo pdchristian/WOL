@@ -1,11 +1,12 @@
-"""Modern UI: dialog for copying batches to another device.
+"""Modern UI: dialog for copying batches to other devices.
 
 Opened from the dashboard's batch library ("Kopieren nach"). The source
-is always the device whose dashboard is open; the dialog picks a target
-device and which batches to copy. The copy MERGES into the target's
-batch list: only target batches whose name matches a copied batch are
-overwritten, all other target batches stay untouched. The dialog warns
-about the number of name collisions that will be overwritten.
+is always the device whose dashboard is open; the dialog picks one or
+more target devices (checkbox list, nothing preselected) and which
+batches to copy. The copy MERGES into each target's batch list: only
+target batches whose name matches a copied batch are overwritten, all
+other target batches stay untouched. The dialog warns about the number
+of name collisions that will be overwritten.
 
 The optional "Batches erlauben" checkbox mirrors the per-device
 ``allow_batch`` opt-in on the target (local config only — the host-side
@@ -18,7 +19,6 @@ from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QFontMetrics, QPainter, QPalette
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -41,6 +41,9 @@ _ROW_MARGIN_Y = 7
 _ROW_SPACING = 10
 # The picker grows with the number of batches and only scrolls past this.
 PICKER_MAX_HEIGHT = 232
+# Same for the target device list — long device lists scroll instead of
+# pushing the batch picker off the dialog.
+TARGET_MAX_HEIGHT = 176
 
 
 class _ElidedLabel(QLabel):
@@ -90,11 +93,36 @@ class _BatchCheckRow(QWidget):
         row.addLayout(col, 1)
 
 
+class _TargetCheckRow(QWidget):
+    """One checkable target device row (prototype .batchItem styling).
+
+    The checkbox starts unchecked: the dialog opens with no target
+    selected so nothing is copied accidentally.
+    """
+
+    def __init__(self, device: dict, text: str,
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.device = device
+        self.setObjectName("batchItem")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(_ROW_MARGIN_X, _ROW_MARGIN_Y,
+                               _ROW_MARGIN_X, _ROW_MARGIN_Y)
+        row.setSpacing(_ROW_SPACING)
+        self.check = QCheckBox()
+        label = _ElidedLabel(text)
+        label.setObjectName("batchItemTitle")
+        row.addWidget(self.check, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(label, 1)
+
+
 class BatchCopyDialog(QDialog):
-    """Pick a target device and the batches to copy onto it.
+    """Pick target devices and the batches to copy onto them.
 
     ``exec()`` returns ``QDialog.Accepted``/``Rejected``; read
-    :attr:`target_device_id`, :meth:`selected_batches` and
+    :attr:`target_device_ids`, :meth:`selected_batches` and
     :meth:`allow_batch_enabled` afterwards.
     """
 
@@ -112,11 +140,11 @@ class BatchCopyDialog(QDialog):
         self._targets = targets
         self._statuses = statuses or {}
         self._rows: list[_BatchCheckRow] = []
-        self._target_batches: list[dict] = []
+        self._target_rows: list[_TargetCheckRow] = []
         self.setWindowTitle(Translations.tr("modern.dashboard.batch.copy.title"))
         self.setMinimumWidth(470)
         self._setup_ui()
-        self._on_target_changed()
+
     def _setup_ui(self) -> None:
         t = current_tokens()
         layout = QVBoxLayout(self)
@@ -135,11 +163,26 @@ class BatchCopyDialog(QDialog):
         src.setObjectName("statusLine")
         layout.addWidget(src)
 
-        # ── Target device ────────────────────────────────────────────
-        lbl_target = QLabel(Translations.tr("modern.dashboard.batch.copy.target"))
+        # ── Target devices (multi-select, nothing preselected) ───────
+        lbl_target = QLabel(Translations.tr("modern.dashboard.batch.copy.targets"))
         lbl_target.setObjectName("pageSubtitle")
         layout.addWidget(lbl_target)
-        self.target_combo = QComboBox()
+        target_box = QFrame()
+        target_box.setObjectName("batchListBox")
+        tb_layout = QVBoxLayout(target_box)
+        tb_layout.setContentsMargins(0, 0, 0, 0)
+        tb_layout.setSpacing(0)
+        self.target_scroll = QScrollArea()
+        self.target_scroll.setObjectName("batchScroll")
+        self.target_scroll.setWidgetResizable(True)
+        self.target_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.target_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        target_container = QWidget()
+        target_container.setObjectName("batchListInner")
+        target_rows_layout = QVBoxLayout(target_container)
+        target_rows_layout.setContentsMargins(4, 4, 4, 4)
+        target_rows_layout.setSpacing(2)
         for dev in self._targets:
             count = len(ConfigManager.get_device_batches(dev))
             text = Translations.tr("modern.dashboard.batch.copy.target_entry",
@@ -148,9 +191,18 @@ class BatchCopyDialog(QDialog):
                                    count=count)
             if self._statuses.get(dev.get("id")) == "offline":
                 text += Translations.tr("modern.dashboard.batch.copy.offline_suffix")
-            self.target_combo.addItem(text, dev.get("id"))
-        self.target_combo.currentIndexChanged.connect(self._on_target_changed)
-        layout.addWidget(self.target_combo)
+            row = _TargetCheckRow(dev, text, target_container)
+            row.check.toggled.connect(self._update_state)
+            target_rows_layout.addWidget(row)
+            self._target_rows.append(row)
+        target_rows_layout.addStretch()
+        self.target_scroll.setWidget(target_container)
+        tb_layout.addWidget(self.target_scroll)
+        # Grow with the device count, scroll only beyond the cap.
+        needed = sum(r.sizeHint().height() for r in self._target_rows)
+        needed += 2 * max(len(self._target_rows) - 1, 0) + 8
+        self.target_scroll.setFixedHeight(min(needed, TARGET_MAX_HEIGHT))
+        layout.addWidget(target_box)
 
         # Replace warning (danger) + offline hint, shown per target
         self.warn_label = QLabel("")
@@ -217,7 +269,7 @@ class BatchCopyDialog(QDialog):
         rows_layout.setSpacing(2)
         for batch in self._batches:
             row = _BatchCheckRow(batch, container)
-            row.check.toggled.connect(self._update_count)
+            row.check.toggled.connect(self._update_state)
             rows_layout.addWidget(row)
             self._rows.append(row)
         rows_layout.addStretch()
@@ -248,44 +300,44 @@ class BatchCopyDialog(QDialog):
         self.copy_btn.clicked.connect(self.accept)
         actions.addWidget(self.copy_btn)
         layout.addLayout(actions)
-        self._update_count()
+        self._update_state()
 
     # ── State helpers ────────────────────────────────────────────────────
 
-    def _current_target(self) -> dict | None:
-        dev_id = self.target_combo.currentData()
-        return next((d for d in self._targets if d.get("id") == dev_id), None)
+    def _checked_targets(self) -> list[dict]:
+        return [r.device for r in self._target_rows if r.check.isChecked()]
 
-    def _on_target_changed(self) -> None:
-        target = self._current_target()
-        if target is None:
-            return
-        self._target_batches = ConfigManager.get_device_batches(target)
-        self._update_warning()
-        self.offline_label.setVisible(
-            self._statuses.get(target.get("id")) == "offline")
-        allowed = bool(target.get("allow_batch", False))
-        self.allow_check.blockSignals(True)
-        self.allow_check.setChecked(allowed)
-        self.allow_check.setEnabled(not allowed)  # already allowed: no-op
-        self.allow_check.blockSignals(False)
+    def _update_state(self) -> None:
+        """Refresh warning/offline labels and the copy button.
 
-    def _update_warning(self) -> None:
-        """Danger label counting the target batches the current selection
-        would overwrite (same-name collision, merge-by-name policy)."""
-        target = self._current_target()
-        if target is None:
-            return
+        The replace warning sums the same-name collisions over all checked
+        targets (merge-by-name policy per target); the offline hint shows
+        when any checked target is currently offline.
+        """
+        targets = self._checked_targets()
         selected_names = {r.batch.get("name", "") for r in self._rows
                           if r.check.isChecked()}
-        colliding = sum(1 for b in self._target_batches
-                        if b.get("name", "") in selected_names)
+        colliding = 0
+        for target in targets:
+            colliding += sum(
+                1 for b in ConfigManager.get_device_batches(target)
+                if b.get("name", "") in selected_names)
         if colliding:
-            self.warn_label.setText(
-                Translations.tr("modern.dashboard.batch.copy.replace_warning",
-                                name=target.get("name", ""),
-                                count=colliding))
+            if len(targets) == 1:
+                text = Translations.tr(
+                    "modern.dashboard.batch.copy.replace_warning",
+                    name=targets[0].get("name", ""), count=colliding)
+            else:
+                names = ", ".join(t.get("name", "") for t in targets)
+                text = Translations.tr(
+                    "modern.dashboard.batch.copy.replace_warning_multi",
+                    name=names, count=colliding)
+            self.warn_label.setText(text)
         self.warn_label.setVisible(colliding > 0)
+        self.offline_label.setVisible(
+            any(self._statuses.get(t.get("id")) == "offline"
+                for t in targets))
+        self._update_count()
 
     def _on_all_clicked(self, checked: bool) -> None:
         for row in self._rows:
@@ -295,8 +347,8 @@ class BatchCopyDialog(QDialog):
         n = self.selected_count()
         self.copy_btn.setText(
             Translations.tr("modern.dashboard.batch.copy.action", count=n))
-        self.copy_btn.setEnabled(n > 0)
-        self._update_warning()
+        # Copying needs at least one checked target and one checked batch.
+        self.copy_btn.setEnabled(n > 0 and bool(self._checked_targets()))
         states = {row.check.checkState() for row in self._rows}
         if states == {Qt.CheckState.Checked}:
             state = Qt.CheckState.Checked
@@ -311,8 +363,8 @@ class BatchCopyDialog(QDialog):
     # ── Public API ───────────────────────────────────────────────────────
 
     @property
-    def target_device_id(self) -> str | None:
-        return self.target_combo.currentData()
+    def target_device_ids(self) -> list[str]:
+        return [t.get("id") for t in self._checked_targets()]
 
     def selected_count(self) -> int:
         return sum(1 for row in self._rows if row.check.isChecked())
