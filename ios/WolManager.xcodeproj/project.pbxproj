@@ -557,7 +557,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.3.6;
+				MARKETING_VERSION = 2.3.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager";
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
@@ -580,7 +580,7 @@
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "de.wake-on-lan.manager";
 				INFOPLIST_KEY_WKWatchOnly = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
-				MARKETING_VERSION = 2.3.6;
+				MARKETING_VERSION = 2.3.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager.watch";
 				PRODUCT_NAME = WolManagerWatch;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -606,7 +606,7 @@
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "de.wake-on-lan.manager";
 				INFOPLIST_KEY_WKWatchOnly = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
-				MARKETING_VERSION = 2.3.6;
+				MARKETING_VERSION = 2.3.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager.watch";
 				PRODUCT_NAME = WolManagerWatch;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -682,7 +682,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.3.6;
+				MARKETING_VERSION = 2.3.7;
 				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager";
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;

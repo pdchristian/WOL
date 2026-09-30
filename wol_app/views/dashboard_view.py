@@ -28,6 +28,7 @@ from typing import Any
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -565,6 +566,43 @@ class ServiceRow(QWidget):
             self.live.setVisible(False)
 
 
+class BatchListWidget(QListWidget):
+    """Batch library list with internal drag & drop reordering.
+
+    The visual order of this list IS the persisted batch order, so every
+    completed move has to be written back to the config. Qt runs an
+    ``InternalMove`` entirely inside :meth:`startDrag` (nested event loop)
+    and re-creates the dropped item from the mime payload, so neither item
+    identity nor ``rowsMoved`` can be relied on. Instead every item carries
+    its config index in ``UserRole`` (stamped by ``_load_batches``); after
+    the drop that index *is* the permutation to apply.
+
+    ``setDefaultDropAction(MoveAction)`` prevents a Ctrl modifier (or a
+    mis-drag) from silently COPYING items and producing duplicate batch ids.
+    """
+
+    def __init__(self, view: "DeviceDashboardView") -> None:
+        super().__init__()
+        self._view = view
+        self.setObjectName("batchList")
+        self.currentRowChanged.connect(self._view._on_batch_selected)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setDragDropOverwriteMode(False)
+        self.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection)
+
+    def startDrag(self, supportedActions) -> None:
+        # The whole move happens inside super().startDrag(), so the config
+        # write belongs in the finally block, not in a dropEvent override.
+        self._view._begin_batch_drag()
+        try:
+            super().startDrag(supportedActions)
+        finally:
+            self._view._commit_batch_reorder()
+            self._view._end_batch_drag()
+
+
 class DeviceDashboardView(QWidget):
     """Per-device dashboard: live metrics + remote batch execution."""
 
@@ -585,6 +623,13 @@ class DeviceDashboardView(QWidget):
         self._batch_worker: BatchWorker | None = None
         self._batch_active: int = -1
         self._batch_dirty = False
+        # True while a drag & drop move is being written back to the config
+        # (guards _on_batch_selected against the shifting currentRowChanged
+        # signals Qt fires during an InternalMove).
+        self._batch_reordering = False
+        # _drag_item_map snapshots QListWidgetItem -> batch dict for the
+        # duration of one drag (see _begin_batch_drag / _commit_batch_reorder).
+        self._drag_item_map: dict = {}
         # Popup about missing/incorrect credentials: once per opened device
         # (the host service rejects every request without them, so polling
         # would repeat the same error every interval).
@@ -775,9 +820,10 @@ class DeviceDashboardView(QWidget):
         lib_head.addWidget(self.new_btn)
         lib_layout.addLayout(lib_head)
 
-        self.batch_list = QListWidget()
-        self.batch_list.setObjectName("batchList")
-        self.batch_list.currentRowChanged.connect(self._on_batch_selected)
+        # Drag & drop reordering: the list order IS the persisted batch
+        # order, so BatchListWidget writes every move back to the config.
+        self.batch_list = BatchListWidget(self)
+        self.batch_list.setToolTip(Translations.tr("modern.dashboard.batch.reorder_tip"))
         lib_layout.addWidget(self.batch_list, 1)
 
         lib_foot = QHBoxLayout()
@@ -1039,6 +1085,7 @@ class DeviceDashboardView(QWidget):
         self.next_btn.setToolTip(Translations.tr("modern.dashboard.next"))
         self._update_nav_ui()
         self.lib_title.setText(Translations.tr("modern.dashboard.batch.title"))
+        self.batch_list.setToolTip(Translations.tr("modern.dashboard.batch.reorder_tip"))
         self.new_btn.setText(Translations.tr("modern.dashboard.batch.new"))
         self.dup_btn.setText(Translations.tr("modern.dashboard.batch.duplicate"))
         self.copy_btn.setText(Translations.tr("modern.dashboard.batch.copy"))
@@ -1326,9 +1373,13 @@ class DeviceDashboardView(QWidget):
     def _load_batches(self) -> None:
         self.batch_list.blockSignals(True)
         self.batch_list.clear()
-        for batch in self._batches():
+        for index, batch in enumerate(self._batches()):
             item = QListWidgetItem(batch.get("name") or
                                    Translations.tr("modern.dashboard.batch.untitled"))
+            # Config index travels with the item through drag & drop (it is
+            # part of the mime payload), which makes the visual order a
+            # permutation _commit_batch_reorder can apply.
+            item.setData(Qt.ItemDataRole.UserRole, index)
             self.batch_list.addItem(item)
         self.batch_list.blockSignals(False)
         # Copying needs at least one batch AND another device to copy to.
@@ -1352,11 +1403,59 @@ class DeviceDashboardView(QWidget):
         self.delete_btn.setEnabled(has_current)
 
     def _on_batch_selected(self, row: int) -> None:
+        if self._batch_reordering:
+            # During an InternalMove the view fires currentRowChanged with
+            # shifting indices (the source row is removed before the drop
+            # lands); _commit_batch_reorder applies the final row.
+            return
         # Store pending edits of the previous batch before switching
         self._commit_editor()
         self._batch_active = row
         batches = self._batches()
         self._show_batch(batches[row] if 0 <= row < len(batches) else None)
+        self._update_batch_actions()
+
+    # ── Drag & drop reordering ──────────────────────────────────────
+
+    def _begin_batch_drag(self) -> None:
+        """Flush pending editor edits before a drag starts."""
+        self._commit_editor()
+        self._batch_reordering = True
+
+    def _end_batch_drag(self) -> None:
+        self._batch_reordering = False
+
+    def _commit_batch_reorder(self) -> None:
+        """Write the list's visual order back to the config after a move.
+
+        Runs inside Qt's drag event loop, so the list model must NOT be
+        rebuilt here (no :meth:`_load_batches`) — the widget already shows
+        the new order, only the config and the editor need syncing. Each
+        item's ``UserRole`` holds its original config index, so the visual
+        order is a permutation of ``0..n-1``.
+        """
+        if not self._batch_reordering or self._device is None:
+            return
+        lst = self.batch_list
+        batches = self._batches()
+        if lst.count() != len(batches):
+            return
+        order = [lst.item(i).data(Qt.ItemDataRole.UserRole)
+                 for i in range(lst.count())]
+        if sorted(order) != list(range(len(batches))):
+            # Stale/foreign indices (e.g. a config reload during the drag):
+            # refuse the write, the next refresh restores the config order.
+            return
+        if order == list(range(len(batches))):
+            return  # dropped back in place — nothing changed
+        mapped = [batches[i] for i in order]
+        try:
+            self.config.set_device_batches(self._device_id, mapped)
+        except (ValueError, RuntimeError):
+            return
+        self._batch_active = lst.currentRow()
+        self._show_batch(mapped[self._batch_active]
+                         if 0 <= self._batch_active < len(mapped) else None)
         self._update_batch_actions()
 
     def _show_batch(self, batch: dict | None) -> None:
@@ -1459,14 +1558,16 @@ class DeviceDashboardView(QWidget):
         self._commit_editor()
 
     def _copy_batches(self) -> None:
-        """Copy the selected batches onto another device (replace policy).
+        """Copy the selected batches onto another device (merge by name).
 
-        Like the ``device_io`` file import, the copy REPLACES the target's
-        batch list — the dialog warns about that and a confirmation names
-        the number of batches lost. Fresh ids are generated (same pattern
-        as :meth:`_duplicate_batch`) so no id ever appears twice. This is
-        pure local config work: no host command, hence no network-profile
-        gating; execution on the target still needs its own opt-in.
+        The copy MERGES into the target's batch list: only target batches
+        whose name matches a copied batch are overwritten, every other
+        target batch stays untouched. The dialog warns about the number of
+        name collisions and a confirmation precedes the write. Fresh ids
+        are generated (same pattern as :meth:`_duplicate_batch`) so no id
+        ever appears twice. This is pure local config work: no host
+        command, hence no network-profile gating; execution on the target
+        still needs its own opt-in.
         """
         if self._device is None or self._device_id is None:
             return
@@ -1487,41 +1588,54 @@ class DeviceDashboardView(QWidget):
         selected = dialog.selected_batches()
         if not selected:
             return
-        existing = len(ConfigManager.get_device_batches(target))
-        if existing:
+        existing_batches = ConfigManager.get_device_batches(target)
+        selected_names = {b.get("name", "") for b in selected}
+        colliding = sum(1 for b in existing_batches
+                        if b.get("name", "") in selected_names)
+        if colliding:
             answer = QMessageBox.question(
                 self,
                 Translations.tr("modern.dashboard.batch.copy.title"),
                 Translations.tr("modern.dashboard.batch.copy.confirm_replace",
-                                name=target.get("name", ""), count=existing),
+                                name=target.get("name", ""), count=colliding),
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
         now = datetime.now().strftime("%H%M%S")
-        copied = []
-        for i, batch in enumerate(selected):
+        # Merge by name: a copied batch replaces the target batch with the
+        # same name in place (keeping its id); the rest are appended with
+        # fresh ids. Target batches with a different name stay untouched.
+        merged = [dict(b) for b in existing_batches]
+        by_name = {b.get("name", ""): i for i, b in enumerate(merged)}
+        for batch in selected:
             clone = dict(batch)
-            clone["id"] = f"b{i + 1}-{now}"
-            copied.append(clone)
-        if len(copied) > MAX_BATCHES_PER_DEVICE:
+            name = clone.get("name", "")
+            if name in by_name:
+                clone["id"] = merged[by_name[name]]["id"]
+                merged[by_name[name]] = clone
+            else:
+                clone["id"] = f"b{len(merged) + 1}-{now}"
+                by_name[name] = len(merged)
+                merged.append(clone)
+        if len(merged) > MAX_BATCHES_PER_DEVICE:
             self._log(Translations.tr("modern.dashboard.batch.copy.limit",
                                       limit=MAX_BATCHES_PER_DEVICE))
             return
         try:
-            self.config.set_device_batches(target_id, copied)
+            self.config.set_device_batches(target_id, merged)
         except (ValueError, RuntimeError):
             self._log(Translations.tr("modern.dashboard.batch.copy.failed"))
             return
         if dialog.allow_batch_enabled():
             self.config.set_device_allow_batch(target_id, True)
-        if existing:
+        if colliding:
             message = Translations.tr("modern.dashboard.batch.copy.done_replaced",
                                       name=target.get("name", ""),
-                                      count=len(copied), replaced=existing)
+                                      count=len(selected), replaced=colliding)
         else:
             message = Translations.tr("modern.dashboard.batch.copy.done",
                                       name=target.get("name", ""),
-                                      count=len(copied))
+                                      count=len(selected))
         self._log(message)
         self.status_line.setText(message)
 

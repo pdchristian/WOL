@@ -7,7 +7,12 @@ from wol_app.translations import Translations
 
 pytest.importorskip("PyQt6")
 
-from PyQt6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PyQt6.QtCore import Qt  # noqa: E402
+from PyQt6.QtWidgets import (  # noqa: E402
+    QAbstractItemView,
+    QApplication,
+    QMessageBox,
+)
 
 from wol_app.views.dashboard_view import (  # noqa: E402
     DeviceDashboardView,
@@ -698,7 +703,8 @@ class TestBatchCopy:
         assert v.copy_btn.isEnabled()
         v.cancel_workers()
 
-    def test_full_copy_replaces_target_list(self, qapp, tmp_path, monkeypatch):
+    def test_full_copy_merges_into_target_list(self, qapp, tmp_path, monkeypatch):
+        """Different names are appended — existing batches are kept."""
         v, cfg, src_id, tgt_id = self._copy_config(
             qapp, tmp_path, monkeypatch,
             target_batches=[{"id": "t1", "name": "Old", "script": "x",
@@ -708,12 +714,39 @@ class TestBatchCopy:
         v.set_device(src_id)
         v._copy_batches()
         tgt = ConfigManager.get_device_batches(cfg.get_device_by_id(tgt_id))
-        assert [b["name"] for b in tgt] == ["A", "B"]  # "Old" replaced
+        assert [b["name"] for b in tgt] == ["Old", "A", "B"]  # "Old" kept
         # Fresh ids: no collision with the source batches
         assert all(b["id"] not in ("s1", "s2") for b in tgt)
         # Source untouched
         src = ConfigManager.get_device_batches(cfg.get_device_by_id(src_id))
         assert [b["id"] for b in src] == ["s1", "s2"]
+        v.cancel_workers()
+
+    def test_same_name_overwrites_only_that_batch(self, qapp, tmp_path,
+                                                  monkeypatch):
+        """Example 2: copying C+D onto A,B,C keeps A and B, replaces C, adds D."""
+        v, cfg, src_id, tgt_id = self._copy_config(qapp, tmp_path, monkeypatch)
+        cfg.set_device_batches(src_id, [
+            {"id": "s1", "name": "C", "script": "echo new-c", "timeout": 30},
+            {"id": "s2", "name": "D", "script": "echo d", "timeout": 10},
+        ])
+        cfg.set_device_batches(tgt_id, [
+            {"id": "t1", "name": "A", "script": "echo a", "timeout": 10},
+            {"id": "t2", "name": "B", "script": "echo b", "timeout": 10},
+            {"id": "t3", "name": "C", "script": "echo old-c", "timeout": 10},
+        ])
+        self._confirm(monkeypatch, QMessageBox.StandardButton.Yes)
+        _patch_copy_dialog(monkeypatch)
+        v.set_device(src_id)
+        v._copy_batches()
+        tgt = ConfigManager.get_device_batches(cfg.get_device_by_id(tgt_id))
+        assert [b["name"] for b in tgt] == ["A", "B", "C", "D"]
+        by_name = {b["name"]: b for b in tgt}
+        assert by_name["C"]["script"] == "echo new-c"  # C overwritten
+        assert by_name["A"]["script"] == "echo a"      # A untouched
+        assert by_name["B"]["script"] == "echo b"      # B untouched
+        # The replaced batch keeps its target id (stable reference)
+        assert by_name["C"]["id"] == "t3"
         v.cancel_workers()
 
     def test_partial_selection_copies_only_checked(self, qapp, tmp_path,
@@ -743,8 +776,8 @@ class TestBatchCopy:
     def test_replace_confirm_declined_aborts(self, qapp, tmp_path, monkeypatch):
         v, cfg, src_id, tgt_id = self._copy_config(
             qapp, tmp_path, monkeypatch,
-            target_batches=[{"id": "t1", "name": "Old", "script": "x",
-                             "timeout": 5}])
+            target_batches=[{"id": "t1", "name": "A", "script": "x",
+                             "timeout": 5}])  # name collides with source "A"
         self._confirm(monkeypatch, QMessageBox.StandardButton.No)
         _patch_copy_dialog(monkeypatch)
         v.set_device(src_id)
@@ -814,7 +847,8 @@ class TestBatchCopyDialog:
         cfg.add_device("Empty", "AA:BB:CC:00:33:03")
         ids = {d["name"]: d["id"] for d in cfg.get_devices()}
         cfg.set_device_batches(ids["Tgt"], [
-            {"id": "t1", "name": "Old", "script": "x", "timeout": 5}])
+            {"id": "t1", "name": "A", "script": "x", "timeout": 5},
+            {"id": "t2", "name": "Old", "script": "x", "timeout": 5}])
         cfg.set_device_allow_batch(ids["Tgt"], True)
         source = cfg.get_device_by_id(ids["Src"])
         targets = [d for d in cfg.get_devices() if d["id"] != ids["Src"]]
@@ -838,6 +872,13 @@ class TestBatchCopyDialog:
         idx_empty = next(i for i in range(dlg.target_combo.count())
                          if dlg.target_combo.itemData(i) == ids["Empty"])
         dlg.target_combo.setCurrentIndex(idx_tgt)
+        # "A" collides with a target batch, "B" does not → warning counts 1
+        assert dlg.warn_label.isVisibleTo(dlg)
+        assert "1" in dlg.warn_label.text()
+        # Unchecking the colliding batch makes the warning disappear
+        dlg._rows[0].check.setChecked(False)  # row 0 = "A"
+        assert not dlg.warn_label.isVisibleTo(dlg)
+        dlg._rows[0].check.setChecked(True)
         assert dlg.warn_label.isVisibleTo(dlg)
         dlg.target_combo.setCurrentIndex(idx_empty)
         assert not dlg.warn_label.isVisibleTo(dlg)
@@ -889,3 +930,137 @@ class TestBatchCopyDialog:
         sel[0]["name"] = "mutated"
         assert dlg._rows[0].batch["name"] == "A"  # original untouched
         dlg.close()
+
+
+class TestBatchReorder:
+    """Drag & drop reordering of the batch list (config write-back).
+
+    A real mouse drag cannot be synthesised offscreen, so the tests drive
+    the same code path the widget uses: the view's drag hooks around a
+    QAbstractItemModel.moveRow() (which is what Qt's InternalMove drop
+    performs internally, mime payload and UserRole indices included).
+    """
+
+    def _view_with_batches(self, qapp, tmp_path, monkeypatch, names):
+        cfg = ConfigManager(config_path=str(tmp_path / "reorder.json"))
+        cfg.add_device("WS", "AA:BB:CC:00:44:01")
+        dev_id = cfg.get_devices()[0]["id"]
+        cfg.set_device_batches(dev_id, [
+            {"id": f"b{i}", "name": n, "script": f"echo {n}", "timeout": 10}
+            for i, n in enumerate(names)])
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics",
+                            lambda self: None)
+        v = DeviceDashboardView(cfg)
+        v.set_device(dev_id)
+        return v, cfg, dev_id
+
+    def _move_row(self, v, source, dest_final):
+        """Simulate one InternalMove drop exactly like Qt's drag does.
+
+        QAbstractItemModel.moveRow interprets destinationChild against the
+        list BEFORE the source row is removed, so the final visual position
+        needs +1 when moving downwards.
+        """
+        v._begin_batch_drag()
+        model = v.batch_list.model()
+        parent = model.index(0, 0).parent()
+        dest = dest_final + 1 if dest_final > source else dest_final
+        model.moveRow(parent, source, parent, dest)
+        v._commit_batch_reorder()
+        v._end_batch_drag()
+
+    def _names(self, cfg, dev_id):
+        return [b["name"] for b in
+                ConfigManager.get_device_batches(cfg.get_device_by_id(dev_id))]
+
+    def test_list_is_configured_for_internal_move(self, view, tmp_config):
+        _, dev_id = tmp_config
+        view.set_device(dev_id)
+        assert view.batch_list.dragDropMode() == \
+            QAbstractItemView.DragDropMode.InternalMove
+        # Copy drops would duplicate batch ids — must be MoveAction.
+        assert view.batch_list.defaultDropAction() == Qt.DropAction.MoveAction
+        assert not view.batch_list.dragDropOverwriteMode()
+
+    def test_items_carry_config_index(self, qapp, tmp_path, monkeypatch):
+        v, _, _ = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                          ["One", "Two", "Three"])
+        roles = [v.batch_list.item(i).data(Qt.ItemDataRole.UserRole)
+                 for i in range(v.batch_list.count())]
+        assert roles == [0, 1, 2]
+        v.cancel_workers()
+
+    def test_move_row_persists_new_order(self, qapp, tmp_path, monkeypatch):
+        v, cfg, dev_id = self._view_with_batches(
+            qapp, tmp_path, monkeypatch, ["One", "Two", "Three"])
+        self._move_row(v, 0, 2)  # first batch dropped after the last
+        assert self._names(cfg, dev_id) == ["Two", "Three", "One"]
+        assert [v.batch_list.item(i).text()
+                for i in range(v.batch_list.count())] == \
+            ["Two", "Three", "One"]
+        v.cancel_workers()
+
+    def test_move_middle_to_top_persists(self, qapp, tmp_path, monkeypatch):
+        v, cfg, dev_id = self._view_with_batches(
+            qapp, tmp_path, monkeypatch, ["A", "B", "C", "D"])
+        self._move_row(v, 2, 0)
+        assert self._names(cfg, dev_id) == ["C", "A", "B", "D"]
+        v.cancel_workers()
+
+    def test_editor_follows_moved_selection(self, qapp, tmp_path, monkeypatch):
+        v, _, _ = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                          ["One", "Two", "Three"])
+        v.batch_list.setCurrentRow(0)
+        assert v.script_edit.toPlainText() == "echo One"
+        self._move_row(v, 0, 2)
+        # Qt keeps the selection on the moved item (now row 2):
+        assert v.batch_list.currentRow() == 2
+        assert v._batch_active == 2
+        assert v.script_edit.toPlainText() == "echo One"
+        v.cancel_workers()
+
+    def test_drop_in_place_changes_nothing(self, qapp, tmp_path, monkeypatch):
+        v, cfg, dev_id = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                                 ["One", "Two", "Three"])
+        self._move_row(v, 0, 0)  # no-op move
+        assert self._names(cfg, dev_id) == ["One", "Two", "Three"]
+        v.cancel_workers()
+
+    def test_stale_indices_refuse_write(self, qapp, tmp_path, monkeypatch):
+        v, cfg, dev_id = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                                 ["One", "Two", "Three"])
+        v._begin_batch_drag()
+        # Simulate a config reload during the drag: indices no longer form
+        # a 0..n-1 permutation -> the write must be refused, not guessed.
+        v.batch_list.item(0).setData(Qt.ItemDataRole.UserRole, 7)
+        model = v.batch_list.model()
+        parent = model.index(0, 0).parent()
+        model.moveRow(parent, 0, parent, 2)
+        v._commit_batch_reorder()
+        v._end_batch_drag()
+        assert self._names(cfg, dev_id) == ["One", "Two", "Three"]
+        v.cancel_workers()
+
+    def test_pending_editor_edits_committed_before_drag(self, qapp, tmp_path,
+                                                        monkeypatch):
+        v, cfg, dev_id = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                                 ["One", "Two"])
+        v.batch_list.setCurrentRow(0)
+        v.name_edit.setText("Renamed")
+        self._move_row(v, 0, 1)
+        assert self._names(cfg, dev_id) == ["Two", "Renamed"]
+        v.cancel_workers()
+
+    def test_reload_restamps_indices_after_reorder(self, qapp, tmp_path,
+                                                   monkeypatch):
+        v, cfg, dev_id = self._view_with_batches(
+            qapp, tmp_path, monkeypatch, ["One", "Two", "Three"])
+        self._move_row(v, 0, 2)
+        v._load_batches()  # e.g. device switch / retranslate
+        roles = [v.batch_list.item(i).data(Qt.ItemDataRole.UserRole)
+                 for i in range(v.batch_list.count())]
+        assert roles == [0, 1, 2]
+        # A second reorder still maps onto the fresh config order:
+        self._move_row(v, 2, 0)
+        assert self._names(cfg, dev_id) == ["One", "Two", "Three"]
+        v.cancel_workers()

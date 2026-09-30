@@ -2,9 +2,10 @@
 
 Opened from the dashboard's batch library ("Kopieren nach"). The source
 is always the device whose dashboard is open; the dialog picks a target
-device and which batches to copy. Following the ``device_io`` import
-policy the copy REPLACES the target's batch list, so the dialog warns
-about the number of existing batches that will be lost.
+device and which batches to copy. The copy MERGES into the target's
+batch list: only target batches whose name matches a copied batch are
+overwritten, all other target batches stay untouched. The dialog warns
+about the number of name collisions that will be overwritten.
 
 The optional "Batches erlauben" checkbox mirrors the per-device
 ``allow_batch`` opt-in on the target (local config only — the host-side
@@ -111,6 +112,7 @@ class BatchCopyDialog(QDialog):
         self._targets = targets
         self._statuses = statuses or {}
         self._rows: list[_BatchCheckRow] = []
+        self._target_batches: list[dict] = []
         self.setWindowTitle(Translations.tr("modern.dashboard.batch.copy.title"))
         self.setMinimumWidth(470)
         self._setup_ui()
@@ -157,7 +159,6 @@ class BatchCopyDialog(QDialog):
         self.warn_label.setWordWrap(True)
         self.warn_label.setVisible(False)
         layout.addWidget(self.warn_label)
-
         self.offline_label = QLabel(
             Translations.tr("modern.dashboard.batch.copy.offline_info"))
         self.offline_label.setObjectName("fieldHint")
@@ -259,12 +260,8 @@ class BatchCopyDialog(QDialog):
         target = self._current_target()
         if target is None:
             return
-        existing = len(ConfigManager.get_device_batches(target))
-        if existing:
-            self.warn_label.setText(Translations.tr("modern.dashboard.batch.copy.replace_warning",
-                                                    name=target.get("name", ""),
-                                                    count=existing))
-        self.warn_label.setVisible(existing > 0)
+        self._target_batches = ConfigManager.get_device_batches(target)
+        self._update_warning()
         self.offline_label.setVisible(
             self._statuses.get(target.get("id")) == "offline")
         allowed = bool(target.get("allow_batch", False))
@@ -272,6 +269,23 @@ class BatchCopyDialog(QDialog):
         self.allow_check.setChecked(allowed)
         self.allow_check.setEnabled(not allowed)  # already allowed: no-op
         self.allow_check.blockSignals(False)
+
+    def _update_warning(self) -> None:
+        """Danger label counting the target batches the current selection
+        would overwrite (same-name collision, merge-by-name policy)."""
+        target = self._current_target()
+        if target is None:
+            return
+        selected_names = {r.batch.get("name", "") for r in self._rows
+                          if r.check.isChecked()}
+        colliding = sum(1 for b in self._target_batches
+                        if b.get("name", "") in selected_names)
+        if colliding:
+            self.warn_label.setText(
+                Translations.tr("modern.dashboard.batch.copy.replace_warning",
+                                name=target.get("name", ""),
+                                count=colliding))
+        self.warn_label.setVisible(colliding > 0)
 
     def _on_all_clicked(self, checked: bool) -> None:
         for row in self._rows:
@@ -282,6 +296,7 @@ class BatchCopyDialog(QDialog):
         self.copy_btn.setText(
             Translations.tr("modern.dashboard.batch.copy.action", count=n))
         self.copy_btn.setEnabled(n > 0)
+        self._update_warning()
         states = {row.check.checkState() for row in self._rows}
         if states == {Qt.CheckState.Checked}:
             state = Qt.CheckState.Checked
