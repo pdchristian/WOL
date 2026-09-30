@@ -977,9 +977,11 @@ class TestBatchReorder:
     """Drag & drop reordering of the batch list (config write-back).
 
     A real mouse drag cannot be synthesised offscreen, so the tests drive
-    the same code path the widget uses: the view's drag hooks around a
-    QAbstractItemModel.moveRow() (which is what Qt's InternalMove drop
-    performs internally, mime payload and UserRole indices included).
+    the same code path the widget uses: the view's drag hooks around the
+    (source, target) pair that BatchListWidget.dropEvent() reports
+    (drop indicator index against the list BEFORE the source row is
+    removed — Qt's moveRow convention). The view then re-syncs the list
+    through a singleShot _load_batches, which processEvents() runs.
     """
 
     def _view_with_batches(self, qapp, tmp_path, monkeypatch, names):
@@ -996,19 +998,19 @@ class TestBatchReorder:
         return v, cfg, dev_id
 
     def _move_row(self, v, source, dest_final):
-        """Simulate one InternalMove drop exactly like Qt's drag does.
+        """Simulate one InternalMove drop exactly like the widget does.
 
-        QAbstractItemModel.moveRow interprets destinationChild against the
+        dropEvent reports the drop indicator's insertion index against the
         list BEFORE the source row is removed, so the final visual position
-        needs +1 when moving downwards.
+        needs +1 when moving downwards. processEvents() then runs the
+        singleShot _load_batches that re-syncs the list with the config.
         """
         v._begin_batch_drag()
-        model = v.batch_list.model()
-        parent = model.index(0, 0).parent()
-        dest = dest_final + 1 if dest_final > source else dest_final
-        model.moveRow(parent, source, parent, dest)
+        target = dest_final + 1 if dest_final > source else dest_final
+        v._record_batch_move(source, target)
         v._commit_batch_reorder()
         v._end_batch_drag()
+        QApplication.processEvents()
 
     def _names(self, cfg, dev_id):
         return [b["name"] for b in
@@ -1023,12 +1025,15 @@ class TestBatchReorder:
         assert view.batch_list.defaultDropAction() == Qt.DropAction.MoveAction
         assert not view.batch_list.dragDropOverwriteMode()
 
-    def test_items_carry_config_index(self, qapp, tmp_path, monkeypatch):
-        v, _, _ = self._view_with_batches(qapp, tmp_path, monkeypatch,
-                                          ["One", "Two", "Three"])
-        roles = [v.batch_list.item(i).data(Qt.ItemDataRole.UserRole)
-                 for i in range(v.batch_list.count())]
-        assert roles == [0, 1, 2]
+    def test_record_batch_move_needs_active_drag(self, qapp, tmp_path,
+                                                 monkeypatch):
+        # _record_batch_move only arms while _begin_batch_drag ran (a
+        # stray drop outside a drag must never touch the config).
+        v, cfg, dev_id = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                                 ["One", "Two", "Three"])
+        v._record_batch_move(0, 2)
+        v._commit_batch_reorder()
+        assert self._names(cfg, dev_id) == ["One", "Two", "Three"]
         v.cancel_workers()
 
     def test_move_row_persists_new_order(self, qapp, tmp_path, monkeypatch):
@@ -1054,10 +1059,29 @@ class TestBatchReorder:
         v.batch_list.setCurrentRow(0)
         assert v.script_edit.toPlainText() == "echo One"
         self._move_row(v, 0, 2)
-        # Qt keeps the selection on the moved item (now row 2):
+        # The selection travels with the batch (now row 2) and the editor
+        # keeps showing the moved batch's script across the re-sync.
         assert v.batch_list.currentRow() == 2
         assert v._batch_active == 2
         assert v.script_edit.toPlainText() == "echo One"
+        v.cancel_workers()
+
+    def test_title_stays_paired_with_script_after_reorder(
+            self, qapp, tmp_path, monkeypatch):
+        # Regression: reordering must move name AND script as one unit —
+        # selecting any visible row has to show exactly that batch's script.
+        v, cfg, dev_id = self._view_with_batches(qapp, tmp_path, monkeypatch,
+                                                 ["One", "Two", "Three"])
+        self._move_row(v, 0, 2)
+        names = self._names(cfg, dev_id)
+        assert names == ["Two", "Three", "One"]
+        # Visible list matches the persisted order...
+        assert [v.batch_list.item(i).text()
+                for i in range(v.batch_list.count())] == names
+        # ...and every row's editor shows its own script.
+        for row, name in enumerate(names):
+            v.batch_list.setCurrentRow(row)
+            assert v.script_edit.toPlainText() == f"echo {name}"
         v.cancel_workers()
 
     def test_drop_in_place_changes_nothing(self, qapp, tmp_path, monkeypatch):
@@ -1067,19 +1091,16 @@ class TestBatchReorder:
         assert self._names(cfg, dev_id) == ["One", "Two", "Three"]
         v.cancel_workers()
 
-    def test_stale_indices_refuse_write(self, qapp, tmp_path, monkeypatch):
+    def test_stale_source_resyncs_without_write(self, qapp, tmp_path,
+                                                monkeypatch):
+        # Simulate a config reload during the drag: the recorded source row
+        # is out of range -> nothing is written, the list re-syncs instead.
         v, cfg, dev_id = self._view_with_batches(qapp, tmp_path, monkeypatch,
                                                  ["One", "Two", "Three"])
-        v._begin_batch_drag()
-        # Simulate a config reload during the drag: indices no longer form
-        # a 0..n-1 permutation -> the write must be refused, not guessed.
-        v.batch_list.item(0).setData(Qt.ItemDataRole.UserRole, 7)
-        model = v.batch_list.model()
-        parent = model.index(0, 0).parent()
-        model.moveRow(parent, 0, parent, 2)
-        v._commit_batch_reorder()
-        v._end_batch_drag()
+        v._apply_batch_move(7, 0)
+        QApplication.processEvents()
         assert self._names(cfg, dev_id) == ["One", "Two", "Three"]
+        assert v.batch_list.count() == 3
         v.cancel_workers()
 
     def test_pending_editor_edits_committed_before_drag(self, qapp, tmp_path,
@@ -1092,16 +1113,12 @@ class TestBatchReorder:
         assert self._names(cfg, dev_id) == ["Two", "Renamed"]
         v.cancel_workers()
 
-    def test_reload_restamps_indices_after_reorder(self, qapp, tmp_path,
-                                                   monkeypatch):
+    def test_second_reorder_after_resync(self, qapp, tmp_path, monkeypatch):
         v, cfg, dev_id = self._view_with_batches(
             qapp, tmp_path, monkeypatch, ["One", "Two", "Three"])
         self._move_row(v, 0, 2)
         v._load_batches()  # e.g. device switch / retranslate
-        roles = [v.batch_list.item(i).data(Qt.ItemDataRole.UserRole)
-                 for i in range(v.batch_list.count())]
-        assert roles == [0, 1, 2]
-        # A second reorder still maps onto the fresh config order:
+        # A second reorder maps onto the fresh config order again:
         self._move_row(v, 2, 0)
         assert self._names(cfg, dev_id) == ["One", "Two", "Three"]
         v.cancel_workers()
@@ -1144,8 +1161,8 @@ class TestBatchReorder:
         v.batch_list._set_hover_row(0)
         assert not v.batch_list.item(0).icon().isNull()
         self._move_row(v, 0, 2)
-        # moveRow keeps the icon on the moved item — the post-drag sync
-        # (startDrag's finally) clears it; offscreen no row is hovered.
+        # The post-drag sync (startDrag's finally) clears every grip;
+        # offscreen no row is hovered.
         v.batch_list.sync_hover_after_move()
         for i in range(v.batch_list.count()):
             assert v.batch_list.item(i).icon().isNull()

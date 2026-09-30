@@ -605,9 +605,11 @@ class BatchListWidget(QListWidget):
     completed move has to be written back to the config. Qt runs an
     ``InternalMove`` entirely inside :meth:`startDrag` (nested event loop)
     and re-creates the dropped item from the mime payload, so neither item
-    identity nor ``rowsMoved`` can be relied on. Instead every item carries
-    its config index in ``UserRole`` (stamped by ``_load_batches``); after
-    the drop that index *is* the permutation to apply.
+    identity nor ``rowsMoved`` can be relied on. Instead :meth:`dropEvent`
+    reports the drag source row and the drop indicator's insertion index
+    to the view, which moves the whole batch dict (name + script +
+    timeout) in the config as a unit — a title can never end up paired
+    with another batch's script.
 
     ``setDefaultDropAction(MoveAction)`` prevents a Ctrl modifier (or a
     mis-drag) from silently COPYING items and producing duplicate batch ids.
@@ -635,6 +637,9 @@ class BatchListWidget(QListWidget):
         # -1 over empty space), Leave fires when the pointer exits.
         self._grip = QIcon(_grip_pixmap(16, dpr=self.devicePixelRatioF()))
         self._hover_row = -1
+        # Row the current drag started on (Qt's current item is the dragged
+        # one); -1 while no drag is running. See dropEvent().
+        self._drag_source_row = -1
         self.setMouseTracking(True)
         self.viewport().installEventFilter(self)
 
@@ -694,13 +699,32 @@ class BatchListWidget(QListWidget):
             self._hover_row = self.row(under)
             self._apply_grip(self._hover_row, True)
 
+    def dropEvent(self, event) -> None:
+        # Record source row + insertion index BEFORE Qt applies its own
+        # InternalMove (the model is still untouched here), then let Qt do
+        # the visual move. The view applies the authoritative config move
+        # in startDrag's finally block and re-syncs the list from the
+        # config right after the drag finished.
+        if self._drag_source_row >= 0:
+            index = self.indexAt(event.position().toPoint())
+            if index.isValid():
+                below = (self.dropIndicatorPosition()
+                         == QAbstractItemView.DropIndicatorPosition.BelowItem)
+                target = index.row() + (1 if below else 0)
+            else:
+                target = self.count()  # dropped into the empty area below
+            self._view._record_batch_move(self._drag_source_row, target)
+        super().dropEvent(event)
+
     def startDrag(self, supportedActions) -> None:
         # The whole move happens inside super().startDrag(), so the config
         # write belongs in the finally block, not in a dropEvent override.
+        self._drag_source_row = self.currentRow()
         self._view._begin_batch_drag()
         try:
             super().startDrag(supportedActions)
         finally:
+            self._drag_source_row = -1
             self._view._commit_batch_reorder()
             self._view._end_batch_drag()
             self.sync_hover_after_move()
@@ -730,9 +754,10 @@ class DeviceDashboardView(QWidget):
         # (guards _on_batch_selected against the shifting currentRowChanged
         # signals Qt fires during an InternalMove).
         self._batch_reordering = False
-        # _drag_item_map snapshots QListWidgetItem -> batch dict for the
-        # duration of one drag (see _begin_batch_drag / _commit_batch_reorder).
-        self._drag_item_map: dict = {}
+        # (source row, insertion index) recorded by
+        # BatchListWidget.dropEvent() during one drag and applied by
+        # _commit_batch_reorder() when the drag finishes.
+        self._pending_batch_move: tuple[int, int] | None = None
         # Popup about missing/incorrect credentials: once per opened device
         # (the host service rejects every request without them, so polling
         # would repeat the same error every interval).
@@ -1480,16 +1505,15 @@ class DeviceDashboardView(QWidget):
         self.batch_list.blockSignals(True)
         self.batch_list.clear()
         self.batch_list.reset_hover()
-        for index, batch in enumerate(self._batches()):
+        for batch in self._batches():
             # No grip icon here: BatchListWidget shows the 6-dot handle
             # only on the row under the mouse (entered/left signals).
+            # No per-item payload either: reordering is driven by the
+            # source/target rows reported by dropEvent, so the list is
+            # always rebuilt from the config and can never drift from it.
             item = QListWidgetItem(
                 batch.get("name") or
                 Translations.tr("modern.dashboard.batch.untitled"))
-            # Config index travels with the item through drag & drop (it is
-            # part of the mime payload), which makes the visual order a
-            # permutation _commit_batch_reorder can apply.
-            item.setData(Qt.ItemDataRole.UserRole, index)
             self.batch_list.addItem(item)
         self.batch_list.blockSignals(False)
         # Copying needs at least one batch AND another device to copy to.
@@ -1530,43 +1554,59 @@ class DeviceDashboardView(QWidget):
     def _begin_batch_drag(self) -> None:
         """Flush pending editor edits before a drag starts."""
         self._commit_editor()
+        self._pending_batch_move = None
         self._batch_reordering = True
 
     def _end_batch_drag(self) -> None:
         self._batch_reordering = False
+        self._pending_batch_move = None
+
+    def _record_batch_move(self, source: int, target: int) -> None:
+        """Remember the drop reported by BatchListWidget.dropEvent().
+
+        *target* is the drop indicator's insertion index in the list
+        BEFORE the source row is removed (Qt's moveRow convention).
+        """
+        if self._batch_reordering:
+            self._pending_batch_move = (source, target)
 
     def _commit_batch_reorder(self) -> None:
-        """Write the list's visual order back to the config after a move.
+        """Apply the drop recorded during the drag (startDrag finally)."""
+        move, self._pending_batch_move = self._pending_batch_move, None
+        if move is None:
+            return
+        self._apply_batch_move(*move)
 
-        Runs inside Qt's drag event loop, so the list model must NOT be
-        rebuilt here (no :meth:`_load_batches`) — the widget already shows
-        the new order, only the config and the editor need syncing. Each
-        item's ``UserRole`` holds its original config index, so the visual
-        order is a permutation of ``0..n-1``.
+    def _apply_batch_move(self, source: int, target: int) -> None:
+        """Move one batch dict in the config to the dropped position.
+
+        The whole batch (name + script + timeout) travels as a unit, so a
+        title can never end up paired with another batch's script. Runs
+        inside Qt's drag event loop, so the list is NOT rebuilt here — a
+        singleShot :meth:`_load_batches` right after the drag finished
+        re-syncs the visible order with the persisted one.
         """
-        if not self._batch_reordering or self._device is None:
+        if self._device is None or self._device_id is None:
             return
-        lst = self.batch_list
         batches = self._batches()
-        if lst.count() != len(batches):
+        if not (0 <= source < len(batches)):
+            # Stale drag (e.g. the config changed underneath): restore.
+            QTimer.singleShot(0, self._load_batches)
             return
-        order = [lst.item(i).data(Qt.ItemDataRole.UserRole)
-                 for i in range(lst.count())]
-        if sorted(order) != list(range(len(batches))):
-            # Stale/foreign indices (e.g. a config reload during the drag):
-            # refuse the write, the next refresh restores the config order.
-            return
-        if order == list(range(len(batches))):
+        insert_at = target - 1 if target > source else target
+        insert_at = max(0, min(insert_at, len(batches) - 1))
+        if insert_at == source:
             return  # dropped back in place — nothing changed
-        mapped = [batches[i] for i in order]
+        batches.insert(insert_at, batches.pop(source))
         try:
-            self.config.set_device_batches(self._device_id, mapped)
+            self.config.set_device_batches(self._device_id, batches)
         except (ValueError, RuntimeError):
+            QTimer.singleShot(0, self._load_batches)
             return
-        self._batch_active = lst.currentRow()
-        self._show_batch(mapped[self._batch_active]
-                         if 0 <= self._batch_active < len(mapped) else None)
+        self._batch_active = insert_at
+        self._show_batch(batches[insert_at])
         self._update_batch_actions()
+        QTimer.singleShot(0, self._load_batches)
 
     def _show_batch(self, batch: dict | None) -> None:
         self._batch_dirty = False
