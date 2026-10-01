@@ -69,6 +69,13 @@
 			remoteGlobalIDString = 6AC4F56CA2506C6AC36964AE;
 			remoteInfo = WolManagerWatch;
 		};
+		E3869092306EBBC600163200 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8EF06E7D89E73B32DB806E12 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6AC4F56CA2506C6AC36964AE;
+			remoteInfo = WolManagerWatch;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -292,6 +299,7 @@
 			);
 			dependencies = (
 				7FA6E94CB41B71A61657C877 /* PBXTargetDependency */,
+				E3869093306EBBC600163200 /* PBXTargetDependency */,
 			);
 			name = WolManagerTests;
 			packageProductDependencies = (
@@ -347,6 +355,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					490F24FACD5D3507BB047173 = {
+						TestTargetID = FF54870EB608CD9A6555F513;
+					};
 					FF54870EB608CD9A6555F513 = {
 						ProvisioningStyle = Automatic;
 					};
@@ -472,6 +483,11 @@
 			target = 6AC4F56CA2506C6AC36964AE /* WolManagerWatch */;
 			targetProxy = 1AC36225314E197AD77ABCD1 /* PBXContainerItemProxy */;
 		};
+		E3869093306EBBC600163200 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6AC4F56CA2506C6AC36964AE /* WolManagerWatch */;
+			targetProxy = E3869092306EBBC600163200 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -551,18 +567,22 @@
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = WolManager/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN Manager";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.3.7;
-				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager";
+				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager";
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -572,16 +592,16 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = CH9M2M9R7N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "de.wake-on-lan.manager";
+				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN Manager";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "de.wake-on-lan-manager";
 				INFOPLIST_KEY_WKWatchOnly = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				MARKETING_VERSION = 2.3.7;
-				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager.watch";
+				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager.watch";
 				PRODUCT_NAME = WolManagerWatch;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = watchos;
@@ -598,16 +618,16 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = CH9M2M9R7N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "de.wake-on-lan.manager";
+				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN Manager";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "de.wake-on-lan-manager";
 				INFOPLIST_KEY_WKWatchOnly = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				MARKETING_VERSION = 2.3.7;
-				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager.watch";
+				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager.watch";
 				PRODUCT_NAME = WolManagerWatch;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = watchos;
@@ -631,12 +651,12 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager.tests";
+				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager.tests";
 				PRODUCT_NAME = WolManagerTests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WolManager.app/WolManager";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WolManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WolManager";
 			};
 			name = Release;
 		};
@@ -653,12 +673,12 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager.tests";
+				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager.tests";
 				PRODUCT_NAME = WolManagerTests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WolManager.app/WolManager";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WolManager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WolManager";
 			};
 			name = Debug;
 		};
@@ -676,18 +696,22 @@
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = WolManager/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN Manager";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.3.7;
-				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan.manager";
+				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager";
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
