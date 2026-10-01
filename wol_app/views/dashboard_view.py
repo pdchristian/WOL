@@ -83,8 +83,25 @@ INFERENCE_GPU_PCT = 60.0
 INFERENCE_GPU_POLLS = 2
 
 
+def _is_port_only_entry(entry: str) -> bool:
+    """True for v7 port-only watch entries (``":8080"``/``"8080"``).
+
+    Such entries name no process - the host watches whichever API answers
+    on the port, so the dashboard labels them as an API service.
+    """
+    base, sep, port = entry.rpartition(":")
+    if sep and not base and port.isdigit():
+        return True
+    return entry.isdigit()
+
+
 def _watch_display_name(entry: str) -> str:
-    """``"llama-server.exe:8080"`` -> ``"llama-server"`` (chip/row label)."""
+    """``"llama-server.exe:8080"`` -> ``"llama-server"`` (chip/row label).
+
+    Port-only entries (host protocol v7) become ``"API :8080"``.
+    """
+    if _is_port_only_entry(entry):
+        return f"API :{entry.lstrip(':')}"
     name = entry.rpartition(":")[0] or entry
     if name.lower().endswith(".exe"):
         name = name[:-4]
@@ -92,6 +109,8 @@ def _watch_display_name(entry: str) -> str:
 
 
 def _watch_icon(entry: str) -> str:
+    if _is_port_only_entry(entry):
+        return "🧠"
     return "🦙" if "llama" in entry.lower() else "⚙️"
 
 
@@ -159,6 +178,47 @@ def _model_tps_suffix(info: dict, model_name: str) -> str:
     if not parts:
         return ""
     return " · " + " · ".join(parts)
+
+
+def _api_info_line(info: dict) -> str:
+    """Localized capability line from the host's ``api_info`` probe (v7).
+
+    Renders the parts that exist, joined by " · ": server build/version,
+    max context size and parallel slots. Returns "" when the host
+    reported no usable info (older hosts or a server without /props).
+    """
+    api_info = info.get("api_info")
+    if not isinstance(api_info, dict):
+        return ""
+    parts: list[str] = []
+    server = str(api_info.get("server") or "").strip()
+    if server:
+        parts.append(Translations.tr("modern.dashboard.svc.info_server",
+                                     server=server))
+    try:
+        context = int(api_info.get("context"))
+    except (TypeError, ValueError):
+        context = -1
+    if context > 0:
+        parts.append(Translations.tr("modern.dashboard.svc.info_context",
+                                     context=_fmt_int_grouped(context)))
+    try:
+        slots = int(api_info.get("slots"))
+    except (TypeError, ValueError):
+        slots = -1
+    if slots > 0:
+        parts.append(Translations.tr("modern.dashboard.svc.info_slots",
+                                     slots=slots))
+    return " · ".join(parts)
+
+
+def _api_features_tip(info: dict) -> str:
+    """Tooltip listing the answered API endpoints (host v7), "" if none."""
+    features = info.get("api_features")
+    if not isinstance(features, list) or not features:
+        return ""
+    return Translations.tr("modern.dashboard.svc.tip_features",
+                           features=", ".join(str(f) for f in features))
 
 
 def _fmt_int_grouped(value: int) -> str:
@@ -376,11 +436,13 @@ class ServiceChip(QLabel):
             return
         self.setVisible(True)
         running = bool(info.get("running"))
-        # A port was only requested for "name.exe:port" entries; without one
-        # "running" alone is enough for the green state.
+        # v7 readiness is port-first: an open API port is enough even
+        # without a watched process (port-only entries like ":8080" never
+        # report running=true). Without a port in the entry, "running"
+        # alone is enough for the green state.
         wants_port = info.get("api_port") is not None
         port_open = bool(info.get("api_port_open"))
-        ready = running and (port_open or not wants_port)
+        ready = port_open or (running and not wants_port)
         name = _watch_display_name(self.entry)
         icon = _watch_icon(self.entry)
         if ready:
@@ -393,11 +455,17 @@ class ServiceChip(QLabel):
                     label = f"{label} +{len(names) - 1}"
                 model = f" · {label}"
             self.setText(f"{icon} {name}{model}")
-            tip = Translations.tr("modern.dashboard.svc.tip_running",
-                                  pid=info.get("pid", "?"),
-                                  uptime=_fmt_uptime(info.get("uptime")),
-                                  cpu=info.get("cpu", 0.0),
-                                  ram=_fmt_bytes_gb(info.get("ram")))
+            if running:
+                tip = Translations.tr("modern.dashboard.svc.tip_running",
+                                      pid=info.get("pid", "?"),
+                                      uptime=_fmt_uptime(info.get("uptime")),
+                                      cpu=info.get("cpu", 0.0),
+                                      ram=_fmt_bytes_gb(info.get("ram")))
+            else:
+                # Port-only entry (v7): no process data, show the API kind.
+                tip = Translations.tr("modern.dashboard.svc.tip_api",
+                                      port=info.get("api_port", ""),
+                                      kind=str(info.get("api_kind") or ""))
             if names:
                 tip += "\n" + Translations.tr(
                     "modern.dashboard.svc.tip_models",
@@ -411,7 +479,11 @@ class ServiceChip(QLabel):
         else:
             state = "svcChipInactive"
             self.setText(f"{icon} {name} · {Translations.tr('modern.dashboard.svc.inactive')}")
-            tip = Translations.tr("modern.dashboard.svc.tip_stopped")
+            if wants_port:
+                tip = Translations.tr("modern.dashboard.svc.tip_api_stopped",
+                                      port=info.get("api_port", ""))
+            else:
+                tip = Translations.tr("modern.dashboard.svc.tip_stopped")
         self.setToolTip(tip)
         self._repolish(state)
 
@@ -459,12 +531,18 @@ class ServiceRow(QWidget):
         self.status = QLabel("")
         self.status.setObjectName("svcStatusOff")
         text_col.addWidget(self.status)
-        # One mono line per loaded model (llama-server GET /v1/models, host
+        # One mono line per loaded model (OpenAI API GET /v1/models, host
         # protocol v4); hidden until the metrics carry a model list.
         self._model_holder = QVBoxLayout()
         self._model_holder.setSpacing(1)
         self._model_labels: list[QLabel] = []
         text_col.addLayout(self._model_holder)
+        # v7 capability line (server build · context · slots) from the
+        # host's api_info probe; hidden when the host reports nothing.
+        self._api_info = QLabel("")
+        self._api_info.setObjectName("svcApiInfo")
+        self._api_info.setVisible(False)
+        text_col.addWidget(self._api_info)
         layout.addLayout(text_col, 1)
 
         # Right-aligned metric columns (value over caption), like the
@@ -499,13 +577,22 @@ class ServiceRow(QWidget):
         running = bool(info.get("running"))
         wants_port = info.get("api_port") is not None
         port_open = bool(info.get("api_port_open"))
-        ready = running and (port_open or not wants_port)
+        # v7: an open API port makes the service ready even without a
+        # watched process (port-only entries, or the process running under
+        # a different name than configured).
+        ready = port_open or (running and not wants_port)
         if ready:
             if wants_port:
                 status_obj = "svcStatusRunning"
-                status_txt = Translations.tr(
-                    "modern.dashboard.svc.status_ready",
-                    pid=info.get("pid", "?"), port=info.get("api_port", ""))
+                if running:
+                    status_txt = Translations.tr(
+                        "modern.dashboard.svc.status_ready",
+                        pid=info.get("pid", "?"), port=info.get("api_port", ""))
+                else:
+                    # Port-only entry (v7): API answers, no process watched.
+                    status_txt = Translations.tr("modern.dashboard.svc.status_api",
+                                                 port=info.get("api_port", ""),
+                                                 kind=str(info.get("api_kind") or ""))
             else:
                 status_obj = "svcStatusRunning"
                 status_txt = Translations.tr(
@@ -515,6 +602,11 @@ class ServiceRow(QWidget):
             status_obj, status_txt = "svcStatusWarn", Translations.tr(
                 "modern.dashboard.svc.status_no_port", pid=info.get("pid", "?"),
                 port=info.get("api_port", ""))
+        elif wants_port:
+            # Port-only entry (v7) with a closed port: no process is watched,
+            # so the message talks about the API instead of a process.
+            status_obj, status_txt = "svcStatusOff", Translations.tr("modern.dashboard.svc.status_api_stopped",
+                                                                     port=info.get("api_port", ""))
         else:
             status_obj, status_txt = "svcStatusOff", Translations.tr(
                 "modern.dashboard.svc.stopped")
@@ -524,9 +616,10 @@ class ServiceRow(QWidget):
             self.status.style().polish(self.status)
         self.status.setText(status_txt)
 
-        # Loaded models: one line per model (llama-server API list when the
-        # host reports it, else the single argv-derived name).
-        names = _model_names(info) if running else []
+        # Loaded models: one line per model (OpenAI API list when the host
+        # reports it, else the single argv-derived name). v7: the API list
+        # is also available for port-only entries without a process.
+        names = _model_names(info) if (running or port_open) else []
         while len(self._model_labels) < len(names):
             lbl = QLabel("")
             lbl.setObjectName("rowMono")
@@ -538,10 +631,16 @@ class ServiceRow(QWidget):
             lbl.deleteLater()
         for lbl, model_name in zip(self._model_labels, names):
             # Host protocol v5 appends the per-model prompt/generation
-            # throughput (llama.cpp GET /metrics?model=<name>).
+            # throughput (GET /metrics?model=<name>, Prometheus or JSON).
             lbl.setText(f"🧠 {model_name}{_model_tps_suffix(info, model_name)}")
             lbl.setToolTip(model_name)
             lbl.setVisible(True)
+
+        # v7 capability line: server build · context · slots from api_info.
+        api_line = _api_info_line(info)
+        self._api_info.setText(api_line)
+        self._api_info.setToolTip(_api_features_tip(info))
+        self._api_info.setVisible(bool(api_line))
 
         for key in ("uptime", "ram", "cpu"):
             value_lbl, caption_lbl = self._metric_labels[key]

@@ -68,6 +68,40 @@ final class HostServiceProtocolTests: XCTestCase {
         XCTAssertTrue(m.processes.isEmpty)
     }
 
+    /* Host-Protokoll v7: Port-only-Eintrag ohne Prozess, JSON-/metrics-Server. */
+    func testMetricsV7PortOnlyEntry() throws {
+        let body = """
+        {
+          "status": "ok", "protocol": 7, "hostname": "SERVER",
+          "processes": {
+            ":8081": {
+              "running": false,
+              "api_port": 8081, "api_port_open": true, "api_up": true,
+              "api_kind": "openai",
+              "api_features": ["models", "health", "metrics"],
+              "api_info": { "server": "Strata 0.1.30", "context": 262144, "slots": 1 },
+              "models": ["qwen3.8-flash-next-iq3_s"],
+              "model_metrics": {
+                "qwen3.8-flash-next-iq3_s": { "prompt_tps": 398.0, "predicted_tps": 72.2, "total_tokens": 19456405 }
+              }
+            }
+          }
+        }
+        """
+        let m = try JSONDecoder().decode(MetricsSnapshot.self, from: Data(body.utf8))
+        XCTAssertEqual(m.protocolVersion, 7)
+        let api = m.processes[":8081"]!
+        XCTAssertEqual(api.running, false)
+        XCTAssertEqual(api.apiPort, 8081)
+        XCTAssertEqual(api.apiUp, true)
+        XCTAssertEqual(api.apiKind, "openai")
+        XCTAssertEqual(api.apiFeatures, ["models", "health", "metrics"])
+        XCTAssertEqual(api.apiInfo?.server, "Strata 0.1.30")
+        XCTAssertEqual(api.apiInfo?.context, 262144)
+        XCTAssertEqual(api.apiInfo?.slots, 1)
+        XCTAssertEqual(api.modelMetrics["qwen3.8-flash-next-iq3_s"]!.predictedTps!, 72.2, accuracy: 0.001)
+    }
+
     func testErrorResponseShape() throws {
         let body = """
         {"status":"error","message":"Batches sind deaktiviert. Starten Sie den Dienst mit \\"--enable-batch\\"."}

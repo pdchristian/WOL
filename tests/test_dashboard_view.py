@@ -452,6 +452,73 @@ class TestWatchedProcesses:
                             "ram": 1024, "uptime": 10}}))
         assert v._chip_widgets["ollama.exe"].objectName() == "svcChipRunning"
 
+    def test_chip_green_for_port_only_api(self, qapp, tmp_path, monkeypatch):
+        """v7 ":8080" entry: open API port is green even without a process."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch, [":8080"])
+        v._on_metrics(dict(METRICS, processes={
+            ":8080": {"running": False, "api_port": 8080,
+                      "api_port_open": True, "api_up": True,
+                      "api_kind": "openai",
+                      "api_features": ["models", "health"],
+                      "api_info": {"server": "Strata 0.1.30",
+                                   "context": 262144, "slots": 1},
+                      "models": ["qwen3.8-flash-next-iq3_s"]}}))
+        chip = v._chip_widgets[":8080"]
+        assert chip.objectName() == "svcChipRunning"
+        assert not chip.isHidden()
+        assert "API :8080" in chip.text()
+        assert "qwen3.8-flash-next-iq3_s" in chip.text()
+
+    def test_row_port_only_shows_api_status_and_info(self, qapp, tmp_path,
+                                                     monkeypatch):
+        """v7 row: API status line, model line and api_info capability line."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch, [":8080"])
+        v._on_metrics(dict(METRICS, processes={
+            ":8080": {"running": False, "api_port": 8080,
+                      "api_port_open": True, "api_up": True,
+                      "api_kind": "openai",
+                      "api_features": ["models", "health", "metrics"],
+                      "api_info": {"server": "Strata 0.1.30",
+                                   "context": 262144, "slots": 1},
+                      "models": ["qwen3.8-flash-next-iq3_s"],
+                      "model_metrics": {
+                          "qwen3.8-flash-next-iq3_s": {
+                              "prompt_tps": 398.0, "predicted_tps": 72.2,
+                              "total_tokens": 19456405}}}}))
+        row = v._svc_row_widgets[":8080"]
+        assert row.status.objectName() == "svcStatusRunning"
+        assert ":8080" in row.status.text()
+        texts = [lbl.text() for lbl in row._model_labels if not lbl.isHidden()]
+        assert any("qwen3.8-flash-next-iq3_s" in t and "398.00" in t
+                   for t in texts)
+        # v7 capability line: server · context · slots
+        assert not row._api_info.isHidden()
+        assert "Strata 0.1.30" in row._api_info.text()
+        assert "262\u00a0144" in row._api_info.text()
+
+    def test_row_api_info_hidden_without_probe_data(self, qapp, tmp_path,
+                                                    monkeypatch):
+        """Older hosts (v4/v5) report no api_info -> capability line hidden."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch,
+                                  ["llama-server.exe:8080"])
+        v._on_metrics(dict(METRICS, processes={
+            "llama-server.exe:8080": {
+                "running": True, "pid": 1, "cpu": 0.0, "ram": 1024,
+                "uptime": 5, "api_port": 8080, "api_port_open": True,
+                "models": ["m1"]}}))
+        row = v._svc_row_widgets["llama-server.exe:8080"]
+        assert row._api_info.isHidden()
+
+    def test_chip_inactive_port_only_closed(self, qapp, tmp_path, monkeypatch):
+        """v7 ":8080" with a closed port -> inactive chip (API wording)."""
+        v = self._view_with_watch(qapp, tmp_path, monkeypatch, [":8080"])
+        v._on_metrics(dict(METRICS, processes={
+            ":8080": {"running": False, "api_port": 8080,
+                      "api_port_open": False}}))
+        chip = v._chip_widgets[":8080"]
+        assert chip.objectName() == "svcChipInactive"
+        assert "8080" in chip.toolTip()
+
     def test_chips_hidden_when_host_offline(self, qapp, tmp_path, monkeypatch):
         v = self._view_with_watch(qapp, tmp_path, monkeypatch,
                                   ["llama-server.exe"])

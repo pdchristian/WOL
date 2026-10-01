@@ -1,6 +1,6 @@
 # WOL Host Service — Wire Protocol Specification
 
-**Version:** 6 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
+**Version:** 7 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
 
 Referenzimplementierungen:
 
@@ -94,19 +94,21 @@ Request:
 
 ```json
 {"command": "metrics", "username": "u", "password": "p",
- "watch": ["llama-server.exe:8080", "backup-sync.exe"]}
+ "watch": ["llama-server.exe:8080", "backup-sync.exe", ":8081"]}
 ```
 
 * `watch` optional, Liste von Prozessnamen (`name.exe`) oder
   `name.exe:port`; **max. 8** Einträge (`WATCH_MAX_ENTRIES`), Überzählige
   werden ignoriert. `:port` = Loopback-Check (250 ms) + Modell-Abfrage (§4.2.1).
+  **v7:** Port-only-Einträge (`":8081"` oder nacktes `"8081"`) beobachten nur
+  die API auf dem Port — ohne Prozessnamen-Prüfung.
 
 Antwort (`status: "ok"`):
 
 ```json
 {
   "status": "ok",
-  "protocol": 6,
+  "protocol": 7,
   "hostname": "FRACTAL",
   "cpu": 63.4,
   "cpu_count": 16,
@@ -122,10 +124,24 @@ Antwort (`status: "ok"`):
       "running": true, "count": 1, "pid": 12044, "cpu": 12.5,
       "ram": 8589934592, "uptime": 10024,
       "model": "Qwen3.8-Flash-256k-62",
-      "api_port": 8080, "api_port_open": true,
+      "api_port": 8080, "api_port_open": true, "api_up": true,
+      "api_kind": "llama.cpp",
+      "api_features": ["models", "health", "props", "metrics"],
+      "api_info": { "server": "build 5023", "context": 8192, "slots": 4 },
       "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"],
       "model_metrics": {
         "Qwen3.8-Flash-256k-62": { "prompt_tps": 261.15, "predicted_tps": 26.65, "total_tokens": 77427 }
+      }
+    },
+    ":8081": {
+      "running": false,
+      "api_port": 8081, "api_port_open": true, "api_up": true,
+      "api_kind": "openai",
+      "api_features": ["models", "health", "metrics"],
+      "api_info": { "server": "Strata 0.1.30", "context": 262144, "slots": 1 },
+      "models": ["qwen3.8-flash-next-iq3_s"],
+      "model_metrics": {
+        "qwen3.8-flash-next-iq3_s": { "prompt_tps": 398.0, "predicted_tps": 72.2, "total_tokens": 19456405 }
       }
     },
     "backup-sync.exe": { "running": false }
@@ -153,7 +169,13 @@ felder (`status`, `protocol`, `hostname`) sind immer vorhanden.
 #### 4.2.1 `processes` (Watch-Liste)
 
 * Key = **Originaler** Watch-Eintrag (z. B. `"llama-server.exe:8080"`).
-* Läuft der Prozess **nicht**: nur `{"running": false}`.
+* **Port-only-Eintrag (v7):** `":8080"` oder ein nacktes `"8080"` nennt
+  keinen Prozess — der Host ueberwacht nur die API auf dem Port, egal welche
+  Software dahinter laeuft. Solche Einträge melden `running: false` (kein
+  Prozess beobachtet), aber `api_port`/`api_port_open`/`api_up` zeigen, ob
+  die API lebt. Der Port wird **unabhaengig von einem Prozessnamen-Treffer**
+  geprobt.
+* Läuft der Prozess **nicht** (und kein Port offen): nur `{"running": false}`.
 * Läuft er: zusätzlich `count` (Instanzen), `pid` (niedrigste PID),
   `cpu` (% über alle Instanzen, 1 Nachkomma), `ram` (Bytes RSS, summiert),
   `uptime` (Sekunden, ältester Instanz).
@@ -164,24 +186,44 @@ felder (`status`, `protocol`, `hostname`) sind immer vorhanden.
   (`Qwen3.8-Flash-256k-62`).
 * `:port`-Einträge: zusätzlich `api_port` (int) und `api_port_open` (bool,
   Loopback-Connect im Code, 250 ms).
-* `models` (string-Array, max 16): **nur wenn `api_port_open`** — llama-server
+* `api_up` (bool, **v7**): **nur wenn `api_port_open`** — `GET /v1/models`
+  antwortete 200 mit einem JSON-Objekt (OpenAI-Vertrag erfuellt, egal welche
+  Software). `models` kann trotzdem leer sein (kein Modell geladen).
+* `api_kind` (string, **v7**): **nur wenn `api_port_open`** — grobe
+  Server-Klassifikation aus `/props`/`/health`: `"llama.cpp"` (llama.cpp und
+  kompatible Forks wie Strata: `build_info`/`total_slots`/`chat_template`),
+  `"openai"` (reiner OpenAI-Vertrag) oder `"unknown"`.
+* `api_features` (string-Array, **v7**): **nur wenn `api_port_open`** — die
+  Endpunkte, die geantwortet haben (Teilmenge von `models`,`health`,
+  `props`,`metrics`). Das Dashboard kann daraus ableiten, was verfuegbar ist,
+  statt still zu scheitern.
+* `api_info` (object, **v7**): **nur wenn `api_port_open` und mindestens ein
+  Extra ermittelbar** — Anzeige-Zusatz aus `/props`/`/health`: `server`
+  (Build/Version, string), `context` (max. Kontextgroesse, int), `slots`
+  (gleichzeitige Slots, int), `model_alias` (string). Einzelne Keys fehlen,
+  wenn die Quelle sie nicht liefert.
+* `models` (string-Array, max 16): **nur wenn `api_port_open`** — OpenAI-API
   `GET /v1/models`; Alias bevorzugt, sonst Datei-Stem; Resident = Status
   `loaded` **oder** `sleeping` (llama-swap hält Idle-Modelle im RAM).
   Jeder Fehler ⇒ Feld schlicht nicht vorhanden (argv-`model` bleibt Fallback).
 * `model_metrics` (object, **v5**): **nur wenn `api_port_open` und mindestens
   ein Modell messbar** — pro geladenem Modell (Key = Anzeigename aus `models`)
-  der Durchsatz aus dem llama.cpp-Prometheus-Endpoint
-  (`GET /metrics?model=<name>`): `prompt_tps` (Input,
-  `llamacpp:prompt_tokens_seconds`) und `predicted_tps` (Output,
-  `llamacpp:predicted_tokens_seconds`), beides tokens/s (number). Die Gauges
-  sind bei Idle-Server 0 — der Host **haelt den zuletzt gueltigen (nicht-Null)
-  Wert pro (Port, Modell) fest** und liefert ihn weiter aus, statt 0 zu
-  melden. `total_tokens` (int): Summe aus den kumulativen Zaehlern
-  `llamacpp:prompt_tokens_total` + `llamacpp:n_decode_total` (fehlender
-  Zaehler zaehlt als 0), waechst kontinuierlich und wird frisch uebernommen
-  (nur wenn > 0). Einzelne Keys fehlen, wenn nur
-  ein Gauge lesbar war (NaN/Inf = nicht messbar); kein Feld, wenn gar nichts
-  messbar war (Dashboard zeigt dann die Modell-Zeile ohne t/s).
+  der Durchsatz (`prompt_tps` Input, `predicted_tps` Output, tokens/s) und
+  `total_tokens` (int, kumulativ). Der Host versteht **zwei** Body-Formate
+  von `GET /metrics?model=<name>`:
+  * **Prometheus-Text** (llama.cpp): Gauges `llamacpp:prompt_tokens_seconds`
+    / `llamacpp:predicted_tokens_seconds`; `total_tokens` =
+    `llamacpp:prompt_tokens_total` + `llamacpp:n_decode_total`.
+  * **JSON** (andere OpenAI-Server, z. B. Strata, **v7**): gemappt auf
+    dieselben Keys — `predicted_tps` ← `live.tok_s`, `prompt_tps` ←
+    `live.prefill_tok_s_mean`, `total_tokens` ← `totals.prompt_tokens` +
+    `totals.output_tokens` (first-hit-Kandidatenliste).
+  Die Gauges sind bei Idle-Server 0 — der Host **haelt den zuletzt gueltigen
+  (nicht-Null) Wert pro (Port, Modell) fest** und liefert ihn weiter aus,
+  statt 0 zu melden. `total_tokens` waechst kontinuierlich und wird frisch
+  uebernommen (nur wenn > 0). Einzelne Keys fehlen, wenn nur ein Wert lesbar
+  war (NaN/Inf = nicht messbar); kein Feld, wenn gar nichts messbar war
+  (Dashboard zeigt dann die Modell-Zeile ohne t/s).
 
 Schema: [`schema/response-metrics.json`](schema/response-metrics.json)
 
@@ -234,11 +276,12 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 |---|---|---|
 | `DEFAULT_PORT` | 8765 | beide Services |
 | `MAX_REQUEST_BYTES` | 65536 | beide |
-| `PROTOCOL_VERSION` | 6 | beide |
+| `PROTOCOL_VERSION` | 7 | beide |
 | `WATCH_MAX_ENTRIES` | 8 | beide |
 | `WATCH_PORT_TIMEOUT_S` | 0.25 | beide |
 | `WATCH_MODELS_TIMEOUT_S` | 0.6 | beide |
 | `WATCH_MAX_MODELS` | 16 | beide |
+| `WATCH_PROBE_TTL_S` | 10 | beide |
 | `MODEL_FILE_EXTS` | .gguf .ggml .safetensors .bin .pt | beide |
 | `MAX_SCRIPT_CHARS` | 32000 | beide |
 | `BATCH_TIMEOUT_DEFAULT` / MIN / MAX | 120 / 5 / 3600 | beide |
@@ -301,6 +344,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | 4 | `models` pro Watch-Eintrag | argv-`model`-Fallback zeigen |
 | 5 | `model_metrics` pro Watch-Eintrag (`prompt_tps`/`predicted_tps` latchen zuletzt gueltige Werte; `total_tokens` = `prompt_tokens_total` + `n_decode_total`) | Modell-Zeile ohne t/s anzeigen |
 | 6 | Anti-Replay `ts`/`nonce` auf `shutdown`/`reboot`/`run_batch` (§4.3/§4.4); Auth-Throttling mit `retry_after` (§3); Audit-Log; Firewall-Quellscope | Requests ohne `ts`/`nonce` senden (Host-Accept solange `require_replay` aus); `retry_after` ignorieren |
+| 7 | Port-only-Watch-Einträge (`:8080`/`8080`), Port-Probe ohne Prozess-Treffer; `api_up`/`api_kind`/`api_features`/`api_info` pro Watch-Eintrag; JSON-`/metrics`-Mapping (nicht-llama.cpp-Server) | Port-only-Einträge zeigen nichts an; Namens-Watch funktioniert wie bei v3–v5; neue Felder ignorieren |
 
 Regel: **Nur additive Änderungen.** Neue Felder müssen für ältere Clients
 ignorierbar sein. Neue Pflichtfelder oder Semantic-Änderungen ⇒ neue Major-

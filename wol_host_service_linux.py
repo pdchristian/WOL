@@ -57,6 +57,7 @@ Note: ``--enable-batch`` must be run as the same user that runs the service
 directory (see ``_LOG_DIR`` below).
 """
 
+import http.client
 import json
 import math
 import os
@@ -96,7 +97,15 @@ MAX_REQUEST_BYTES = 65536
 #    (shutdown/reboot/run_batch): "ts" (Unix seconds) + "nonce" (random
 #    string). The service rejects stale timestamps and reused nonces; with
 #    require_replay enabled (service.json) unsigned requests are refused.
-PROTOCOL_VERSION = 6
+# v7 makes the watch entry port-driven: ":8080"/"8080" (no process name)
+#    watches just the API, and the port is probed even when no process
+#    name matched. Open ports additionally report "api_up" (the OpenAI
+#    /v1/models call answered), "api_kind" ("llama.cpp"/"openai"/"unknown"),
+#    "api_features" (which endpoints answered: models/health/props/metrics)
+#    and "api_info" (server build, context size, slots, queue, state).
+#    Non-llama servers whose /metrics answers JSON (e.g. Strata) get their
+#    throughput mapped onto the same "model_metrics" keys.
+PROTOCOL_VERSION = 7
 
 # Platform shutdown/reboot commands used by the TCP handler. The macOS
 # variant (wol_host_service_macos.py) reuses this module as its core and
@@ -113,6 +122,11 @@ WATCH_PORT_TIMEOUT_S = 0.25
 WATCH_MODELS_TIMEOUT_S = 0.6
 # Max model names surfaced per watch entry.
 WATCH_MAX_MODELS = 16
+# Seconds an API capability probe result (kind/features/info) is cached per
+# port. The identity of a server never changes while it runs, so the
+# /health + /props probes run at most every WATCH_PROBE_TTL_S seconds even
+# though the dashboard polls every 2-3 s.
+WATCH_PROBE_TTL_S = 10.0
 
 # File extensions stripped from model file names for display. ONLY these -
 # never a blind splitext(): model ids like "Qwen3.8-Flash-256k-62" contain
@@ -640,15 +654,25 @@ _WATCH_PROCS_LOCK = threading.Lock()
 
 
 def _parse_watch_entry(entry: str) -> tuple[str, int | None]:
-    """``"llama-server:8080"`` -> ``("llama-server", 8080)``."""
+    """``"llama-server:8080"`` -> ``("llama-server", 8080)``.
+
+    Port-only entries (protocol v7) carry no process name: ``":8080"`` and
+    a bare ``"8080"`` both parse to ``("", 8080)`` - the dashboard then
+    watches just the API on that port, whatever software serves it. A bare
+    number is treated as a port, not as a process name.
+    """
     name = str(entry).strip()
     if not name:
         return "", None
     base, sep, port_str = name.rpartition(":")
-    if sep and base and port_str.isdigit():
+    if sep and port_str.isdigit():
         port = int(port_str)
         if 1 <= port <= 65535:
             return base, port
+    if name.isdigit():
+        port = int(name)
+        if 1 <= port <= 65535:
+            return "", port
     return name, None
 
 
@@ -660,6 +684,28 @@ def _check_port_loopback(port: int) -> bool:
             return True
     except OSError:
         return False
+
+
+def _http_get_loopback(port: int, path: str, accept: str,
+                       max_bytes: int = 262_144) -> tuple[int | None, str]:
+    """Plain ``http.client`` GET on loopback -> ``(status, body_text)``.
+
+    Any failure (refused, timeout, read error) degrades to ``(None, "")``
+    so every watch probe can treat "not there" uniformly.
+    """
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port,
+                                          timeout=WATCH_MODELS_TIMEOUT_S)
+        try:
+            conn.request("GET", path, headers={"Accept": accept})
+            resp = conn.getresponse()
+            status = resp.status
+            body = resp.read(max_bytes)
+        finally:
+            conn.close()
+        return status, body.decode("utf-8", errors="replace")
+    except Exception:
+        return None, ""
 
 
 def _model_display_name(raw: str) -> str:
@@ -715,34 +761,32 @@ def _models_from_api_json(payload: dict) -> list:
     return names
 
 
-def _fetch_loaded_models(port: int) -> list:
-    """``GET http://127.0.0.1:port/v1/models`` -> loaded model names ([]).
+def _fetch_models_and_up(port: int) -> tuple[list, bool]:
+    """``GET http://127.0.0.1:port/v1/models`` -> ``(model names, api_up)``.
 
-    Plain ``http.client`` on loopback: llama-server answers the model list
-    without authentication, and any failure (timeout, non-200, non-JSON, a
-    non-llama API that happens to listen on the port) degrades to an empty
-    list so the dashboard falls back to the command-line model name.
+    ``api_up`` is True when the endpoint answered 200 with a JSON object -
+    the OpenAI-compatible contract holds, whatever software serves the port
+    (llama.cpp, Strata, vLLM, Ollama, llama-swap ...). The model list is
+    filtered to resident models (see :func:`_models_from_api_json`); any
+    failure degrades to ``([], False)`` so the dashboard falls back to the
+    command-line model name.
     """
+    status, text = _http_get_loopback(port, "/v1/models",
+                                      "application/json")
+    if status != 200:
+        return [], False
     try:
-        import http.client  # stdlib, cheap import inside the poll
-
-        conn = http.client.HTTPConnection("127.0.0.1", port,
-                                          timeout=WATCH_MODELS_TIMEOUT_S)
-        try:
-            conn.request("GET", "/v1/models",
-                         headers={"Accept": "application/json"})
-            resp = conn.getresponse()
-            if resp.status != 200:
-                return []
-            body = resp.read(262_144)
-        finally:
-            conn.close()
-        payload = json.loads(body.decode("utf-8", errors="replace"))
-    except Exception:
-        return []
+        payload = json.loads(text)
+    except ValueError:
+        return [], False
     if not isinstance(payload, dict):
-        return []
-    return _models_from_api_json(payload)
+        return [], False
+    return _models_from_api_json(payload), True
+
+
+def _fetch_loaded_models(port: int) -> list:
+    """Loaded model names only (kept for back-compat with the v4 tests)."""
+    return _fetch_models_and_up(port)[0]
 
 
 # Prometheus gauge lines of the llama.cpp /metrics endpoint. Body is plain
@@ -791,51 +835,111 @@ def _parse_prometheus_gauge(text: str,
     return value
 
 
+# JSON /metrics bodies (protocol v7): OpenAI servers that are NOT llama.cpp
+# answer /metrics with JSON instead of Prometheus text (verified live on
+# Strata 0.1.x). The candidate paths below map such a body onto the same
+# "model_metrics" keys the dashboard already renders, first hit wins:
+#   prompt_tps    <- live.prefill_tok_s_mean   (input throughput)
+#   predicted_tps <- live.tok_s                (decode throughput)
+#   total_tokens  <- totals.prompt_tokens + totals.output_tokens
+_JSON_TPS_CANDIDATES: dict[str, tuple[tuple[str, str], ...]] = {
+    "prompt_tps": (("live", "prefill_tok_s_mean"),
+                   ("hardware", "prefill_tok_s_mean")),
+    "predicted_tps": (("live", "tok_s"), ("hardware", "tok_s"),
+                      ("live", "tok_s_mean"), ("hardware", "tok_s_mean")),
+}
+
+
+def _json_number(payload: dict, path: tuple) -> "float | None":
+    """Nested dict lookup *path* in *payload* as finite float (or None)."""
+    node = payload
+    for key in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(key)
+    if isinstance(node, bool) or not isinstance(node, (int, float)):
+        return None
+    value = float(node)
+    return value if math.isfinite(value) else None
+
+
+def _parse_json_metrics(text: str) -> dict:
+    """Map a JSON ``/metrics`` body onto model_metrics keys (fresh dict).
+
+    Returns ``{}`` when the body is not a JSON object or carries no usable
+    number. Throughput values only count when > 0 (idle servers report 0,
+    same semantics as the llama.cpp gauges); ``total_tokens`` is the sum of
+    the cumulative token counters that are present.
+    """
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    fresh: dict = {}
+    for key, candidates in _JSON_TPS_CANDIDATES.items():
+        for path in candidates:
+            value = _json_number(payload, path)
+            if value is not None and value > 0:
+                fresh[key] = value
+                break
+    totals = [v for v in (_json_number(payload, ("totals", "prompt_tokens")),
+                          _json_number(payload, ("totals", "output_tokens")))
+              if v is not None]
+    if totals:
+        total = sum(totals)
+        if total > 0:
+            fresh["total_tokens"] = int(total)
+    return fresh
+
+
 def _fetch_model_metrics(port: int, model_name: str) -> "dict | None":
-    """Per-model throughput from llama.cpp ``GET /metrics?model=<name>``.
+    """Per-model throughput from the server's ``GET /metrics`` endpoint.
+
+    Two body formats are understood (protocol v7):
+
+    * **Prometheus text** (llama.cpp): the ``llamacpp:prompt_tokens_seconds``
+      / ``llamacpp:predicted_tokens_seconds`` gauges plus the cumulative
+      counters ``llamacpp:prompt_tokens_total`` + ``llamacpp:n_decode_total``.
+    * **JSON** (other OpenAI-compatible servers, e.g. Strata): mapped by
+      :func:`_parse_json_metrics` onto the same keys.
 
     Returns ``{"prompt_tps": float, "predicted_tps": float,
     "total_tokens": int}`` - keys are omitted while not measurable. The
-    two throughput gauges report 0 while the server idles: a 0 (or NaN)
+    two throughput values report 0 while the server idles: a 0 (or NaN)
     reading never overwrites the latched last valid value
-    (``_MODEL_TPS_CACHE``), it is just re-sent. ``total_tokens`` is the
-    sum of the cumulative counters ``llamacpp:prompt_tokens_total`` and
-    ``llamacpp:n_decode_total`` (missing counters count as 0) and grows
+    (``_MODEL_TPS_CACHE``), it is just re-sent. ``total_tokens`` grows
     continuously.
-    ``None`` when nothing is known at all - non-llama servers, timeouts,
-    non-200 and non-numeric values all degrade quietly so the dashboard
-    shows the plain model line without a suffix.
+    ``None`` when nothing is known at all - servers without /metrics,
+    timeouts, non-200 and non-numeric values all degrade quietly so the
+    dashboard shows the plain model line without a suffix.
     """
     if not model_name:
         return None
     path = "/metrics?model=" + urllib.parse.quote(model_name)
-    try:
-        import http.client  # stdlib, cheap import inside the poll
-
-        conn = http.client.HTTPConnection("127.0.0.1", port,
-                                          timeout=WATCH_MODELS_TIMEOUT_S)
-        try:
-            conn.request("GET", path, headers={"Accept": "text/plain"})
-            resp = conn.getresponse()
-            if resp.status != 200:
-                return None
-            body = resp.read(262_144)
-        finally:
-            conn.close()
-        text = body.decode("utf-8", errors="replace")
-    except Exception:
+    status, text = _http_get_loopback(port, path,
+                                      "text/plain, application/json")
+    if status != 200 or not text:
         return None
-    prompt = _parse_prometheus_gauge(text, _PROMPT_TPS_RE)
-    predicted = _parse_prometheus_gauge(text, _PREDICTED_TPS_RE)
-    counter_values = [_parse_prometheus_gauge(text, _PROMPT_TOKENS_TOTAL_RE),
-                      _parse_prometheus_gauge(text, _N_DECODE_TOTAL_RE)]
-    counters = [v for v in counter_values if v is not None]
-    total = sum(counters) if counters else None
     fresh: dict = {}
-    if prompt is not None and prompt > 0:
-        fresh["prompt_tps"] = prompt
-    if predicted is not None and predicted > 0:
-        fresh["predicted_tps"] = predicted
+    total: "float | None" = None
+    if text.lstrip()[:1] == "{":
+        parsed = _parse_json_metrics(text)
+        total = parsed.pop("total_tokens", None)
+        fresh = parsed
+    else:
+        prompt = _parse_prometheus_gauge(text, _PROMPT_TPS_RE)
+        predicted = _parse_prometheus_gauge(text, _PREDICTED_TPS_RE)
+        counter_values = [
+            _parse_prometheus_gauge(text, _PROMPT_TOKENS_TOTAL_RE),
+            _parse_prometheus_gauge(text, _N_DECODE_TOTAL_RE)]
+        counters = [v for v in counter_values if v is not None]
+        total = sum(counters) if counters else None
+        if prompt is not None and prompt > 0:
+            fresh["prompt_tps"] = prompt
+        if predicted is not None and predicted > 0:
+            fresh["predicted_tps"] = predicted
     result: dict = {}
     with _MODEL_TPS_CACHE_LOCK:
         key = (port, model_name)
@@ -849,6 +953,109 @@ def _fetch_model_metrics(port: int, model_name: str) -> "dict | None":
     if total is not None and total > 0:
         result["total_tokens"] = int(total)
     return result or None
+
+
+# --- API capability probe (protocol v7) ---------------------------------
+#
+# When a watch entry's port is open, the host asks the server which
+# endpoints it actually answers and what it is. The identity of a server
+# does not change while it runs, so the /health + /props probes are cached
+# per port for WATCH_PROBE_TTL_S seconds (the /v1/models list itself is
+# re-fetched every poll - models come and go). "api_features" lists the
+# endpoints that answered, so the dashboard can show what is available
+# instead of failing silently; "api_info" carries the display extras
+# (server build, context size, slot count, queue, state).
+
+_API_PROBE_CACHE: dict[int, tuple[float, dict]] = {}
+_API_PROBE_CACHE_LOCK = threading.Lock()
+
+
+def _probe_api_identity(port: int, api_up: bool = False) -> dict:
+    """TTL-cached ``/health`` + ``/props`` + ``/metrics`` probe.
+
+    Returns a dict with (all optional): ``api_kind`` ("llama.cpp" |
+    "openai" | "unknown"), ``api_features_extra`` (health/props/metrics
+    hits) and ``api_info`` (the merged display extras). *api_up* is the
+    caller's ``/v1/models`` verdict, used to classify plain
+    OpenAI-contract servers. Never raises; a server that answers nothing
+    still yields ``{"api_kind": "unknown"}`` (no features/info).
+    """
+    now = time.time()
+    with _API_PROBE_CACHE_LOCK:
+        cached = _API_PROBE_CACHE.get(port)
+        if cached and now - cached[0] < WATCH_PROBE_TTL_S:
+            return dict(cached[1])
+
+    features: list = []
+    info: dict = {}
+    kind = "unknown"
+
+    status, text = _http_get_loopback(port, "/health", "application/json")
+    health: dict = {}
+    if status == 200:
+        features.append("health")
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                health = parsed
+        except ValueError:
+            pass
+
+    status, text = _http_get_loopback(port, "/props", "application/json")
+    props: dict = {}
+    if status == 200:
+        features.append("props")
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                props = parsed
+        except ValueError:
+            pass
+
+    # llama.cpp (and llama.cpp-compatible forks such as Strata) expose
+    # build_info / total_slots / chat_template on /props.
+    build_info = str(props.get("build_info") or "").strip()
+    if (build_info or "total_slots" in props
+            or "chat_template" in props or "use_mlock" in props):
+        kind = "llama.cpp"
+    elif api_up or health.get("loaded") is not None or health.get(
+            "max_context"):
+        kind = "openai"
+
+    # /metrics presence decides the throughput source (Prometheus text or
+    # JSON body) - probe it once per TTL window, cheaply.
+    status, text = _http_get_loopback(port, "/metrics",
+                                      "text/plain, application/json",
+                                      max_bytes=4096)
+    if status == 200:
+        features.append("metrics")
+
+    if build_info:
+        info["server"] = build_info[:64]
+    elif health.get("version"):
+        info["server"] = str(health["version"])[:64]
+    context = (health.get("max_context") or props.get("n_ctx")
+               or (props.get("default_generation_settings") or {}).get(
+                   "n_ctx"))
+    if isinstance(context, (int, float)) and context > 0:
+        info["context"] = int(context)
+    slots = props.get("total_slots")
+    if isinstance(slots, (int, float)) and slots > 0:
+        info["slots"] = int(slots)
+    alias = str(props.get("model_alias") or "").strip()
+    if alias:
+        info["model_alias"] = alias[:64]
+
+    result: dict = {"api_kind": kind}
+    if features:
+        result["api_features_extra"] = features
+    if info:
+        result["api_info"] = info
+    with _API_PROBE_CACHE_LOCK:
+        if len(_API_PROBE_CACHE) > 64:
+            _API_PROBE_CACHE.clear()
+        _API_PROBE_CACHE[port] = (now, dict(result))
+    return result
 
 
 def _model_from_argv(argv: list) -> str:
@@ -875,79 +1082,93 @@ def _watched_processes(watch: list) -> dict:
     Each value: ``{"running": bool}`` plus - when running - ``count``,
     ``pid``, ``cpu`` (percent, summed), ``ram`` (bytes, summed), ``uptime``
     (seconds) and, for ``name:port`` entries, ``api_port``/``api_port_open``.
+
+    Protocol v7: port-only entries (``":8080"``/``"8080"``) carry no
+    process name - the port is probed regardless of any process match, and
+    every entry with an open port reports the API capability fields
+    ``api_up`` (the OpenAI ``/v1/models`` contract answered), ``api_kind``,
+    ``api_features`` and ``api_info`` (see :func:`_probe_api_identity`).
+    A port-only entry keeps ``running: false`` (no process was watched)
+    while ``api_port_open``/``api_up`` tell the dashboard it is live.
     """
     entries: dict[str, tuple[str, int | None]] = {}
     for raw in list(watch)[:WATCH_MAX_ENTRIES]:
         name, port = _parse_watch_entry(str(raw))
-        if name:
+        if name or port:
             entries[str(raw)] = (name, port)
     result: dict[str, dict] = {key: {"running": False} for key in entries}
     if not entries:
         return result
-    try:
-        import psutil  # type: ignore
-    except Exception:
-        return result  # no psutil -> everything reports as not running
 
-    wanted = {name.lower() for name, _port in entries.values()}
-    found: dict[str, list] = {name.lower(): [] for name in wanted}
-    now = time.time()
-    with _WATCH_PROCS_LOCK:
-        alive: set[int] = set()
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                pname = (proc.info["name"] or "").lower()
-                if pname not in wanted:
-                    continue
-                pid = proc.info["pid"]
-                cached = _WATCH_PROCS.get(pid)
-                if cached is None:
-                    # First sighting: cpu_percent() needs two calls, so the
-                    # first poll reports 0 - keep the object for the next one.
-                    _WATCH_PROCS[pid] = proc
-                    cpu = 0.0
-                else:
-                    cpu = cached.cpu_percent(interval=None)
-                alive.add(pid)
-                ram = 0
-                try:
-                    mem = proc.memory_info()
-                    ram = int(mem.rss)
-                except (psutil.Error, OSError):
-                    pass
-                # cmdline is only read for matching processes (a full
-                # cmdline scan of every process would be too expensive on
-                # each poll); used to surface the llama.cpp model name.
-                try:
-                    argv = proc.cmdline()
-                except (psutil.Error, OSError):
-                    argv = []
-                found[pname].append(
-                    (pid, cpu, ram, now - proc.create_time(), argv))
-            except (psutil.NoSuchProcess, psutil.AccessDenied,
-                    psutil.ZombieProcess, OSError):
-                continue
-        # Drop cached objects of processes that disappeared.
-        for dead in [p for p in _WATCH_PROCS if p not in alive]:
-            del _WATCH_PROCS[dead]
+    found: dict[str, list] = {}
+    named = [(name, port) for name, port in entries.values() if name]
+    if named:
+        try:
+            import psutil  # type: ignore
+        except Exception:
+            psutil = None  # no psutil -> process parts report not running
+        if psutil is not None:
+            wanted = {name.lower() for name, _port in named}
+            found = {name.lower(): [] for name in wanted}
+            now = time.time()
+            with _WATCH_PROCS_LOCK:
+                alive: set[int] = set()
+                for proc in psutil.process_iter(["pid", "name"]):
+                    try:
+                        pname = (proc.info["name"] or "").lower()
+                        if pname not in wanted:
+                            continue
+                        pid = proc.info["pid"]
+                        cached = _WATCH_PROCS.get(pid)
+                        if cached is None:
+                            # First sighting: cpu_percent() needs two
+                            # calls, so the first poll reports 0 - keep
+                            # the object for the next one.
+                            _WATCH_PROCS[pid] = proc
+                            cpu = 0.0
+                        else:
+                            cpu = cached.cpu_percent(interval=None)
+                        alive.add(pid)
+                        ram = 0
+                        try:
+                            mem = proc.memory_info()
+                            ram = int(mem.rss)
+                        except (psutil.Error, OSError):
+                            pass
+                        # cmdline is only read for matching processes (a
+                        # full cmdline scan of every process would be too
+                        # expensive on each poll); used to surface the
+                        # llama.cpp model name.
+                        try:
+                            argv = proc.cmdline()
+                        except (psutil.Error, OSError):
+                            argv = []
+                        found[pname].append(
+                            (pid, cpu, ram, now - proc.create_time(), argv))
+                    except (psutil.NoSuchProcess, psutil.AccessDenied,
+                            psutil.ZombieProcess, OSError):
+                        continue
+                # Drop cached objects of processes that disappeared.
+                for dead in [p for p in _WATCH_PROCS if p not in alive]:
+                    del _WATCH_PROCS[dead]
 
     port_tasks: list[tuple[dict, int]] = []
     for key, (name, port) in entries.items():
-        procs = found.get(name.lower(), [])
-        if not procs:
-            continue
-        entry_result = {
-            "running": True,
-            "count": len(procs),
-            "pid": min(p[0] for p in procs),
-            "cpu": round(sum(p[1] for p in procs), 1),
-            "ram": sum(p[2] for p in procs),
-            "uptime": int(max(p[3] for p in procs)),
-        }
-        model = _model_from_argv(min(procs, key=lambda p: p[0])[4])
-        if model:
-            entry_result["model"] = model
-        result[key] = entry_result
+        procs = found.get(name.lower(), []) if name else []
+        entry_result = result[key]
+        if procs:
+            entry_result = {
+                "running": True,
+                "count": len(procs),
+                "pid": min(p[0] for p in procs),
+                "cpu": round(sum(p[1] for p in procs), 1),
+                "ram": sum(p[2] for p in procs),
+                "uptime": int(max(p[3] for p in procs)),
+            }
+            model = _model_from_argv(min(procs, key=lambda p: p[0])[4])
+            if model:
+                entry_result["model"] = model
+            result[key] = entry_result
         if port:
             entry_result["api_port"] = port
             entry_result["api_port_open"] = False  # set below
@@ -964,25 +1185,50 @@ def _watched_processes(watch: list) -> dict:
                     futures[fut]["api_port_open"] = bool(fut.result())
                 except Exception:
                     pass
-        # On top of the open port, ask the llama-server API which models it
-        # currently reports as loaded (GET /v1/models). Only done for ready
-        # entries; failures degrade to no "models" field (the argv-derived
-        # "model" above stays as the fallback on the dashboard).
+        # On top of the open port, ask the OpenAI-compatible API which
+        # models it currently reports as loaded (GET /v1/models) and
+        # whether the endpoint answers at all (api_up, protocol v7). Only
+        # done for ready entries; failures degrade to no "models" field
+        # (the argv-derived "model" above stays as the fallback on the
+        # dashboard).
         ready = [(e, p) for e, p in port_tasks if e.get("api_port_open")]
         if ready:
             with ThreadPoolExecutor(max_workers=len(ready)) as pool:
-                model_futures = {pool.submit(_fetch_loaded_models, p): e
+                model_futures = {pool.submit(_fetch_models_and_up, p): e
                                  for e, p in ready}
                 for fut in model_futures:
                     try:
-                        names = fut.result()
+                        names, api_up = fut.result()
                     except Exception:
-                        names = []
+                        names, api_up = [], False
+                    entry = model_futures[fut]
                     if names:
-                        model_futures[fut]["models"] = names
+                        entry["models"] = names
+                    if api_up:
+                        entry["api_up"] = True
+            # Capability probe (protocol v7): which endpoints answer, what
+            # the server is, and the display extras. TTL-cached per port
+            # (WATCH_PROBE_TTL_S) so the identity probes run at most every
+            # ~10 s even though the dashboard polls every 2-3 s.
+            for entry_result, port in ready:
+                try:
+                    probe = _probe_api_identity(
+                        port, bool(entry_result.get("api_up")))
+                except Exception:
+                    probe = {}
+                kind = probe.get("api_kind")
+                if kind:
+                    entry_result["api_kind"] = kind
+                features = (["models"] if entry_result.get("api_up") else [])
+                features += probe.get("api_features_extra", [])
+                if features:
+                    entry_result["api_features"] = features
+                if probe.get("api_info"):
+                    entry_result["api_info"] = probe["api_info"]
             # On top of the model list, read the prompt/generation
-            # throughput per model from the llama.cpp Prometheus endpoint
-            # (GET /metrics?model=<name>, protocol v5 "model_metrics"). One
+            # throughput per model from the server's /metrics endpoint
+            # (GET /metrics?model=<name>, protocol v5 "model_metrics"; v7
+            # understands both Prometheus text and JSON bodies). One
             # request per loaded model, run in parallel with a bounded
             # worker count; a model whose metrics cannot be read is simply
             # absent from the map (the dashboard omits its t/s suffix).
@@ -1012,9 +1258,10 @@ def _watched_processes(watch: list) -> dict:
 def collect_metrics(watch: "list | None" = None) -> dict:
     """Collect CPU/RAM/GPU/VRAM metrics for the dashboard.
 
-    Watch entries with an open llama-server port additionally report
-    ``models`` (v4) and ``model_metrics`` (v5: per-model prompt/generation
-    throughput in tokens/s from ``GET /metrics?model=<name>``).
+    Watch entries with an open API port additionally report ``models``
+    (v4), ``model_metrics`` (v5: per-model prompt/generation throughput in
+    tokens/s from ``GET /metrics?model=<name>``) and the v7 capability
+    fields ``api_up``/``api_kind``/``api_features``/``api_info``.
 
     All sizes are bytes, percentages 0-100. psutil is imported lazily so a
     broken/missing psutil in an old build only degrades this command.

@@ -126,6 +126,15 @@ data class ModelMetric(
     @SerialName("total_tokens") val totalTokens: Double? = null,
 )
 
+/** Anzeige-Zusatz aus der API-Probe des Hosts (Host-Protokoll v7). */
+@Serializable
+data class ApiInfo(
+    val server: String? = null,
+    val context: Int? = null,
+    val slots: Int? = null,
+    @SerialName("model_alias") val modelAlias: String? = null,
+)
+
 @Serializable
 data class WatchInfo(
     val running: Boolean = false,
@@ -137,6 +146,14 @@ data class WatchInfo(
     val model: String? = null,
     @SerialName("api_port") val apiPort: Int? = null,
     @SerialName("api_port_open") val apiPortOpen: Boolean? = null,
+    /** v7: /v1/models antwortete 200 mit JSON (OpenAI-Vertrag erfuellt). */
+    @SerialName("api_up") val apiUp: Boolean? = null,
+    /** v7: "llama.cpp" | "openai" | "unknown". */
+    @SerialName("api_kind") val apiKind: String? = null,
+    /** v7: geantwortete Endpunkte (models/health/props/metrics). */
+    @SerialName("api_features") val apiFeatures: List<String> = emptyList(),
+    /** v7: Server-Build, Kontextgroesse, Slots. */
+    @SerialName("api_info") val apiInfo: ApiInfo? = null,
     val models: List<String> = emptyList(),
     @SerialName("model_metrics") val modelMetrics: Map<String, ModelMetric> = emptyMap(),
 )

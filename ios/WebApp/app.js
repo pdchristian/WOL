@@ -47,7 +47,7 @@ de:{
  "dev.user":"Benutzer:","dev.pass":"Passwort:","dev.method":"Herunterfahr-Methode:",
  "dev.watch":"Überwachte Prozesse (Dashboard):",
  "ph.name":"Gerätenamen eingeben","ph.mac":"z.B., AA:BB:CC:DD:EE:FF","ph.ip":"z.B., 192.168.1.100 oder ubuntu-mercury",
- "ph.user":"Benutzername (optional)","ph.pass":"Passwort (optional)","ph.watch":"z.B., llama-server.exe:8080",
+ "ph.user":"Benutzername (optional)","ph.pass":"Passwort (optional)","ph.watch":"z.B., llama-server.exe:8080 oder :8080",
  "ph.pass.keep":"Leer lassen = gespeichertes Passwort behalten",
  "pass.share.title":"Passwort übernehmen?","pass.share.message":'Passwort auf die anderen {count} Gerät(e) mit Benutzer "{username}" übernehmen?',"pass.share.done":"Passwort übernommen.",
  "dev.added":"Gerät hinzugefügt.",
@@ -108,6 +108,7 @@ de:{
  "dash.swipe":"Wischen nach links/rechts wechselt zum nächsten Gerät.",
  "dash.svc":"Dienste","dash.svc.sub":"Überwachte Prozesse","dash.svc.none":"Keine überwachten Prozesse konfiguriert.",
  "svc.running":"läuft · PID {pid}","svc.ready":"läuft · PID {pid} · API bereit :{port}","svc.unreach":"läuft (PID {pid}), aber Port {port} nicht erreichbar","svc.gone":"Prozess nicht gefunden",
+ "svc.api_ready":"API bereit :{port} · {kind}","svc.api_gone":"Port {port} nicht erreichbar","svc.info_server":"Server {server}","svc.info_context":"Kontext {context}","svc.info_slots":"Slots {slots}","svc.tip_features":"Antwortende Endpunkte: {features}",
  "svc.probing":"wird geprüft…",
  "dash.inferenz":"⚡ Inferenz aktiv","dash.model":"🧠 {m}",
  "dash.model_tps":"Eingabe-Tokens {prompt} t/s – Ausgabe-Tokens {predicted} t/s",
@@ -172,7 +173,7 @@ en:{
  "dev.user":"Username:","dev.pass":"Password:","dev.method":"Shutdown method:",
  "dev.watch":"Watched processes (Dashboard):",
  "ph.name":"Enter device name","ph.mac":"e.g., AA:BB:CC:DD:EE:FF","ph.ip":"e.g., 192.168.1.100 or ubuntu-mercury",
- "ph.user":"Username (optional)","ph.pass":"Password (optional)","ph.watch":"e.g., llama-server.exe:8080",
+ "ph.user":"Username (optional)","ph.pass":"Password (optional)","ph.watch":"e.g., llama-server.exe:8080 or :8080",
  "ph.pass.keep":"Leave empty = keep stored password",
  "pass.share.title":"Apply password?","pass.share.message":'Apply this password to the other {count} device(s) with user "{username}"?',"pass.share.done":"Password applied.",
  "dev.added":"Device added.",
@@ -227,6 +228,7 @@ en:{
  "dash.swipe":"Swipe left/right to switch to the next device.",
  "dash.svc":"Services","dash.svc.sub":"Watched processes","dash.svc.none":"No watched processes configured.",
  "svc.running":"running · PID {pid}","svc.ready":"running · PID {pid} · API ready :{port}","svc.unreach":"running (PID {pid}), but port {port} unreachable","svc.gone":"Process not found",
+ "svc.api_ready":"API ready :{port} · {kind}","svc.api_gone":"Port {port} not reachable","svc.info_server":"Server {server}","svc.info_context":"Context {context}","svc.info_slots":"Slots {slots}","svc.tip_features":"Answering endpoints: {features}",
  "svc.probing":"checking…",
  "dash.inferenz":"⚡ Inference active","dash.model":"🧠 {m}",
  "dash.model_tps":"Input Tokens {prompt} t/s - Output Tokens {predicted} t/s",
@@ -291,7 +293,7 @@ fr:{
  "dev.user":"Utilisateur :","dev.pass":"Mot de passe :","dev.method":"Méthode d'extinction :",
  "dev.watch":"Processus surveillés (Tableau de bord) :",
  "ph.name":"Saisir le nom","ph.mac":"ex., AA:BB:CC:DD:EE:FF","ph.ip":"ex., 192.168.1.100 ou ubuntu-mercury",
- "ph.user":"Utilisateur (facultatif)","ph.pass":"Mot de passe (facultatif)","ph.watch":"ex., llama-server.exe:8080",
+ "ph.user":"Utilisateur (facultatif)","ph.pass":"Mot de passe (facultatif)","ph.watch":"ex., llama-server.exe:8080 ou :8080",
  "ph.pass.keep":"Vide = conserver le mot de passe enregistré",
  "pass.share.title":"Appliquer le mot de passe ?","pass.share.message":'Appliquer ce mot de passe aux {count} autre(s) appareil(s) de l\'utilisateur "{username}" ?',"pass.share.done":"Mot de passe appliqué.",
  "dev.added":"Appareil ajouté.",
@@ -346,6 +348,7 @@ fr:{
  "dash.swipe":"Faites glisser à gauche/droite pour changer d'appareil.",
  "dash.svc":"Services","dash.svc.sub":"Processus surveillés","dash.svc.none":"Aucun processus surveillé.",
  "svc.running":"actif · PID {pid}","svc.ready":"actif · PID {pid} · API prête :{port}","svc.unreach":"actif (PID {pid}), port {port} injoignable","svc.gone":"Processus introuvable",
+ "svc.api_ready":"API prête :{port} · {kind}","svc.api_gone":"Port {port} injoignable","svc.info_server":"Serveur {server}","svc.info_context":"Contexte {context}","svc.info_slots":"Slots {slots}","svc.tip_features":"Endpoints réactifs : {features}",
  "svc.probing":"vérification…",
  "dash.inferenz":"⚡ Inférence active","dash.model":"🧠 {m}",
  "dash.model_tps":"Tokens d'entrée {prompt} t/s - Tokens de sortie {predicted} t/s",
@@ -410,7 +413,7 @@ es:{
  "dev.user":"Usuario:","dev.pass":"Contraseña:","dev.method":"Método de apagado:",
  "dev.watch":"Procesos supervisados (Panel):",
  "ph.name":"Introduzca el nombre","ph.mac":"p. ej., AA:BB:CC:DD:EE:FF","ph.ip":"p. ej., 192.168.1.100 o ubuntu-mercury",
- "ph.user":"Usuario (opcional)","ph.pass":"Contraseña (opcional)","ph.watch":"p. ej., llama-server.exe:8080",
+ "ph.user":"Usuario (opcional)","ph.pass":"Contraseña (opcional)","ph.watch":"p. ej., llama-server.exe:8080 o :8080",
  "ph.pass.keep":"Vacío = mantener la contraseña guardada",
  "pass.share.title":"¿Aplicar contraseña?","pass.share.message":'¿Aplicar esta contraseña a los otros {count} dispositivo(s) con el usuario "{username}"?',"pass.share.done":"Contraseña aplicada.",
  "dev.added":"Dispositivo añadido.",
@@ -465,6 +468,7 @@ es:{
  "dash.swipe":"Desliza a izquierda/derecha para cambiar de dispositivo.",
  "dash.svc":"Servicios","dash.svc.sub":"Procesos supervisados","dash.svc.none":"Sin procesos supervisados.",
  "svc.running":"activo · PID {pid}","svc.ready":"activo · PID {pid} · API lista :{port}","svc.unreach":"activo (PID {pid}), puerto {port} inaccesible","svc.gone":"Proceso no encontrado",
+ "svc.api_ready":"API lista :{port} · {kind}","svc.api_gone":"Puerto {port} no accesible","svc.info_server":"Servidor {server}","svc.info_context":"Contexto {context}","svc.info_slots":"Ranuras {slots}","svc.tip_features":"Endpoints que responden: {features}",
  "svc.probing":"comprobando…",
  "dash.inferenz":"⚡ Inferencia activa","dash.model":"🧠 {m}",
  "dash.model_tps":"Tokens de entrada {prompt} t/s - Tokens de salida {predicted} t/s",
@@ -953,15 +957,39 @@ function sparkSvg(vals, color) {
 }
 /* Prozess-Info aus dem letzten Metrik-Snapshot (watch-Key → Eintrag). */
 function procFor(d, key) { return (d.metrics && d.metrics.processes || []).find(p => p.key === key) || null; }
+/* Host v7: port-only watch entries (":8080"/"8080") name no process. */
+function isPortOnly(entry) { return /^:?(\d{1,5})$/.test(String(entry || "").trim()); }
+function svcName(entry) { return isPortOnly(entry) ? "API :" + String(entry).trim().replace(/^:/, "") : String(entry).split(":")[0]; }
+function svcIcon(entry) { return isPortOnly(entry) ? "🧠" : (String(entry).toLowerCase().includes("llama") ? "🦙" : "⚙️"); }
 function svcLine(d, entry) {
   if (d.status !== "online") return t("svc.gone");
   const p = procFor(d, entry);
   if (!p) return t("svc.probing");
+  const port = p.apiPort != null ? String(p.apiPort) : (String(entry).split(":")[1] || "8080");
+  // v7 readiness is port-first: an open API port is enough, even without a
+  // watched process (port-only entries never report running=true).
+  if (p.apiPort != null && p.apiPortOpen) {
+    return p.running ? t("svc.ready", { pid: p.pid, port })
+                     : t("svc.api_ready", { port, kind: p.apiKind || "" });
+  }
+  if (p.apiPort != null && p.apiPortOpen === false) {
+    return p.running ? t("svc.unreach", { pid: p.pid, port }) : t("svc.api_gone", { port });
+  }
   if (!p.running) return t("svc.gone");
-  const port = entry.split(":")[1] || String(p.apiPort || "8080");
-  if (p.apiPort != null && p.apiPortOpen) return t("svc.ready", { pid: p.pid, port });
-  if (p.apiPort != null && p.apiPortOpen === false) return t("svc.unreach", { pid: p.pid, port });
   return t("svc.running", { pid: p.pid });
+}
+/* Host v7: capability line from api_info (server build · context · slots). */
+function apiInfoHtml(p) {
+  const a = p && p.apiInfo;
+  if (!a) return "";
+  const parts = [];
+  if (a.server) parts.push(t("svc.info_server", { server: String(a.server) }));
+  if (Number(a.context) > 0) parts.push(t("svc.info_context", { context: fmtInt(Number(a.context)) }));
+  if (Number(a.slots) > 0) parts.push(t("svc.info_slots", { slots: Number(a.slots) }));
+  if (!parts.length) return "";
+  const feats = (p.apiFeatures || []).join(", ");
+  const tip = feats ? ` title="${esc(t("svc.tip_features", { features: feats }))}"` : "";
+  return `<span class="mono wrap"${tip}>${esc(parts.join(" · "))}</span>`;
 }
 // Host v5: per-model throughput (t/s) + total tokens (prompt_tokens_total
 // + n_decode_total) from the llama.cpp Prometheus endpoint. The host
@@ -1316,11 +1344,12 @@ function renderDash(dir) {
       ${d.watch.length ? `<div class="panel">${svc.map((s, i) => `
         ${i ? '<div class="sep"></div>' : ""}
         <div class="row64" style="min-height:56px">
-          <span style="font-size:20px">${s.w.toLowerCase().includes("llama") ? "🦙" : "⚙️"}</span>
-          <div class="rowInfo"><div class="rowTitle" style="font-size:13px">${esc(s.w.split(":")[0])}
+          <span style="font-size:20px">${svcIcon(s.w)}</span>
+          <div class="rowInfo"><div class="rowTitle" style="font-size:13px">${esc(svcName(s.w))}
             ${s.w.toLowerCase().includes("llama") && d.gpuHigh >= 2 ? `<span class="chip probe" style="margin-left:6px;font-size:9px" id="infBadge">${esc(t("dash.inferenz"))}</span>` : ""}</div>
             <span class="mono">${esc(svcLine(d, s.w))}</span>
-            ${s.p && s.p.models && s.p.models.length && s.p.apiPortOpen ? `<span class="mono wrap">${esc(t("dash.model", { m: s.p.models[0] }) + modelTps(s.p, s.p.models[0]))}${s.p.models.length > 1 ? ` +${s.p.models.length - 1}` : ""}</span>` : ""}
+            ${s.p && s.p.models && s.p.models.length && (s.p.apiPortOpen || s.p.running) ? `<span class="mono wrap">${esc(t("dash.model", { m: s.p.models[0] }) + modelTps(s.p, s.p.models[0]))}${s.p.models.length > 1 ? ` +${s.p.models.length - 1}` : ""}</span>` : ""}
+            ${s.p ? apiInfoHtml(s.p) : ""}
           </div>
         </div>`).join("")}</div>`
       : `<div class="pageSub">${esc(t("dash.svc.none"))}</div>`}

@@ -164,6 +164,23 @@ class TestNegativeExamples:
             "Qwen3.8-Flash-256k-62": {"predicted_tps": 26.65}}
         assert_valid("response-metrics", payload)
 
+    def test_metrics_watch_port_only_entry_ok(self):
+        # v7: a port-only entry (running:false + api_port fields) is valid -
+        # the "bare entry" rule only applies when no api_port is present.
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        assert ":8081" in payload["processes"]
+        assert_valid("response-metrics", payload)
+
+    def test_metrics_watch_rejects_unknown_api_kind(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["processes"][":8081"]["api_kind"] = "vllm"
+        assert_invalid("response-metrics", payload)
+
+    def test_metrics_watch_rejects_unknown_api_feature(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["processes"][":8081"]["api_features"] = ["models", "completions"]
+        assert_invalid("response-metrics", payload)
+
     def test_run_batch_ok_requires_exit_code(self):
         payload = _load(EXAMPLES_DIR / "response-run_batch-ok.json")
         del payload["exit_code"]
@@ -230,8 +247,11 @@ def _fake_psutil_with_llama(monkeypatch, svc, port_open=True,
         "gpu": 64.0, "vram_used": 18 * 1024 ** 3,
         "vram_total": 24 * 1024 ** 3, "gpu_name": "NVIDIA GeForce RTX 4090"})
     monkeypatch.setattr(svc, "_check_port_loopback", lambda port: True)
-    monkeypatch.setattr(svc, "_fetch_loaded_models",
-                        lambda port: models or ["Qwen3.8-Flash-256k-62"])
+    monkeypatch.setattr(
+        svc, "_fetch_models_and_up",
+        lambda port: (models or ["Qwen3.8-Flash-256k-62"], True))
+    monkeypatch.setattr(svc, "_probe_api_identity",
+                        lambda port, api_up=False: {})
     monkeypatch.setattr(
         svc, "_fetch_model_metrics",
         lambda port, name: {"prompt_tps": 261.15, "predicted_tps": 26.65})

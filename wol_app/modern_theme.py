@@ -539,6 +539,9 @@ QScrollArea#batchScroll > QWidget {{ background: transparent; }}
 #svcStatusRunning {{ color: {t['online']}; font-size: 12px; }}
 #svcStatusWarn {{ color: {t['unknown']}; font-size: 12px; }}
 #svcStatusOff {{ color: {t['text_dim']}; font-size: 12px; }}
+#svcApiInfo {{
+    color: {t['text_dim']}; font-family: Consolas, monospace; font-size: 11px;
+}}
 #svcMetricValue {{ color: {t['text']}; font-size: 15px; font-weight: 700; }}
 #svcMetricCaption {{
     color: {t['text_dim']}; font-size: 10px; font-weight: 600;

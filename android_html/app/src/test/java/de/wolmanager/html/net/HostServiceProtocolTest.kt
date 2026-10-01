@@ -80,6 +80,41 @@ class HostServiceProtocolTest {
     }
 
     @Test
+    fun metrics_v7PortOnlyEntry() {
+        // Host-Protokoll v7: Port-only-Eintrag ohne Prozess, JSON-/metrics-Server.
+        val body = """
+        {
+          "status": "ok", "protocol": 7, "hostname": "SERVER",
+          "processes": {
+            ":8081": {
+              "running": false,
+              "api_port": 8081, "api_port_open": true, "api_up": true,
+              "api_kind": "openai",
+              "api_features": ["models", "health", "metrics"],
+              "api_info": { "server": "Strata 0.1.30", "context": 262144, "slots": 1 },
+              "models": ["qwen3.8-flash-next-iq3_s"],
+              "model_metrics": {
+                "qwen3.8-flash-next-iq3_s": { "prompt_tps": 398.0, "predicted_tps": 72.2, "total_tokens": 19456405 }
+              }
+            }
+          }
+        }
+        """.trimIndent()
+        val m = json.decodeFromJsonElement(MetricsSnapshot.serializer(), json.parseToJsonElement(body))
+        assertEquals(7, m.protocol)
+        val api = m.processes[":8081"]!!
+        assertEquals(false, api.running)
+        assertEquals(8081, api.apiPort)
+        assertEquals(true, api.apiUp)
+        assertEquals("openai", api.apiKind)
+        assertEquals(listOf("models", "health", "metrics"), api.apiFeatures)
+        assertEquals("Strata 0.1.30", api.apiInfo!!.server)
+        assertEquals(262144, api.apiInfo!!.context)
+        assertEquals(1, api.apiInfo!!.slots)
+        assertEquals(72.2, api.modelMetrics["qwen3.8-flash-next-iq3_s"]!!.predictedTps!!, 0.001)
+    }
+
+    @Test
     fun errorResponse_shape() {
         val body = """{"status":"error","message":"Batches sind deaktiviert. Starten Sie den Dienst mit \"--enable-batch\"."}"""
         val obj = json.parseToJsonElement(body).jsonObject

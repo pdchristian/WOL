@@ -116,6 +116,10 @@ class TestWatchedProcesses:
             "agent:service") == ("agent:service", None)
         assert wol_host_service._parse_watch_entry(
             "x.exe:99999") == ("x.exe:99999", None)
+        # v7 port-only entries: no process name, just the port
+        assert wol_host_service._parse_watch_entry(":8080") == ("", 8080)
+        assert wol_host_service._parse_watch_entry("8080") == ("", 8080)
+        assert wol_host_service._parse_watch_entry(":99999") == (":99999", None)
 
     def test_watched_processes_not_running(self, monkeypatch):
         fake_psutil = mock.MagicMock()
@@ -137,6 +141,10 @@ class TestWatchedProcesses:
         monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
         monkeypatch.setattr(wol_host_service, "_check_port_loopback",
                             lambda port: True)
+        monkeypatch.setattr(wol_host_service, "_fetch_models_and_up",
+                            lambda port: ([], False))
+        monkeypatch.setattr(wol_host_service, "_probe_api_identity",
+                            lambda port, api_up=False: {})
         monkeypatch.setattr(wol_host_service.time, "time", lambda: 3600.0)
         wol_host_service._WATCH_PROCS.clear()
         try:
@@ -266,8 +274,10 @@ class TestLoadedModels:
         monkeypatch.setattr(wol_host_service, "_check_port_loopback",
                             lambda port: True)
         monkeypatch.setattr(
-            wol_host_service, "_fetch_loaded_models",
-            lambda port: ["Qwen3.8-Flash-256k-50", "glm-4.7-air"])
+            wol_host_service, "_fetch_models_and_up",
+            lambda port: (["Qwen3.8-Flash-256k-50", "glm-4.7-air"], True))
+        monkeypatch.setattr(wol_host_service, "_probe_api_identity",
+                            lambda port, api_up=False: {})
         wol_host_service._WATCH_PROCS.clear()
         try:
             result = wol_host_service._watched_processes(
@@ -276,6 +286,8 @@ class TestLoadedModels:
             wol_host_service._WATCH_PROCS.clear()
         info = result["llama-server.exe:8080"]
         assert info["api_port_open"] is True
+        assert info["api_up"] is True
+        assert info["api_features"] == ["models"]
         assert info["models"] == ["Qwen3.8-Flash-256k-50", "glm-4.7-air"]
 
     def test_watched_processes_no_models_when_port_closed(self, monkeypatch):
@@ -292,8 +304,8 @@ class TestLoadedModels:
                             lambda port: False)
         called = []
         monkeypatch.setattr(
-            wol_host_service, "_fetch_loaded_models",
-            lambda port: called.append(port) or [])
+            wol_host_service, "_fetch_models_and_up",
+            lambda port: called.append(port) or ([], False))
         wol_host_service._WATCH_PROCS.clear()
         try:
             result = wol_host_service._watched_processes(
@@ -317,8 +329,10 @@ class TestLoadedModels:
         monkeypatch.setattr(wol_host_service, "_check_port_loopback",
                             lambda port: True)
         monkeypatch.setattr(
-            wol_host_service, "_fetch_loaded_models",
-            lambda port: ["Qwen3.8-Flash-256k-62", "glm-4.7-air"])
+            wol_host_service, "_fetch_models_and_up",
+            lambda port: (["Qwen3.8-Flash-256k-62", "glm-4.7-air"], True))
+        monkeypatch.setattr(wol_host_service, "_probe_api_identity",
+                            lambda port, api_up=False: {})
         monkeypatch.setattr(
             wol_host_service, "_fetch_model_metrics",
             lambda port, name: ({"prompt_tps": 261.15,
@@ -392,10 +406,11 @@ class TestModelThroughput:
         assert wol_host_service._fetch_model_metrics(
             8080, "Qwen3.8-Flash-256k-62") == {
                 "prompt_tps": 261.15, "predicted_tps": 26.6524}
-        # Model name is URL-encoded into the query string.
+        # Model name is URL-encoded into the query string. v7 accepts both
+        # Prometheus text and a JSON body from the same endpoint.
         fake_conn.request.assert_called_once_with(
             "GET", "/metrics?model=Qwen3.8-Flash-256k-62",
-            headers={"Accept": "text/plain"})
+            headers={"Accept": "text/plain, application/json"})
 
     def test_fetch_model_metrics_partial(self, monkeypatch):
         # Only the prompt gauge present -> predicted key is omitted.
@@ -509,6 +524,185 @@ class TestModelThroughput:
         assert wol_host_service._fetch_model_metrics(1, "m") is None
         # empty model name -> no request at all
         assert wol_host_service._fetch_model_metrics(8080, "") is None
+
+
+class TestApiCapabilityProbe:
+    """Protocol v7: port-only watch entries + API capability fields."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_caches(self):
+        """Module-level caches would leak between tests."""
+        wol_host_service._MODEL_TPS_CACHE.clear()
+        wol_host_service._API_PROBE_CACHE.clear()
+        yield
+        wol_host_service._MODEL_TPS_CACHE.clear()
+        wol_host_service._API_PROBE_CACHE.clear()
+
+    def test_protocol_version_at_least_7(self):
+        assert wol_host_service.PROTOCOL_VERSION >= 7
+
+    def test_parse_json_metrics_strata_body(self):
+        """A JSON /metrics body maps onto the model_metrics keys (v7)."""
+        body = json.dumps({
+            "live": {"tok_s": 72.2, "prefill_tok_s_mean": 398.0},
+            "totals": {"prompt_tokens": 19000000, "output_tokens": 456405},
+            "hardware": {"gpu": "RTX 5070 Ti"},
+        })
+        assert wol_host_service._parse_json_metrics(body) == {
+            "prompt_tps": 398.0, "predicted_tps": 72.2,
+            "total_tokens": 19456405}
+
+    def test_parse_json_metrics_zero_and_garbage(self):
+        # Idle server (all zeros) -> nothing usable.
+        assert wol_host_service._parse_json_metrics(
+            json.dumps({"live": {"tok_s": 0, "prefill_tok_s_mean": 0}})) == {}
+        # Non-JSON / non-object bodies never raise.
+        assert wol_host_service._parse_json_metrics("not json") == {}
+        assert wol_host_service._parse_json_metrics("[1,2]") == {}
+
+    def test_fetch_model_metrics_json_body(self, monkeypatch):
+        """A JSON /metrics body flows through the same latch logic."""
+        body = json.dumps({
+            "live": {"tok_s": 30.0, "prefill_tok_s_mean": 200.0},
+            "totals": {"prompt_tokens": 100, "output_tokens": 50},
+        }).encode()
+        fake_conn = mock.MagicMock()
+        fake_conn.getresponse.return_value.status = 200
+        fake_conn.getresponse.return_value.read.return_value = body
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_conn)
+        assert wol_host_service._fetch_model_metrics(8090, "strata-m") == {
+            "prompt_tps": 200.0, "predicted_tps": 30.0,
+            "total_tokens": 150}
+
+    def test_probe_api_identity_llama_cpp(self, monkeypatch):
+        """/props with build_info -> kind llama.cpp + info extras."""
+        def fake_get(port, path, accept, max_bytes=262_144):
+            if path == "/health":
+                return 200, json.dumps({"status": "ok", "loaded": True,
+                                        "max_context": 8192})
+            if path == "/props":
+                return 200, json.dumps({"build_info": "build 5023",
+                                        "total_slots": 4,
+                                        "chat_template": "chatml"})
+            if path == "/metrics":
+                return 200, "# TYPE llamacpp:prompt_tokens_seconds gauge\n"
+            return 404, ""
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback", fake_get)
+        probe = wol_host_service._probe_api_identity(8080, api_up=True)
+        assert probe["api_kind"] == "llama.cpp"
+        assert probe["api_features_extra"] == ["health", "props", "metrics"]
+        assert probe["api_info"] == {"server": "build 5023",
+                                     "context": 8192, "slots": 4}
+
+    def test_probe_api_identity_openai(self, monkeypatch):
+        """No /props, but /health + api_up -> plain OpenAI server."""
+        def fake_get(port, path, accept, max_bytes=262_144):
+            if path == "/health":
+                return 200, json.dumps({"status": "ok", "loaded": True,
+                                        "max_context": 262144,
+                                        "version": "Strata 0.1.30"})
+            if path == "/props":
+                return 404, ""
+            if path == "/metrics":
+                return 200, '{"live": {"tok_s": 1}}'
+            return 404, ""
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback", fake_get)
+        probe = wol_host_service._probe_api_identity(8081, api_up=True)
+        assert probe["api_kind"] == "openai"
+        assert probe["api_features_extra"] == ["health", "metrics"]
+        assert probe["api_info"] == {"server": "Strata 0.1.30",
+                                     "context": 262144}
+
+    def test_probe_api_identity_silent_server(self, monkeypatch):
+        """Nothing answers -> kind "unknown", no features/info; TTL-cached."""
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (None, ""))
+        assert wol_host_service._probe_api_identity(8082) == {
+            "api_kind": "unknown"}
+        # Second call within the TTL window hits the cache (no re-probe).
+        calls = []
+        monkeypatch.setattr(
+            wol_host_service, "_http_get_loopback",
+            lambda *a, **k: calls.append(a[1]) or (None, ""))
+        wol_host_service._probe_api_identity(8082)
+        assert calls == []
+
+    def test_port_only_entry_without_process_reports_api(self, monkeypatch):
+        """:8080 with no matching process still probes port + API (v7)."""
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = []
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: True)
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_models_and_up",
+            lambda port: (["qwen3.8-flash-next-iq3_s"], True))
+        monkeypatch.setattr(
+            wol_host_service, "_probe_api_identity",
+            lambda port, api_up=False: {
+                "api_kind": "openai",
+                "api_features_extra": ["health", "metrics"],
+                "api_info": {"server": "Strata 0.1.30",
+                             "context": 262144, "slots": 1}})
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_model_metrics",
+            lambda port, name: {"prompt_tps": 398.0, "predicted_tps": 72.2,
+                                "total_tokens": 19456405})
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes([":8081"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        info = result[":8081"]
+        assert info["running"] is False          # no process watched
+        assert info["api_port"] == 8081
+        assert info["api_port_open"] is True
+        assert info["api_up"] is True
+        assert info["api_kind"] == "openai"
+        assert info["api_features"] == ["models", "health", "metrics"]
+        assert info["api_info"]["server"] == "Strata 0.1.30"
+        assert info["models"] == ["qwen3.8-flash-next-iq3_s"]
+        assert info["model_metrics"]["qwen3.8-flash-next-iq3_s"][
+            "predicted_tps"] == 72.2
+
+    def test_port_only_entry_closed_port_minimal(self, monkeypatch):
+        """Closed port -> only running:false + api_port/api_port_open."""
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: False)
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(["8081"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        info = result["8081"]
+        assert info == {"running": False, "api_port": 8081,
+                        "api_port_open": False}
+
+    def test_named_entry_port_open_without_process_match(self, monkeypatch):
+        """v7: process name misses but the port still gets probed."""
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = []
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: True)
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_models_and_up",
+            lambda port: (["srv-model"], True))
+        monkeypatch.setattr(wol_host_service, "_probe_api_identity",
+                            lambda port, api_up=False: {"api_kind": "openai"})
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        info = result["llama-server.exe:8080"]
+        assert info["running"] is False
+        assert info["api_port_open"] is True
+        assert info["api_up"] is True
+        assert info["models"] == ["srv-model"]
 
 
 class TestBatchGating:

@@ -53,6 +53,18 @@ enum MetricsUI {
                 "model": w.model as Any,
                 "apiPort": w.apiPort ?? NSNull(),
                 "apiPortOpen": w.apiPortOpen ?? NSNull(),
+                // Host v7: API capability probe (works without a process name).
+                "apiUp": w.apiUp ?? NSNull(),
+                "apiKind": w.apiKind as Any,
+                "apiFeatures": w.apiFeatures,
+                "apiInfo": w.apiInfo.map { a in
+                    [
+                        "server": a.server as Any,
+                        "context": a.context ?? NSNull(),
+                        "slots": a.slots ?? NSNull(),
+                        "modelAlias": a.modelAlias as Any,
+                    ] as [String: Any]
+                } as Any,
                 "models": w.models,
                 "modelMetrics": metrics,
             ]

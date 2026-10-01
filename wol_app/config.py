@@ -854,9 +854,12 @@ class ConfigManager:
 
         Entries are process names like ``"llama-server.exe"`` or
         ``"llama-server.exe:8080"`` (the port turns the dashboard chip into
-        "running AND API reachable"). Malformed/oversized entries are
-        skipped and the list is capped at MAX_WATCH_PROCESSES_PER_DEVICE so
-        a hand-edited config never breaks the dashboard or the host service.
+        "running AND API reachable"). A port-only entry ``":8080"`` watches
+        whichever inference API answers on that port, regardless of the
+        process behind it (host protocol v7). Malformed/oversized entries
+        are skipped and the list is capped at MAX_WATCH_PROCESSES_PER_DEVICE
+        so a hand-edited config never breaks the dashboard or the host
+        service.
         """
         result: list = []
         raw = device.get("watch_processes", [])

@@ -328,6 +328,18 @@ class Bridge(
                     put("model", w.model)
                     put("apiPort", w.apiPort)
                     put("apiPortOpen", w.apiPortOpen)
+                    // Host v7: API capability probe (works without a process name).
+                    put("apiUp", w.apiUp)
+                    put("apiKind", w.apiKind)
+                    put("apiFeatures", JsonArray(w.apiFeatures.map { JsonPrimitive(it) }))
+                    put("apiInfo", w.apiInfo?.let { a ->
+                        buildJsonObject {
+                            put("server", a.server)
+                            put("context", a.context)
+                            put("slots", a.slots)
+                            put("modelAlias", a.modelAlias)
+                        }
+                    } ?: JsonNull)
                     put("models", JsonArray(w.models.map { JsonPrimitive(it) }))
                     // Host v5: per-model throughput (t/s) + total tokens.
                     put("modelMetrics", buildJsonObject {

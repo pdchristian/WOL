@@ -1,6 +1,6 @@
 {
   "status": "ok",
-  "protocol": 6,
+  "protocol": 7,
   "hostname": "FRACTAL",
   "cpu": 63.4,
   "cpu_count": 16,
@@ -22,9 +22,30 @@
       "model": "Qwen3.8-Flash-256k-62",
       "api_port": 8080,
       "api_port_open": true,
+      "api_up": true,
+      "api_kind": "llama.cpp",
+      "api_features": ["models", "health", "props", "metrics"],
+      "api_info": { "server": "build 5023", "context": 8192, "slots": 4 },
       "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"],
       "model_metrics": {
         "Qwen3.8-Flash-256k-62": { "prompt_tps": 261.15, "predicted_tps": 26.65, "total_tokens": 77427 }
+      }
+    },
+    ":8081": {
+      "running": false,
+      "api_port": 8081,
+      "api_port_open": true,
+      "api_up": true,
+      "api_kind": "openai",
+      "api_features": ["models", "health", "metrics"],
+      "api_info": { "server": "Strata 0.1.30", "context": 262144, "slots": 1 },
+      "models": ["qwen3.8-flash-next-iq3_s"],
+      "model_metrics": {
+        "qwen3.8-flash-next-iq3_s": {
+          "prompt_tps": 398.0,
+          "predicted_tps": 72.2,
+          "total_tokens": 19456405
+        }
       }
     },
     "backup-sync.exe": { "running": false }

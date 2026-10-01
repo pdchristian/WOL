@@ -272,6 +272,27 @@ struct ModelMetric: Codable, Equatable {
     }
 }
 
+/// Anzeige-Zusatz aus der API-Probe des Hosts (Host-Protokoll v7).
+struct ApiInfo: Codable, Equatable {
+    var server: String?
+    var context: Int?
+    var slots: Int?
+    var modelAlias: String?
+
+    enum CodingKeys: String, CodingKey {
+        case server, context, slots
+        case modelAlias = "model_alias"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        server = try c.decodeIfPresent(String.self, forKey: .server)
+        context = try c.decodeIfPresent(Int.self, forKey: .context)
+        slots = try c.decodeIfPresent(Int.self, forKey: .slots)
+        modelAlias = try c.decodeIfPresent(String.self, forKey: .modelAlias)
+    }
+}
+
 /// Ein Eintrag aus metrics.processes.
 struct WatchInfo: Codable, Equatable {
     var running: Bool = false
@@ -283,6 +304,14 @@ struct WatchInfo: Codable, Equatable {
     var model: String?
     var apiPort: Int?
     var apiPortOpen: Bool?
+    /// v7: /v1/models antwortete 200 mit JSON (OpenAI-Vertrag erfüllt).
+    var apiUp: Bool?
+    /// v7: "llama.cpp" | "openai" | "unknown".
+    var apiKind: String?
+    /// v7: geantwortete Endpunkte (models/health/props/metrics).
+    var apiFeatures: [String] = []
+    /// v7: Server-Build, Kontextgröße, Slots.
+    var apiInfo: ApiInfo?
     var models: [String] = []
     var modelMetrics: [String: ModelMetric] = [:]
 
@@ -290,6 +319,10 @@ struct WatchInfo: Codable, Equatable {
         case running, count, pid, cpu, ram, uptime, model
         case apiPort = "api_port"
         case apiPortOpen = "api_port_open"
+        case apiUp = "api_up"
+        case apiKind = "api_kind"
+        case apiFeatures = "api_features"
+        case apiInfo = "api_info"
         case models
         case modelMetrics = "model_metrics"
     }
@@ -305,6 +338,10 @@ struct WatchInfo: Codable, Equatable {
         model = try c.decodeIfPresent(String.self, forKey: .model)
         apiPort = try c.decodeIfPresent(Int.self, forKey: .apiPort)
         apiPortOpen = try c.decodeIfPresent(Bool.self, forKey: .apiPortOpen)
+        apiUp = try c.decodeIfPresent(Bool.self, forKey: .apiUp)
+        apiKind = try c.decodeIfPresent(String.self, forKey: .apiKind)
+        apiFeatures = try c.decodeIfPresent([String].self, forKey: .apiFeatures) ?? []
+        apiInfo = try c.decodeIfPresent(ApiInfo.self, forKey: .apiInfo)
         models = try c.decodeIfPresent([String].self, forKey: .models) ?? []
         modelMetrics = try c.decodeIfPresent([String: ModelMetric].self,
                                              forKey: .modelMetrics) ?? [:]
