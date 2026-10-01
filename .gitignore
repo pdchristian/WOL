@@ -10,7 +10,7 @@ dist/
 dist_onefile/
 build/
 *.deb
-*__pycache__*
+__pycache__
 *.pyc
 *.log
 .DS_Store
