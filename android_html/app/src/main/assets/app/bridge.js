@@ -85,6 +85,16 @@
       case "info": r.data = { versionName: "2.3.7-demo", versionCode: 1, protocol: 4 }; break;
       case "saveDevice":
         if (p.password) { /* Demo: verwerfen */ }
+        /* Demo: Felder (inkl. batches/allow_batch → Drag-&-Drop-Reihenfolge)
+           übernehmen, damit die UI den Round-Trip wie nativ sieht. */
+        (function () {
+          var d = null;
+          for (var i = 0; i < demoDevices.length; i++) if (demoDevices[i].id === p.id) d = demoDevices[i];
+          if (!d) { d = { id: p.id }; demoDevices.push(d); }
+          ["name", "mac", "ip", "username", "enabled", "watch", "allow_batch", "batches"].forEach(function (k) {
+            if (p[k] !== undefined) d[k] = p[k];
+          });
+        })();
         r.data = demoDevices; break;
       case "deleteDevice":
         demoDevices = demoDevices.filter(function (d) { return d.id !== p.id; });

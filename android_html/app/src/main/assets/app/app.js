@@ -121,6 +121,7 @@ de:{
  "batch.newname":"Neuer Batch","batch.running":"Batch läuft…","batch.exit":"Exit-Code: {c}","batch.dur":"Dauer: {s} s",
  "batch.empty":"Noch keine Batches. „Neu\" erstellt einen neuen Batch.",
  "batch.disabled":"Ausführung deaktiviert: „Batches erlauben\" aktivieren und den Host freigeben (WOL Host Service.exe --enable-batch).",
+ "batch.reorder":"Zum Sortieren halten und ziehen",
  "dash.creds":"Für dieses Gerät sind keine Benutzerdaten hinterlegt. Dashboard-Metriken benötigen die Host-Service-Anmeldung.",
  "dash.unreach":"Host Service nicht erreichbar ({ip}:8765). Läuft der Dienst?",
  "dash.err":"Host-Service-Fehler: {msg}",
@@ -240,6 +241,7 @@ en:{
  "batch.newname":"New batch","batch.running":"Batch running…","batch.exit":"Exit code: {c}","batch.dur":"Duration: {s} s",
  "batch.empty":"No batches yet. \"New\" creates a new batch.",
  "batch.disabled":"Execution disabled: enable \"Allow batches\" and release the host (WOL Host Service.exe --enable-batch).",
+ "batch.reorder":"Press and hold to reorder",
  "dash.creds":"No credentials stored for this device. Dashboard metrics require host service sign-in.",
  "dash.unreach":"Host Service unreachable ({ip}:8765). Is the service running?",
  "dash.err":"Host service error: {msg}",
@@ -359,6 +361,7 @@ fr:{
  "batch.newname":"Nouveau lot","batch.running":"Lot en cours…","batch.exit":"Code retour : {c}","batch.dur":"Durée : {s} s",
  "batch.empty":"Aucun lot. « Nouveau » crée un lot.",
  "batch.disabled":"Exécution désactivée : activez « Autoriser les lots » et libérez l'hôte.",
+ "batch.reorder":"Maintenir pour réordonner",
  "dash.creds":"Aucun identifiant enregistré. Les métriques exigent la connexion au service hôte.",
  "dash.unreach":"Service hôte injoignable ({ip}:8765). Le service tourne-t-il ?",
  "dash.err":"Erreur du service hôte : {msg}",
@@ -478,6 +481,7 @@ es:{
  "batch.newname":"Nuevo lote","batch.running":"Lote en ejecución…","batch.exit":"Código de salida: {c}","batch.dur":"Duración: {s} s",
  "batch.empty":"No hay lotes. „Nuevo\" crea un lote.",
  "batch.disabled":"Ejecución desactivada: active „Permitir lotes\" y libere el host.",
+ "batch.reorder":"Mantener pulsado para reordenar",
  "dash.creds":"No hay credenciales para este dispositivo. Las métricas requieren inicio de sesión del servicio host.",
  "dash.unreach":"Servicio host inaccesible ({ip}:8765). ¿Está en ejecución?",
  "dash.err":"Error del servicio host: {msg}",
@@ -926,7 +930,7 @@ function switchDashDevice(dir) {
     if (Date.now() - st.tm > 900) return;                    /* kein Drag/Scroll */
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return; /* zu klein / vertikal */
     if (ev.target && ev.target.closest &&
-        ev.target.closest("input,select,textarea,.console,#sheet,#overlay")) return;
+        ev.target.closest("input,select,textarea,.console,.batchList,#sheet,#overlay")) return;
     switchDashDevice(dx < 0 ? 1 : -1); /* links wischen → nächstes Gerät */
   }, { passive: true });
   el.addEventListener("touchcancel", () => { s = null; }, { passive: true });
@@ -981,6 +985,11 @@ function modelTps(p, name) {
 }
 
 /* ══════════════════════════ Batches (Dashboard, am Gerät persistiert) ════ */
+/* Grip-Glyph (6 Punkte, 2×3) — Parität zum Desktop _grip_pixmap(). */
+const GRIP_SVG = `<svg class="grip" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+  <circle cx="5.04" cy="4.16" r="1.44"/><circle cx="10.96" cy="4.16" r="1.44"/>
+  <circle cx="5.04" cy="8" r="1.44"/><circle cx="10.96" cy="8" r="1.44"/>
+  <circle cx="5.04" cy="11.84" r="1.44"/><circle cx="10.96" cy="11.84" r="1.44"/></svg>`;
 function currentBatches() { const d = byId(state.ui.dashDeviceId); return d ? (d.batches || []) : []; }
 function selBatchObj() { const d = byId(state.ui.dashDeviceId); return d ? (d.batches || []).find(b => b.id === state.ui.selBatch) : null; }
 function persistBatches(d, msg) {
@@ -989,6 +998,105 @@ function persistBatches(d, msg) {
     else toast(String(res.error || "error"), true);
   });
 }
+/* Drag & Drop hat ein click auf derselben Zeile ausgelöst → batch-sel
+   unterdrücken (sonst öffnet der Drop versehentlich den Batch-Editor). */
+let batchDragEndedAt = 0;
+/* Laufender Drag → renderDash() pausiert (Metrik-Tick würde die gezogene
+   Zeile aus dem DOM reißen; Parität Desktop: Liste bleibt während Drag stabil). */
+let batchDragActive = false;
+/* ══════════════════════════ Batch Drag & Drop (Sortierung) ══════════════
+   Parität Desktop BatchListWidget: die visuelle Reihenfolge IST die
+   persistierte Reihenfolge (device.batches → saveDeviceNative).
+   Touch: 300 ms Halten startet den Drag (normales Tippen öffnet den
+   Batch); Maus: Bewegung > 8 px. Delegation auf document, damit
+   renderDash()-Rebuilds überlebt werden. */
+(function initBatchDrag() {
+  let row = null, list = null, ghost = null, line = null,
+      startY = 0, curY = 0, target = -1, holdTimer = null, dragging = false;
+
+  const visibleRows = () =>
+    [...list.querySelectorAll(".batchRow:not(.hidden):not(.dragging)")];
+
+  const clear = () => {
+    clearTimeout(holdTimer); holdTimer = null;
+    if (ghost) ghost.remove();
+    if (line) line.remove();
+    ghost = line = row = list = null; dragging = false; target = -1;
+    batchDragActive = false;
+  };
+
+  const begin = () => {
+    dragging = true;
+    batchDragActive = true;
+    list = row.closest(".batchList");
+    ghost = row.cloneNode(true);
+    ghost.classList.add("dragging"); ghost.classList.remove("sel");
+    ghost.style.top = row.offsetTop + "px";
+    ghost.style.height = row.getBoundingClientRect().height + "px";
+    row.classList.add("hidden");
+    list.appendChild(ghost);
+    line = document.createElement("div");
+    line.className = "dropLine";
+    list.appendChild(line);
+    Native.call("vibrate", { ms: 12 });
+    position();
+  };
+
+  const position = () => {
+    ghost.style.transform = `translateY(${curY - startY}px)`;
+    const rows = visibleRows();
+    target = rows.length;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i].getBoundingClientRect();
+      if (curY < r.top + r.height / 2) { target = i; break; }
+    }
+    const lr = list.getBoundingClientRect();
+    line.style.top = (rows.length === 0 ? 0
+      : target >= rows.length ? rows[rows.length - 1].getBoundingClientRect().bottom - lr.top
+      : rows[target].getBoundingClientRect().top - lr.top) + "px";
+  };
+
+  const commit = () => {
+    if (!dragging) { clear(); return; }
+    const d = byId(state.ui.dashDeviceId);
+    const from = row.dataset.id;
+    if (d) {
+      const order = (d.batches || []).map(b => b.id).filter(id => id !== from);
+      order.splice(Math.min(target, order.length), 0, from);
+      d.batches = order.map(id => (d.batches || []).find(b => b.id === id));
+      persistBatches(d);
+    }
+    batchDragEndedAt = Date.now();
+    clear();
+    renderDash();
+  };
+
+  document.addEventListener("pointerdown", ev => {
+    const r = ev.target.closest(".batchRow");
+    if (!r || ev.target.closest("button")) return;
+    row = r; startY = curY = ev.clientY;
+    try { r.setPointerCapture(ev.pointerId); } catch (_) {}
+    if (ev.pointerType === "mouse") return;   /* Start erst bei Bewegung */
+    holdTimer = setTimeout(begin, 300);       /* Touch: Halten = Drag */
+  });
+  document.addEventListener("pointermove", ev => {
+    if (!row) return;
+    curY = ev.clientY;
+    if (!dragging) {
+      if (Math.abs(curY - startY) <= 8) return;
+      if (ev.pointerType !== "mouse") { clear(); return; } /* Scroll-Intention */
+      begin();
+    }
+    ev.preventDefault();
+    position();
+  });
+  /* Während des Drags kein Seiten-Scroll (passive-default verhindern). */
+  document.addEventListener("touchmove", ev => {
+    if (dragging) ev.preventDefault();
+  }, { passive: false });
+  document.addEventListener("pointerup", commit);
+  document.addEventListener("pointercancel", clear);
+})();
 function runBatch() {
   const b = selBatchObj(); const d = byId(state.ui.dashDeviceId);
   if (!b || !d || state.con.running) return;
@@ -1266,6 +1374,7 @@ function renderSettings() {
 
 /* ══════════════════════════ Render: Dashboard (📊, kein Nav-Eintrag) ══════ */
 function renderDash(dir) {
+  if (batchDragActive) return; /* Drag läuft — Rebuild würde die gezogene Zeile reißen */
   const d = byId(state.ui.dashDeviceId);
   if (!d) { $("#s-dash").innerHTML = `<div class="empty">${esc(t("devices.empty"))}</div>`; return; }
   const dlist = dashNavList();
@@ -1334,16 +1443,21 @@ function renderDash(dir) {
         ${metricCard("vram", m.vram, m.vramTotalGB ? t("d.gb", { used: m.vramUsedGB, total: m.vramTotalGB }) : t("d.na"))}
       </div>` : ""}` : ""}
     <div class="sectionHeading" style="display:flex;justify-content:space-between;align-items:baseline">
-      <span>${esc(t("batch.title"))}</span>
-      <button class="btn small" data-act="batch-new">${esc(t("batch.new"))}</button></div>
-    ${batches.length ? `<div class="panel">${batches.map(b => `
-      <div class="batchItem ${state.ui.selBatch === b.id ? "sel" : ""}" data-act="batch-sel" data-id="${b.id}">
-        ${esc(b.name)}<div class="mono">${esc(b.script)} · ${b.timeout} s</div></div>
-      <div class="sep"></div>`).join("")}</div>
-      <div class="toolbar" style="margin-top:8px">
+      <span>${esc(t("batch.title"))}</span></div>
+    ${batches.length ? `<div class="panel">
+      <div class="libHead"><span class="spacer"></span>
         <button class="btn small" data-act="batch-dup">${esc(t("batch.dup"))}</button>
+        <button class="btn small" data-act="batch-new">${esc(t("batch.new"))}</button></div>
+      <div class="sep"></div>
+      <div class="batchList" id="blist">${batches.map(b => `
+        <div class="batchRow ${state.ui.selBatch === b.id ? "sel" : ""}" data-act="batch-sel" data-id="${b.id}">
+          ${GRIP_SVG}<span>${esc(b.name)}</span></div>`).join("")}</div>
+      <div class="sep"></div>
+      <div class="reorderHint">${GRIP_SVG}<span>${esc(t("batch.reorder"))}</span></div>
+      <div class="sep"></div>
+      <div class="toolbar" style="padding:8px 10px;margin:0;justify-content:flex-end">
         <button class="btn small danger" data-act="batch-del">${esc(t("batch.del"))}</button>
-      </div>`
+      </div></div>`
     : `<div class="pageSub">${esc(t("batch.empty"))}</div>`}
     ${sb ? `
     <div class="panel" style="padding:12px;margin-top:10px">
@@ -1353,7 +1467,7 @@ function renderDash(dir) {
         <span class="mono" style="font-size:11px">${esc(t("batch.timeout"))}</span>
         <input class="inp" id="b-timeout" type="number" min="5" max="3600" value="${sb.timeout}" style="width:76px;padding:6px 8px">
         <span class="spacer"></span>
-        <button class="btn small" data-act="batch-save" ${state.ui.selBatch===sb.id?"":""} >${esc(t("batch.save"))}</button>
+        <button class="btn small" data-act="batch-save">${esc(t("batch.save"))}</button>
         <button class="btn small primary" data-act="batch-run">${esc(t("batch.run"))}</button>
       </div>
       <div class="togRow" style="padding:10px 0 0"><div style="font-size:12px">${esc(t("batch.allow"))}</div>
@@ -1525,7 +1639,10 @@ document.addEventListener("click", ev => {
       const b = { id: "b" + Date.now(), name: t("batch.newname"), script: "@echo off", timeout: 120 };
       d.batches = [...(d.batches || []), b]; state.ui.selBatch = b.id; renderDash();
       persistBatches(d); break; }
-    case "batch-sel": state.ui.selBatch = id; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; renderDash(); break;
+    case "batch-sel": if (Date.now() - batchDragEndedAt < 300) break;
+      /* Erneutes Tippen auf den geöffneten Batch schließt den Editor. */
+      if (state.ui.selBatch === id) { state.ui.selBatch = null; renderDash(); break; }
+      state.ui.selBatch = id; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; renderDash(); break;
     case "batch-dup": { const d = byId(state.ui.dashDeviceId); const b = selBatchObj();
       if (d && b) { const c = { ...b, id: "b" + Date.now(), name: b.name + " (Kopie)" };
         d.batches = [...d.batches, c]; state.ui.selBatch = c.id; renderDash(); persistBatches(d); }

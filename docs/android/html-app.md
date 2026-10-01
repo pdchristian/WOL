@@ -109,6 +109,18 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
   Wischen nach links/rechts wechselt zum nächsten/vorherigen Gerät – in
   genau der Reihenfolge, die gerade im Gerätemanager sortiert ist
   (`sortDevices()`; Anzeige `Position/Gesamt` neben dem Titel, zyklisch).
+- **Batch-Bibliothek (Parität Desktop, 2.3.7):** die Liste zeigt **nur den
+  Titel** pro Zeile (kein Skript/Timeout) mit 6-Punkte-Grip — wie
+  `BatchListWidget` am Desktop. **Drag & Drop** sortiert vertikal: Touch =
+  300 ms **halten** dann ziehen, Maus = Bewegung > 8 px; Drop-Indikator =
+  Akzentlinie. Die visuelle Reihenfolge IST die persistierte Reihenfolge
+  (`device.batches` → `saveDeviceNative`), ein Drop löst **kein** Öffnen aus
+  (`batchDragEndedAt`-Guard in `batch-sel`). **Klick/Tap** auf einen Titel
+  öffnet den Batch-Editor **unterhalb** der Liste (Titel/Skript/Timeout/
+  „Batches erlauben“/Speichern/Ausführen + Konsole); erneutes Tippen auf den
+  geöffneten Titel schließt ihn wieder. Der Metrik-Tick pausiert `renderDash()`
+  während eines Drags (`batchDragActive`), damit die gezogene Zeile nicht aus
+  dem DOM gerissen wird; `.batchList` ist vom Wisch-Gesten-Handler ausgenommen.
 
 ## Windows-Kompatibilität der Geräte-Dateien
 
