@@ -512,6 +512,16 @@ class ConfigManager:
                     dev["password"] = kwargs["password"]
                 if "shutdown_method" in kwargs and kwargs["shutdown_method"] in VALID_SHUTDOWN_METHODS:
                     dev["shutdown_method"] = kwargs["shutdown_method"]
+                if "rdp_auth_level" in kwargs:
+                    # mstsc "authentication level" (0/1/2). Reuse the same
+                    # coercion as the getter so an out-of-range or malformed
+                    # value falls back to the secure default (1) instead of
+                    # being dropped silently.
+                    try:
+                        level = int(kwargs["rdp_auth_level"])
+                    except (TypeError, ValueError):
+                        level = 1
+                    dev["rdp_auth_level"] = level if level in (0, 1, 2) else 1
                 self.save()
                 return True
         return False

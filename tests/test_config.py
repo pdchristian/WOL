@@ -148,6 +148,28 @@ class TestConfigShutdownMethod(ConfigManagerTestBase):
         cm.update_device(device["id"], ip="a" * 300)
         self.assertEqual(len(device["ip"]), 253)
 
+    def test_update_device_persists_rdp_auth_level(self):
+        # Regression: rdp_auth_level used to be silently dropped by
+        # update_device, so the certificate-validation dropdown never saved.
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.update_device(device["id"], rdp_auth_level=0)
+        self.assertEqual(cm.get_device_rdp_auth_level(device), 0)
+        cm.update_device(device["id"], rdp_auth_level=2)
+        self.assertEqual(cm.get_device_rdp_auth_level(device), 2)
+        # Reload from disk to confirm it was actually written.
+        reloaded = ConfigManager(config_path=str(self.config_path))
+        dev2 = reloaded.get_device_by_id(device["id"])
+        self.assertEqual(reloaded.get_device_rdp_auth_level(dev2), 2)
+
+    def test_update_device_rdp_auth_level_invalid_falls_back(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.update_device(device["id"], rdp_auth_level=7)
+        self.assertEqual(cm.get_device_rdp_auth_level(device), 1)
+        cm.update_device(device["id"], rdp_auth_level="bogus")
+        self.assertEqual(cm.get_device_rdp_auth_level(device), 1)
+
 
 class TestRemoteDesktopResolution(ConfigManagerTestBase):
     def test_default_resolution(self):
