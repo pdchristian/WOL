@@ -68,13 +68,13 @@ class TestDeviceCard:
         card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
         assert card.action_btn.text() == Translations.tr("modern.devices.button.wake")
         assert card.action_btn.objectName() == "wakeButton"
-        assert card.dot.objectName() == "dotOffline"
+        assert card.pill.dot.objectName() == "pillDotOffline"
 
     def test_online_card_shows_shutdown_button(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
         assert card.action_btn.text() == Translations.tr("button.shutdown")
         assert card.action_btn.objectName() == "shutdownButton"
-        assert card.dot.objectName() == "dotOnline"
+        assert card.pill.dot.objectName() == "pillDotOnline"
 
     def test_status_swap_updates_button(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
@@ -82,7 +82,7 @@ class TestDeviceCard:
         assert card.action_btn.objectName() == "shutdownButton"
         card.set_status("unknown")
         assert card.action_btn.objectName() == "wakeButton"
-        assert card.dot.objectName() == "dotUnknown"
+        assert card.pill.dot.objectName() == "pillDotUnknown"
 
     def test_action_click_emits_wake_or_shutdown(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
@@ -452,3 +452,199 @@ class TestLocaleKeyConsistency:
         keys = self._locale_keys(lang)
         missing = [k for k in _NAME_KEYS if k not in keys]
         assert not missing, f"Keys missing from {lang}.json: {missing}"
+
+
+class TestPlatformPill:
+    """Status + platform chip on cards and rows, and the client tooltips."""
+
+    def test_card_pill_shows_detected_platform(self, qapp, config_with_devices):
+        device = dict(config_with_devices.config["devices"][0], os="ubuntu")
+        card = DeviceCard(device, "online", set())
+        assert "Linux" in card.pill.text.text()
+        assert card.pill.dot.objectName() == "pillDotOnline"
+
+    def test_card_pill_marks_unknown_platform(self, qapp, config_with_devices):
+        card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
+        assert Translations.tr("scan_dialog.os.unknown") in card.pill.text.text()
+
+    def test_list_row_keeps_dot_and_adds_pill(self, qapp, config_with_devices):
+        device = dict(config_with_devices.config["devices"][0], os="windows")
+        row = DeviceListRow(device, "online", set())
+        assert row.dot.objectName() == "dotOnline"
+        assert "Windows" in row.pill.text.text()
+        assert row.pill.dot.objectName() == "pillDotOnline"
+
+    def test_status_update_moves_pill_dot(self, qapp, config_with_devices):
+        card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
+        card.set_status("online")
+        assert card.pill.dot.objectName() == "pillDotOnline"
+
+    def test_estimate_is_prefixed_and_service_is_not(self, qapp):
+        from wol_app.widgets.status_pill import StatusPill
+
+        estimated = StatusPill("windows", "ttl", "online")
+        assert estimated.text.text().startswith("~")
+        assert "Windows" in estimated.text.text()
+        assert not StatusPill("windows", "high", "online").text.text().startswith("~")
+
+    def test_pill_tooltip_combines_status_and_platform(self, qapp):
+        from wol_app.widgets.status_pill import StatusPill
+
+        pill = StatusPill("linux", "", "online")
+        tip = pill.toolTip()
+        assert Translations.tr("status.online") in tip
+        assert Translations.tr("modern.devices.pill_detected") in tip
+        pill.set_platform("", "")
+        assert Translations.tr("modern.devices.pill_unknown") in pill.toolTip()
+
+    def test_remote_tooltips_name_the_client_for_the_protocol(
+            self, qapp, config_with_devices):
+        from wol_app.config import REMOTE_PROTOCOL_VNC
+
+        device = dict(config_with_devices.config["devices"][0], os="linux")
+        card = DeviceCard(
+            device, "online", set(), remote_protocol=REMOTE_PROTOCOL_VNC)
+        assert card.remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_vnc"))
+        assert card.remote_win_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_vnc"))
+        # default (windows / unknown) keeps the RDP client in the tooltip
+        plain = DeviceCard(config_with_devices.config["devices"][0], "online", set())
+        assert plain.remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_rdp"))
+
+    def test_view_routes_protocol_per_device(self, qapp, config_with_devices):
+        config_with_devices.config["devices"][0]["os"] = "linux"
+        view = DevicesView(config_with_devices)
+        assert view._cards["d1"].remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_vnc"))
+        assert view._cards["d2"].remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_rdp"))
+
+
+class TestPlatformDetection:
+    """Automatic platform fingerprinting for devices without a stored platform."""
+
+    def test_probe_targets_resolves_hostnames(self, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+
+        monkeypatch.setattr(
+            "wol_app.utils.resolve_ipv4_all",
+            lambda v: ["10.0.0.9", "10.0.0.10"])
+        targets, hint = OsDetectWorker.probe_targets(
+            {"ip": "ubuntu-mercury.fritz.box", "name": "mercury"})
+        assert targets == ["10.0.0.9", "10.0.0.10"]
+        assert hint == "ubuntu-mercury.fritz.box"
+
+    def test_probe_targets_keeps_plain_ipv4(self):
+        from wol_app.app_core import OsDetectWorker
+
+        assert OsDetectWorker.probe_targets(
+            {"ip": "10.0.0.5", "name": "PC"}) == (["10.0.0.5"], "PC")
+
+    def test_probe_targets_unresolvable_name_is_tried_as_is(self, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+
+        monkeypatch.setattr("wol_app.utils.resolve_ipv4_all", lambda v: [])
+        assert OsDetectWorker.probe_targets({"ip": "gone.local"}) == (
+            ["gone.local"], "gone.local")
+
+    def test_worker_tries_further_addresses_until_one_answers(
+            self, config_with_devices, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+
+        config_with_devices.config["devices"][0]["ip"] = "pc.fritz.box"
+        monkeypatch.setattr(
+            "wol_app.utils.resolve_ipv4_all",
+            lambda v: ["10.0.0.1", "10.0.0.2"])
+
+        def fake_fingerprint(ip, hostname="", mac="", **_kw):
+            if ip == "10.0.0.1":
+                return "", "", ""       # stale lease, no signal at all
+            return "windows", "medium", "fingerprint"
+
+        monkeypatch.setattr("wol_app.os_detect.fingerprint_host",
+                            fake_fingerprint)
+        worker = OsDetectWorker(config_with_devices)
+        results: list = []
+        worker.finished.connect(results.extend)
+        worker.run()
+
+        d1 = next(r for r in results if r[0] == "d1")
+        assert d1[1:3] == ("windows", "medium")
+
+    def test_worker_probes_only_devices_without_platform(
+            self, config_with_devices, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+        from wol_app.os_detect import CONFIDENCE_MEDIUM
+
+        config_with_devices.config["devices"][0]["os"] = "windows"
+        probed: list[str] = []
+
+        def fake_fingerprint(ip, hostname="", mac="", **_kw):
+            probed.append(hostname or ip)
+            return "linux", CONFIDENCE_MEDIUM, "fingerprint"
+
+        monkeypatch.setattr("wol_app.os_detect.fingerprint_host",
+                            fake_fingerprint)
+        worker = OsDetectWorker(config_with_devices)
+        results: list = []
+        worker.finished.connect(results.extend)
+        worker.run()
+
+        # d1 already has a platform and d3 is disabled -> only d2 is probed.
+        assert sorted(r[0] for r in results) == ["d2"]
+        assert all(r[1] == "linux" for r in results)
+        assert len(probed) == 1
+
+    def test_worker_survives_probe_errors(self, config_with_devices, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+
+        def boom(*_a, **_kw):
+            raise OSError("network down")
+
+        monkeypatch.setattr("wol_app.os_detect.fingerprint_host", boom)
+        worker = OsDetectWorker(config_with_devices)
+        results: list = []
+        worker.finished.connect(results.extend)
+        worker.run()
+        assert results
+        assert all(r[1] == "" for r in results)
+
+    def test_headless_mode_skips_detection(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        assert view._os_thread is None
+
+    def test_results_persist_and_update_the_cards(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        view._on_platforms_finished([("d1", "linux", "low", "fingerprint")])
+
+        stored = config_with_devices.get_device_by_id("d1")
+        assert stored["os"] == "linux"
+        assert stored["os_confidence"] == "low"
+        # Rebuilt cards show the platform and route the Remote buttons to VNC.
+        card = view._cards["d1"]
+        assert "Linux" in card.pill.text.text()
+        assert card.pill.text.text().startswith("~")
+        assert card.remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_vnc"))
+
+    def test_unknown_result_leaves_device_untouched(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        view._on_platforms_finished([("d1", "", "", "")])
+        stored = config_with_devices.get_device_by_id("d1")
+        assert "os" not in stored or not stored["os"]
+        assert "d1" in view._os_probed
+
+    def test_manual_refresh_forgets_missing_platforms(self, qapp,
+                                                       config_with_devices,
+                                                       monkeypatch):
+        view = DevicesView(config_with_devices)
+        view._os_probed = {"d1", "d2", "d3"}
+        started: list[bool] = []
+        monkeypatch.setattr(view, "refresh_statuses", lambda: started.append(True))
+        monkeypatch.setattr(view, "detect_missing_platforms", lambda: None)
+        view._on_refresh_clicked()
+        assert started == [True]
+        # All three devices lack a platform -> the memory is cleared again.
+        assert view._os_probed == set()

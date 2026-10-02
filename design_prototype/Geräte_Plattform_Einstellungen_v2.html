@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WOL Manager – Geräte &amp; Einstellungen (Prototyp v2)</title>
+<!--
+  ============================================================================
+  WOL Manager Modern-UI – PROTOTYP v2 (1:1 nahe an der aktuellen Umsetzung)
+  ----------------------------------------------------------------------------
+  Änderungen gegenüber dem aktuellen Stand (nur diese zwei Themen):
+    1. Plattform-Anzeige in Geräte-Kachel UND Listen-Zeile
+       • Kachel: Status-Punkt (wie bisher oben rechts) wird MIT der Plattform
+         zu einem Pill kombiniert  →  ● 🍏 macOS
+       • Liste:   Punkt links bleibt, rechts neben den Tiles dieselbe Pill
+       • Remote-Tiles 🖥️/🪟 bleiben unverändert; Tooltip nennt das Protokoll
+         (Windows → RDP, macOS/Linux → Turbo VNC, unbekannt → Nachfrage)
+    2. „Remote-Einstellungen" ist KEIN eigener Menüpunkt, sondern eine Gruppe
+       in den Einstellungen. Dort zusätzlich umsortiert:
+       „Automatisch nach Updates suchen" wandert von ganz oben rechts zu den
+       anderen Schaltern in die Gruppe „Sonstiges".
+  Farben/Styles stammen aus wol_app/modern_theme.py (DARK + LIGHT Tokens).
+  Öffnen: direkt im Browser. Keine Code-Änderung an der App.
+  ============================================================================
+-->
+<style>
+  /* ── DARK-Tokens (modern_theme.py) ── */
+  :root, body[data-theme="dark"] {
+    --bg:#0f1115; --surface:#1a1d24; --surface-hover:#232733; --border:#2c303a;
+    --text:#e6e8ee; --text-dim:#9aa0ab; --accent:#00b8a9; --accent-dark:#006b63;
+    --accent-text:#032019; --online:#22c55e; --offline:#ef4444; --unknown:#f59e0b;
+    --danger:#e0485a; --blue:#60a5fa; --console-bg:#12141a;
+  }
+  /* ── LIGHT-Tokens (modern_theme.py) ── */
+  body[data-theme="light"] {
+    --bg:#f3f4f7; --surface:#ffffff; --surface-hover:#eef0f4; --border:#d8dbe2;
+    --text:#1b1e24; --text-dim:#5b6270; --accent:#009688; --accent-dark:#00695f;
+    --accent-text:#ffffff; --online:#16a34a; --offline:#dc2626; --unknown:#d97706;
+    --danger:#dc2637; --blue:#2563eb; --console-bg:#f7f8fa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", sans-serif; }
+  body { background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── Sidebar (NAV_DEFS) ── */
+  .sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 20px 12px; flex-shrink: 0; }
+  .logo { display: flex; align-items: center; gap: 12px; padding: 6px 10px; margin-bottom: 22px; }
+  .logo .mark { width: 38px; height: 38px; border-radius: 12px; background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; color: #fff; }
+  .logo span { font-weight: 600; font-size: 14.5px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; color: var(--text-dim);
+    font-size: 14px; margin-bottom: 3px; cursor: pointer; border: none; background: none; text-align: left; width: 100%; }
+  .nav-item:hover { background: var(--surface-hover); color: var(--text); }
+  .nav-item.active { background: rgba(0,184,169,.14); color: var(--accent); font-weight: 600; }
+  body[data-theme="light"] .nav-item.active { background: rgba(0,150,136,.12); }
+  .nav-item .emoji { font-size: 16px; width: 20px; }
+  .nav-spacer { flex: 1; }
+  .nav-footer { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .theme-switch { display: flex; gap: 6px; }
+  .theme-switch button { flex: 1; font-size: 12px; padding: 6px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-dim); cursor: pointer; }
+  .theme-switch button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .ver { color: var(--text-dim); font-size: 11px; padding-left: 2px; }
+
+  /* ── Main ── */
+  .main { flex: 1; overflow: auto; padding: 26px 32px; }
+  .screen { display: none; animation: fade .18s ease; }
+  .screen.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+  .pageTitle { font-size: 21px; font-weight: 600; }
+  .pageSubtitle { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 18px 0 16px; }
+
+  .btn { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
+    padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: var(--surface-hover); }
+  .btn.primary { background: var(--accent); color: var(--accent-text); border: none; }
+  .btn.primary:hover { background: var(--accent-dark); }
+
+  /* Segmented control Karten ↔ Liste */
+  .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 3px; gap: 3px; }
+  .seg button { border: none; background: none; color: var(--text-dim); font-size: 12.5px; font-weight: 600;
+    padding: 6px 12px; border-radius: 7px; cursor: pointer; }
+  .seg button.on { background: var(--accent); color: var(--accent-text); }
+
+  /* ── Status-/Plattform-Pill (das neue Element) ── */
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; border-radius: 999px;
+    background: var(--surface-hover); border: 1px solid var(--border); font-size: 12px; font-weight: 600;
+    color: var(--text-dim); white-space: nowrap; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot.online { background: var(--online); box-shadow: 0 0 8px var(--online); }
+  .dot.offline { background: var(--offline); }
+  .dot.unknown { background: var(--unknown); }
+  .pill .os { color: var(--text); }
+  .pill.est .os::before { content: "~ "; color: var(--text-dim); font-weight: 400; }
+
+  /* ── Karten (deviceCard) ── */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+  .card:hover { background: var(--surface-hover); border-color: var(--accent); }
+  .card .top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .card .top .rowTitle { flex: 1 1 auto; min-width: 0; }
+  .card .top .pill { flex: 0 0 auto; }
+  .rowTitle { font-size: 14px; font-weight: 600; }
+  .rowTitle.dis { color: var(--text-dim); }
+  .rowMono { color: var(--text-dim); font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; margin-bottom: 12px; }
+  .card .bottom { display: flex; align-items: center; gap: 8px; }
+  .tile { width: 36px; height: 36px; border-radius: 10px; background: var(--surface-hover); border: 1px solid var(--border);
+    color: var(--text-dim); font-size: 14px; cursor: pointer; }
+  .tile:hover { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .tile:disabled { opacity: .4; cursor: not-allowed; }
+  .grow { flex: 1; }
+  .wakeBtn { background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 8px;
+    padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; min-width: 96px; }
+  .wakeBtn:hover { background: var(--accent); color: var(--accent-text); }
+  .shutdownBtn { background: transparent; color: var(--danger); border: 1px solid var(--danger); border-radius: 8px;
+    padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; min-width: 96px; }
+  .shutdownBtn:hover { background: var(--danger); color: #fff; }
+
+  /* ── Liste (deviceRow) ── */
+  .listWrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: var(--surface-hover); }
+  .row .info { flex: 1; min-width: 0; }
+  .row .tile { width: 34px; height: 34px; }
+
+  /* ── Einstellungen: Gruppen ── */
+  .group { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; max-width: 940px; }
+  .group h2 { font-size: 13px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .8px;
+    margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .group h2 .tag { font-size: 10px; letter-spacing: 0; text-transform: none; background: rgba(0,184,169,.15); color: var(--accent);
+    padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+  .form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 14px; }
+  .field label { display: block; color: var(--text-dim); font-size: 12px; margin-bottom: 5px; }
+  .field .hint { color: var(--text-dim); font-size: 11.5px; margin-top: 5px; }
+  select, input[type=text], input[type=number] { width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 13px; outline: none; }
+  select:focus, input:focus { border-color: var(--accent); }
+  .switchRow { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+  .switch { width: 40px; height: 22px; border-radius: 999px; background: var(--border); position: relative; cursor: pointer; flex-shrink: 0; transition: background .15s; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { left: 21px; }
+  .switchRow .lbl { font-size: 13px; }
+  .moved { position: relative; }
+  .moved .badge { position: absolute; right: -4px; top: 2px; font-size: 10px; color: var(--accent); font-weight: 700; }
+  .oscols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .note { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11.5px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .note code { font-family: Consolas, monospace; color: var(--blue); }
+  .legend { max-width: 940px; margin-top: 18px; padding: 14px 18px; border: 1px dashed var(--border); border-radius: 12px;
+    color: var(--text-dim); font-size: 12px; line-height: 1.8; }
+  .legend b { color: var(--text); }
+</style>
+</head>
+<body data-theme="dark">
+
+<nav class="sidebar">
+  <div class="logo"><div class="mark">W</div><span>WOL Manager</span></div>
+  <button class="nav-item active" data-screen="devices"><span class="emoji">🖥️</span>Geräte</button>
+  <button class="nav-item" data-screen="manage"><span class="emoji">🔍</span>Verwalten</button>
+  <button class="nav-item" data-screen="schedule"><span class="emoji">⏰</span>Zeitplan</button>
+  <button class="nav-item" data-screen="logs"><span class="emoji">📄</span>Protokolle</button>
+  <button class="nav-item" data-screen="settings"><span class="emoji">⚙️</span>Einstellungen</button>
+  <button class="nav-item" data-screen="about"><span class="emoji">ℹ️</span>Info</button>
+  <div class="nav-spacer"></div>
+  <div class="nav-footer">
+    <div class="theme-switch">
+      <button class="on" data-theme-set="dark">🌙 Dunkel</button>
+      <button data-theme-set="light">☀️ Hell</button>
+    </div>
+    <div class="ver">Prototyp v2 · 2026-10-02</div>
+  </div>
+</nav>
+
+<main class="main">
+
+<!-- ═══════════════ Geräte ═══════════════ -->
+<section class="screen active" id="screen-devices">
+  <div class="pageTitle">Geräte</div>
+  <div class="pageSubtitle">Plattform rechts oben neben dem Statuspunkt – Remote-Tiles bleiben, das Protokoll ergibt sich aus der Plattform</div>
+
+  <div class="toolbar">
+    <div class="seg">
+      <button class="on" data-view="cards">▦ Karten</button>
+      <button data-view="list">☰ Liste</button>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn">🔄 Aktualisieren</button>
+      <button class="btn primary">＋ Gerät hinzufügen</button>
+    </div>
+  </div>
+
+  <div class="grid" id="cardView"></div>
+  <div class="listWrap" id="listView" style="display:none"></div>
+
+  <div class="legend">
+    <b>Neu:</b> Der Statuspunkt (online/offline/unbekannt) sitzt nicht mehr allein oben rechts, sondern gemeinsam mit der Plattform in einer Pill:
+    <span class="pill" style="vertical-align:middle"><span class="dot online"></span>🍏 macOS</span>
+    <span class="pill est" style="vertical-align:middle"><span class="dot offline"></span>🐧 Linux</span>
+    <span class="pill" style="vertical-align:middle"><span class="dot unknown"></span>❓ Unbekannt</span><br>
+    „~" = nur per Fingerprint geschätzt (TTL/SMB/OUI), ohne "~" = vom Host Service gemeldet.
+    Tooltip der Tiles 🖥️/🪟: <b>Windows → RDP (mstsc) · macOS/Linux → Turbo VNC · unbekannt → Nachfrage</b>.
+    Anordnung, Tiles und Power-Button bleiben unverändert gegenüber der aktuellen Version.
+  </div>
+</section>
+
+<!-- ═══════════════ Einstellungen ═══════════════ -->
+<section class="screen" id="screen-settings">
+  <div class="pageTitle">Einstellungen</div>
+  <div class="pageSubtitle">Remote-Einstellungen sind jetzt eine Gruppe hier – kein eigener Menüpunkt. „Automatisch nach Updates suchen" wurde zu den Schaltern einsortiert.</div>
+
+  <div style="height:16px"></div>
+
+  <div class="group">
+    <h2>Netzwerk</h2>
+    <div class="form">
+      <div class="field"><label>Broadcast-IP</label><input type="text" value="255.255.255.255"></div>
+      <div class="field"><label>Broadcast-Port</label><input type="number" value="9"></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Darstellung</h2>
+    <div class="form">
+      <div class="field"><label>Sprache</label>
+        <select><option>Deutsch</option><option>English</option><option>Français</option><option>Español</option></select></div>
+      <div class="field"><label>Erscheinungsbild</label>
+        <select><option>Automatisch</option><option>Hell</option><option>Dunkel</option></select></div>
+      <div class="field"><label>Layout</label>
+        <select><option>Modern (Dark Control Center)</option><option>Klassisch</option></select>
+        <div class="hint">Änderung wird erst nach Neustart wirksam</div></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Remote-Zugang <span class="tag">integriert</span></h2>
+    <div class="form">
+      <div class="field"><label>Auflösung</label>
+        <select><option>Optimiert 16:9</option><option>1920 × 1080</option><option>1600 × 900</option><option>1366 × 768</option></select>
+        <div class="hint">Gilt für RDP-Fenster (unverändert)</div></div>
+      <div class="field"><label>VNC-Client (Turbo VNC)</label>
+        <input type="text" value="C:\Program Files\Turbo VNC\TurboVNC.exe">
+        <div class="hint">Auto-Erkennung unter %ProgramFiles%\Turbo VNC*, sonst manuell setzen</div></div>
+    </div>
+
+    <div style="margin-top:16px">
+      <label style="display:block;color:var(--text-dim);font-size:12px;margin-bottom:6px">Protokoll je Plattform</label>
+      <div class="oscols">
+        <div class="field"><label>🪟 Windows</label><select><option>RDP</option><option>VNC</option></select></div>
+        <div class="field"><label>🍏 macOS</label><select><option>VNC</option><option>RDP</option></select></div>
+        <div class="field"><label>🐧 Linux</label><select><option>VNC</option><option>RDP</option></select></div>
+      </div>
+    </div>
+
+    <div class="note">
+      <span>Plattform je Gerät: gemeldet vom Host Service oder geschätzt (~) per TTL/SMB/MAC – bereits vorhanden, hier nur verknüpft.
+      Einzelne Geräte lassen sich im Geräte-Dialog auf <code>Auto / RDP / VNC / Deaktiviert</code> stellen.</span>
+      <button class="btn" style="flex-shrink:0">🔎 Plattformen erkennen</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Sonstiges</h2>
+    <div class="form">
+      <div class="field"><label>Max. Protokolleinträge</label><input type="number" value="100"></div>
+      <div class="field"><label>Standard-Abschaltmethode</label>
+        <select><option>Host Service</option><option>SMB (net use + shutdown)</option></select></div>
+      <div style="grid-column:1 / -1">
+        <div class="switchRow moved"><span class="switch on"></span><span class="lbl">Automatisch nach Updates suchen</span>
+          <span class="badge">↑ einsortiert (war oben rechts)</span></div>
+        <div class="field" style="max-width:260px;margin:2px 0 8px 50px"><label>Intervall</label>
+          <select><option>Täglich</option><option>Wöchentlich</option><option>Monatlich</option></select></div>
+        <div class="switchRow"><span class="switch on"></span><span class="lbl">Beim Schließen in die Taskleiste minimieren</span></div>
+        <div class="switchRow"><span class="switch"></span><span class="lbl">Mehrere Instanzen erlauben</span></div>
+        <div class="switchRow"><span class="switch"></span><span class="lbl">Privilegierte Host-Service-Befehle in öffentlichen Netzwerken erlauben</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>Wegfall:</b> der eigene Menüpunkt „Remote-Einstellungen" (war nur im Prototyp v1). <b>Unverändert:</b> alle bestehenden Felder der
+    Einstellungen – sie sind nur in Gruppen unterteilt, damit die neue Gruppe „Remote-Zugang" nicht einzeln dasteht.
+    Der Schalter „Automatisch nach Updates suchen" steht jetzt mit den anderen Schaltern statt ganz oben in der rechten Spalte.
+  </div>
+</section>
+
+<!-- ═══════════════ Platzhalter ═══════════════ -->
+<section class="screen" id="screen-manage"><div class="pageTitle">Verwalten</div><div class="pageSubtitle">Unverändert – hier nur Platzhalter (Geräte + Netzwerk-Scan wie aktuell).</div></section>
+<section class="screen" id="screen-schedule"><div class="pageTitle">Zeitplan</div><div class="pageSubtitle">Unverändert – Platzhalter.</div></section>
+<section class="screen" id="screen-logs"><div class="pageTitle">Protokolle</div><div class="pageSubtitle">Unverändert – Platzhalter.</div></section>
+<section class="screen" id="screen-about"><div class="pageTitle">Info</div><div class="pageSubtitle">Unverändert – Platzhalter.</div></section>
+
+</main>
+
+<script>
+"use strict";
+
+/* Geräte wie in devices.json, plus optionales Feld "os" */
+const devices = [
+  { name: "A4-H20",    ip: "192.168.2.50",  mac: "60:CF:84:84:31:29", status: "online",  os: "windows", conf: "high",   enabled: true },
+  { name: "Fractal",   ip: "192.168.2.62",  mac: "50:EB:F6:B7:8B:0C", status: "online",  os: "linux",   conf: "high",   enabled: true },
+  { name: "Mac-Studio",ip: "192.168.2.80",  mac: "3C:22:FB:1A:2B:3C", status: "online",  os: "macos",   conf: "medium", enabled: true },
+  { name: "A4-TV",     ip: "192.168.2.111", mac: "A0:AD:9F:1C:09:FF", status: "unknown", os: "",        conf: "",       enabled: true },
+  { name: "NAS",       ip: "192.168.2.9",   mac: "00:11:32:AA:BB:CC", status: "offline", os: "linux",   conf: "low",    enabled: false },
+];
+
+const OS = { windows: "🪟 Windows", macos: "🍏 macOS", linux: "🐧 Linux", "": "❓ Unbekannt" };
+const PROTO_TIP = {
+  windows: "Remote Vollbild – RDP (mstsc)",
+  macos:   "Remote Vollbild – Turbo VNC",
+  linux:   "Remote Vollbild – Turbo VNC",
+  "":      "Remote Vollbild – Protokoll wird nachgefragt",
+};
+
+function pill(d) {
+  const est = d.conf === "medium" || d.conf === "low";
+  return `<span class="pill ${est ? "est" : ""}" title="${d.conf === "high" ? "Vom Host Service gemeldet"
+      : est ? "Per Fingerprint geschätzt (TTL / SMB / MAC)" : "Plattform unbekannt"}">
+    <span class="dot ${d.status}"></span><span class="os">${OS[d.os]}</span></span>`;
+}
+
+function powerBtn(d) {
+  if (!d.enabled) return `<button class="wakeBtn" disabled>Deaktiviert</button>`;
+  return d.status === "online"
+    ? `<button class="shutdownBtn">⏻ Ausschalten</button>`
+    : `<button class="wakeBtn">📤 Aufwecken</button>`;
+}
+
+function tiles(d, size) {
+  const dis = d.enabled ? "" : "disabled";
+  return `<button class="tile" ${dis} title="${PROTO_TIP[d.os]}">🖥️</button>
+          <button class="tile" ${dis} title="${PROTO_TIP[d.os].replace("Vollbild", "Fenster")}">🪟</button>
+          <button class="tile" ${dis} title="Dashboard">📊</button>`;
+}
+
+function render() {
+  document.getElementById("cardView").innerHTML = devices.map(d => `
+    <div class="card">
+      <div class="top"><span class="rowTitle ${d.enabled ? "" : "dis"}">${d.name}</span>${pill(d)}</div>
+      <div class="rowMono">${d.ip}<br>${d.mac}</div>
+      <div class="bottom">${tiles(d)}<span class="grow"></span>${powerBtn(d)}</div>
+    </div>`).join("");
+
+  document.getElementById("listView").innerHTML = devices.map(d => `
+    <div class="row">
+      <span class="dot ${d.status}"></span>
+      <div class="info">
+        <div class="rowTitle ${d.enabled ? "" : "dis"}">${d.name}${d.enabled ? "" : " (deaktiviert)"}</div>
+        <div class="rowMono" style="margin:2px 0 0">${d.ip} · ${d.mac}</div>
+      </div>
+      ${pill(d)}
+      ${tiles(d)}
+      ${powerBtn(d)}
+    </div>`).join("");
+}
+
+/* Karten ↔ Liste */
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".seg button").forEach(x => x.classList.toggle("on", x === b));
+  document.getElementById("cardView").style.display = b.dataset.view === "cards" ? "" : "none";
+  document.getElementById("listView").style.display = b.dataset.view === "list" ? "" : "none";
+}));
+
+/* Navigation */
+document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".nav-item").forEach(x => x.classList.toggle("active", x === b));
+  document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === "screen-" + b.dataset.screen));
+}));
+
+/* Theme */
+document.querySelectorAll(".theme-switch button").forEach(b => b.addEventListener("click", () => {
+  document.body.dataset.theme = b.dataset.themeSet;
+  document.querySelectorAll(".theme-switch button").forEach(x => x.classList.toggle("on", x === b));
+}));
+
+/* Schalter */
+document.querySelectorAll(".switch").forEach(s => s.addEventListener("click", () => s.classList.toggle("on")));
+
+render();
+</script>
+</body>
+</html>

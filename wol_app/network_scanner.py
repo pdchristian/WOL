@@ -6,9 +6,11 @@ import struct
 import subprocess
 import threading
 
+from wol_app.os_detect import fingerprint_host
 from wol_app.translations import Translations
 from wol_app.utils import (
     build_ping_args,
+    normalize_os,
     run_subprocess_safe,
     validate_ip,
     validate_mac,
@@ -495,8 +497,14 @@ def find_interface_for_device(target_ip: str) -> dict | None:
 
 
 def scan_subnet(ip: str, netmask: str, timeout: int = 1,
-                progress_callback=None) -> list[dict]:
-    """Scan a subnet for active hosts with safety limits."""
+                progress_callback=None, detect_os: bool = True) -> list[dict]:
+    """Scan a subnet for active hosts with safety limits.
+
+    *detect_os* additionally fingerprints every live host (host-service
+    query plus TTL/SMB/name/MAC heuristics) and stores the result in the
+    ``os``/``os_confidence`` keys. It costs one extra ping and two bounded
+    TCP probes per live host, so very large subnets can skip it.
+    """
     if not validate_ip(ip):
         return []
     if timeout > MAX_SCAN_TIMEOUT:
@@ -516,12 +524,28 @@ def scan_subnet(ip: str, netmask: str, timeout: int = 1,
             hostname = resolve_hostname(target_ip)
             mac = get_mac_from_arp(target_ip)
             ipv6_addr = get_ipv6_from_nd(mac) or ""
-            results.append({
+            host = {
                 "hostname": hostname or "Unknown",
                 "ipv4": target_ip,
                 "ipv6": ipv6_addr,
                 "mac": mac or "Unknown",
-            })
+                "os": "",
+                "os_confidence": "",
+            }
+            if detect_os:
+                try:
+                    os_id, confidence, _source = fingerprint_host(
+                        target_ip,
+                        hostname=host["hostname"],
+                        mac=host["mac"],
+                        ping_timeout=timeout,
+                    )
+                    host["os"] = normalize_os(os_id)
+                    host["os_confidence"] = confidence
+                except Exception:
+                    # Fingerprinting must never fail the scan itself.
+                    pass
+            results.append(host)
 
     threads = []
     # Limit concurrent threads to avoid overwhelming the network
@@ -542,7 +566,8 @@ def scan_subnet(ip: str, netmask: str, timeout: int = 1,
     return results
 
 
-def scan_network(timeout: int = 1, progress_callback=None) -> list[dict]:
+def scan_network(timeout: int = 1, progress_callback=None,
+                 detect_os: bool = True) -> list[dict]:
     """Scan all local subnets for active hosts."""
     if timeout > MAX_SCAN_TIMEOUT:
         timeout = MAX_SCAN_TIMEOUT
@@ -556,7 +581,7 @@ def scan_network(timeout: int = 1, progress_callback=None) -> list[dict]:
                 None, None, Translations.tr("scan.scanning_subnet", ip=iface["ip"])
             )
         hosts = scan_subnet(iface["ip"], iface["netmask"], timeout,
-                           progress_callback)
+                           progress_callback, detect_os=detect_os)
         for host in hosts:
             if host["ipv4"] not in seen_ips:
                 seen_ips.add(host["ipv4"])

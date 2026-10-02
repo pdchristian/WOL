@@ -1,17 +1,21 @@
 """Bump the application version EVERYWHERE — the one command to release a version.
 
-The single source of truth is ``wol_app/__init__.py`` (``__version__``).
-This tool sets the new version there and propagates it to every build file
+The single source of truth is ``wol_app/__init__.py``, which carries two
+release lines: ``__version__`` for the desktop variants (Windows, Ubuntu,
+macOS) and ``MOBILE_VERSION`` for the Android/iOS WebView clients. They are
+separate because a desktop-only feature must not bump the mobile release, and
+vice versa. This tool sets one line and propagates it to its build file
 and document (Android ``build.gradle.kts``, iOS ``project.yml``, ``setup.iss``,
 WebApp fallbacks, docs, …) via ``update_docs_version.py``, then regenerates
 the Xcode project with ``xcodegen generate`` when it is available.
 
 Usage:
-    python update_version.py 2.3.5          # bump everywhere
-    python update_version.py --check        # verify sync without changing files
+    python update_version.py 2.4.0              # bump the desktop line
+    python update_version.py --mobile 2.3.8     # bump the Android/iOS line
+    python update_version.py --check            # verify both lines
 
 ``--check`` exits with code 1 and lists every file whose version differs
-from the source of truth (also used by tests/test_version_sync.py).
+from its line's source of truth (also used by tests/test_version_sync.py).
 """
 
 from __future__ import annotations
@@ -21,7 +25,6 @@ import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
 import update_docs_version as sync
 
@@ -44,23 +47,41 @@ def set_source_version(version: str) -> bool:
     return False
 
 
+def set_mobile_version(version: str) -> bool:
+    """Write ``MOBILE_VERSION = "X.Y.Z"`` into wol_app/__init__.py."""
+    text = sync.VERSION_SOURCE.read_text(encoding="utf-8")
+    new_text, count = re.subn(
+        r'(MOBILE_VERSION\s*=\s*["\'])\d+\.\d+\.\d+(["\'])',
+        rf"\g<1>{version}\g<2>",
+        text,
+    )
+    if count != 1:
+        raise SystemExit(
+            f"ERROR: Could not rewrite MOBILE_VERSION in {sync.VERSION_SOURCE}")
+    if new_text != text:
+        sync.VERSION_SOURCE.write_text(new_text, encoding="utf-8")
+        return True
+    return False
+
+
 def check() -> list[str]:
-    """Return a list of human-readable drift messages (empty == everything in sync)."""
-    version = sync.read_version()
+    """Return drift messages for both release lines (empty == everything in sync)."""
     drift: list[str] = []
-    for filename, patterns in sync.DOC_PATTERNS.items():
-        path = sync.ROOT / filename
-        if not path.exists():
-            continue
-        text = path.read_text(encoding="utf-8")
-        for pattern, _replacement in patterns:
-            for match in re.finditer(pattern, text):
-                found = VERSION_RE.search(match.group(0))
-                if found and found.group(0) != version:
-                    drift.append(
-                        f"{filename}: found {found.group(0)}, "
-                        f"expected {version} (pattern {pattern!r})"
-                    )
+    for patterns, version in ((sync.DOC_PATTERNS, sync.read_version()),
+                              (sync.MOBILE_PATTERNS, sync.read_mobile_version())):
+        for filename, file_patterns in patterns.items():
+            path = sync.ROOT / filename
+            if not path.exists():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for pattern, _replacement in file_patterns:
+                for match in re.finditer(pattern, text):
+                    found = VERSION_RE.search(match.group(0))
+                    if found and found.group(0) != version:
+                        drift.append(
+                            f"{filename}: found {found.group(0)}, "
+                            f"expected {version} (pattern {pattern!r})"
+                        )
     return drift
 
 
@@ -80,39 +101,54 @@ def regenerate_xcodeproj() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("version", nargs="?", help="New version, e.g. 2.3.5")
+    parser.add_argument("version", nargs="?",
+                        help="New desktop version, e.g. 2.4.0")
+    parser.add_argument("--mobile", metavar="X.Y.Z",
+                        help="Bump the Android/iOS line (MOBILE_VERSION) instead.")
     parser.add_argument("--check", action="store_true",
-                        help="Only verify that all files share the source version.")
+                        help="Only verify that every file matches its line.")
     args = parser.parse_args(argv)
 
     if args.check:
-        version = sync.read_version()
         drift = check()
         if drift:
             print(f"VERSION DRIFT vs. {sync.VERSION_SOURCE.relative_to(sync.ROOT)} "
-                  f"({version}):")
+                  f"(desktop {sync.read_version()} / "
+                  f"mobile {sync.read_mobile_version()}):")
             for line in drift:
                 print(f"  MISMATCH {line}")
             print("\nFix with: python update_docs_version.py")
             return 1
-        print(f"All files in sync at version {version}.")
+        print(f"All files in sync — desktop {sync.read_version()}, "
+              f"mobile {sync.read_mobile_version()}.")
         return 0
 
-    if not args.version:
-        parser.error("version required (or use --check)")
-    assert args.version is not None
-    if not VERSION_RE.fullmatch(args.version):
-        parser.error(f"invalid version {args.version!r}, expected X.Y.Z")
+    if args.mobile and args.version:
+        parser.error("--mobile takes the version as its value; "
+                     "do not also pass a positional version")
 
-    if set_source_version(args.version):
-        print(f'Set __version__ = "{args.version}" in {sync.VERSION_SOURCE.name}')
+    target = args.mobile if args.mobile else args.version
+    if not target:
+        parser.error("version required (or use --check)")
+    assert target is not None
+    if not VERSION_RE.fullmatch(target):
+        parser.error(f"invalid version {target!r}, expected X.Y.Z")
+
+    if args.mobile:
+        if set_mobile_version(target):
+            print(f'Set MOBILE_VERSION = "{target}" in {sync.VERSION_SOURCE.name}')
+        else:
+            print(f'MOBILE_VERSION already "{target}"')
     else:
-        print(f'__version__ already "{args.version}"')
+        if set_source_version(target):
+            print(f'Set __version__ = "{target}" in {sync.VERSION_SOURCE.name}')
+        else:
+            print(f'__version__ already "{target}"')
 
     sync.main()
     regenerate_xcodeproj()
-    print(f"\nDone. Version {args.version} applied to all variants "
-          f"(Windows, Ubuntu, Android, iOS).")
+    line = "Android/iOS" if args.mobile else "Windows, Ubuntu, macOS"
+    print(f"\nDone. Version {target} applied to the {line} variant(s).")
     return 0
 
 

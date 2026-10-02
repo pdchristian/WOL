@@ -5,6 +5,14 @@ Extracted from ``MainWindow._remote_desktop_selected`` so both UIs start
 and resolution selection (fixed value or "auto" from the primary screen's
 physical pixels).
 
+Platform routing: the detected platform of the device (``os`` key, see
+``wol_app.os_detect``) decides which client opens —
+``config.get_remote_protocol()`` maps Windows to RDP and macOS/Linux to VNC
+(TurboVNC). Devices whose platform was never detected keep the historical
+RDP path. The VNC path copies the stored password to the clipboard instead of
+passing it on the command line: TurboVNC has no secure hand-over channel like
+the temporary ``.rdp`` file mstsc uses.
+
 Fast-exit retry: a wrong password against an xrdp/Linux host (typical for
 Ubuntu) shows as a black screen and mstsc closes again immediately. The
 launch therefore watches the mstsc process and, when it dies within a few
@@ -16,16 +24,21 @@ import threading
 from typing import Any
 
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import QMessageBox, QWidget
+from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from wol_app.config import (
+    DEFAULT_VNC_PORT,
     REMOTE_DESKTOP_AUTO_FRACTION,
     REMOTE_DESKTOP_RESOLUTION_AUTO,
+    REMOTE_PROTOCOL_RDP,
+    REMOTE_PROTOCOL_VNC,
 )
 from wol_app.translations import Translations
 from wol_app.utils import (
     auto_rdp_resolution,
     launch_remote_desktop,
+    launch_vnc,
+    normalize_os,
     retry_remote_desktop_without_password,
 )
 
@@ -148,6 +161,92 @@ def _make_fast_exit_callback(
     return _on_fast_exit
 
 
+def resolve_remote_protocol(config: Any, device: dict) -> str:
+    """Protocol that reaches *device*: :data:`REMOTE_PROTOCOL_RDP` or VNC.
+
+    Driven by the platform stored on the device (``os`` key) and the routing
+    table in the settings. Read defensively like the other config accesses:
+    a stub config without the getter — or a hand-edited, invalid value — keeps
+    the historical RDP behaviour instead of blocking the connection.
+    """
+    getter = getattr(config, "get_remote_protocol", None)
+    if not callable(getter):
+        return REMOTE_PROTOCOL_RDP
+    try:
+        protocol = getter(normalize_os(device.get("os", "")))
+    except Exception:  # noqa: BLE001 - never block the connection on config
+        return REMOTE_PROTOCOL_RDP
+    return protocol if protocol in (REMOTE_PROTOCOL_RDP, REMOTE_PROTOCOL_VNC) \
+        else REMOTE_PROTOCOL_RDP
+
+
+def _start_vnc(
+    parent: QWidget,
+    config: Any,
+    device_name: str,
+    ip: str,
+    password: str,
+    fullscreen: bool,
+) -> None:
+    """Open a VNC session for a device whose platform is routed to VNC.
+
+    The stored password goes to the clipboard rather than to the command line
+    or a file: TurboVNC offers no secure hand-over channel (mstsc gets a
+    temporary, ACL-protected ``.rdp`` file), so the clipboard is the only way
+    that leaves nothing on disk. The message box tells the user before the
+    viewer's own prompt appears.
+    """
+    port_getter = getattr(config, "get_vnc_port", None)
+    path_getter = getattr(config, "get_vnc_viewer_path", None)
+    port = port_getter() if callable(port_getter) else DEFAULT_VNC_PORT
+    viewer = path_getter() if callable(path_getter) else ""
+
+    try:
+        cmd = launch_vnc(ip, port=port, viewer_path=viewer, fullscreen=fullscreen)
+    except RuntimeError:
+        # No viewer installed / configured — actionable, so a warning with the
+        # hint where to set the path, not the generic error dialog.
+        QMessageBox.warning(
+            parent,
+            Translations.tr("dialog.vnc_missing.title"),
+            Translations.tr("dialog.vnc_missing.message"),
+        )
+        return
+    except Exception:
+        QMessageBox.critical(
+            parent,
+            Translations.tr("dialog.remote_desktop_error.title"),
+            Translations.tr("dialog.remote_desktop_error.message"),
+        )
+        return
+
+    if password:
+        copied = False
+        try:
+            QApplication.clipboard().setText(password)
+            copied = True
+        except Exception:  # noqa: BLE001 - clipboard may be unavailable
+            pass
+        if copied:
+            QMessageBox.information(
+                parent,
+                Translations.tr("dialog.vnc_password_copied.title"),
+                Translations.tr(
+                    "dialog.vnc_password_copied.message", name=device_name
+                ),
+            )
+
+    # English log text by convention (all add_log callers log English).
+    if config is not None:
+        try:
+            config.add_log(
+                device_name, "VNC", "INFO",
+                f"Started VNC session to {cmd[-1]}",
+            )
+        except Exception:  # noqa: BLE001 - logging must never block the session
+            pass
+
+
 def start_remote_desktop(
     parent: QWidget, config: Any, device: dict, fullscreen: bool
 ) -> None:
@@ -174,6 +273,12 @@ def start_remote_desktop(
 
     username: str = device.get("username", "") or ""
     password: str = device.get("password", "") or ""
+
+    # Platform routing decides the client: a device whose platform is mapped to
+    # VNC (default macOS/Linux) opens TurboVNC instead of the RDP client.
+    if resolve_remote_protocol(config, device) == REMOTE_PROTOCOL_VNC:
+        _start_vnc(parent, config, device_name, device_ip, password, fullscreen)
+        return
 
     width: int = 1920
     height: int = 1080

@@ -12,10 +12,12 @@ A future Android (or any) client can rely on ``protocol/`` alone; breaking
 this contract must fail CI here.
 """
 
+import builtins
 import json
 import re
 from pathlib import Path
 from unittest import mock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -355,6 +357,72 @@ class TestLiveHandlerContract:
                         "password": "p"}).encode() + b"\n",
             monkeypatch=monkeypatch)
         assert_valid("response-shutdown-reboot", resp)
+
+
+# ── v8: platform reporting ("os") ──────────────────────────────────────────
+
+class TestOsField:
+    def test_status_response_carries_os(self, monkeypatch):
+        resp = _run_handler(wol_host_service, b'{"command": "status"}\n',
+                            monkeypatch=monkeypatch)
+        assert resp["os"] == "windows"
+        assert_valid("response-status", resp)
+
+    def test_metrics_response_carries_os(self, monkeypatch):
+        monkeypatch.setitem(__import__("sys").modules, "psutil", None)
+        monkeypatch.setattr(wol_host_service, "_gpu_metrics_cached",
+                            lambda: {"gpu": None, "vram_used": None,
+                                     "vram_total": None, "gpu_name": None})
+        resp = _run_handler(
+            wol_host_service,
+            json.dumps({"command": "metrics", "username": "u",
+                        "password": "p"}).encode() + b"\n",
+            monkeypatch=monkeypatch)
+        assert resp["os"] == "windows"
+        assert_valid("response-metrics", resp)
+
+    def test_linux_core_reports_distribution(self, monkeypatch):
+        import wol_host_service_linux as linux_svc
+
+        monkeypatch.setattr(linux_svc, "_OS_ID_CACHE", None)
+        monkeypatch.setattr(linux_svc.sys, "platform", "linux")
+        monkeypatch.setattr(builtins, "open", mock.mock_open(
+            read_data='NAME="Ubuntu"\nID=ubuntu\nID_LIKE=debian\n'))
+        assert linux_svc.os_id() == "ubuntu"
+
+    def test_linux_core_falls_back_to_linux(self, monkeypatch):
+        import wol_host_service_linux as linux_svc
+
+        monkeypatch.setattr(linux_svc, "_OS_ID_CACHE", None)
+        monkeypatch.setattr(linux_svc.sys, "platform", "linux")
+        monkeypatch.setattr(builtins, "open",
+                            MagicMock(side_effect=FileNotFoundError()))
+        assert linux_svc.os_id() == "linux"
+
+    def test_linux_core_reports_macos_for_darwin(self, monkeypatch):
+        # The macOS variant reuses the Linux core, so the darwin branch is
+        # what makes wol_host_service_macos.py report "macos".
+        import wol_host_service_linux as linux_svc
+
+        monkeypatch.setattr(linux_svc, "_OS_ID_CACHE", None)
+        monkeypatch.setattr(linux_svc.sys, "platform", "darwin")
+        assert linux_svc.os_id() == "macos"
+
+    def test_schema_allows_pre_v8_hosts_without_os(self):
+        # "os" must stay optional: a v2 host has no such field.
+        payload = _load(EXAMPLES_DIR / "response-metrics-no-gpu.json")
+        assert "os" not in payload
+        assert_valid("response-metrics", payload)
+
+    def test_schema_rejects_non_string_os(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["os"] = 7
+        assert_invalid("response-metrics", payload)
+
+    def test_schema_rejects_empty_os(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["os"] = ""
+        assert_invalid("response-metrics", payload)
 
 
 # ── Contract invariants: SPEC/schema constants vs. service code ────────────

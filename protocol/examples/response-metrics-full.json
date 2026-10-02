@@ -1,7 +1,8 @@
 {
   "status": "ok",
-  "protocol": 7,
+  "protocol": 8,
   "hostname": "FRACTAL",
+  "os": "windows",
   "cpu": 63.4,
   "cpu_count": 16,
   "ram_used": 13214287872,

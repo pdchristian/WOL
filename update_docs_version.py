@@ -1,11 +1,18 @@
-"""Synchronize the version string across ALL build variants and docs.
+"""Synchronize the version strings across ALL build variants and docs.
 
-Single source of truth: ``wol_app/__init__.py`` (``__version__``).
-This script propagates that version to every hardcoded reference so the
-Windows, Ubuntu, Android and iOS variants can never drift apart again:
+Single source of truth: ``wol_app/__init__.py`` — but in TWO lines, because
+the desktop and the mobile clients do not always ship the same content:
 
-  Build files (functional — the shipped binaries use these):
+  ``__version__``      desktop line  (Windows, Ubuntu, macOS)
+  ``MOBILE_VERSION``   mobile line   (Android/iOS WebView clients)
+
+``update_docs_version.py`` (no arguments) applies each line to its own files:
+
+  Desktop build files (functional — the shipped binaries use these):
     - setup.iss                          ``#define AppVersion "X.Y.Z"``
+    - build.ps1, Wake-on-LAN Manager*.spec
+
+  Mobile build files (functional):
     - android_html/app/build.gradle.kts  ``versionName = "X.Y.Z"``
     - ios/project.yml                    ``"MARKETING_VERSION": "X.Y.Z"``
     - ios/WebApp/app.js                  ``let APP_VERSION = "X.Y.Z"``
@@ -13,17 +20,19 @@ Windows, Ubuntu, Android and iOS variants can never drift apart again:
     - ios/WebApp/bridge.js               ``versionName: "X.Y.Z-demo"``
     - android_html/.../bridge.js         ``versionName: "X.Y.Z-demo"``
     - ios/WolManager/WebView/Bridge.swift fallbacks ``?? "X.Y.Z"``
+    - docs/android/html-app.md
 
-  Documentation / build helpers (cosmetic, kept in step as well):
+  Documentation (desktop line — the docs headline the desktop release):
     - README.md, Bedienungsanleitung.md, KNOWLEDGE.md, SECURITY.md,
-      build.ps1, Wake-on-LAN Manager.spec, docs/android/html-app.md
+      docs/ubuntu/*.md
 
 The Xcode project (``ios/WolManager.xcodeproj/project.pbxproj``) is generated
 from ``ios/project.yml`` — run ``xcodegen generate`` inside ``ios/`` (or use
 ``update_version.py``, which does it automatically).
 
 Run directly (e.g. from build.ps1, build_html.ps1 or CI) — no arguments needed.
-Use ``update_version.py X.Y.Z`` to bump the version everywhere at once.
+Use ``update_version.py X.Y.Z`` (desktop) or ``update_version.py --mobile
+X.Y.Z`` (Android/iOS) to bump one line everywhere at once.
 """
 
 import re
@@ -40,33 +49,16 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "setup.iss": [
         (r'(#define AppVersion ")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
     ],
-    "android_html/app/build.gradle.kts": [
-        (r'(versionName\s*=\s*")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
-    ],
-    "ios/project.yml": [
-        (r'("MARKETING_VERSION":\s*")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
-    ],
-    "ios/WebApp/app.js": [
-        (r'(let APP_VERSION = ")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
-    ],
-    "android_html/app/src/main/assets/app/app.js": [
-        (r'(let APP_VERSION = ")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
-    ],
-    "ios/WebApp/bridge.js": [
-        (r'(versionName: ")\d+\.\d+\.\d+(-demo")', r'\g<1>{version}\g<2>'),
-    ],
-    "android_html/app/src/main/assets/app/bridge.js": [
-        (r'(versionName: ")\d+\.\d+\.\d+(-demo")', r'\g<1>{version}\g<2>'),
-    ],
-    "ios/WolManager/WebView/Bridge.swift": [
-        (r'(\?\? ")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
-    ],
-    # ---- Documentation / build helpers: cosmetic ----
+    # ---- Documentation: headline the desktop release ----
     "README.md": [
         (r"\*\*Version (\d+\.\d+\.\d+)([^\n]*)\*\*", r"**Version {version}\2**"),
     ],
     "Bedienungsanleitung.md": [
-        (r"\*Version (\d+\.\d+\.\d+)([^\n]*)\*", r"*Version {version}\2*"),
+        # Only the footer line tracks the release. Anchored on purpose: an
+        # unanchored pattern also rewrote historical statements such as
+        # "Mit **Version 2.0.0** ist ein neues, modernes App-Design …".
+        (r"(\*Version )\d+\.\d+\.\d+( \| Wake-on-LAN Manager\*)",
+         r"\g<1>{version}\g<2>"),
     ],
     # NOTE: KNOWLEDGE.md and SECURITY.md each have a single consolidated entry
     # further below — a duplicate dict key here would silently override it.
@@ -79,9 +71,6 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
     ],
     "Wake-on-LAN Manager-macos.spec": [
         (r"(Version )\d+\.\d+\.\d+", r"\g<1>{version}"),
-    ],
-    "docs/android/html-app.md": [
-        (r"(`versionName )\d+\.\d+\.\d+(`)", r"\g<1>{version}\g<2>"),
     ],
     "docs/ubuntu/vm-test-guide.md": [
         (r"(wake-on-lan-manager_)\d+\.\d+\.\d+(-1_all\.deb)", r"\g<1>{version}\g<2>"),
@@ -113,6 +102,36 @@ DOC_PATTERNS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
+# Android/iOS WebView clients follow ``MOBILE_VERSION`` instead of
+# ``__version__``: desktop-only features must not drag the mobile release
+# number forward while its own code is unchanged.
+MOBILE_PATTERNS: dict[str, list[tuple[str, str]]] = {
+    "android_html/app/build.gradle.kts": [
+        (r'(versionName\s*=\s*")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
+    ],
+    "ios/project.yml": [
+        (r'("MARKETING_VERSION":\s*")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
+    ],
+    "ios/WebApp/app.js": [
+        (r'(let APP_VERSION = ")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
+    ],
+    "android_html/app/src/main/assets/app/app.js": [
+        (r'(let APP_VERSION = ")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
+    ],
+    "ios/WebApp/bridge.js": [
+        (r'(versionName: ")\d+\.\d+\.\d+(-demo")', r'\g<1>{version}\g<2>'),
+    ],
+    "android_html/app/src/main/assets/app/bridge.js": [
+        (r'(versionName: ")\d+\.\d+\.\d+(-demo")', r'\g<1>{version}\g<2>'),
+    ],
+    "ios/WolManager/WebView/Bridge.swift": [
+        (r'(\?\? ")\d+\.\d+\.\d+(")', r'\g<1>{version}\g<2>'),
+    ],
+    "docs/android/html-app.md": [
+        (r"(`versionName )\d+\.\d+\.\d+(`)", r"\g<1>{version}\g<2>"),
+    ],
+}
+
 
 def read_version() -> str:
     """Extract ``__version__ = "X.Y.Z"`` from the source file."""
@@ -123,15 +142,32 @@ def read_version() -> str:
     return match.group(1)
 
 
-def update_file(path: Path, version: str) -> bool:
-    """Apply version substitutions to *path*. Returns True if anything changed."""
+def read_mobile_version() -> str:
+    """Extract ``MOBILE_VERSION = "X.Y.Z"`` from the source file."""
+    text = VERSION_SOURCE.read_text(encoding="utf-8")
+    match = re.search(r'MOBILE_VERSION\s*=\s*["\'](\d+\.\d+\.\d+)["\']', text)
+    if not match:
+        raise SystemExit(
+            f"ERROR: Could not find MOBILE_VERSION in {VERSION_SOURCE}")
+    return match.group(1)
+
+
+def update_file(path: Path, version: str,
+                patterns: dict[str, list[tuple[str, str]]] | None = None) -> bool:
+    """Apply version substitutions to *path*. Returns True if anything changed.
+
+    ``patterns`` selects the release line (``DOC_PATTERNS`` for the desktop,
+    ``MOBILE_PATTERNS`` for the WebView clients); omitting it keeps the
+    historical desktop-only behaviour.
+    """
     text = path.read_text(encoding="utf-8")
     changed = False
-    # DOC_PATTERNS keys use '/' — Path.relative_to yields '\' on Windows, so
+    table = DOC_PATTERNS if patterns is None else patterns
+    # Pattern keys use '/' — Path.relative_to yields '\' on Windows, so
     # without this normalization every sub-directory file silently matched no
     # pattern and was reported as "already up to date" (2.3.5 drift).
     key = str(path.relative_to(ROOT)).replace("\\", "/")
-    for pattern, replacement in DOC_PATTERNS.get(key, []):
+    for pattern, replacement in table.get(key, []):
         # Replace {version} with the actual version, then let re.sub resolve
         # the remaining backreferences (\1, \2, ...) via the string form.
         repl = replacement.format(version=version)
@@ -146,24 +182,29 @@ def update_file(path: Path, version: str) -> bool:
 
 def main() -> None:
     version = read_version()
-    print(f"Source version: {version}")
+    mobile_version = read_mobile_version()
+    print(f"Desktop version: {version} | mobile version: {mobile_version}")
 
     updated = []
-    for filename in DOC_PATTERNS:
-        path = ROOT / filename
-        if not path.exists():
-            print(f"  SKIP  {filename} (not found)")
-            continue
-        if update_file(path, version):
-            updated.append(filename)
-            print(f"  UPDATE {filename}")
-        else:
-            print(f"  OK    {filename} (already up to date)")
+    for patterns, line_version, label in (
+        (DOC_PATTERNS, version, "desktop"),
+        (MOBILE_PATTERNS, mobile_version, "mobile"),
+    ):
+        for filename in patterns:
+            path = ROOT / filename
+            if not path.exists():
+                print(f"  SKIP  {filename} (not found)")
+                continue
+            if update_file(path, line_version, patterns):
+                updated.append(filename)
+                print(f"  UPDATE {filename} -> {line_version} ({label})")
+            else:
+                print(f"  OK    {filename} ({label} {line_version})")
 
     if updated:
-        print(f"\nUpdated {len(updated)} file(s) to version {version}.")
+        print(f"\nUpdated {len(updated)} file(s).")
     else:
-        print("\nAll docs already at version", version)
+        print("\nAll build files and docs already in sync.")
     return 0
 
 

@@ -20,7 +20,7 @@ python3 -m venv .venv
 
 ---
 
-## Windows (v2.3.7)
+## Windows (v2.4.0)
 
 Kompletter Build in einem Schritt:
 

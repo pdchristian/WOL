@@ -22,10 +22,11 @@ to the user part before authentication.
 
 Commands (identical to the Windows service):
     status    - no authentication required, answers ``{"status": "ok", ...}``
+                plus the protocol v8 ``os`` field (see :func:`os_id`)
     metrics   - authenticated; answers with CPU/RAM/GPU/VRAM metrics
                 (``cpu``, ``ram_used``/``ram_total``, ``gpu``,
                 ``vram_used``/``vram_total``, ``gpu_name``, ``hostname``,
-                ``uptime``, ``protocol``). GPU fields are ``null`` when no
+                ``os``, ``uptime``, ``protocol``). GPU fields are ``null`` when no
                 NVIDIA GPU/``nvidia-smi`` is available.
     run_batch - authenticated AND gated: executes a bash script
                 (``script`` field, ``timeout`` optional) and answers with
@@ -105,7 +106,10 @@ MAX_REQUEST_BYTES = 65536
 #    and "api_info" (server build, context size, slots, queue, state).
 #    Non-llama servers whose /metrics answers JSON (e.g. Strata) get their
 #    throughput mapped onto the same "model_metrics" keys.
-PROTOCOL_VERSION = 7
+# v8 reports the host platform in "os" - on the unauthenticated "status"
+#    response and on "metrics". Values: "windows", "macos", or the Linux
+#    distribution id ("ubuntu", "debian", ...; "linux" when not readable).
+PROTOCOL_VERSION = 8
 
 # Platform shutdown/reboot commands used by the TCP handler. The macOS
 # variant (wol_host_service_macos.py) reuses this module as its core and
@@ -1255,6 +1259,39 @@ def _watched_processes(watch: list) -> dict:
     return result
 
 
+_OS_ID_CACHE: "str | None" = None
+
+
+def os_id() -> str:
+    """Normalized platform id of this host ("ubuntu", "debian", "macos", ...).
+
+    Used for the protocol v8 ``os`` field. The macOS variant imports this
+    module as its core, so the ``darwin`` branch is what makes the macOS
+    service report ``macos``. On Linux the distribution id comes from
+    ``/etc/os-release`` (``ID=``); anything unreadable degrades to
+    ``"linux"`` rather than failing the request. Cached after the first call.
+    """
+    global _OS_ID_CACHE
+    if _OS_ID_CACHE is not None:
+        return _OS_ID_CACHE
+    value = "linux"
+    try:
+        if sys.platform == "darwin":
+            value = "macos"
+        elif sys.platform.startswith("linux"):
+            with open("/etc/os-release", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if line.startswith("ID="):
+                        ident = line.split("=", 1)[1].strip().strip('"').lower()
+                        if ident:
+                            value = ident
+                        break
+    except Exception:
+        value = "linux"
+    _OS_ID_CACHE = value
+    return value
+
+
 def collect_metrics(watch: "list | None" = None) -> dict:
     """Collect CPU/RAM/GPU/VRAM metrics for the dashboard.
 
@@ -1265,6 +1302,8 @@ def collect_metrics(watch: "list | None" = None) -> dict:
 
     All sizes are bytes, percentages 0-100. psutil is imported lazily so a
     broken/missing psutil in an old build only degrades this command.
+    The protocol v8 ``os`` field always carries the platform id
+    (:func:`os_id`).
     *watch* (optional list of process names, see :func:`_watched_processes`)
     adds a ``processes`` field to the response.
     """
@@ -1273,6 +1312,7 @@ def collect_metrics(watch: "list | None" = None) -> dict:
         "status": "ok",
         "protocol": PROTOCOL_VERSION,
         "hostname": "",
+        "os": os_id(),
         "cpu": None,
         "cpu_count": None,
         "ram_used": None,
@@ -1439,8 +1479,12 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                 client_ip = ""
 
             if command == "status":
-                # Reachability probe - no authentication required.
-                self._respond({"status": "ok", "message": "online"})
+                # Reachability probe - no authentication required. The
+                # protocol v8 "os" field lets clients label the platform
+                # without credentials (TTL is visible to anyone pinging).
+                self._respond(
+                    {"status": "ok", "message": "online", "os": os_id()}
+                )
                 return
 
             if command not in ("metrics", "shutdown", "reboot", "run_batch"):

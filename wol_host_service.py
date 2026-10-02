@@ -114,7 +114,10 @@ MAX_REQUEST_BYTES = 65536
 #    and "api_info" (server build, context size, slots, queue, state).
 #    Non-llama servers whose /metrics answers JSON (e.g. Strata) get their
 #    throughput mapped onto the same "model_metrics" keys.
-PROTOCOL_VERSION = 7
+# v8 reports the host platform in "os" - on the unauthenticated "status"
+#    response and on "metrics". Values: "windows", "macos", or the Linux
+#    distribution id ("ubuntu", "debian", ...; "linux" when not readable).
+PROTOCOL_VERSION = 8
 
 # Max number of entries in a "watch" list (client configures e.g.
 # ["llama-server.exe", "ollama.exe:11434"] - keep the loop bounded).
@@ -1229,6 +1232,17 @@ def _watched_processes(watch: list) -> dict:
     return result
 
 
+def os_id() -> str:
+    """Normalized platform id of this host - always ``"windows"`` here.
+
+    Used for the protocol v8 ``os`` field on the ``status`` and ``metrics``
+    responses. Kept as a function so the Linux/macOS core
+    (``wol_host_service_linux.py``) and this Windows service share one call
+    site shape.
+    """
+    return "windows"
+
+
 def collect_metrics(watch: "list | None" = None) -> dict:
     """Collect CPU/RAM/GPU/VRAM metrics for the dashboard.
 
@@ -1239,6 +1253,8 @@ def collect_metrics(watch: "list | None" = None) -> dict:
 
     All sizes are bytes, percentages 0-100. psutil is imported lazily so a
     broken/missing psutil in an old build only degrades this command.
+    The protocol v8 ``os`` field always carries the platform id
+    (:func:`os_id`).
     *watch* (optional list of process names, see :func:`_watched_processes`)
     adds a ``processes`` field to the response.
     """
@@ -1247,6 +1263,7 @@ def collect_metrics(watch: "list | None" = None) -> dict:
         "status": "ok",
         "protocol": PROTOCOL_VERSION,
         "hostname": "",
+        "os": os_id(),
         "cpu": None,
         "cpu_count": None,
         "ram_used": None,
@@ -1422,8 +1439,12 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                 client_ip = ""
 
             if command == "status":
-                # Reachability probe - no authentication required.
-                self._respond({"status": "ok", "message": "online"})
+                # Reachability probe - no authentication required. The
+                # protocol v8 "os" field lets clients label the platform
+                # without credentials (TTL is visible to anyone pinging).
+                self._respond(
+                    {"status": "ok", "message": "online", "os": os_id()}
+                )
                 return
 
             if command not in ("metrics", "shutdown", "reboot", "run_batch"):

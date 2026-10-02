@@ -14,6 +14,8 @@ import threading
 import time
 from pathlib import Path
 
+from wol_app.translations import Translations
+
 # ── Validation ──────────────────────────────────────────────────────────────
 
 def validate_ip(ip: str) -> bool:
@@ -1149,6 +1151,106 @@ def retry_remote_desktop_without_password(
     )
 
 
+# ── VNC (TurboVNC) ─────────────────────────────────────────────────────────
+
+# TurboVNC ships no native viewer binary on Windows: the viewer is a Java jar
+# behind ``vncviewer.bat`` / ``vncviewerw.bat``. The "w" variant starts javaw
+# (no console window) and is therefore preferred.
+_VNC_WINDOWS_LAUNCHERS = ("vncviewerw.bat", "vncviewer.bat")
+_VNC_WINDOWS_DIR_NAMES = ("TurboVNC", "Turbo VNC")
+# Executable names looked up on the PATH (Linux/macOS installs, RealVNC-style
+# viewers that also answer to "vncviewer").
+_VNC_PATH_NAMES = ("vncviewer", "vncviewer.exe")
+
+
+def _vnc_candidate_dirs() -> list[str]:
+    """Install directories that may hold a Windows VNC viewer."""
+    roots: list[str] = []
+    for var in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
+        root = os.environ.get(var, "")
+        if root and root not in roots:
+            roots.append(root)
+    return [
+        os.path.join(root, name)
+        for root in roots
+        for name in _VNC_WINDOWS_DIR_NAMES
+    ]
+
+
+def find_vnc_viewer() -> str:
+    """Locate a VNC viewer executable ("" when none was found).
+
+    Search order: the TurboVNC default install directories (Windows), then the
+    ``PATH`` (Linux/macOS installs put ``vncviewer`` in ``/usr/local/bin`` or
+    ``/opt/TurboVNC/bin``). Never raises — an empty result simply means the
+    caller should tell the user to install or configure a client.
+    """
+    if sys.platform == "win32":
+        for directory in _vnc_candidate_dirs():
+            for launcher in _VNC_WINDOWS_LAUNCHERS:
+                candidate = os.path.join(directory, launcher)
+                if os.path.isfile(candidate):
+                    return candidate
+    for name in _VNC_PATH_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    return ""
+
+
+def build_vnc_args(
+    viewer: str,
+    ip: str,
+    port: int = 5900,
+    fullscreen: bool = True,
+) -> list[str]:
+    """Command line that opens a direct VNC connection to *ip*:*port*.
+
+    TurboVNC addresses a literal TCP port with the doubled-colon form
+    ``host::port`` (``host:1`` would mean display 1, i.e. port 5901), and
+    ``-FullScreen 1`` starts the viewer full-screen. No credentials are ever
+    part of the command line — the viewer prompts for the password (the caller
+    may pre-fill the clipboard).
+    """
+    args = [viewer]
+    if fullscreen:
+        args += ["-FullScreen", "1"]
+    args.append(f"{ip}::{int(port)}")
+    return args
+
+
+def launch_vnc(
+    ip: str,
+    port: int = 5900,
+    viewer_path: str = "",
+    fullscreen: bool = True,
+) -> list[str]:
+    """Open a VNC session to *ip*:*port* with the installed TurboVNC viewer.
+
+    *viewer_path* overrides the auto-detection (empty = :func:`find_vnc_viewer`).
+    Returns the command line that was started so the caller can log it.
+
+    Raises:
+        ValueError: if *ip* is empty.
+        RuntimeError: if no VNC viewer is installed or configured.
+        OSError: if the viewer could not be started.
+    """
+    if not ip:
+        raise ValueError("IP address is empty")
+    viewer = (viewer_path or "").strip() or find_vnc_viewer()
+    if not viewer:
+        raise RuntimeError(
+            "No VNC viewer found. Install TurboVNC or set its path in the "
+            "remote access settings."
+        )
+    cmd = build_vnc_args(viewer, ip, port=port, fullscreen=fullscreen)
+    # CREATE_NO_WINDOW hides the console of TurboVNC's .bat launcher (the Java
+    # viewer itself is a GUI process). shell=False: no command injection.
+    creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    subprocess.Popen(cmd, creationflags=creationflags)
+    return cmd
+
+
 # ── Sorting helpers ────────────────────────────────────────────────────────
 
 def ip_sort_key(ip: str) -> tuple:
@@ -1176,6 +1278,57 @@ def get_ip_key(ip_str: str) -> tuple:
         return tuple(parts)
     except (ValueError, AttributeError):
         return (0, 0, 0, 0)
+
+
+# Normalized platform ids stored per device ("os" key) and reported by the
+# host service (protocol v8). Lives here so both config and the network
+# scanner can use it without importing each other.
+OS_WINDOWS = "windows"
+OS_MACOS = "macos"
+OS_LINUX = "linux"
+VALID_OS_IDS = (OS_WINDOWS, OS_MACOS, OS_LINUX)
+
+#: locale key for each platform id (used by the scan UIs)
+OS_LABEL_KEYS = {
+    OS_WINDOWS: "scan_dialog.os.windows",
+    OS_MACOS: "scan_dialog.os.macos",
+    OS_LINUX: "scan_dialog.os.linux",
+}
+
+
+def normalize_os(value: object) -> str:
+    """Collapse a platform id to ``windows``/``macos``/``linux`` ("" = unknown).
+
+    The host service reports the concrete distribution (``ubuntu``,
+    ``debian``, …); the UI groups everything else under ``linux`` so the
+    scan table and the stored device records stay consistent.
+    """
+    if not isinstance(value, str):
+        return ""
+    ident = value.strip().lower()
+    if ident in VALID_OS_IDS:
+        return ident
+    if ident == "darwin" or ident.startswith("macos"):
+        return OS_MACOS
+    if ident == "win32" or ident.startswith("windows"):
+        return OS_WINDOWS
+    if ident and ident != "unknown":
+        return OS_LINUX
+    return ""
+
+
+def os_display_text(os_id: str, confidence: str) -> str:
+    """Platform label for a device/host ("" when unknown, ``~`` = estimated).
+
+    Shared by the scan results and the platform pill on the device cards and
+    rows: only a high-confidence reading (the host service answered) is shown
+    as a bare label, everything derived from TTL/SMB/OUI hints gets a ``~``.
+    """
+    label_key = OS_LABEL_KEYS.get(os_id)
+    if label_key is None:
+        return ""
+    text = Translations.tr(label_key)
+    return text if confidence == "high" else f"~ {text}"
 
 
 def make_sort_key(column: int, is_ip: bool = False):

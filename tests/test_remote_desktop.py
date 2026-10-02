@@ -175,3 +175,101 @@ class TestFastExitCallback:
                 qapp.processEvents()
                 time.sleep(0.005)
         assert opened, "dialog was not opened on the GUI thread"
+
+
+# ── Platform routing: RDP vs VNC ─────────────────────────────────────────
+
+LINUX_DEVICE = dict(DEVICE, os="linux")
+WINDOWS_DEVICE = dict(DEVICE, os="windows")
+
+
+def test_resolve_protocol_follows_device_platform(config):
+    assert remote_desktop.resolve_remote_protocol(config, WINDOWS_DEVICE) == "rdp"
+    assert remote_desktop.resolve_remote_protocol(config, LINUX_DEVICE) == "vnc"
+    # never-detected platform keeps the historical RDP path
+    assert remote_desktop.resolve_remote_protocol(config, DEVICE) == "rdp"
+
+
+def test_resolve_protocol_survives_stub_config():
+    class Stub:
+        pass
+
+    assert remote_desktop.resolve_remote_protocol(Stub(), LINUX_DEVICE) == "rdp"
+
+
+def test_resolve_protocol_ignores_invalid_stored_value(config):
+    # a hand-edited, invalid value falls back to the platform default
+    config.config["remote"]["protocol_by_os"]["linux"] = "telnet"
+    config.config["remote"]["protocol_by_os"]["windows"] = "telnet"
+    assert remote_desktop.resolve_remote_protocol(config, LINUX_DEVICE) == "vnc"
+    assert remote_desktop.resolve_remote_protocol(config, WINDOWS_DEVICE) == "rdp"
+
+
+def test_linux_device_opens_vnc_not_mstsc(parent, config):
+    with patch.object(remote_desktop, "launch_vnc", return_value=["vncviewer", "x"]) as vnc, \
+            patch.object(remote_desktop, "launch_remote_desktop") as rdp, \
+            patch.object(QMessageBox, "information"), \
+            patch.object(QApplication, "clipboard", return_value=MagicMock()):
+        start_remote_desktop(parent, config, LINUX_DEVICE, True)
+    rdp.assert_not_called()
+    vnc.assert_called_once_with(
+        "10.0.0.42", port=5900, viewer_path="", fullscreen=True)
+
+
+def test_windows_device_still_opens_mstsc(parent, config):
+    with patch.object(remote_desktop, "launch_vnc") as vnc, \
+            patch.object(remote_desktop, "launch_remote_desktop") as rdp:
+        start_remote_desktop(parent, config, WINDOWS_DEVICE, True)
+    vnc.assert_not_called()
+    rdp.assert_called_once()
+
+
+def test_vnc_uses_configured_viewer_path_and_port(parent, config):
+    config.set_vnc_viewer_path(r"C:\Tools\vncviewerw.bat")
+    config.set_vnc_port(5901)
+    with patch.object(remote_desktop, "launch_vnc", return_value=["v"]) as vnc, \
+            patch.object(QMessageBox, "information"), \
+            patch.object(QApplication, "clipboard", return_value=MagicMock()):
+        start_remote_desktop(parent, config, LINUX_DEVICE, False)
+    vnc.assert_called_once_with(
+        "10.0.0.42", port=5901, viewer_path=r"C:\Tools\vncviewerw.bat",
+        fullscreen=False)
+
+
+def test_vnc_password_goes_to_clipboard_not_command_line(parent, config):
+    clipboard = MagicMock()
+    with patch.object(remote_desktop, "launch_vnc", return_value=["v"]) as vnc, \
+            patch.object(QMessageBox, "information") as info, \
+            patch.object(QApplication, "clipboard", return_value=clipboard):
+        start_remote_desktop(parent, config, LINUX_DEVICE, True)
+    clipboard.setText.assert_called_once_with("secret")
+    info.assert_called_once()
+    assert "secret" not in str(vnc.call_args)
+
+
+def test_vnc_logs_started_session(parent, config):
+    with patch.object(remote_desktop, "launch_vnc",
+                      return_value=["v", "10.0.0.42::5900"]), \
+            patch.object(QMessageBox, "information"), \
+            patch.object(QApplication, "clipboard", return_value=MagicMock()):
+        start_remote_desktop(parent, config, LINUX_DEVICE, True)
+    messages = [entry.get("message", "") for entry in config.get_logs()]
+    assert any("Started VNC session to 10.0.0.42::5900" in m for m in messages)
+
+
+def test_vnc_without_viewer_warns_where_to_configure(parent, config):
+    with patch.object(remote_desktop, "launch_vnc",
+                      side_effect=RuntimeError("no viewer")), \
+            patch.object(QMessageBox, "warning") as warn:
+        start_remote_desktop(parent, config, LINUX_DEVICE, True)
+    assert warn.call_args.args[1] == Translations.tr("dialog.vnc_missing.title")
+    assert not config.get_logs()
+
+
+def test_vnc_launch_failure_shows_generic_error(parent, config):
+    with patch.object(remote_desktop, "launch_vnc",
+                      side_effect=OSError("boom")), \
+            patch.object(QMessageBox, "critical") as critical:
+        start_remote_desktop(parent, config, LINUX_DEVICE, True)
+    assert critical.call_args.args[1] == \
+        Translations.tr("dialog.remote_desktop_error.title")

@@ -1,6 +1,6 @@
 # WOL Host Service — Wire Protocol Specification
 
-**Version:** 7 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
+**Version:** 8 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
 
 Referenzimplementierungen:
 
@@ -82,11 +82,18 @@ Schema: [`schema/response-error.json`](schema/response-error.json)
 
 ```json
 → {"command": "status"}
-← {"status": "ok", "message": "online"}
+← {"status": "ok", "message": "online", "os": "ubuntu"}
 ```
 
 Dient Clients als Host-Check (Port offen? Dienst läuft?). Benötigt **keine**
 Credentials.
+
+* `os` (**v8**): normalisierte Plattform des Hosts — `"windows"`, `"macos"`
+  oder die Linux-Distribution (`"ubuntu"`, `"debian"`, …; `"linux"` wenn
+  `/etc/os-release` nicht lesbar). Bewusst **auth-frei**, damit der
+  Netzwerk-Scan Geräte ohne Credentials beschriften kann; ein ICMP-Ping
+  verrät die Plattform über das TTL ebenfalls. Ältere Services lassen das
+  Feld weg.
 
 ### 4.2 `metrics` — Dashboard-Metriken (mit Auth)
 
@@ -108,8 +115,9 @@ Antwort (`status: "ok"`):
 ```json
 {
   "status": "ok",
-  "protocol": 7,
+  "protocol": 8,
   "hostname": "FRACTAL",
+  "os": "windows",
   "cpu": 63.4,
   "cpu_count": 16,
   "ram_used": 12345678901,
@@ -162,9 +170,10 @@ Feld-Semantik:
 | `vram_used`/`vram_total` | int\|null | Bytes — `null` ohne GPU. |
 | `gpu_name` | string\|null | GPU-Produktname. |
 | `hostname` | string | `socket.gethostname()`. |
+| `os` | string | **v8** — Plattform des Hosts (`windows`/`macos`/Linux-Distribution), siehe §4.1. |
 
 **Alle Werte `null` = „nicht ermittelbar“** (psutil/nvidia-smi defekt). Basis-
-felder (`status`, `protocol`, `hostname`) sind immer vorhanden.
+felder (`status`, `protocol`, `hostname`, `os`) sind immer vorhanden.
 
 #### 4.2.1 `processes` (Watch-Liste)
 
@@ -276,7 +285,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 |---|---|---|
 | `DEFAULT_PORT` | 8765 | beide Services |
 | `MAX_REQUEST_BYTES` | 65536 | beide |
-| `PROTOCOL_VERSION` | 7 | beide |
+| `PROTOCOL_VERSION` | 8 | beide |
 | `WATCH_MAX_ENTRIES` | 8 | beide |
 | `WATCH_PORT_TIMEOUT_S` | 0.25 | beide |
 | `WATCH_MODELS_TIMEOUT_S` | 0.6 | beide |
@@ -301,7 +310,10 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
   über die Leitung. Niemals über WAN exponieren.
 * Auth-Pflicht für `metrics`, `shutdown`, `reboot`, `run_batch`
   (Windows: `LogonUserW`; Linux: PAM). `status` ist unauthentifiziert und
-  liefert nur die Erreichbarkeit.
+  liefert nur die Erreichbarkeit — seit v8 zusätzlich die Plattform (`os`),
+  was keine vertrauliche Information ist (ein ICMP-Ping verrät sie über das
+  TTL ebenfalls) und Clients eine agentenlose Beschriftung im Netzwerk-Scan
+  erlaubt.
 * `run_batch` führt Code als SYSTEM (Win) / root (Linux) aus — deshalb
   standardmäßig deaktiviert und nur per `--enable-batch` auf der Zielmaschine
   scharf. Clients müssen den Fehlerfall „disabled“ abfangen.
@@ -345,6 +357,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | 5 | `model_metrics` pro Watch-Eintrag (`prompt_tps`/`predicted_tps` latchen zuletzt gueltige Werte; `total_tokens` = `prompt_tokens_total` + `n_decode_total`) | Modell-Zeile ohne t/s anzeigen |
 | 6 | Anti-Replay `ts`/`nonce` auf `shutdown`/`reboot`/`run_batch` (§4.3/§4.4); Auth-Throttling mit `retry_after` (§3); Audit-Log; Firewall-Quellscope | Requests ohne `ts`/`nonce` senden (Host-Accept solange `require_replay` aus); `retry_after` ignorieren |
 | 7 | Port-only-Watch-Einträge (`:8080`/`8080`), Port-Probe ohne Prozess-Treffer; `api_up`/`api_kind`/`api_features`/`api_info` pro Watch-Eintrag; JSON-`/metrics`-Mapping (nicht-llama.cpp-Server) | Port-only-Einträge zeigen nichts an; Namens-Watch funktioniert wie bei v3–v5; neue Felder ignorieren |
+| 8 | `os` auf `status` (auth-frei) und `metrics` — Plattform des Hosts (§4.1) | Plattform aus TTL/Fingerprint-Heuristik schätzen oder Spalte leer lassen |
 
 Regel: **Nur additive Änderungen.** Neue Felder müssen für ältere Clients
 ignorierbar sein. Neue Pflichtfelder oder Semantic-Änderungen ⇒ neue Major-

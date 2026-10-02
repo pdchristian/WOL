@@ -5,6 +5,7 @@ JSON line and answers with a single JSON line. This module exposes three
 facades over the shared :func:`_request` core:
 
 - :func:`send_host_command` — ``shutdown`` / ``reboot`` / ``status``
+- :func:`get_host_os`       — platform id via the unauthenticated ``status``
 - :func:`get_metrics`       — CPU/RAM/GPU/VRAM metrics for the dashboard
 - :func:`run_batch`         — run a cmd batch script (host must opt in)
 
@@ -28,6 +29,10 @@ _MAX_BATCH_BYTES = 131_072
 # Protocol version that introduced "metrics" / "run_batch" (host service
 # responses without a "protocol" field are older than that).
 _MIN_PROTOCOL_DASHBOARD = 2
+
+# Protocol version that introduced the "os" field on "status"/"metrics".
+# Older hosts simply omit it; clients then fall back to fingerprinting.
+_MIN_PROTOCOL_OS = 8
 
 
 def _replay_fields() -> dict:
@@ -138,6 +143,31 @@ def send_host_command(
     if status == "ok":
         return True, message or "Command accepted"
     return False, message or "Command rejected by host service"
+
+
+def get_host_os(
+    ip: str,
+    port: int = HOST_SERVICE_PORT,
+    timeout: float = 3.0,
+) -> str | None:
+    """Ask the host service which platform it runs on (protocol v8).
+
+    Uses the unauthenticated ``status`` probe, so it works without stored
+    credentials — that is what lets the network scan label devices. Returns
+    the normalized id (``"windows"``, ``"macos"``, ``"ubuntu"``, …) or
+    ``None`` when the host is unreachable, refuses, or runs a service older
+    than v8 (callers then fall back to passive fingerprinting).
+    """
+    ok, response = _request(
+        ip, {"command": "status"}, port, timeout, _MAX_LINE_BYTES
+    )
+    if not ok or str(response.get("status", "error")) != "ok":
+        return None
+    value = response.get("os")
+    if not isinstance(value, str):
+        return None
+    value = value.strip().lower()[:32]
+    return value or None
 
 
 def get_metrics(

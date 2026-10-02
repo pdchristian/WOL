@@ -1,9 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 2.3.7 - Service Watch Edition**
+**Version 2.4.0 - Service Watch Edition**
 
 A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.4.0:** **Platform-aware remote access (desktop only)** — every device card and list row now shows the detected operating system next to the online dot (`🪟 Windows` / `🍏 macOS` / `🐧 Linux`, `~` marks an estimate, `❓` when nothing was detected), and the Remote buttons open the right client for that platform: **Remotedesktop (`mstsc`) for Windows, TurboVNC for macOS/Linux** — configurable per platform in the regrouped **Settings → Remote access** screen (the former *Remote Einstellungen* menu is now part of Settings). Devices stored without a platform are **fingerprinted automatically** at startup (passive TTL/SMB/name/OUI probes, results persisted). The **Android and iOS** apps move to 2.4.0 as well and their Settings screen is **grouped the same way** (*Network* · *Appearance* · *Miscellaneous*) — no new settings on mobile.
 > **New in 2.3.6:** **Apple Watch app** (watchOS 10+, companion to the iOS app) and **security hardening** — Remote Desktop credentials are never written to the temporary `.rdp` file again (Windows Credential Manager / `mstsc` prompt only) with a per-device **certificate-verification level** (default *warn*), and **privileged host-service commands are read-only on public networks**. Plus: **token throughput (tokens/s)** in the dashboard model line, a **power button on the list view** and dashboard navigation buttons, **unified version numbering** across all apps, and assorted fixes.
 > **New in 2.2.3:** **Hostname status fix** — devices configured with a host name (e.g. `blade-18` or `blade-18.fritz.box`) are now resolved to IPv4 before the status ping. Windows preferred the AAAA record when the router (e.g. a Fritz!Box) publishes IPv6, and IPv6 replies carry no `TTL=` token the reply detector relies on; additionally every A record is probed, so a stale DHCP lease next to the current address no longer masks an online device. Unresolvable names report *unknown* with an explicit hint instead of a misleading *offline*.
 > **New in 2.2.2:** **Ubuntu / Linux support** — the app now runs natively on Ubuntu (Modern UI) with a `.deb` package, a systemd-based **Linux Host Service** (protocol v4: metrics, watched processes, llama.cpp models — PAM-authenticated), and `xfreerdp`-based Remote Desktop with the same fast-exit retry. Also: cross-platform ping reply detection (case-insensitive TTL) and a fixed UI font stack so emoji icons and text render correctly on Qt 6.4.
@@ -24,6 +25,7 @@ A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN ma
 - **Status Monitoring** — Ping devices to check online/offline status (auto-refresh every 30 seconds, up to 16 concurrent)
 - **Scheduling** — Schedule automatic wake-ups and remote shutdowns by time and day of week
 - **Network Scanner** — Auto-discover devices across all local network interfaces with DNS name resolution
+- **Platform detection (new)** — The scanner adds a *Plattform* column: hosts running the Host Service report their OS directly (protocol **v8**, no login needed), everything else is estimated passively from ping TTL (128 → Windows, 64 → Linux/macOS), an open SMB port 445, `.local` (Bonjour) names and MAC OUI ranges. Estimates are marked `~` and stored per device as `"os"` (`windows` / `macos` / `linux`)
 - **Remote Shutdown** — Two methods: SMB (Windows shared folder) and **Host Service** (a small Windows service on the target machine, JSON over TCP port 8765)
 - **Host Service** — Optional Windows service (`WOL Host Service`) that accepts remote shutdown/reboot/status commands over TCP port 8765. With it, both **Windows** and **Android** clients can shut down this PC remotely (Android: [pdchristian/WOL-Android](https://github.com/pdchristian/WOL-Android)); installable via the installer
 - **Network Settings** — Configure broadcast IP and port
@@ -133,6 +135,22 @@ Settings). Build and installation details, platform decisions and known
 limitations: [docs/macos/README.md](docs/macos/README.md).
 
 ## 📝 Changelog
+
+### Version 2.4.0 - Platform Edition (2026-10-02)
+
+> Platform work is **desktop only** (Windows · Ubuntu · macOS); the Android and iOS WebView clients ship the same number (2.4.0) with their Settings screen regrouped to match. `wol_app/__init__.py` carries two release lines (`__version__` for the desktop, `MOBILE_VERSION` for mobile), and `update_version.py --check` verifies both — a desktop-only release can still leave the mobile number behind.
+
+#### 🖥️ Platform-aware remote access
+- **Status/platform pill** in the device card *and* the device list: the online dot is combined with the detected operating system — `🪟 Windows`, `🍏 macOS`, `🐧 Linux`, or `❓ Unbekannt`; an estimated reading is prefixed with `~`, and the tooltip explains how the value was derived (`wol_app/widgets/status_pill.py`)
+- **Remote buttons open the right client per platform** (`remote_desktop.resolve_remote_protocol()`): Windows → Remotedesktop (`mstsc`, unchanged), macOS/Linux → **TurboVNC** (`utils.launch_vnc` auto-detects `vncviewerw.bat`, connects `host::port`, `-FullScreen 1`). The tile tooltips and the card context menu name the client that a click starts
+- **VNC password handling:** TurboVNC has no secure hand-off like the temporary `.rdp` file, so the stored password is placed on the **clipboard** and announced in advance — never on the command line, never on disk; sessions are logged as `VNC`
+- **Automatic platform backfill:** devices stored without a platform (added by hand or before detection existed) are fingerprinted once per session by `app_core.OsDetectWorker` (≤ 8 parallel passive probes, DNS names resolved to IPv4 first); results are persisted with the new `os_confidence` key and the cards/rows are rebuilt. The refresh button re-probes the devices that are still without a platform
+- **Settings screen regrouped** into *Network*, *Appearance*, *Remote access* and *Misc* — the former *Remote Einstellungen* menu is integrated (VNC viewer path, VNC port, one protocol drop-down per platform) and the *automatically search for updates* switch moved next to the other toggles. Navigation is unchanged
+
+#### 📱 Settings structure in the mobile apps (Android · iOS)
+- The WebView Settings screen is now split into the same **group cards** as the desktop — **Network** (broadcast IP/port), **Appearance** (language/display mode) and **Miscellaneous** (log entries, update switch with its interval below it). The *Remote access* group has no fields on phones (no `mstsc`/TurboVNC), so it is simply absent
+- **No new settings and no behaviour change:** the same seven fields, the same element ids (`st-ip`, `st-port`, `st-lang`, `st-disp`, `st-int`, `st-maxlogs`) and the same `data-act` handlers — only wrapper `<div class="group">` cards, three i18n keys per language (`set.group.*`) and a handful of CSS lines were added (`app.js` `renderSettings()`, `app.css` `.group`). Every field keeps the same left edge, including the update interval below the auto-update switch
+- Both release lines are at **2.4.0** (Android `versionCode` 8); the group headers stick to the top while scrolling, which keeps long settings pages orientable on a phone
 
 ### Version 2.3.6 - Service Watch Edition (2026-09-26)
 

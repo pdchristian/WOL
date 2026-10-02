@@ -76,7 +76,7 @@ Starten Sie die Anwendung über:
 
 ## Die moderne Benutzeroberfläche
 
-Mit **Version 2.3.7** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
+Mit **Version 2.0.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
 
 > **Wichtig:** Die moderne und die klassische Oberfläche bieten **exakt dieselben Funktionen** – sie unterscheiden sich nur im Layout. Alle Einstellungen, Geräte, Zeitpläne, Protokolle und Sicherheitsfunktionen sind identisch. Sie können jederzeit zwischen beiden wechseln.
 
@@ -170,7 +170,7 @@ Die zuletzt gewählte Ansicht wird **gespeichert** und beim nächsten Start wied
 
 #### Kachelansicht
 Jedes Gerät wird als **Karte** dargestellt:
-- **Name** mit **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
+- **Name** und rechts oben die **Status-/Plattform-Anzeige** (Pill): Status-Punkt (🟢 online / 🔴 offline / 🟡 unbekannt) zusammen mit dem erkannten Betriebssystem (🪟 Windows / 🍏 macOS / 🐧 Linux). Geschätzte Plattformen sind mit `~` markiert, ohne Erkennung steht **❓ Unbekannt**. Der Tooltip der Anzeige erklärt, wie der Wert zustande kam.
 - **IP- und MAC-Adresse**
 - **Remote-Desktop-Kacheln** (🖥️ Vollbild / 🪟 Fenster) und **📊 Dashboard** (öffnet das [Geräte-Dashboard](#geräte-dashboard-performance--batches))
 - **Aktions-Button:**
@@ -181,10 +181,22 @@ Jedes Gerät wird als **Karte** dargestellt:
 Jedes Gerät wird als **Zeile** dargestellt:
 - **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
 - **Name** sowie **IP- und MAC-Adresse** in einer Mono-Zeile darunter
+- **Status-/Plattform-Anzeige** (wie in der Kachel) rechts neben der Zeile
 - **Drei Aktions-Icons rechts:**
-  - 🖥️ **Remote Vollbild** – startet die Remote-Desktop-Sitzung im Vollbild
-  - 🪟 **Remote Fenster** – startet die Remote-Desktop-Sitzung im Fenster
+  - 🖥️ **Remote Vollbild** – startet die Remote-Sitzung im Vollbild
+  - 🪟 **Remote Fenster** – startet die Remote-Sitzung im Fenster
   - ✏️ **Bearbeiten** – öffnet den Geräte-Dialog (alternativ **Doppelklick** auf die Zeile)
+
+> **Welches Programm die Remote-Icons öffnen**, hängt von der Plattform des Geräts ab: Windows → Remotedesktop (`mstsc`), macOS/Linux → **Turbo VNC**. Die Tooltipps der Icons nennen das Programm, siehe [Welcher Client gestartet wird](#welcher-client-gestartet-wird-rdp-oder-turbo-vnc).
+
+#### Plattform-Erkennung
+Damit die Anzeige und die Remote-Icons funktionieren, muss die Plattform des Geräts bekannt sein:
+
+- Geräte, die Sie über den **Netzwerk-Scanner** hinzufügen, bringen die Plattform direkt mit.
+- Für alle anderen Geräte (manuell angelegt oder vor der Einführung der Plattform-Erkennung gespeichert) stellt die App **beim Start automatisch** die Plattform fest: Sie werden wie beim Scanner passiv untersucht (Ping-TTL, offener SMB-Port, Name, MAC-Herstellerbereich). Gefundene Werte werden **gespeichert** und sind ab sofort in Kachel, Liste und Tooltip zu sehen.
+- **Geschätzte** Plattformen tragen ein `~` (z. B. `~ 🍏 macOS`). Die Zuordnung macOS/Linux ist nur sicher, wenn das Gerät den Host Service nutzt, ein `.local`-Name vorliegt oder der Name ein Apple-Produkt enthält (z. B. `MACBOOKPRO`).
+- Ein Gerät, das gerade **offline** ist, bleibt beim automatischen Durchlauf **❓ Unbekannt** – jeder Rechner wird pro Start nur einmal untersucht. Klicken Sie auf **Aktualisieren**, wenn das Gerät später eingeschaltet war: dann werden alle Geräte erneut untersucht, die noch ohne Plattform sind.
+- Im Geräte-Dialog gibt es **kein Plattform-Feld** – die Plattform wird ausschließlich erkannt bzw. aus dem Scanner übernommen. Korrekturen sind direkt in `config.json` möglich (Schlüssel `"os"` mit `windows`, `macos` oder `linux`, optional `"os_confidence"`).
 
 #### Sortierung und Suche
 Links neben dem Suchfeld befindet sich ein **Sortier-Drop-down** mit folgenden Optionen:
@@ -428,7 +440,23 @@ Nach der Entfernung kann der Dienst mit `--install` und `--start` sauber neu reg
 
 ## Remote Desktop
 
-Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten. Dazu werden die im Geräteeintrag gespeicherten **IP-Adresse**, **Benutzername** und **Passwort** verwendet.
+Die Anwendung kann für ein Gerät eine **Remote-Sitzung** starten. Dazu werden die im Geräteeintrag gespeicherten **IP-Adresse**, **Benutzername** und **Passwort** verwendet. Welches Programm dabei geöffnet wird – die Windows-Remotedesktopverbindung (`mstsc`) oder **Turbo VNC** – entscheidet die **Plattform des Geräts**.
+
+### Welcher Client gestartet wird (RDP oder Turbo VNC)
+Die Plattform stammt aus der Geräteerkennung (Spalte **Plattform** im Netzwerk-Scan, siehe [Netzwerkeinstellungen](#netzwerkeinstellungen)) oder aus der automatischen Erkennung beim Start (siehe [Plattform-Erkennung](#plattform-erkennung)) und ist im Geräteeintrag unter `"os"` gespeichert. Nach Zuordnung öffnet die Anwendung:
+
+| Plattform | Standard-Client |
+|-----------|-----------------|
+| **Windows** | Remotedesktop (`mstsc`, RDP) |
+| **macOS** | **Turbo VNC** |
+| **Linux** | **Turbo VNC** |
+| **Unbekannt** (nie erkannt) | Remotedesktop (`mstsc`, RDP) |
+
+Die Zuordnung ist einstellbar: **Einstellungen → Bereich „Remote-Zugang“ → „Welchen Client öffnen die Remote-Buttons?“** – je Plattform ein Drop-Down (**RDP (mstsc)** / **Turbo VNC**). In der Geräteansicht zeigt die **Status-/Plattform-Anzeige** und der Tooltip der Remote-Icons, welches Programm ein Klick öffnet.
+
+**Voraussetzungen für VNC:** Auf dem Zielsystem muss ein VNC-Server laufen (z. B. `x11vnc`, der GNOME-Bildschirmdienst oder der macOS-Fernbildschirm). Die Anwendung startet den installierten **TurboVNC-Client** (`vncviewerw.bat`) und verbindet direkt auf Port **5900** (einstellbar unter **VNC-Port**). Ist kein Client gefunden worden, erscheint ein Hinweis; der Pfad lässt sich im Bereich **Remote-Zugang** manuell setzen.
+
+> **Passwort:** TurboVNC kennt keinen sicheren Übergabekanal wie die temporäre `.rdp`-Datei von `mstsc`. Das gespeicherte Passwort wird deshalb **in die Zwischenablage** gelegt und die Anwendung teilt das vorab mit – Sie fügen es im Verbindungsfenster des Viewers ein. Das Passwort erscheint weder auf der Befehlszeile noch auf der Festplatte. Jede gestartete Sitzung wird im Protokoll als `VNC` vermerkt.
 
 ### Remote Desktop starten
 1. Klicken Sie mit der **rechten Maustaste** auf das Gerät in der Gerätetabelle.
@@ -448,11 +476,25 @@ Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten
 > **Automatischer 2. Versuch ohne Passwort:** Wird ein gespeichertes Passwort verwendet und schließt sich `mstsc` innerhalb von 10 Sekunden wieder (schwarzes Bild, Fenster verschwindet – das typische Antwortverhalten von xrdp/Ubuntu auf ein falsches Passwort), fragt die Anwendung nach, ob **ohne das gespeicherte Passwort** neu verbunden werden soll. Bestätigen Sie die Rückfrage, entfernt die Anwendung den Eintrag `TERMSRV/<Host>` aus dem Windows-Anmeldeinformations-Manager und startet `mstsc` erneut – mit vor ausgefülltem Benutzernamen, sodass Sie das Passwort direkt im Remotedesktop-Fenster eingeben können. Das im Geräteeintrag gespeicherte Passwort bleibt dabei unverändert; im Protokoll wird der Vorfall als Warnung (`RDP`) festgehalten. Verbindungen, die länger als 10 Sekunden bestehen, sowie Verbindungen ganz ohne gespeichertes Passwort lösen keine Rückfrage aus.
 
 ### Auflösung für das Fenster einstellen
-1. Menü: **Tools → Einstellungen...**
-2. In der Gruppe **Remote Desktop** wählen Sie im Drop-Down **Auflösung** die gewünschte Fensterauflösung (z. B. `1920 × 1080`).
+1. Moderne Oberfläche: Seitenleiste **Einstellungen**, Bereich **Remote-Zugang** · klassische Oberfläche: **Tools → Einstellungen...**
+2. Wählen Sie im Drop-Down **Auflösung** die gewünschte Fensterauflösung (z. B. `1920 × 1080`) oder **Optimiert (Bildschirmgröße)**.
 3. Klicken Sie auf **Speichern**.
 
+> Die Auflösung gilt nur für die **RDP-Fenstersitzung**. VNC-Sitzungen starten immer Vollbild; das Fenster-Icon öffnet den Viewer ebenfalls ohne eigene Größenangabe.
+
 > **Hinweis:** Die Anmeldedaten werden in einer temporären `.rdp`-Datei abgelegt, die wenige Sekunden nach dem Start automatisch gelöscht wird, damit das Passwort nicht auf der Festplatte verbleibt.
+
+### Aufbau des Einstellungs-Bildschirms
+Der Bildschirm **Einstellungen** (Seitenleiste → ⚙ **Einstellungen**) gliedert sich in vier Bereiche:
+
+| Bereich | Inhalt |
+|---------|--------|
+| **Netzwerk** | Broadcast-IP, Broadcast-Port |
+| **Darstellung** | Sprache, Farbschema (hell/dunkel/auto), **Design** (Modern/Klassisch) |
+| **Remote-Zugang** | **Auflösung** (RDP-Fenster), **VNC-Client (Pfad)**, **VNC-Port**, **Client je Plattform** (Windows/macOS/Linux → RDP oder Turbo VNC) |
+| **Sonstiges** | Standard-Herunterfahrmethode, max. Protokolleinträge, **Automatisch nach Updates suchen** + Intervall, **Im Iconbereich bleiben beim Schließen**, mehrere Instanzen, Berechtigung in öffentlichen Netzwerken, Host Service (macOS) |
+
+> Die Einstellungen zum Remote-Zugang liegen damit gesammelt in einem Bereich: die RDP-Auflösung (früher eigene Gruppe „Remote-Desktop“ im Einstellungs-Dialog) zusammen mit VNC-Client, VNC-Port und der Client-Zuordnung. An der Menüführung der klassischen Oberfläche hat sich nichts geändert.
 
 ---
 
@@ -543,7 +585,7 @@ Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
 
 > Ändern Sie die Broadcast-IP nur, wenn Sie ein spezifisches Subnetz ansprechen müssen (z. B. `192.168.2.255`).
 
-> **Netzwerkscanner:** Der Scanner entdeckt Geräte im lokalen Netzwerk. Über dem Suchfeld der Ergebnis-Tabelle können Sie die Liste **live filtern** – nach Hostname, IPv4, IPv6 oder MAC-Adresse.
+> **Netzwerkscanner:** Der Scanner entdeckt Geräte im lokalen Netzwerk. Über dem Suchfeld der Ergebnis-Tabelle können Sie die Liste **live filtern** – nach Hostname, IPv4, IPv6, MAC-Adresse oder Plattform. Die Spalte **Plattform** zeigt das erkannte Betriebssystem (**Windows**, **macOS** oder **Linux**): Geräte mit installiertem Host Service melden es direkt (Protokoll v8, ohne Anmeldung); bei allen anderen Geräten schätzt der Scanner es anhand der Ping-TTL (128 → Windows, 64 → Linux/macOS), eines offenen SMB-Ports (445), von `.local`-Namen (Bonjour) und der MAC-Herstellerbereiche. Geschätzte Werte sind mit `~` markiert; die Checkbox **Plattform erkennen** schaltet die Zusatzuntersuchung ab. Beim Hinzufügen eines Geräts werden die Plattform als `"os"` und die Sicherheit der Schätzung als `"os_confidence"` im Gerät gespeichert.
 
 ---
 
@@ -669,4 +711,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.3.7 | Wake-on-LAN Manager*
+*Version 2.4.0 | Wake-on-LAN Manager*

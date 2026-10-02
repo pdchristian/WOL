@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.3.7                                                                 |
+| **version**         | 2.4.0                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -62,6 +62,7 @@ run.py
       ├── wol_app/crypto.py        (AES-256-GCM encrypt/decrypt, DPAPI key)
       ├── wol_app/wol_engine.py    (WOLEngine: WoL packets, ping, shutdown, scheduler)
       ├── wol_app/network_scanner.py  (interface detection, subnet scanning)
+      ├── wol_app/os_detect.py     (passive platform fingerprinting: TTL, SMB, OUI, host service)
       ├── wol_app/translations.py  (Translations singleton, i18n)
       ├── wol_app/device_dialog.py   (add/edit device UI)
       ├── wol_app/schedule_dialog.py (schedule management UI)
@@ -125,6 +126,11 @@ DeviceDashboardView (modern UI, stack index 6)
      immediately — required to avoid "QThread: Destroyed while thread is
      still running" at window teardown. run() returns silently when cancelled.
 
+DeviceListView (modern UI, devices)
+ └── OsDetectWorker     → QThread, one fingerprint sweep per session for the
+     devices stored without a platform (≤ 8 parallel probes, results are
+     persisted with config.set_device_os before the cards are rebuilt)
+
 Scheduler              → threading.Timer (60s recurrence, re-arms on each check)
 ```
 
@@ -163,6 +169,7 @@ Key enforcement points:
 - Fixed command lists are constructed with validated inputs
 - Timeouts range from 1s (ping) to 15s (permission fixes)
 - `CREATE_NO_WINDOW` flag suppresses console flash on Windows
+- `utils.launch_vnc()` builds `[viewer, "-FullScreen", "1", "ip::port"]` as an argument list (no shell); the viewer is either auto-detected in the TurboVNC install directories / on `PATH` or a user-configured path, and the device password is never part of the command line or a file — it is placed on the clipboard (TurboVNC has no secure hand-over channel like the ACL-protected temp `.rdp` file `mstsc` uses)
 
 ### 3.2 Path Traversal Protection (CWE-73, CWE-22)
 
@@ -290,9 +297,20 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
     "auto_check_enabled": true,
     "check_interval_hours": 24,
     "last_check_timestamp": null
+  },
+  "remote": {
+    "protocol_by_os": {
+      "windows": "rdp",
+      "macos": "vnc",
+      "linux": "vnc"
+    },
+    "vnc_viewer_path": "",
+    "vnc_port": 5900
   }
 }
 ```
+
+> **Remote access routing (current development branch):** the `remote` section decides which client the Remote buttons open. `remote.protocol_by_os` maps the platform stored on a device (`os` key, normalised via `utils.normalize_os`) to `rdp` (`mstsc`) or `vnc` (TurboVNC); an unknown platform — `os` missing or `"unknown"` — always falls back to `rdp`, the historical behaviour. `remote.vnc_viewer_path` overrides auto-detection (`""` = `utils.find_vnc_viewer()`), `remote.vnc_port` is the TCP port (default 5900, clamped 1–65535). Accessors: `ConfigManager.get_remote_protocol(os_id)` / `set_remote_protocol()` / `get_vnc_viewer_path()` / `set_vnc_viewer_path()` / `get_vnc_port()` / `set_vnc_port()`; invalid stored values fall back to the per-platform default. The section is materialised by the deep-merge in `_load()`, so old config files need no migration.
 
 > **UI layout & display mode (new in 2.0.0):**
 > - `ui.layout_mode` — `"classic"` (single-view `MainWindow`) or `"modern"` (sidebar `ModernMainWindow`). On first start the installer-written registry value `HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode` wins (see `ConfigManager._apply_installer_ui_mode`); `layout_mode_user_set` is set to `true` once the user picks a layout in Settings, after which the registry hint is ignored.
@@ -315,6 +333,8 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
   "password": "string (optional, AES-256-GCM encrypted at rest)",
   "enabled": true,
   "allow_batch": false,
+  "os": "windows|macos|linux (optional, detected platform)",
+  "os_confidence": "high|medium|low (optional, how certain the platform read is; estimates are shown with "~")",
   "batches": [
     { "id": "uuid4-string", "name": "string", "script": "cmd/batch text",
       "timeout": 120 }
@@ -336,6 +356,16 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
 > device export/import (`wol_app/device_io.py`, key `watch_processes`) and by
 > the Android/iOS bridges; empty lists are omitted from the export and a
 > missing key on import keeps the existing list.
+> **Platform (protocol v8):** `os` stores the detected platform of a device
+> (`windows` / `macos` / `linux`; anything else is normalised to `""` by
+> `ConfigManager.normalize_os()` — distro ids such as `ubuntu` or `debian`
+> collapse to `linux`) and `os_confidence` how certain that read is
+> (`high`/`medium`/`low`; anything else is dropped). Written by the scan
+> dialogs and by the automatic backfill in `DevicesView` via
+> `ConfigManager.set_device_os(id, os, confidence)`, read with
+> `get_device_os()` / `get_device_os_confidence()`. It has no effect on
+> wake/shutdown behaviour, but it does decide which Remote-Desktop client the
+> Remote buttons launch (see the `remote` section).
 
 ### 4.4 Schedule Schema
 
@@ -394,7 +424,44 @@ Network discovery module for finding active devices on the local network.
 | Function                        | Description                                |
 |---------------------------------|--------------------------------------------|
 | `get_local_interfaces()`        | Parse ipconfig output for IPv4/netmask pairs|
-| `scan_subnet(cidr, timeout)`   | Multi-threaded ping sweep of subnet         |
+| `scan_subnet(cidr, timeout, detect_os=True)` | Multi-threaded ping sweep of subnet |
+| `scan_network(..., detect_os=)` | Wrapper used by `ScanWorker`, forwards `detect_os` |
+
+**Platform detection (`wol_app/os_detect.py`):** when `detect_os` is enabled,
+every responding host is additionally fingerprinted and the result carries
+`os` (`windows`/`macos`/`linux`, normalised via `utils.normalize_os()`) plus
+`os_confidence` (`high`/`medium`/`low`). `fingerprint_host()` returns
+`(os, confidence, source)` and combines, cheapest first:
+
+| Signal | Source | Weight |
+|--------|--------|--------|
+| `os` from the host service (`status`, protocol ≥ 8, no auth) | TCP 8765 | authoritative → `high` |
+| Ping TTL (`128` → Windows, `64` → Linux/macOS) | `ping` output, regex `ttl[:=]\s*(\d+)` | strong |
+| Open SMB/CIFS on 445 | TCP probe (0.4 s) | supports Windows, but Samba on Linux/macOS means it never overrides TTL 64 |
+| `.local` reverse name (Bonjour) or an Apple product name (`MACBOOKPRO`, `mac-mini`, …) | hostname (`MACOS_NAME_HINTS`) | supports macOS |
+| MAC OUI prefix | `OUI_HINTS` table | weak hint only |
+
+macOS and Linux share TTL 64, so they are only separable through the host
+service, the `.local` suffix, an Apple product name in the DNS name or the OUI
+table. All probes are passive/local
+(no privileged sockets, no external tools) and any probe failure is swallowed
+— a scan never fails because of platform detection.
+
+**Platform backfill for stored devices (`app_core.OsDetectWorker`):** devices
+added by hand or before platform detection existed carry no `os`, which would
+leave the platform pill in the modern device views on "Unbekannt" forever.
+`DevicesView` therefore runs one fingerprint sweep per session for exactly
+those devices: `OsDetectWorker` (a `QThread`, ≤ 8 parallel probes through a
+`ThreadPoolExecutor`) selects the enabled devices that have an address but no
+stored platform, resolves DNS names to IPv4 first (`os_detect.get_ping_ttl()`
+only accepts literal addresses, so a name such as `x15.fritz.box` would
+otherwise lose the TTL signal), fingerprints them and emits
+`(device_id, os, confidence, source)`. `DevicesView._on_platforms_finished()`
+persists the result with `config.set_device_os(id, os, confidence)` and
+rebuilds the cards/rows. Each device is probed once per session
+(`_os_probed`); the refresh button deliberately clears that memory for the
+devices still without a platform, so a machine that was asleep during the
+first sweep is retried on demand. In headless mode the sweep is skipped.
 
 **Interface Parsing:**
 Handles both English and German `ipconfig` output:
@@ -466,7 +533,7 @@ Translations.tr("scan.scanning_subnet", ip="192.168.1.0")
 # → "Scanning subnet 192.168.1.0..."
 ```
 
-### 5.5 WOL Host Service Protocol (TCP 8765, JSON lines, protocol v2)
+### 5.5 WOL Host Service Protocol (TCP 8765, JSON lines, protocol v8)
 
 One JSON object per line in, one JSON object per line out. All commands
 authenticate first with `validate_credentials(username, password)`
@@ -474,9 +541,20 @@ authenticate first with `validate_credentials(username, password)`
 
 | Command | Request | Response |
 |---------|---------|----------|
+| `status` | `{"command":"status"}` (no auth) | `{"status":"ok","message":"online","os"}` — `os` added in protocol v8 |
 | `shutdown` | `{"command":"shutdown","username","password"}` | `{"status":"ok"\|"error","message"}` |
-| `metrics` (v2) | `{"command":"metrics","username","password"}` | `{"status":"ok","protocol":2,"hostname","cpu","cpu_count","ram_used","ram_total","uptime","gpu","vram_used","vram_total","gpu_name"}` — bytes / per-cent, each field `null` when unavailable |
+| `metrics` (v2) | `{"command":"metrics","username","password"}` | `{"status":"ok","protocol":8,"hostname","os","cpu","cpu_count","ram_used","ram_total","uptime","gpu","vram_used","vram_total","gpu_name"}` — bytes / per-cent, each field `null` when unavailable |
 | `run_batch` (v2) | `{"command":"run_batch","username","password","script","timeout"}` | `{"status":"ok","exit_code","stdout","stderr","duration_ms","truncated"}` or `{"status":"error","message"}` |
+
+**`os` field (protocol v8):** platform id reported by the service — `windows`
+(`wol_host_service.py`), or the `ID=` of `/etc/os-release` (`ubuntu`,
+`debian`, …) with `darwin` → `macos` and `linux` as fallback
+(`os_id()` in `wol_host_service_linux.py`, cached in `_OS_ID_CACHE`; the
+macOS service imports that module as its core). It is present in the
+unauthenticated `status` response on purpose, so a scanner can label a host
+without credentials; the schemas keep it optional for backwards compatibility
+with older services. Client side: `host_service_client.get_host_os()`
+(returns `""` for `protocol < 8`).
 
 **`metrics` implementation (`wol_host_service.py`):**
 - CPU/RAM/uptime via `psutil` (lazy import — the service still starts without it);
@@ -520,7 +598,7 @@ Professional Windows installer with registry-based Add/Remove Programs integrati
 | Field          | Value                                |
 |----------------|--------------------------------------|
 | App Name       | "Wake-on-LAN Manager"                |
-| Version        | 2.3.7 (from `wol_app.__version__`)   |
+| Version        | 2.4.0 (from `wol_app.__version__`)   |
 | Publisher      | "pdchristian"                        |
 | Install Dir    | `%ProgramFiles%\Wake-on-LAN Manager` |
 | Registry Key   | `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN` |
@@ -528,7 +606,7 @@ Professional Windows installer with registry-based Add/Remove Programs integrati
 **Registry Values Written:**
 ```
 DisplayName     = "Wake-on-LAN Manager"
-DisplayVersion  = "2.3.7"
+DisplayVersion  = "2.4.0"
 Publisher       = "pdchristian"
 InstallLocation = <actual path>
 UninstallString = "<path>\uninstall.exe"
@@ -655,15 +733,19 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 
 **Key behaviors:**
 - **Dual view** (`DevicesView`): the toolbar toggle (icon top-left, SVG glyphs `#viewListButton` three-lines / `#viewGridButton` four-tiles) switches between
-  - **Card grid** — responsive; each card shows a live status dot, IP/MAC, Remote-Desktop tiles (fullscreen/window), a 📊 dashboard tile and a primary action button that swaps between *Wake* (offline/unknown) and *Shutdown* (online).
-  - **Device list** (`DeviceListRow`) — panel rows with status dot, name, mono "IP · MAC" and action tiles on the right (🖥️ remote fullscreen / 🪟 remote window / 📊 dashboard / ✏️ edit; double-click also edits), followed by a far-right power icon button (`wakeIconButton`↔`shutdownIconButton`, same wake/shutdown color logic as the card action button).
+  - **Card grid** — responsive; each card shows a live **status/platform pill** (`widgets/status_pill.py`, see below), IP/MAC, Remote-Desktop tiles (fullscreen/window), a 📊 dashboard tile and a primary action button that swaps between *Wake* (offline/unknown) and *Shutdown* (online).
+  - **Device list** (`DeviceListRow`) — panel rows with status dot, name, mono "IP · MAC", the same **status/platform pill**, and action tiles on the right (🖥️ remote fullscreen / 🪟 remote window / 📊 dashboard / ✏️ edit; double-click also edits), followed by a far-right power icon button (`wakeIconButton`↔`shutdownIconButton`, same wake/shutdown color logic as the card action button).
   Both views share `_statuses` and rebuild via `refresh_devices()`. Auto-refresh every 30 s (`QTimer`), paused when hidden.
+- **Status/platform pill (`widgets/status_pill.py`, `StatusPill`):** one chip combining the online dot (`pillDotOnline`/`pillDotOffline`/`pillDotUnknown`) with the detected platform (`🪟 Windows` / `🍏 macOS` / `🐧 Linux`, `❓` when never detected). `os_display_text()` (in `utils.py`, shared with the scan tables) prefixes estimated readings with `~`; the confidence of a stored device comes from its `os_confidence` key (`config.get_device_os_confidence()`), which both the scan-import paths and the automatic backfill write, so the tooltip names the source instead of staying neutral. Cards replace the old standalone dot; list rows keep their left dot *and* gain the pill.
+- **Automatic platform backfill:** `DevicesView.detect_missing_platforms()` starts `app_core.OsDetectWorker` once per session for every enabled device that has an address but no stored `os` (devices added manually or before detection existed). Results are persisted with `config.set_device_os(id, os, confidence)` and the cards/rows are rebuilt, which also switches the Remote tiles to the right client. Skipped in headless mode; the refresh button re-arms the devices that are still without a platform (they were probably offline).
+- **Platform routing (RDP vs TurboVNC):** `DevicesView` passes `remote_desktop.resolve_remote_protocol(config, device)` into every `DeviceCard`/`DeviceListRow`, which use it for the remote tile tooltips (`remote_tooltip()` — action + client name) and the card context menu. `start_remote_desktop()` branches on the same call: `vnc` → `_start_vnc()` → `utils.launch_vnc()` (auto-detects `vncviewerw.bat` under `Program Files\TurboVNC`, connects `ip::port`, `-FullScreen 1`; the stored password is put on the **clipboard** with an info dialog — never argv, never disk; a missing viewer raises `RuntimeError` → `dialog.vnc_missing.*` warning; the session is logged as `VNC`). `rdp` keeps the untouched mstsc path (temp `.rdp`, `cmdkey`, fast-exit retry). Desktop layouts only — Android/iOS are unaffected.
 - **Sorting** (`DevicesView`): drop-down left of the search field — *Namen* (alphabetical), *IP-Adresse* (numeric via `_ip_sort_key`), *MAC-Adresse* (ascending), *Status* (rank Online → Offline → Unknown, then name). Persisted to `ui.devices_sort_key`; applies to both views; re-sorts after status updates when sorting by status.
 - **Cross-sync:** `ModernMainWindow._on_devices_changed` keeps the device lists of `DevicesView` and `ManageView` in sync when a device is added/edited/removed in either area.
 - **Shared flows:** both layouts reuse `wol_app/remote_desktop.py` (`start_remote_desktop`) and `wol_app/shutdown_flow.py` (`confirm_shutdown`/`execute_shutdown`), the same `ConfigManager` API, the same `WOLEngine`, and the classic `UpdateAvailableDialog` for downloads.
 - **Theming:** `modern_theme.py` provides `DARK`/`LIGHT` token sets and `apply_modern_theme()`; objectName-based QSS so it never leaks into the classic UI. Respects `ui.display_mode` (auto/light/dark).
 - **Native dialogs:** `ModernDeviceDialog` (`views/device_edit_dialog.py`) and `ModernScheduleEditDialog` (`views/schedule_edit_dialog.py`); `widgets/toggle_switch.py` provides `ToggleSwitch`/`ToggleWithLabel`.
-- **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution, close-to-tray) — devices/schedules/logs and the layout mode are preserved.
+- **Settings screen (`settings_view.py`):** grouped cards (`Group`, QSS `#settingsGroup` / `#settingsGroupTitle`, heading uppercased in Python since QSS has no `text-transform`) instead of one flat grid — **Network** (broadcast IP/port), **Appearance** (language, display mode, layout mode), **Remote access** (RDP resolution, `vnc_viewer_path`, `vnc_port`, and one protocol combo per platform), **Misc** (default shutdown method, log limit, auto-update switch + interval, close-to-tray, multiple instances, public-network privilege gate, macOS host service). `Field(label_key, widget, hint_key=…)` renders label + control + optional `#fieldHint` line. Navigation is unchanged — no new sidebar entries.
+- **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution, close-to-tray, `remote` section) — devices/schedules/logs and the layout mode are preserved.
 - **Device Dashboard (`dashboard_view.py`, stack index 6, no sidebar entry):** opened via the 📊 tile on each device card/row (between the remote-desktop tiles and edit) or the context menu — `DevicesView.dashboard_requested(device_id)` → `ModernMainWindow.open_device_dashboard()` (also refreshes the header on `_on_devices_changed`; `closeEvent` and `back_requested` → nav index 0 call `cancel_workers()`). Widgets: `RingGauge` (painted arc, "–" when `None`), `Sparkline` (60-sample deque, gaps break the line), `MetricCard` (CPU/RAM/GPU/VRAM, gauge colours from theme tokens `gauge_cpu`/`gauge_ram`/`gauge_gpu`/`gauge_vram`). Polls `get_metrics()` every `ui.dashboard_interval_ms` (single-flight `_metrics_busy`, paused in `hideEvent`, guarded by `HEADLESS_MODE`); offline keeps the last values but flips the badge and shows the error in `status_line`. Batch library (QListWidget + editor + console) persists via `ConfigManager.set_device_batches()`; running a batch requires the device's `allow_batch` checkbox and the host-side gate (see §5.5).
 
 ### 7.3 Dialog Components
@@ -686,19 +768,32 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 
 ## 8. Build System
 
-### 8.0 Version management (single source of truth)
+### 8.0 Version management (single source of truth, two release lines)
 
-`wol_app/__init__.py` (`__version__`) is the ONE version for ALL variants
-(Windows, Ubuntu, macOS, Android, iOS). Never edit the version in a build file by hand.
+`wol_app/__init__.py` is the only place a version is ever written — but it
+carries **two** numbers, because the desktop and the mobile clients do not
+always ship the same content:
 
-- **Bump everywhere:** `python update_version.py 2.3.5` — writes
-  `__version__`, propagates via `update_docs_version.py` to `setup.iss`,
-  `android_html/app/build.gradle.kts`, `ios/project.yml`, the WebApp fallbacks
-  (`app.js`/`bridge.js` in both copies), `Bridge.swift`, docs and build
-  helpers, then runs `xcodegen generate` (if installed) to refresh
+| Constant | Variants | Files it drives |
+|----------|----------|-----------------|
+| `__version__` | Windows, Ubuntu, macOS | `setup.iss`, `Wake-on-LAN Manager*.spec`, `build.ps1`, `packaging/build_deb.sh` (reads the constant), README/Bedienungsanleitung/KNOWLEDGE/SECURITY, `docs/ubuntu/*` |
+| `MOBILE_VERSION` | Android, iOS (WebView clients) | `android_html/app/build.gradle.kts`, `ios/project.yml`, the WebApp fallbacks (`app.js`/`bridge.js` in both copies), `Bridge.swift`, `docs/android/html-app.md` |
+
+A desktop-only feature (the 2.4.0 platform pill / RDP-VNC routing / the
+desktop *Remote access* settings group) does **not** bump the mobile line
+while its own code is unchanged. Both lines happen to sit at 2.4.0 because
+the WebView clients carried their own change in the same cycle (grouped
+Settings screen, section 8.0.1).
+
+- **Bump desktop:** `python update_version.py 2.4.0`
+- **Bump mobile:** `python update_version.py --mobile 2.3.8`
+  Both write their constant, propagate via `update_docs_version.py` to the
+  files of that line, then run `xcodegen generate` (if installed) to refresh
   `WolManager.xcodeproj`.
-- **Verify:** `python update_version.py --check` (exit 1 + list on drift) —
-  also covered by `tests/test_version_sync.py` (runs with the normal test suite).
+- **Verify both lines:** `python update_version.py --check` (exit 1 + list on
+  drift) — also covered by `tests/test_version_sync.py` (runs with the normal
+  test suite, including a test that the Android/iOS files are never assigned
+  to the desktop line).
 - **Runtime sources:** Windows/Ubuntu read `__version__` directly
   (`installer.py`, `packaging/build_deb.sh`); the macOS spec reads it at build
   time for `CFBundleShortVersionString`/`CFBundleVersion`. Android uses Gradle
@@ -708,6 +803,31 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
   `app.js` is only a browser-preview fallback and is kept in sync by the tool.
 - Android `versionCode` must still be bumped manually in `build.gradle.kts`
   (Android requires a monotonically increasing integer).
+
+### 8.0.1 Mobile Settings screen (grouped like the desktop)
+
+`renderSettings()` in **both** WebApp copies (`android_html/app/src/main/
+assets/app/app.js` and `ios/WebApp/app.js` — near-duplicates that must be
+edited in lockstep) renders the seven mobile settings inside three group
+cards that mirror the desktop sections:
+
+| Group (i18n key) | Fields |
+|------------------|--------|
+| `set.group.network` | `st-ip` (broadcast IP), `st-port` (broadcast port) |
+| `set.group.appearance` | `st-lang` (language), `st-disp` (display mode) |
+| `set.group.misc` | `st-maxlogs` (log entries), `tog-autoUpdate`, `st-int` (interval — directly below the switch it belongs to, but left-aligned like every other field) |
+
+- The desktop *Remote access* group is deliberately **absent** on phones —
+  there is no `mstsc`/TurboVNC there, and no other desktop-only setting was
+  introduced when the layout was copied.
+- Only wrapper markup changed: element ids and `data-act` handlers are
+  unchanged, so the `set-save` payload and every handler still work. New
+  i18n keys: `set.group.network|appearance|misc` (de/en/fr/es in both files).
+- Styling lives in `app.css` of each copy: `.group` (card + sticky uppercase
+  header) plus the separator line above a `.togRow`. Every field keeps the
+  same left edge — sub-fields are deliberately **not** indented. The Android
+  copy uses `--border`/radius 14, the iOS copy `--sep`/radius 12.
+- Prototype of record: `design_prototype/Einstellungen_Mobil_Gruppen.html`.
 
 ### 8.1 build.ps1
 
@@ -991,7 +1111,8 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
-| 2.3.7   | 2026-09-11 | Mobile Refinement Edition  | Current version. 2.3.x series: **macOS port (Apple Silicon, unsigned .dmg + launchd/PAM Host Service, section 8.4)**, Android HTML WebView client `android_html/` (2.3.0, native Compose app removed in 2.3.1), iOS app with `Ipv4Resolver`, Remote Desktop via Windows App URI (2.3.3, fullscreen-only on mobile since 2.3.5), Wi-Fi-only network scan (2.3.4), dashboard swipe between devices, password sync for devices sharing a user, `watch_processes` in export, close-to-tray + single-instance settings, token/s display in dashboard, **batch library drag & drop reorder** (desktop `BatchListWidget` + Android/iOS title-only list with grip, section 8.3) |
+| 2.4.0   | 2026-10-02 | Platform Edition           | Current version. Platform work is **desktop-only** (Windows/Ubuntu/macOS — see the two release lines `__version__` / `MOBILE_VERSION`): status/platform **pill** in card *and* list (`widgets/status_pill.py`), **automatic platform backfill** for stored devices (`app_core.OsDetectWorker`, new `os_confidence` device key, `MACOS_NAME_HINTS` tie-break), Remote buttons **routed per platform** (`remote_desktop.resolve_remote_protocol()` → `mstsc` for Windows, TurboVNC for macOS/Linux via `utils.launch_vnc`, password only via clipboard) and the **settings screen regrouped** (Network / Appearance / Remote access / Misc, former *Remote Einstellungen* integrated). The Android/iOS clients (also 2.4.0, `versionCode` 8) got the **same settings grouping** without new fields — section 8.0.1 |
+| 2.3.7   | 2026-09-11 | Mobile Refinement Edition  | 2.3.x series: **macOS port (Apple Silicon, unsigned .dmg + launchd/PAM Host Service, section 8.4)**, Android HTML WebView client `android_html/` (2.3.0, native Compose app removed in 2.3.1), iOS app with `Ipv4Resolver`, Remote Desktop via Windows App URI (2.3.3, fullscreen-only on mobile since 2.3.5), Wi-Fi-only network scan (2.3.4), dashboard swipe between devices, password sync for devices sharing a user, `watch_processes` in export, close-to-tray + single-instance settings, token/s display in dashboard, **batch library drag & drop reorder** (desktop `BatchListWidget` + Android/iOS title-only list with grip, section 8.3) |
 | 2.3.0   | 2026-09-08 | Android HTML Edition       | Standalone Android client (`android_html/`): WebView shell + Kotlin bridge, Host Service protocol v4 dashboard, batch console, network scanner, schedules, CSV/JSON log export; `devices.json` compatible with Windows |
 | 2.2.3   | 2026-09-08 | Hostname Fix Edition       | Status ping resolves host names to IPv4 first (`resolve_ipv4_all` in `utils.py`, `ping -4`): Windows preferred AAAA records (IPv6 replies lack `TTL=` → false offline) and a Fritz!Box may return several A records (stale DHCP lease + current) in nondeterministic order — every candidate is now probed until one replies; unresolvable names report `unknown` with a resolve hint; `send_wake_packet` interface selection also resolves names |
 | 2.2.2   | 2026-09-06 | Ubuntu Port Edition        | Native Ubuntu/Linux support: `.deb` package (`packaging/`), systemd/PAM Linux Host Service (protocol v4: metrics, watched processes, llama.cpp models), `xfreerdp` Remote Desktop with fast-exit retry; platform shims for crypto (file master key), theme (gsettings) and RDP dispatch; cross-platform ping reply detection (case-insensitive `ttl=`); fixed UI font stack (color emoji + text) for Qt 6.4 |

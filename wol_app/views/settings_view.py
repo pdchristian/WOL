@@ -1,31 +1,39 @@
 """Modern UI: "Einstellungen" screen (application & network configuration).
 
 Layout mirrors the prototype's settings screen
-(design_prototype/dark_control_center_full.html):
+(design_prototype/Geräte_Plattform_Einstellungen_v2.html):
 
 1. Page header (title + subtitle).
-2. A two-column form grid: dim field label above each input
-   (QLineEdit / QComboBox / QSpinBox / QCheckBox).
+2. One card per section — Netzwerk, Darstellung, Remote-Zugang, Sonstiges —
+   each holding a two-column form grid: dim field label above each input
+   (QLineEdit / QComboBox / QSpinBox) with an optional hint below, and the
+   switches stacked full width.
 3. An info label and a toolbar with "Zurücksetzen" and "Speichern"
    (primary) aligned to the right.
 
 Feature-identical to the classic ``SettingsDialog`` — all persistence goes
 through the shared ``ConfigManager`` using the same setters and the same
 input validation (``_validate_broadcast_ip`` / ``_validate_port`` are
-imported from ``wol_app.settings_dialog``). The prototype's
+imported from ``wol_app.settings_dialog``) — plus the ``remote`` section
+that maps each platform to RDP or TurboVNC. The prototype's
 "Auto-Refresh" and "Host-Service Port" fields have no backend and are
 intentionally omitted.
 
+"Remote-Einstellungen" is *not* a separate screen: the remote fields live in
+the "Remote-Zugang" group here, and the "Automatisch nach Updates suchen"
+switch moved down next to the other switches.
+
 The "Zurücksetzen" button restores factory defaults for the settings
 sections only (network, updates, log limit, shutdown method, language,
-display mode); devices, schedules and logs are kept. The layout mode is
-deliberately *not* reset — doing so would eject the user from the modern
-layout mid-session.
+display mode, remote routing); devices, schedules and logs are kept. The
+layout mode is deliberately *not* reset — doing so would eject the user from
+the modern layout mid-session.
 
 After a successful save the view emits ``settings_saved`` so the main
 window can re-apply the modern theme and retranslate every screen.
 """
 
+import copy
 import sys
 from typing import Any
 
@@ -46,11 +54,17 @@ from PyQt6.QtWidgets import (
 
 from wol_app.config import (
     DEFAULT_CONFIG,
+    DEFAULT_VNC_PORT,
     REMOTE_DESKTOP_RESOLUTION_AUTO,
     REMOTE_DESKTOP_RESOLUTIONS,
+    REMOTE_PROTOCOL_RDP,
+    REMOTE_PROTOCOL_VNC,
+    VNC_PORT_MAX,
+    VNC_PORT_MIN,
 )
 from wol_app.settings_dialog import _validate_broadcast_ip, _validate_port
 from wol_app.translations import Translations
+from wol_app.utils import OS_LINUX, OS_MACOS, OS_WINDOWS
 from wol_app.widgets.toggle_switch import ToggleWithLabel
 
 
@@ -64,21 +78,84 @@ def _label(key: str) -> str:
 
 
 class Field(QWidget):
-    """Prototype ``.field``: dim label above the input widget."""
+    """Prototype ``.field``: dim label above the input, optional hint below."""
 
-    def __init__(self, label_key: str, widget: QWidget, parent=None) -> None:
+    def __init__(
+        self,
+        label_key: str,
+        widget: QWidget,
+        hint_key: str = "",
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
+
+        self._label_key = label_key
+        self._hint_key = hint_key
 
         self.label = QLabel(_label(label_key))
         self.label.setObjectName("fieldLabel")
         layout.addWidget(self.label)
         layout.addWidget(widget)
 
-    def retranslate(self, label_key: str) -> None:
-        self.label.setText(_label(label_key))
+        self.hint: QLabel | None = None
+        if hint_key:
+            self.hint = QLabel(Translations.tr(hint_key))
+            self.hint.setObjectName("fieldHint")
+            self.hint.setWordWrap(True)
+            layout.addWidget(self.hint)
+
+    def retranslate(self, label_key: str = "") -> None:
+        """Re-pick the label (and hint) texts; *label_key* may override the key."""
+        if label_key:
+            self._label_key = label_key
+        self.label.setText(_label(self._label_key))
+        if self.hint is not None:
+            self.hint.setText(Translations.tr(self._hint_key))
+
+
+class Group(QWidget):
+    """Prototype ``.group``: card with an uppercase heading and a 2-column form.
+
+    The settings screen used to be one flat grid; grouping it lets the new
+    "Remote-Zugang" section sit alongside the existing fields instead of
+    forming its own menu entry.
+    """
+
+    def __init__(self, title_key: str, parent=None) -> None:
+        super().__init__(parent)
+        self._title_key = title_key
+        self.setObjectName("settingsGroup")
+        # Plain QWidgets only paint their QSS background with this attribute.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 16, 20, 18)
+        outer.setSpacing(14)
+
+        self.title = QLabel(self._title_text())
+        self.title.setObjectName("settingsGroupTitle")
+        outer.addWidget(self.title)
+
+        self.form = QGridLayout()
+        self.form.setHorizontalSpacing(14)
+        self.form.setVerticalSpacing(16)
+        self.form.setColumnStretch(0, 1)
+        self.form.setColumnStretch(1, 1)
+        outer.addLayout(self.form)
+
+    def add(self, widget: QWidget, row: int, col: int, span: int = 1) -> None:
+        """Place *widget* in the group's form grid."""
+        self.form.addWidget(widget, row, col, 1, span)
+
+    def _title_text(self) -> str:
+        # The prototype renders group headings with CSS text-transform.
+        return Translations.tr(self._title_key).upper()
+
+    def retranslate(self) -> None:
+        self.title.setText(self._title_text())
 
 
 class SettingsView(QWidget):
@@ -120,32 +197,37 @@ class SettingsView(QWidget):
         layout.addWidget(self.subtitle)
         layout.addSpacing(10)
 
-        # ── Form grid (two columns, prototype .form-grid) ──
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(14)
-        grid.setVerticalSpacing(16)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
+        # ── Grouped form: one card per section (prototype .group) ──
+        self.group_network = Group("settings.group.network")
+        self.group_appearance = Group("settings.group.appearance")
+        self.group_remote = Group("settings.group.remote")
+        self.group_misc = Group("settings.group.misc")
+        for group in (
+            self.group_network, self.group_appearance,
+            self.group_remote, self.group_misc,
+        ):
+            layout.addWidget(group)
 
-        # Left column: network + appearance
+        # ── Netzwerk ──
         self.broadcast_ip_input = QLineEdit()
         self.broadcast_ip_input.setPlaceholderText("255.255.255.255")
         self.field_broadcast_ip = Field(
             "settings.label.broadcast_ip", self.broadcast_ip_input)
-        grid.addWidget(self.field_broadcast_ip, 0, 0)
+        self.group_network.add(self.field_broadcast_ip, 0, 0)
 
         self.broadcast_port_input = QSpinBox()
         self.broadcast_port_input.setRange(1, 65535)
         self.broadcast_port_input.setValue(9)
         self.field_broadcast_port = Field(
             "settings.label.broadcast_port", self.broadcast_port_input)
-        grid.addWidget(self.field_broadcast_port, 1, 0)
+        self.group_network.add(self.field_broadcast_port, 0, 1)
 
+        # ── Darstellung ──
         self.language_combo = QComboBox()
         for code, name in Translations.available_languages().items():
             self.language_combo.addItem(name, code)
         self.field_language = Field("settings.label.language", self.language_combo)
-        grid.addWidget(self.field_language, 2, 0)
+        self.group_appearance.add(self.field_language, 0, 0)
 
         self.display_mode_combo = QComboBox()
         self.display_mode_combo.addItem(
@@ -156,7 +238,7 @@ class SettingsView(QWidget):
             Translations.tr("settings.display_mode.dark"), "dark")
         self.field_display_mode = Field(
             "settings.label.display_mode", self.display_mode_combo)
-        grid.addWidget(self.field_display_mode, 3, 0)
+        self.group_appearance.add(self.field_display_mode, 0, 1)
 
         self.layout_mode_combo = QComboBox()
         self.layout_mode_combo.addItem(
@@ -165,38 +247,15 @@ class SettingsView(QWidget):
             Translations.tr("settings.layout.modern"), "modern")
         self.field_layout_mode = Field(
             "settings.group.layout", self.layout_mode_combo)
-        grid.addWidget(self.field_layout_mode, 4, 0)
+        self.group_appearance.add(self.field_layout_mode, 1, 0)
 
         layout_hint = QLabel(Translations.tr("settings.layout.restart_hint"))
         layout_hint.setObjectName("fieldHint")
         layout_hint.setWordWrap(True)
-        grid.addWidget(layout_hint, 5, 0)
+        self.group_appearance.add(layout_hint, 2, 0)
         self.layout_hint = layout_hint
 
-        # Right column: updates + misc
-        self.auto_update_toggle = ToggleWithLabel(
-            Translations.tr("settings.check.auto_update"))
-        grid.addWidget(self.auto_update_toggle, 0, 1)
-
-        self.update_interval_combo = QComboBox()
-        self.update_interval_combo.addItem(
-            Translations.tr("settings.interval.daily"), 24)
-        self.update_interval_combo.addItem(
-            Translations.tr("settings.interval.weekly"), 168)
-        self.update_interval_combo.addItem(
-            Translations.tr("settings.interval.monthly"), 720)
-        self.field_interval = Field(
-            "settings.label.interval", self.update_interval_combo)
-        grid.addWidget(self.field_interval, 1, 1)
-
-        self.max_logs_input = QSpinBox()
-        self.max_logs_input.setRange(10, 10000)
-        self.max_logs_input.setSingleStep(50)
-        self.max_logs_input.setValue(100)
-        self.field_max_logs = Field(
-            "settings.label.max_logs", self.max_logs_input)
-        grid.addWidget(self.field_max_logs, 2, 1)
-
+        # ── Remote-Zugang (the former "Remote Einstellungen" menu entry) ──
         self.remote_desktop_resolution_combo = QComboBox()
         # "Optimized 16:9" first (sentinel "auto"), then the fixed resolutions.
         self.remote_desktop_resolution_combo.addItem(
@@ -208,8 +267,62 @@ class SettingsView(QWidget):
             self.remote_desktop_resolution_combo.addItem(f"{w} × {h}", resolution)
         self.field_rdp = Field(
             "settings.label.remote_desktop_resolution",
-            self.remote_desktop_resolution_combo)
-        grid.addWidget(self.field_rdp, 3, 1)
+            self.remote_desktop_resolution_combo,
+            hint_key="settings.hint.remote_resolution")
+        self.group_remote.add(self.field_rdp, 0, 0)
+
+        # Empty path = auto-detect (wol_app.utils.find_vnc_viewer).
+        self.vnc_viewer_input = QLineEdit()
+        self.field_vnc_viewer = Field(
+            "settings.label.vnc_viewer_path", self.vnc_viewer_input,
+            hint_key="settings.hint.vnc_path")
+        self.group_remote.add(self.field_vnc_viewer, 0, 1)
+
+        self.vnc_port_input = QSpinBox()
+        self.vnc_port_input.setRange(VNC_PORT_MIN, VNC_PORT_MAX)
+        self.vnc_port_input.setValue(DEFAULT_VNC_PORT)
+        self.field_vnc_port = Field(
+            "settings.label.vnc_port", self.vnc_port_input,
+            hint_key="settings.hint.vnc_port")
+        self.group_remote.add(self.field_vnc_port, 1, 0)
+
+        # Which client the Remote buttons open, per detected platform.
+        self.protocol_heading = QLabel(_label("settings.label.protocol_by_os"))
+        self.protocol_heading.setObjectName("fieldLabel")
+        self.group_remote.add(self.protocol_heading, 2, 0, 2)
+
+        protocol_row = QHBoxLayout()
+        protocol_row.setSpacing(12)
+        protocol_holder = QWidget()
+        protocol_holder.setLayout(protocol_row)
+        self.protocol_combos: dict[str, QComboBox] = {}
+        self.field_protocol: dict[str, Field] = {}
+        for os_id in (OS_WINDOWS, OS_MACOS, OS_LINUX):
+            combo = QComboBox()
+            combo.addItem(
+                Translations.tr("modern.devices.client_rdp"), REMOTE_PROTOCOL_RDP)
+            combo.addItem(
+                Translations.tr("modern.devices.client_vnc"), REMOTE_PROTOCOL_VNC)
+            field = Field(f"scan_dialog.os.{os_id}", combo)
+            self.protocol_combos[os_id] = combo
+            self.field_protocol[os_id] = field
+            protocol_row.addWidget(field, 1)
+        self.group_remote.add(protocol_holder, 3, 0, 2)
+
+        protocol_hint = QLabel(Translations.tr("settings.hint.protocol_by_os"))
+        protocol_hint.setObjectName("fieldHint")
+        protocol_hint.setWordWrap(True)
+        self.group_remote.add(protocol_hint, 4, 0, 2)
+        self.protocol_hint = protocol_hint
+
+        # ── Sonstiges ──
+        self.max_logs_input = QSpinBox()
+        self.max_logs_input.setRange(10, 10000)
+        self.max_logs_input.setSingleStep(50)
+        self.max_logs_input.setValue(100)
+        self.field_max_logs = Field(
+            "settings.label.max_logs", self.max_logs_input)
+        self.group_misc.add(self.field_max_logs, 0, 0)
 
         self.default_method_combo = QComboBox()
         self.default_method_combo.addItem(
@@ -218,19 +331,36 @@ class SettingsView(QWidget):
             Translations.tr("device_dialog.method.smb"), "smb")
         self.field_shutdown_method = Field(
             "settings.label.default_shutdown_method", self.default_method_combo)
-        grid.addWidget(self.field_shutdown_method, 4, 1)
+        self.group_misc.add(self.field_shutdown_method, 0, 1)
+
+        # Relocated on purpose: the auto-update switch used to be the first
+        # widget of the right column, now it sits with the other switches.
+        self.auto_update_toggle = ToggleWithLabel(
+            Translations.tr("settings.check.auto_update"))
+        self.group_misc.add(self.auto_update_toggle, 1, 0, 2)
+
+        self.update_interval_combo = QComboBox()
+        self.update_interval_combo.addItem(
+            Translations.tr("settings.interval.daily"), 24)
+        self.update_interval_combo.addItem(
+            Translations.tr("settings.interval.weekly"), 168)
+        self.update_interval_combo.addItem(
+            Translations.tr("settings.interval.monthly"), 720)
+        self.field_interval = Field(
+            "settings.label.interval", self.update_interval_combo)
+        self.group_misc.add(self.field_interval, 2, 0)
 
         # Keep the app alive in the notification area when the window is
         # closed (modern layout; ignored when no system tray is available).
         self.close_to_tray_toggle = ToggleWithLabel(
             Translations.tr("settings.label.close_to_tray"))
-        grid.addWidget(self.close_to_tray_toggle, 5, 1)
+        self.group_misc.add(self.close_to_tray_toggle, 3, 0, 2)
 
         # Off by default: a second launch raises the running instance's
         # window instead of starting twice (wol_app/single_instance.py).
         self.allow_multiple_toggle = ToggleWithLabel(
             Translations.tr("settings.label.allow_multiple_instances"))
-        grid.addWidget(self.allow_multiple_toggle, 6, 1)
+        self.group_misc.add(self.allow_multiple_toggle, 4, 0, 2)
 
         # Public-network protection: privileged host-service commands
         # (shutdown/reboot/batch) stay disabled on a PUBLIC network unless
@@ -238,7 +368,7 @@ class SettingsView(QWidget):
         self.allow_privileged_public_toggle = ToggleWithLabel(
             Translations.tr(
                 "settings.label.allow_privileged_public_network"))
-        grid.addWidget(self.allow_privileged_public_toggle, 7, 1)
+        self.group_misc.add(self.allow_privileged_public_toggle, 5, 0, 2)
 
         # ── macOS only: bundled WOL Host Service (install / update / remove)
         # Status text + action button in one field; the heavy lifting (admin
@@ -267,10 +397,8 @@ class SettingsView(QWidget):
             host_container.setLayout(row_host)
             self.field_hostservice = Field(
                 "settings.label.hostservice", host_container)
-            grid.addWidget(self.field_hostservice, 8, 1)
+            self.group_misc.add(self.field_hostservice, 6, 0, 2)
             self._refresh_hostservice_row()
-
-        layout.addLayout(grid)
 
         # ── Info label ──
         self.info_label = QLabel(Translations.tr("settings.info.text"))
@@ -337,6 +465,13 @@ class SettingsView(QWidget):
         self._select_combo_data(
             self.remote_desktop_resolution_combo,
             self.config.get_remote_desktop_resolution())
+
+        # Remote routing (platform -> RDP / TurboVNC) and the VNC client
+        self.vnc_viewer_input.setText(self.config.get_vnc_viewer_path())
+        self.vnc_port_input.setValue(self.config.get_vnc_port())
+        for os_id, combo in self.protocol_combos.items():
+            self._select_combo_data(combo, self.config.get_remote_protocol(os_id))
+
         self.close_to_tray_toggle.setChecked(self.config.get_close_to_tray())
         self.allow_multiple_toggle.setChecked(
             self.config.get_allow_multiple_instances())
@@ -399,6 +534,14 @@ class SettingsView(QWidget):
         if selected_resolution:
             self.config.set_remote_desktop_resolution(selected_resolution)
 
+        # Remote routing: "" for the viewer path means "auto-detect again".
+        self.config.set_vnc_viewer_path(self.vnc_viewer_input.text().strip())
+        self.config.set_vnc_port(self.vnc_port_input.value())
+        for os_id, combo in self.protocol_combos.items():
+            protocol = combo.currentData()
+            if protocol:
+                self.config.set_remote_protocol(os_id, protocol)
+
         # Applied live via settings_saved → _apply_tray_mode (no restart).
         self.config.set_close_to_tray(self.close_to_tray_toggle.isChecked())
         # Takes effect on the next start (the lock is acquired at startup).
@@ -446,6 +589,9 @@ class SettingsView(QWidget):
             "ui"]["allow_multiple_instances"]
         ui["allow_privileged_public_network"] = DEFAULT_CONFIG[
             "ui"]["allow_privileged_public_network"]
+        # Remote routing + VNC client. Deep copy: the section nests the
+        # protocol_by_os dict, a shallow copy would share it with the defaults.
+        self.config.config["remote"] = copy.deepcopy(DEFAULT_CONFIG["remote"])
         self.config.save()
 
         Translations.set_language(DEFAULT_CONFIG["ui"]["language"])
@@ -460,6 +606,12 @@ class SettingsView(QWidget):
         self.title.setText(Translations.tr("modern.settings.title"))
         self.subtitle.setText(Translations.tr("modern.settings.subtitle"))
 
+        for group in (
+            self.group_network, self.group_appearance,
+            self.group_remote, self.group_misc,
+        ):
+            group.retranslate()
+
         self.field_broadcast_ip.retranslate("settings.label.broadcast_ip")
         self.field_broadcast_port.retranslate("settings.label.broadcast_port")
         self.field_language.retranslate("settings.label.language")
@@ -468,6 +620,16 @@ class SettingsView(QWidget):
         self.field_interval.retranslate("settings.label.interval")
         self.field_max_logs.retranslate("settings.label.max_logs")
         self.field_rdp.retranslate("settings.label.remote_desktop_resolution")
+        self.field_vnc_viewer.retranslate("settings.label.vnc_viewer_path")
+        self.field_vnc_port.retranslate("settings.label.vnc_port")
+        self.protocol_heading.setText(_label("settings.label.protocol_by_os"))
+        self.protocol_hint.setText(
+            Translations.tr("settings.hint.protocol_by_os"))
+        for field in self.field_protocol.values():
+            field.retranslate()
+        for combo in self.protocol_combos.values():
+            combo.setItemText(0, Translations.tr("modern.devices.client_rdp"))
+            combo.setItemText(1, Translations.tr("modern.devices.client_vnc"))
         self.field_shutdown_method.retranslate(
             "settings.label.default_shutdown_method")
         self.layout_hint.setText(Translations.tr("settings.layout.restart_hint"))

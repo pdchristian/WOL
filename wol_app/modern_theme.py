@@ -597,6 +597,26 @@ QPushButton#smallDanger:hover {{
 #dotOffline {{ background: {t['offline']}; border-radius: 5px; max-width: 10px; max-height: 10px; }}
 #dotUnknown {{ background: {t['unknown']}; border-radius: 5px; max-width: 10px; max-height: 10px; }}
 
+/* Platform pill: status dot + OS label in one chip (device card header and
+   list row). Mirrors .pill in design_prototype/Geräte_Plattform_Einstellungen_v2.html */
+#statusPill {{
+    background: {t['surface_hover']}; border: 1px solid {t['border']};
+    border-radius: 11px;
+}}
+#pillText {{ color: {t['text']}; font-size: 11px; font-weight: 600; }}
+#pillDotOnline {{ background: {t['online']}; border-radius: 4px; max-width: 9px; max-height: 9px; }}
+#pillDotOffline {{ background: {t['offline']}; border-radius: 4px; max-width: 9px; max-height: 9px; }}
+#pillDotUnknown {{ background: {t['unknown']}; border-radius: 4px; max-width: 9px; max-height: 9px; }}
+
+/* Settings screen groups (card per section, prototype .settingsGroup) */
+#settingsGroup {{
+    background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 14px;
+}}
+/* Uppercase is applied in Python — Qt Style Sheets have no text-transform. */
+#settingsGroupTitle {{
+    color: {t['text_dim']}; font-size: 11px; font-weight: 700;
+}}
+
 /* ── Inputs ──────────────────────────────────────────────────────────── */
 #fieldLabel {{
     color: {t['text_dim']}; font-size: 12px;

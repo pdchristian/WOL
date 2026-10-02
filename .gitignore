@@ -27,3 +27,4 @@ __pycache__/
 .firecrawl/
 _dbg_out*.txt
 _*_icon_check.png
+android_html/.gradle/
