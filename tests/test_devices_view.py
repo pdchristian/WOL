@@ -479,13 +479,18 @@ class TestPlatformPill:
         card.set_status("online")
         assert card.pill.dot.objectName() == "pillDotOnline"
 
-    def test_estimate_is_prefixed_and_service_is_not(self, qapp):
+    def test_estimate_and_service_show_platform_without_tilde(self, qapp):
         from wol_app.widgets.status_pill import StatusPill
 
         estimated = StatusPill("windows", "ttl", "online")
-        assert estimated.text.text().startswith("~")
         assert "Windows" in estimated.text.text()
-        assert not StatusPill("windows", "high", "online").text.text().startswith("~")
+        assert not estimated.text.text().startswith("~")
+        service = StatusPill("windows", "high", "online")
+        assert "Windows" in service.text.text()
+        assert not service.text.text().startswith("~")
+        # the confidence is still spelled out in the tooltip, not the label
+        assert Translations.tr("scan_dialog.os.tip_estimate") in estimated.toolTip()
+        assert Translations.tr("scan_dialog.os.tip_service") in service.toolTip()
 
     def test_pill_tooltip_combines_status_and_platform(self, qapp):
         from wol_app.widgets.status_pill import StatusPill
@@ -625,7 +630,7 @@ class TestPlatformDetection:
         # Rebuilt cards show the platform and route the Remote buttons to VNC.
         card = view._cards["d1"]
         assert "Linux" in card.pill.text.text()
-        assert card.pill.text.text().startswith("~")
+        assert not card.pill.text.text().startswith("~")
         assert card.remote_fs_btn.toolTip().endswith(
             Translations.tr("modern.devices.client_vnc"))
 

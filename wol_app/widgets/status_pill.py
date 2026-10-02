@@ -30,9 +30,9 @@ class StatusPill(QWidget):
     """Rounded chip with the online dot and the detected platform of a device.
 
     ``confidence`` is the fingerprint confidence (``high`` = reported by the
-    host service, anything else = estimated): estimates are prefixed with
-    ``~`` exactly like the platform column of the scan results, and the
-    tooltip spells out how the value was obtained.
+    host service, anything else = estimated). The pill itself shows only the
+    platform icon and label (no ``~`` marker between the dot and the icon);
+    the tooltip spells out how the value was obtained.
     """
 
     def __init__(
@@ -99,11 +99,12 @@ class StatusPill(QWidget):
         label = os_display_text(self._os_id, self._confidence)
         if label:
             icon = OS_ICONS.get(self._os_id, "")
-            # keep the "~" of an estimate in front of the icon
+            # drop the "~" estimate marker so it does not sit between the
+            # status dot and the platform icon; the tooltip still explains
+            # how the platform was obtained
             if label.startswith("~"):
-                text = f"~ {icon} {label[1:].strip()}"
-            else:
-                text = f"{icon} {label}"
+                label = label[1:].strip()
+            text = f"{icon} {label}"
             if self._confidence == "high":
                 tip_key = "scan_dialog.os.tip_service"
             elif self._confidence:
