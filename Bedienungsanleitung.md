@@ -194,7 +194,7 @@ Haben Sie für ein Gerät **überwachte Prozesse** mit API-Port hinterlegt (z. B
 
 - **Oranger Blitz** – der überwachte Server verarbeitet **gerade jetzt** eine oder mehrere Anfragen.
 - **Grauer (abgedunkelter) Blitz** – der Server ist erreichbar, aber **idle** (nichts läuft).
-- **Bernsteinfarbener Blitz** – der API-Port ist erreichbar, die Aktivität ist aber **nicht messbar** (der Server antwortet nicht auf `/metrics`).
+- **Bernsteinfarbener, durchgestrichener Blitz (⊘-Optik)** – der API-Port ist erreichbar, die Aktivität ist aber **nicht messbar** (der Server antwortet nicht auf `/metrics`). Der Strich durch den Blitz unterscheidet den Zustand klar vom orangenen „läuft"-Blitz, die Farbe allein wäre dafür zu ähnlich. Der Tooltip nennt die Ursache: entweder läuft der Server **mit API-Key** (dann antwortet er auf jede Abfrage ohne Schlüssel mit **401**) – tragen Sie den Schlüssel im Geräte-Dialog unter **API-Key (Dashboard):** ein, siehe [API-Key (Dashboard)](#api-key-dashboard) – oder der API-Key ist zwar hinterlegt, aber der **Host Service auf dem Gerät ist zu alt** (vor Protokoll v10) und sendet ihn nicht. In diesem Fall hilft nur ein Update des Host Service.
 - **Kein Blitz** – das Gerät hat keine überwachten Prozesse mit Port, der überwachte Server ist **ausgeschaltet** (sein API-Port antwortet nicht – dann gibt es nichts zu melden), oder der Host Service ist **zu alt** (Protokoll unter v9). Dann wird nichts geraten, sondern die Anzeige ausgeblendet.
 
 Der Blitz braucht den aktualisierten **Host Service ab Protokoll v9** (Windows · Ubuntu · macOS); ältere Hosts lassen ihn weg. Abgefragt werden die echten aktuellen Zähler des Servers (bei llama.cpp `requests_processing` + `requests_deferred`), **nicht** der zuletzt gemessene Durchsatz – deshalb ist das Signal zuverlässig, auch wenn die t/s-Werte im Dashboard noch den letzten Wert zeigen.
@@ -550,6 +550,23 @@ Im Dashboard erscheint daraufhin:
 
 > **Hinweis:** Die Prozess-Beobachtung erfordert den **WOL Host Service ab Protokollversion 3** auf dem Zielsystem. Ältere Dienste ignorieren die Anfrage einfach – es erscheint kein Fehler, das Panel wird nur nicht angezeigt. Die **Token-Ermittlung** (Durchsatz und Gesamt-Tokens) ist zusätzlich ab **Protokollversion 5** verfügbar und setzt voraus, dass `llama-server` mit **`--metrics`** läuft.
 
+### API-Key (Dashboard)
+
+Ihr Inferenz-Server läuft **mit API-Key** (llama.cpp `--api-key`, Strata `API_KEY`)? Dann beantwortet die API **jede** Anfrage ohne Schlüssel mit **401** – auch `/metrics`. Der Host Service kann die Aktivität nicht messen, und der Blitz bleibt **bernsteinfarben durchgestrichen**, obwohl längst inference läuft.
+
+Tragen Sie den Schlüssel im **Geräte-Dialog** im Feld **API-Key (Dashboard):** ein (direkt unter *Überwachte Prozesse (Dashboard)*):
+
+- Gespeichert wird er **verschlüsselt** in `config.json` (wie das Kennwort); in exportierten Geräte-Dateien steht er mit dem Marker `enc:`.
+- Sobald Sie einen Schlüssel **neu eingetragen oder geändert** haben, fragt die App nach dem Speichern, ob der Schlüssel **an alle anderen Geräte** übertragen werden soll – ein zentral verteilter Key ist damit mit einem Klick gesetzt. Speichern Sie ein Gerät ohne Änderung am Feld, fragt sie nicht. Anders als beim Kennwort ist diese Frage **nicht** an denselben Benutzernamen gebunden, denn der Key gehört zum Inferenz-Server, nicht zum Login.
+- Erlaubt sind bis zu **128 Zeichen** aus dem druckbaren ASCII-Bereich. Der Host Service sendet den Wert als `Authorization: Bearer <key>` bei seinen Loopback-Abfragen (`/v1/models`, `/health`, `/props`, `/metrics`).
+- Das Feld hat **nichts** mit der Anmeldung zu tun: Der Host Service selbst meldet sich weiterhin mit Benutzername und Kennwort des Geräts an.
+
+> **Voraussetzung:** **WOL Host Service ab Protokollversion 10** auf dem Zielsystem (Windows · Ubuntu · macOS). Ältere Dienste ignorieren das Feld – der Blitz bleibt bernsteinfarben und der Tooltip weist auf das veraltete Protokoll hin. Prüfen Sie die Version auf dem Zielsystem mit:
+> ```
+> "C:\Program Files\WakeOnLAN\WOL Host Service\WOL Host Service.exe" --status
+> ```
+> Die Antwort endet auf `(protocol v10)`. Erscheint dieser Zusatz **nicht**, ist ein älterer Dienst installiert – neu bauen und mit `--install` aktualisieren (Ubuntu/macOS: `wol_host_service_linux.py --status`).
+
 ### Batches erstellen und ausführen
 Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
 
@@ -723,4 +740,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.5.0 | Wake-on-LAN Manager*
+*Version 2.5.1 | Wake-on-LAN Manager*

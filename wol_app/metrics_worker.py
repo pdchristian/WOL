@@ -73,6 +73,7 @@ class MetricsWorker(_CancellableWorker):
         password: str = "",
         timeout: float = 5.0,
         watch: "list[str] | None" = None,
+        api_key: str = "",
     ) -> None:
         super().__init__()
         self.ip = ip
@@ -80,13 +81,14 @@ class MetricsWorker(_CancellableWorker):
         self.password = password
         self.timeout = timeout
         self.watch = watch
+        self.api_key = api_key
 
     def run(self) -> None:
         try:
             ok, result = get_metrics(
                 self.ip, self.username, self.password,
                 timeout=self.timeout, sock_sink=self._sink,
-                watch=self.watch,
+                watch=self.watch, api_key=self.api_key,
             )
         except Exception as e:  # never let run() raise: it would wedge the
             # dashboard's single-flight flag and leave the QThread dangling.
@@ -130,7 +132,8 @@ class InferenceSweepWorker(QObject):
         timeout: float = 4.0,
     ) -> None:
         super().__init__()
-        # Each device dict: {"id", "ip", "username", "password", "watch"}.
+        # Each device dict: {"id", "ip", "username", "password", "watch",
+        # "api_key"}.
         self.devices = devices
         self.timeout = timeout
         self._cancelled = False
@@ -155,6 +158,7 @@ class InferenceSweepWorker(QObject):
                 device["ip"], device.get("username", ""),
                 device.get("password", ""),
                 timeout=self.timeout, watch=device.get("watch") or None,
+                api_key=device.get("api_key", ""),
             )
             return result if ok and isinstance(result, dict) else None
 

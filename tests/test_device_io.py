@@ -1,5 +1,6 @@
 """Tests for the shared device import/export helpers (wol_app.device_io)."""
 
+import base64
 import json
 from unittest.mock import patch
 
@@ -276,3 +277,80 @@ class TestWatchProcessImportExport:
         dev = config.get_device_by_name("PC1")
         assert dev.get("ip") == "10.0.0.9"
         assert ConfigManager.get_device_watch_processes(dev) == ["keep-me.exe"]
+
+
+class TestApiKeyImportExport:
+    """The dashboard API key travels encrypted with the device (v10)."""
+
+    def _export(self, config, path):
+        with patch("wol_app.device_io.QFileDialog.getSaveFileName",
+                   return_value=(str(path), "")), \
+             patch("wol_app.device_io.QMessageBox.information"):
+            assert export_devices(config) is True
+
+    def _import(self, config, path):
+        with patch("wol_app.device_io.QFileDialog.getOpenFileName",
+                   return_value=(str(path), "")), \
+             patch("wol_app.device_io.QMessageBox.information"):
+            return import_devices(config)
+
+    def test_roundtrip_with_api_key(self, config, tmp_path):
+        d1 = config.add_device("Blade-18", "AA:BB:CC:DD:EE:01")
+        config.set_device_api_key(d1["id"], "dummy")
+        src = tmp_path / "dev.json"
+        self._export(config, src)
+        data = json.loads(src.read_text(encoding="utf-8"))
+        # Never exported in the clear
+        assert data[0]["api_key"].startswith("enc:")
+        assert "dummy" not in data[0]["api_key"]
+
+        config2 = ConfigManager(config_path=str(tmp_path / "config2.json"))
+        assert self._import(config2, src) is True
+        assert ConfigManager.get_device_api_key(
+            config2.get_device_by_name("Blade-18")) == "dummy"
+
+    def test_export_omits_empty_api_key(self, config, tmp_path):
+        config.add_device("Plain", "AA:BB:CC:DD:EE:02")
+        src = tmp_path / "dev.json"
+        self._export(config, src)
+        data = json.loads(src.read_text(encoding="utf-8"))
+        assert "api_key" not in data[0]
+
+    def test_import_accepts_plaintext_key(self, config, tmp_path):
+        """Foreign/hand-written files may still carry the key in the clear."""
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([
+            {"name": "PC", "mac": "AA:BB:CC:DD:EE:03", "api_key": " dummy "},
+        ]), encoding="utf-8")
+        assert self._import(config, src) is True
+        assert ConfigManager.get_device_api_key(
+            config.get_device_by_name("PC")) == "dummy"
+
+    def test_import_drops_invalid_key(self, config, tmp_path):
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([
+            {"name": "PC", "mac": "AA:BB:CC:DD:EE:04",
+             "api_key": "bad\nkey" + "y" * 300},
+        ]), encoding="utf-8")
+        assert self._import(config, src) is True
+        assert "api_key" not in config.get_device_by_name("PC")
+
+    def test_import_undecryptable_key_is_dropped(self, config, tmp_path):
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([
+            {"name": "PC", "mac": "AA:BB:CC:DD:EE:05",
+             "api_key": "enc:" + base64.b64encode(b"\x00" * 24).decode()},
+        ]), encoding="utf-8")
+        assert self._import(config, src) is True
+        assert "api_key" not in config.get_device_by_name("PC")
+
+    def test_import_without_api_key_keeps_existing(self, config, tmp_path):
+        d1 = config.add_device("PC1", "AA:BB:CC:DD:EE:01")
+        config.set_device_api_key(d1["id"], "keep-me")
+        src = tmp_path / "dev.json"
+        src.write_text(json.dumps([
+            {"name": "PC1", "mac": "AA:BB:CC:DD:EE:01", "ip": "10.0.0.9"},
+        ]), encoding="utf-8")
+        assert self._import(config, src) is True
+        assert ConfigManager.get_device_api_key(
+            config.get_device_by_name("PC1")) == "keep-me"

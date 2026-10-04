@@ -176,19 +176,37 @@ def _grid_view_url(color: str, glyph_px: int = 16, canvas: int = 36) -> str:
     return _glyph_canvas(color, rects, "grid_view", glyph_px, canvas)
 
 
-def _bolt_url(color: str, glyph_px: int = 13, canvas: int = 15) -> str:
+def _bolt_url(color: str, glyph_px: int = 13, canvas: int = 15,
+              slash: str = "") -> str:
     """Filled lightning bolt (feather "zap") for the inference badge.
 
     The devices view shows this glyph inside the status pill (left of the
     online dot) while a watched inference server on the host has requests
     in flight (host protocol v9 ``requests_active``). Filled, not stroked —
     at 13 px a stroke outline reads as noise.
+
+    ``slash`` draws the diagonal "not measurable" strike through the bolt.
+    Its knockout stroke uses that colour, which must be the surface the bolt
+    sits on (the pill background) so the strike reads as a cut, not as a
+    third colour. Amber alone was too close to the llama-orange "active"
+    bolt to tell the two states apart at 13 px.
     """
     paths = (
         f'<path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z" fill="{color}" '
         'stroke="none"/>'
     )
-    return _glyph_canvas(color, paths, "infer_bolt", glyph_px, canvas)
+    if slash:
+        # knockout first, then the strike itself on top of it. The widths are
+        # deliberately chunky: the glyph renders at 13 px, so anything below
+        # ~1.5 device px disappears.
+        paths += (
+            f'<path d="M4.5 3.5 19.5 20.5" stroke="{slash}" stroke-width="6" '
+            'stroke-linecap="round"/>'
+            f'<path d="M4.5 3.5 19.5 20.5" stroke="{color}" stroke-width="2.8" '
+            'stroke-linecap="round"/>'
+        )
+    name = "infer_bolt_slash" if slash else "infer_bolt"
+    return _glyph_canvas(color, paths, name, glyph_px, canvas)
 
 
 def _checkmark_url(color: str) -> str:
@@ -623,9 +641,11 @@ QPushButton#smallDanger:hover {{
 #pillDotOffline {{ background: {t['offline']}; border-radius: 4px; max-width: 9px; max-height: 9px; }}
 #pillDotUnknown {{ background: {t['unknown']}; border-radius: 4px; max-width: 9px; max-height: 9px; }}
 /* Inference badge (host protocol v9): lightning bolt left of the dot —
-   llama-orange while a job runs, dimmed while the server idles, amber when
-   the host answers but the activity is unmeasurable. Mirrors .infer in
-   design_prototype/Inferenz_Kachel.html */
+   llama-orange while a job runs, dimmed while the server idles, and amber
+   with a diagonal strike when the host answers but the activity is
+   unmeasurable. The strike is what separates "warn" from the orange
+   "active" bolt — amber and llama-orange are too close in hue to tell
+   apart at 15 px. Mirrors .infer in design_prototype/Inferenz_Kachel.html */
 #pillBoltActive {{
     image: url("{_bolt_url(t['svc'])}");
     max-width: 15px; max-height: 15px;
@@ -635,7 +655,7 @@ QPushButton#smallDanger:hover {{
     max-width: 15px; max-height: 15px;
 }}
 #pillBoltWarn {{
-    image: url("{_bolt_url(t['unknown'])}");
+    image: url("{_bolt_url(t['unknown'], slash=t['surface_hover'])}");
     max-width: 15px; max-height: 15px;
 }}
 

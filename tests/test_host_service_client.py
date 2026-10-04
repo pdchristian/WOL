@@ -160,6 +160,49 @@ class TestGetMetrics(unittest.TestCase):
         self.assertIn("timed out", msg)
 
 
+class TestGetMetricsApiKey(unittest.TestCase):
+    """protocol v10: the dashboard API key rides along in the metrics request."""
+
+    def _sent_payload(self, **kwargs):
+        sent: dict = {}
+
+        class _FakeSock:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def sendall(self, data):
+                sent.update(json.loads(data.decode("utf-8")))
+
+            def recv(self, size):
+                line = json.dumps({"status": "ok", "protocol": 2,
+                                   "cpu": 1.0}).encode("utf-8") + b"\n"
+                return line[:size]
+
+        with mock.patch(
+            "wol_app.host_service_client.socket.create_connection",
+            return_value=_FakeSock(),
+        ):
+            ok, result = get_metrics("1.2.3.4", "u", "p", **kwargs)
+        self.assertTrue(ok, result)
+        return sent
+
+    def test_api_key_included_when_set(self):
+        sent = self._sent_payload(watch=["strata:8080"], api_key="dummy")
+        self.assertEqual(sent["api_key"], "dummy")
+        self.assertEqual(sent["watch"], ["strata:8080"])
+
+    def test_api_key_omitted_when_empty(self):
+        sent = self._sent_payload(watch=["strata:8080"])
+        self.assertNotIn("api_key", sent)
+
+    def test_api_key_truncated_to_schema_limit(self):
+        sent = self._sent_payload(api_key="x" * 300)
+        self.assertEqual(len(sent["api_key"]), 128)
+
+
 class TestRunBatch(unittest.TestCase):
     def test_success(self):
         payload = {

@@ -54,7 +54,7 @@ class TestInferenceSweepWorker:
         seen = {}
 
         def fake_get_metrics(ip, user, pw, timeout=5.0, sock_sink=None,
-                             watch=None):
+                             watch=None, api_key=""):
             seen["watch"] = watch
             return True, {"protocol": 9}
 
@@ -87,3 +87,54 @@ class TestInferenceSweepWorker:
         worker.finished.connect(results.append)
         worker.run()
         assert results == [[("d1", None)]]
+
+    def test_api_key_is_forwarded(self, monkeypatch):
+        """v10: the device's dashboard key reaches the metrics request."""
+        seen = {}
+
+        def fake_get_metrics(ip, user, pw, timeout=5.0, sock_sink=None,
+                             watch=None, api_key=""):
+            seen["api_key"] = api_key
+            return True, {"protocol": 10}
+
+        monkeypatch.setattr("wol_app.metrics_worker.get_metrics",
+                            fake_get_metrics)
+        worker = InferenceSweepWorker([_device("d1", api_key="dummy")])
+        worker.run()
+        assert seen["api_key"] == "dummy"
+
+    def test_device_without_key_sends_empty_string(self, monkeypatch):
+        seen = {}
+
+        def fake_get_metrics(ip, user, pw, timeout=5.0, sock_sink=None,
+                             watch=None, api_key=""):
+            seen["api_key"] = api_key
+            return True, {"protocol": 10}
+
+        monkeypatch.setattr("wol_app.metrics_worker.get_metrics",
+                            fake_get_metrics)
+        worker = InferenceSweepWorker([_device("d1")])
+        worker.run()
+        assert seen["api_key"] == ""
+
+
+class TestMetricsWorker:
+    def test_api_key_reaches_the_client(self, monkeypatch):
+        from wol_app.metrics_worker import MetricsWorker
+
+        seen = {}
+
+        def fake_get_metrics(ip, user, pw, timeout=5.0, sock_sink=None,
+                             watch=None, api_key=""):
+            seen["api_key"] = api_key
+            return True, {"protocol": 10, "cpu": 1.0}
+
+        monkeypatch.setattr("wol_app.metrics_worker.get_metrics",
+                            fake_get_metrics)
+        worker = MetricsWorker("10.0.0.1", "u", "p",
+                               watch=["strata:8080"], api_key="dummy")
+        got = []
+        worker.metrics_ready.connect(got.append)
+        worker.run()
+        assert seen["api_key"] == "dummy"
+        assert got and got[0]["cpu"] == 1.0

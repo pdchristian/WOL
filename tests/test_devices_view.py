@@ -29,6 +29,7 @@ from wol_app.views.devices_view import (  # noqa: E402
     DevicesView,
     derive_inference_state,
 )
+from wol_app.widgets.status_pill import StatusPill  # noqa: E402
 
 # Translation keys asserted below — must exist in every locale so the
 # locale-synchronous assertions never fall back to the raw key string.
@@ -730,6 +731,39 @@ class TestInferenceBadge:
             "backup-sync.exe": {"running": True, "pid": 5}}}
         assert derive_inference_state(resp) is None
 
+    # ── API key vs. host service version (protocol v10) ─────────────────
+
+    def test_api_key_on_pre_v10_host_explains_itself(self):
+        """Key configured, host too old to send it -> warn_key verdict."""
+        resp = {"protocol": 9, "processes": {
+            "strata.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                "api_up": True, "running": True}}}
+        assert derive_inference_state(resp, "dummy") == "warn_key"
+        # even a pre-v9 host is explained instead of staying silent
+        old = {"protocol": 8, "processes": {}}
+        assert derive_inference_state(old, "dummy") == "warn_key"
+
+    def test_api_key_with_v10_host_keeps_plain_warn(self):
+        resp = {"protocol": 10, "processes": {
+            "strata.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                "api_up": True, "running": True}}}
+        assert derive_inference_state(resp, "dummy") == "warn"
+        assert derive_inference_state(resp) == "warn"
+
+    def test_api_key_still_reports_active(self):
+        resp = {"protocol": 10, "processes": {
+            "strata.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                "api_up": True, "running": True,
+                                "requests_active": 3}}}
+        assert derive_inference_state(resp, "dummy") == "active"
+
+    def test_warn_key_bolt_reuses_amber_style_with_own_tip(self, qapp):
+        pill = StatusPill(os_id="windows", status="online")
+        pill.set_inference("warn_key")
+        assert pill.bolt.objectName() == "pillBoltWarn"
+        assert pill.bolt.isVisibleTo(pill)
+        assert Translations.tr("modern.devices.infer.warn_key") in pill.toolTip()
+
     # ── Card / row / pill plumbing ──────────────────────────────────────
 
     def test_card_bolt_object_names(self, qapp, config_with_devices):
@@ -787,6 +821,17 @@ class TestInferenceBadge:
         targets = view._inference_targets()
         assert [t["id"] for t in targets] == ["d1"]
         assert targets[0]["watch"] == ["llama-server.exe:8080"]
+
+    def test_targets_carry_dashboard_api_key(self, qapp, config_with_devices):
+        """v10: the sweep sends the device's key so /metrics is measurable."""
+        device = config_with_devices.config["devices"][0]
+        device["username"] = "u"
+        device["password"] = "p"
+        device["watch_processes"] = ["strata:8080"]
+        config_with_devices.set_device_api_key(device["id"], "dummy")
+        view = DevicesView(config_with_devices)
+        targets = view._inference_targets()
+        assert targets[0]["api_key"] == "dummy"
 
     def test_targets_skip_offline_devices(self, qapp, config_with_devices):
         device = config_with_devices.config["devices"][0]

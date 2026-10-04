@@ -133,6 +133,23 @@ def validate_password(password: str) -> bool:
     return True
 
 
+def validate_api_key(api_key: str) -> bool:
+    """Validate a dashboard API key for safety.
+
+    The key travels to the host service and ends up in an ``Authorization``
+    header of the local inference-API probes, so control characters (CR/LF
+    included) and non-ASCII are rejected. The length cap must match
+    ``ConfigManager.MAX_API_KEY_CHARS``.
+    """
+    if not api_key:
+        return True  # API key is optional
+    if len(api_key) > 128:
+        return False
+    if any(ord(c) < 32 or ord(c) > 126 for c in api_key):
+        return False
+    return True
+
+
 # ── Subprocess ──────────────────────────────────────────────────────────────
 
 def run_subprocess_safe(command, timeout: int = 5, **kwargs):

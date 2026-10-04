@@ -526,7 +526,7 @@ const state = {
 const Native = (typeof window !== "undefined" && window.Native) ? window.Native : null;
 
 /* Versionsname kommt von nativ ("info"); Fallback für Browser-Vorschau. */
-let APP_VERSION = "2.4.0";
+let APP_VERSION = "2.5.1";
 
 /* Reine Laufzeit-Felder pro Gerät (nie persistiert). */
 function rtDefaults() {

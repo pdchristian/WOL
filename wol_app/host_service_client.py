@@ -178,6 +178,7 @@ def get_metrics(
     timeout: float = 5.0,
     sock_sink: "callable | None" = None,
     watch: "list[str] | None" = None,
+    api_key: str = "",
 ) -> tuple[bool, dict | str]:
     """Fetch CPU/RAM/GPU/VRAM metrics from the host service.
 
@@ -185,6 +186,12 @@ def get_metrics(
     names (``"llama-server.exe"`` or ``"name.exe:port"``); the response then
     contains a ``processes`` map with their status. Older hosts simply
     ignore the field.
+
+    *api_key* (optional, host service protocol ≥ 10) is the key the
+    inference API on a watched port expects in ``Authorization: Bearer``.
+    Servers started with an API key answer 401 on ``/metrics`` without it,
+    which leaves the dashboard's inference badge at "not measurable". Older
+    hosts ignore the field.
 
     Returns:
         (True, metrics_dict) on success — keys include ``cpu``, ``cpu_count``,
@@ -198,6 +205,8 @@ def get_metrics(
                      "username": username or "", "password": password or ""}
     if watch:
         payload["watch"] = [str(w) for w in watch][:8]
+    if api_key:
+        payload["api_key"] = str(api_key)[:128]
     ok, response = _request(
         ip,
         payload,

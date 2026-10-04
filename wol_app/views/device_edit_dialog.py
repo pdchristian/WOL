@@ -23,17 +23,23 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wol_app.shared_password import apply_password, collect_share_targets
+from wol_app.shared_password import (
+    apply_api_key,
+    apply_password,
+    collect_api_key_share_targets,
+    collect_share_targets,
+)
 from wol_app.translations import Translations
-from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
-from wol_app.widgets.toggle_switch import ToggleSwitch
 from wol_app.utils import (
+    validate_api_key,
     validate_device_name,
     validate_ip_or_hostname,
     validate_mac,
     validate_password,
     validate_username,
 )
+from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
+from wol_app.widgets.toggle_switch import ToggleSwitch
 
 
 class ModernDeviceDialog(QDialog):
@@ -160,6 +166,18 @@ class ModernDeviceDialog(QDialog):
         self._add_field(grid, 5, 0, "device_dialog.label.watch",
                         self.watch_input, col_span=2)
 
+        # Dashboard API key (host service protocol v10): sent along with the
+        # metrics request so the host can present it as
+        # "Authorization: Bearer <key>" when probing the inference API.
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.api_key_input.setPlaceholderText(
+            Translations.tr("device_dialog.placeholder.api_key"))
+        self.api_key_input.setToolTip(
+            Translations.tr("device_dialog.tooltip.api_key"))
+        self._add_field(grid, 6, 0, "device_dialog.label.api_key",
+                        self.api_key_input, col_span=2)
+
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         layout.addWidget(panel)
@@ -212,6 +230,7 @@ class ModernDeviceDialog(QDialog):
         self.password_input.setText(device.get("password", ""))
         self.watch_input.setText(", ".join(
             self.config.get_device_watch_processes(device)))
+        self.api_key_input.setText(self.config.get_device_api_key(device))
         self.enabled_toggle.setChecked(device.get("enabled", True))
         # Set shutdown method (legacy devices default to "smb")
         method = self.config.get_device_shutdown_method(device)
@@ -260,6 +279,13 @@ class ModernDeviceDialog(QDialog):
             QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_password"))
             return
 
+        # Dashboard API key (optional) — goes into the Authorization header
+        # of the host-side inference probes.
+        api_key: str = self.api_key_input.text().strip()
+        if api_key and not validate_api_key(api_key):
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_api_key"))
+            return
+
         shutdown_method = self.method_combo.currentData()
         rdp_auth_level = self.rdp_auth_combo.currentData()
         watch_entries = self.config.get_device_watch_processes(
@@ -286,6 +312,14 @@ class ModernDeviceDialog(QDialog):
                     self.editing_device):
                 self.config.set_device_watch_processes(
                     self.editing_device["id"], watch_entries)
+            # Same rule for the API key: only write on an actual change, so
+            # editing a device never clears a key that is not shown here.
+            previous_api_key = self.config.get_device_api_key(
+                self.editing_device)
+            api_key_changed = api_key != previous_api_key
+            if api_key_changed:
+                self.config.set_device_api_key(
+                    self.editing_device["id"], api_key)
             # Re-fetch updated device
             saved = self.config.get_device_by_id(self.editing_device["id"])
         else:
@@ -309,6 +343,9 @@ class ModernDeviceDialog(QDialog):
                 if watch_entries:
                     self.config.set_device_watch_processes(
                         device["id"], watch_entries)
+                if api_key:
+                    self.config.set_device_api_key(device["id"], api_key)
+                api_key_changed = bool(api_key)
                 saved = self.config.get_device_by_id(device["id"])
             else:
                 QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.save_failed"))
@@ -318,9 +355,16 @@ class ModernDeviceDialog(QDialog):
         # username (modern look, Ja/Nein like the shutdown confirmation).
         self._offer_shared_password(username, password,
                                     saved.get("id") if saved else None)
+        # Same offer for the dashboard API key: it belongs to the inference
+        # server rather than to a login, so it covers every other device.
+        # Only asked when the key was actually (re-)entered, so saving an
+        # unchanged device doesn't nag.
+        if api_key_changed:
+            self._offer_shared_api_key(api_key, saved.get("id") if saved else None)
 
-        # Clear password from input field for security
+        # Clear secrets from the input fields for security
         self.password_input.clear()
+        self.api_key_input.clear()
         self.device_saved.emit(saved)
         self.accept()
 
@@ -344,3 +388,23 @@ class ModernDeviceDialog(QDialog):
         )
         if dialog.exec():
             apply_password(self.config, targets, password)
+
+    def _offer_shared_api_key(self, api_key: str,
+                              current_id: str | None) -> None:
+        """Ask whether to copy the API key to every other device."""
+        targets = collect_api_key_share_targets(self.config, api_key,
+                                                exclude_id=current_id)
+        if not targets:
+            return
+        dialog = ModernShutdownConfirmDialog(
+            "", self,
+            title_key="device_dialog.apply_shared_key.title",
+            message_key="device_dialog.apply_shared_key.message",
+            yes_key="device_dialog.apply_shared_key.yes",
+            no_key="device_dialog.apply_shared_key.no",
+            message_kwargs={"count": len(targets)},
+            yes_object_name="primaryButton",
+            show_icon=False,
+        )
+        if dialog.exec():
+            apply_api_key(self.config, targets, api_key)

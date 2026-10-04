@@ -6,6 +6,7 @@ DeviceDialog (QMessageBox.question).
 """
 
 import os
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("WOL_HEADLESS", "1")
@@ -22,7 +23,9 @@ from PyQt6.QtWidgets import (  # noqa: E402
 
 from wol_app.config import ConfigManager  # noqa: E402
 from wol_app.shared_password import (  # noqa: E402
+    apply_api_key,
     apply_password,
+    collect_api_key_share_targets,
     collect_share_targets,
 )
 from wol_app.translations import Translations  # noqa: E402
@@ -246,3 +249,168 @@ class TestClassicDialogSharedPassword:
         dialog._save()
         assert calls == []
         assert config.get_device_by_name("Beta")["password"] == "solo-pw"
+
+
+class TestApiKeyShareHelper:
+    """The dashboard API key is offered to *every* other device.
+
+    Unlike the password it is not scoped by username: the key belongs to the
+    inference server (e.g. Strata started with ``API_Key dummy``), and the
+    dashboard can only measure activity when the host service probes
+    ``/metrics`` with it.
+    """
+
+    def test_no_targets_without_key(self, config):
+        assert collect_api_key_share_targets(config, "") == []
+        assert collect_api_key_share_targets(config, "   ") == []
+
+    def test_targets_are_all_other_devices(self, config):
+        alpha = config.get_device_by_name("Alpha")
+        targets = collect_api_key_share_targets(config, "dummy",
+                                                exclude_id=alpha["id"])
+        assert {d["name"] for d in targets} == {"Beta", "Gamma"}
+
+    def test_skips_devices_already_storing_the_key(self, config):
+        config.set_device_api_key(config.get_device_by_name("Beta")["id"],
+                                  "dummy")
+        targets = collect_api_key_share_targets(config, "dummy")
+        assert {d["name"] for d in targets} == {"Alpha", "Gamma"}
+
+    def test_apply_api_key(self, config):
+        targets = collect_api_key_share_targets(config, "dummy")
+        assert apply_api_key(config, targets, "dummy") == 3
+        for dev in config.get_devices():
+            assert ConfigManager.get_device_api_key(dev) == "dummy"
+
+
+class TestModernDialogApiKey:
+    def _add_dialog(self, config, key):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        dialog = ModernDeviceDialog(config)
+        dialog.name_input.setText("Blade-18")
+        dialog.mac_input.setText("AA:BB:CC:00:00:09")
+        dialog.api_key_input.setText(key)
+        return dialog
+
+    def test_yes_applies_key_to_all_other_devices(self, qapp, config,
+                                                  monkeypatch):
+        calls = _patch_confirm(monkeypatch, accept=True)
+        dialog = self._add_dialog(config, "dummy")
+        dialog._save()
+        assert len(calls) == 1
+        blade = config.get_device_by_name("Blade-18")
+        assert ConfigManager.get_device_api_key(blade) == "dummy"
+        for name in ("Alpha", "Beta", "Gamma"):
+            assert ConfigManager.get_device_api_key(
+                config.get_device_by_name(name)) == "dummy"
+
+    def test_no_keeps_other_keys_untouched(self, qapp, config, monkeypatch):
+        calls = _patch_confirm(monkeypatch, accept=False)
+        dialog = self._add_dialog(config, "dummy")
+        dialog._save()
+        assert len(calls) == 1
+        assert ConfigManager.get_device_api_key(
+            config.get_device_by_name("Blade-18")) == "dummy"
+        assert ConfigManager.get_device_api_key(
+            config.get_device_by_name("Alpha")) == ""
+
+    def test_no_popup_without_key(self, qapp, config, monkeypatch):
+        calls = _patch_confirm(monkeypatch, accept=True)
+        self._add_dialog(config, "")._save()
+        assert calls == []
+
+    def test_no_popup_when_every_device_matches(self, qapp, config,
+                                                monkeypatch):
+        for dev in config.get_devices():
+            config.set_device_api_key(dev["id"], "dummy")
+        calls = _patch_confirm(monkeypatch, accept=True)
+        dialog = self._add_dialog(config, "dummy")
+        dialog._save()
+        assert calls == []
+
+    def test_edit_prefills_key_and_unchanged_save_stays_quiet(
+            self, qapp, config, monkeypatch):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        config.set_device_api_key(config.get_device_by_name("Alpha")["id"],
+                                  "dummy")
+        calls = _patch_confirm(monkeypatch, accept=True)
+        dialog = ModernDeviceDialog(
+            config, device=config.get_device_by_name("Alpha"))
+        assert dialog.api_key_input.text() == "dummy"
+        dialog._save()
+        assert calls == []
+        assert ConfigManager.get_device_api_key(
+            config.get_device_by_name("Alpha")) == "dummy"
+
+    def test_edit_new_key_prompts_for_other_devices(self, qapp, config,
+                                                    monkeypatch):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        calls = _patch_confirm(monkeypatch, accept=True)
+        dialog = ModernDeviceDialog(
+            config, device=config.get_device_by_name("Alpha"))
+        dialog.api_key_input.setText("dummy")
+        dialog._save()
+        assert len(calls) == 1
+        for name in ("Alpha", "Beta", "Gamma"):
+            assert ConfigManager.get_device_api_key(
+                config.get_device_by_name(name)) == "dummy"
+
+    def test_edit_clearing_key_removes_it(self, qapp, config, monkeypatch):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        config.set_device_api_key(config.get_device_by_name("Alpha")["id"],
+                                  "dummy")
+        calls = _patch_confirm(monkeypatch, accept=True)
+        dialog = ModernDeviceDialog(
+            config, device=config.get_device_by_name("Alpha"))
+        dialog.api_key_input.clear()
+        dialog._save()
+        assert calls == []
+        assert ConfigManager.get_device_api_key(
+            config.get_device_by_name("Alpha")) == ""
+
+    def test_edit_prefills_and_clears_field(self, qapp, config, monkeypatch):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        _patch_confirm(monkeypatch, accept=False)
+        d1 = config.add_device("Keyed", "AA:BB:CC:00:00:0A")
+        config.set_device_api_key(d1["id"], "s3cret-key")
+        edit = ModernDeviceDialog(config,
+                                  device=config.get_device_by_id(d1["id"]))
+        assert edit.api_key_input.text() == "s3cret-key"
+        edit.api_key_input.setText("new-key")
+        edit._save()
+        assert ConfigManager.get_device_api_key(
+            config.get_device_by_id(d1["id"])) == "new-key"
+        # Secrets must not linger in the dialog after saving
+        assert edit.api_key_input.text() == ""
+
+    def test_edit_clearing_removes_key(self, qapp, config, monkeypatch):
+        """Clearing the prefilled field is an explicit removal (like watch)."""
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        _patch_confirm(monkeypatch, accept=False)
+        d1 = config.add_device("Keyed", "AA:BB:CC:00:00:0B")
+        config.set_device_api_key(d1["id"], "keep-me")
+        edit = ModernDeviceDialog(config,
+                                  device=config.get_device_by_id(d1["id"]))
+        edit.api_key_input.setText("")
+        edit._save()
+        assert ConfigManager.get_device_api_key(
+            config.get_device_by_id(d1["id"])) == ""
+        assert "api_key" not in config.get_device_by_id(d1["id"])
+
+    def test_invalid_key_is_rejected(self, qapp, config, monkeypatch):
+        from wol_app.views.device_edit_dialog import ModernDeviceDialog
+
+        _patch_confirm(monkeypatch, accept=True)
+        dialog = ModernDeviceDialog(config)
+        dialog.name_input.setText("Nope")
+        dialog.mac_input.setText("AA:BB:CC:00:00:0C")
+        dialog.api_key_input.setText("x" * 200)
+        with mock.patch("wol_app.views.device_edit_dialog.QMessageBox.warning"):
+            dialog._save()
+        assert config.get_device_by_name("Nope") is None

@@ -142,9 +142,9 @@ class TestWatchedProcesses:
         monkeypatch.setattr(wol_host_service, "_check_port_loopback",
                             lambda port: True)
         monkeypatch.setattr(wol_host_service, "_fetch_models_and_up",
-                            lambda port: ([], False))
+                            lambda port, api_key="": ([], False))
         monkeypatch.setattr(wol_host_service, "_probe_api_identity",
-                            lambda port, api_up=False: {})
+                            lambda port, api_up=False, api_key="": {})
         monkeypatch.setattr(wol_host_service.time, "time", lambda: 3600.0)
         wol_host_service._WATCH_PROCS.clear()
         try:
@@ -275,9 +275,9 @@ class TestLoadedModels:
                             lambda port: True)
         monkeypatch.setattr(
             wol_host_service, "_fetch_models_and_up",
-            lambda port: (["Qwen3.8-Flash-256k-50", "glm-4.7-air"], True))
+            lambda port, api_key="": (["Qwen3.8-Flash-256k-50", "glm-4.7-air"], True))
         monkeypatch.setattr(wol_host_service, "_probe_api_identity",
-                            lambda port, api_up=False: {})
+                            lambda port, api_up=False, api_key="": {})
         wol_host_service._WATCH_PROCS.clear()
         try:
             result = wol_host_service._watched_processes(
@@ -305,7 +305,7 @@ class TestLoadedModels:
         called = []
         monkeypatch.setattr(
             wol_host_service, "_fetch_models_and_up",
-            lambda port: called.append(port) or ([], False))
+            lambda port, api_key="": called.append(port) or ([], False))
         wol_host_service._WATCH_PROCS.clear()
         try:
             result = wol_host_service._watched_processes(
@@ -330,12 +330,12 @@ class TestLoadedModels:
                             lambda port: True)
         monkeypatch.setattr(
             wol_host_service, "_fetch_models_and_up",
-            lambda port: (["Qwen3.8-Flash-256k-62", "glm-4.7-air"], True))
+            lambda port, api_key="": (["Qwen3.8-Flash-256k-62", "glm-4.7-air"], True))
         monkeypatch.setattr(wol_host_service, "_probe_api_identity",
-                            lambda port, api_up=False: {})
+                            lambda port, api_up=False, api_key="": {})
         monkeypatch.setattr(
             wol_host_service, "_fetch_model_metrics",
-            lambda port, name: ({"prompt_tps": 261.15,
+            lambda port, name, api_key="": ({"prompt_tps": 261.15,
                                  "predicted_tps": 26.65}
                                 if name == "Qwen3.8-Flash-256k-62"
                                 else None))
@@ -578,7 +578,7 @@ class TestApiCapabilityProbe:
 
     def test_probe_api_identity_llama_cpp(self, monkeypatch):
         """/props with build_info -> kind llama.cpp + info extras."""
-        def fake_get(port, path, accept, max_bytes=262_144):
+        def fake_get(port, path, accept, max_bytes=262_144, api_key=""):
             if path == "/health":
                 return 200, json.dumps({"status": "ok", "loaded": True,
                                         "max_context": 8192})
@@ -598,7 +598,7 @@ class TestApiCapabilityProbe:
 
     def test_probe_api_identity_openai(self, monkeypatch):
         """No /props, but /health + api_up -> plain OpenAI server."""
-        def fake_get(port, path, accept, max_bytes=262_144):
+        def fake_get(port, path, accept, max_bytes=262_144, api_key=""):
             if path == "/health":
                 return 200, json.dumps({"status": "ok", "loaded": True,
                                         "max_context": 262144,
@@ -638,17 +638,17 @@ class TestApiCapabilityProbe:
                             lambda port: True)
         monkeypatch.setattr(
             wol_host_service, "_fetch_models_and_up",
-            lambda port: (["qwen3.8-flash-next-iq3_s"], True))
+            lambda port, api_key="": (["qwen3.8-flash-next-iq3_s"], True))
         monkeypatch.setattr(
             wol_host_service, "_probe_api_identity",
-            lambda port, api_up=False: {
+            lambda port, api_up=False, api_key="": {
                 "api_kind": "openai",
                 "api_features_extra": ["health", "metrics"],
                 "api_info": {"server": "Strata 0.1.30",
                              "context": 262144, "slots": 1}})
         monkeypatch.setattr(
             wol_host_service, "_fetch_model_metrics",
-            lambda port, name: {"prompt_tps": 398.0, "predicted_tps": 72.2,
+            lambda port, name, api_key="": {"prompt_tps": 398.0, "predicted_tps": 72.2,
                                 "total_tokens": 19456405})
         wol_host_service._WATCH_PROCS.clear()
         try:
@@ -689,9 +689,9 @@ class TestApiCapabilityProbe:
                             lambda port: True)
         monkeypatch.setattr(
             wol_host_service, "_fetch_models_and_up",
-            lambda port: (["srv-model"], True))
+            lambda port, api_key="": (["srv-model"], True))
         monkeypatch.setattr(wol_host_service, "_probe_api_identity",
-                            lambda port, api_up=False: {"api_kind": "openai"})
+                            lambda port, api_up=False, api_key="": {"api_kind": "openai"})
         wol_host_service._WATCH_PROCS.clear()
         try:
             result = wol_host_service._watched_processes(
@@ -715,7 +715,7 @@ class TestRequestsActive:
             "# TYPE llamacpp:requests_deferred gauge\n"
             "llamacpp:requests_deferred 3\n")
         monkeypatch.setattr(wol_host_service, "_http_get_loopback",
-                            lambda port, path, accept, max_bytes=262_144:
+                            lambda port, path, accept, max_bytes=262_144, api_key="":
                             (200, body) if path == "/metrics" else (404, ""))
         assert wol_host_service._fetch_api_activity(8080) == 5
 
@@ -801,13 +801,13 @@ class TestRequestsActive:
                             lambda port: True)
         monkeypatch.setattr(
             wol_host_service, "_fetch_models_and_up",
-            lambda port: (["m"], True))
+            lambda port, api_key="": (["m"], True))
         monkeypatch.setattr(wol_host_service, "_probe_api_identity",
-                            lambda port, api_up=False: {})
+                            lambda port, api_up=False, api_key="": {})
         monkeypatch.setattr(wol_host_service, "_fetch_model_metrics",
-                            lambda port, name: None)
+                            lambda port, name, api_key="": None)
         monkeypatch.setattr(wol_host_service, "_fetch_api_activity",
-                            lambda port: 2)
+                            lambda port, api_key="": 2)
         wol_host_service._WATCH_PROCS.clear()
         try:
             result = wol_host_service._watched_processes(
@@ -831,13 +831,13 @@ class TestRequestsActive:
                             lambda port: True)
         monkeypatch.setattr(
             wol_host_service, "_fetch_models_and_up",
-            lambda port: (["m"], True))
+            lambda port, api_key="": (["m"], True))
         monkeypatch.setattr(wol_host_service, "_probe_api_identity",
-                            lambda port, api_up=False: {})
+                            lambda port, api_up=False, api_key="": {})
         monkeypatch.setattr(wol_host_service, "_fetch_model_metrics",
-                            lambda port, name: None)
+                            lambda port, name, api_key="": None)
         monkeypatch.setattr(wol_host_service, "_fetch_api_activity",
-                            lambda port: None)
+                            lambda port, api_key="": None)
         wol_host_service._WATCH_PROCS.clear()
         try:
             result = wol_host_service._watched_processes(
@@ -863,7 +863,7 @@ class TestRequestsActive:
         called = []
         monkeypatch.setattr(
             wol_host_service, "_fetch_api_activity",
-            lambda port: called.append(port) or None)
+            lambda port, api_key="": called.append(port) or None)
         wol_host_service._WATCH_PROCS.clear()
         try:
             result = wol_host_service._watched_processes(
@@ -1295,3 +1295,109 @@ class TestHandlerReplay:
             subprocess=mock.MagicMock(),
         )
         assert resp["status"] == "ok"
+
+
+class TestApiKeyProbing:
+    """protocol v10: probes authenticate with ``Authorization: Bearer``.
+
+    A server started with an API key (llama-server ``--api-key``, Strata
+    ``API_KEY``) answers 401 to every loopback probe, which left the
+    dashboard stuck on the amber "activity not measurable" bolt.
+    """
+
+    def test_sanitize_normalises_key(self):
+        assert wol_host_service._sanitize_api_key("  dummy  ") == "dummy"
+        ok = "k" * wol_host_service.WATCH_API_KEY_MAX_CHARS
+        assert wol_host_service._sanitize_api_key(ok) == ok
+
+    def test_sanitize_drops_unsafe_values(self):
+        bad = ["", "   ",
+               "k" * (wol_host_service.WATCH_API_KEY_MAX_CHARS + 1),
+               "a\r\nX-Injected: 1", "a\nb", "a\tb", "schl\xfcssel",
+               None, 42, ["x"], {"k": 1}]
+        for value in bad:
+            assert wol_host_service._sanitize_api_key(value) == "", repr(value)
+
+    def _fake_conn(self, monkeypatch, status=200, body=b"{}"):
+        conn = mock.MagicMock()
+        conn.getresponse.return_value.status = status
+        conn.getresponse.return_value.read.return_value = body
+        monkeypatch.setattr(wol_host_service.http.client, "HTTPConnection",
+                            lambda *a, **k: conn)
+        return conn
+
+    def test_bearer_header_sent_when_key_given(self, monkeypatch):
+        conn = self._fake_conn(monkeypatch)
+        assert wol_host_service._http_get_loopback(
+            8080, "/metrics", "text/plain", api_key="dummy") == (200, "{}")
+        headers = conn.request.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer dummy"
+
+    def test_no_authorization_header_without_key(self, monkeypatch):
+        conn = self._fake_conn(monkeypatch)
+        wol_host_service._http_get_loopback(8080, "/health",
+                                            "application/json")
+        headers = conn.request.call_args.kwargs["headers"]
+        assert "Authorization" not in headers
+
+    def test_watch_probes_receive_the_key(self, monkeypatch):
+        proc = mock.MagicMock()
+        proc.info = {"pid": 4711, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 0.0
+        proc.memory_info.return_value = mock.MagicMock(rss=1)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+        seen: dict = {}
+
+        def fake_models(port, api_key=""):
+            seen["models"] = api_key
+            return (["strata-m"], True)
+
+        def fake_activity(port, api_key=""):
+            seen["activity"] = api_key
+            return 3
+
+        def fake_identity(port, api_up=False, api_key=""):
+            seen["identity"] = api_key
+            return {"api_kind": "openai"}
+
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: True)
+        monkeypatch.setattr(wol_host_service, "_fetch_models_and_up",
+                            fake_models)
+        monkeypatch.setattr(wol_host_service, "_fetch_api_activity",
+                            fake_activity)
+        monkeypatch.setattr(wol_host_service, "_probe_api_identity",
+                            fake_identity)
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"], api_key="dummy")
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        assert seen == {"models": "dummy", "activity": "dummy",
+                        "identity": "dummy"}
+        assert result["llama-server.exe:8080"]["requests_active"] == 3
+
+    def test_probe_cache_is_keyed_by_port_and_key(self, monkeypatch):
+        """A changed key must not be hidden behind the TTL cache."""
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (None, ""))
+        wol_host_service._API_PROBE_CACHE.clear()
+        try:
+            wol_host_service._probe_api_identity(8095, api_key="one")
+            calls: list = []
+            monkeypatch.setattr(
+                wol_host_service, "_http_get_loopback",
+                lambda port, path, accept, max_bytes=262_144, api_key="":
+                calls.append(api_key) or (None, ""))
+            wol_host_service._probe_api_identity(8095, api_key="one")
+            assert calls == []                      # same key -> cached
+            wol_host_service._probe_api_identity(8095, api_key="two")
+            assert calls and set(calls) == {"two"}  # new key -> re-probe
+        finally:
+            wol_host_service._API_PROBE_CACHE.clear()

@@ -11,6 +11,7 @@ from typing import Any
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 from wol_app.config import (
+    API_KEY_ENC_PREFIX,
     BATCH_TIMEOUT_MAX_S,
     BATCH_TIMEOUT_MIN_S,
     DEFAULT_BATCH_TIMEOUT_S,
@@ -18,6 +19,7 @@ from wol_app.config import (
     MAX_BATCHES_PER_DEVICE,
     MAX_WATCH_ENTRY_CHARS,
     MAX_WATCH_PROCESSES_PER_DEVICE,
+    ConfigManager,
 )
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
 from wol_app.translations import Translations
@@ -89,6 +91,38 @@ def _apply_watch_processes(config_manager: Any, device_id: str,
     config_manager.set_device_watch_processes(device_id, entries)
 
 
+def _export_api_key(api_key: str) -> str:
+    """Return the export form of a dashboard API key ("" when unset)."""
+    clean = ConfigManager.get_device_api_key({"api_key": api_key})
+    if not clean:
+        return ""
+    return API_KEY_ENC_PREFIX + encrypt_password(clean)
+
+
+def _import_api_key(raw: Any) -> str:
+    """Return the plaintext API key from an import file ("" when unusable).
+
+    Exported keys carry the :data:`API_KEY_ENC_PREFIX` marker; a foreign file
+    may still hold plaintext, which is accepted after validation.
+    """
+    if not isinstance(raw, str):
+        return ""
+    value = raw.strip()
+    if value.startswith(API_KEY_ENC_PREFIX):
+        try:
+            value = decrypt_password(value[len(API_KEY_ENC_PREFIX):])
+        except Exception:
+            return ""
+    return ConfigManager.get_device_api_key({"api_key": value})
+
+
+def _apply_api_key(config_manager: Any, device_id: str, api_key: str) -> None:
+    """Write an imported API key only when the file actually carried one."""
+    if not api_key:
+        return
+    config_manager.set_device_api_key(device_id, api_key)
+
+
 def export_devices(config_manager: Any, parent=None) -> bool:
     """Export configured devices to a JSON file.
 
@@ -124,6 +158,11 @@ def export_devices(config_manager: Any, parent=None) -> bool:
         watch = _sanitize_watch_processes(dev.get("watch_processes"))
         if watch:
             entry["watch_processes"] = watch
+        # Dashboard API key (inference probes, host protocol v10+). Stored
+        # encrypted with the explicit "enc:" marker, like the config file.
+        api_key = _export_api_key(dev.get("api_key", ""))
+        if api_key:
+            entry["api_key"] = api_key
         export_data.append(entry)
 
     try:
@@ -204,6 +243,7 @@ def import_devices(config_manager: Any, parent=None) -> bool:
         batches = _sanitize_batches(dev_data.get("batches"))
         allow_batch = bool(dev_data.get("allow_batch", False))
         watch = _sanitize_watch_processes(dev_data.get("watch_processes"))
+        api_key = _import_api_key(dev_data.get("api_key"))
         existing = config_manager.get_device_by_name(name)
         if existing:
             # Update existing device
@@ -221,6 +261,7 @@ def import_devices(config_manager: Any, parent=None) -> bool:
             _apply_batches(config_manager, existing["id"], batches,
                            allow_batch)
             _apply_watch_processes(config_manager, existing["id"], watch)
+            _apply_api_key(config_manager, existing["id"], api_key)
             updated += 1
         else:
             # Add new device
@@ -239,6 +280,7 @@ def import_devices(config_manager: Any, parent=None) -> bool:
                 _apply_batches(config_manager, device["id"], batches,
                                allow_batch)
                 _apply_watch_processes(config_manager, device["id"], watch)
+                _apply_api_key(config_manager, device["id"], api_key)
                 imported += 1
 
     # Build summary message

@@ -226,6 +226,18 @@ MAX_BATCH_SCRIPT_CHARS = 32_000  # must match the host service limit
 # Entries: "name.exe" or "name.exe:port" (port = "running AND API reachable").
 MAX_WATCH_PROCESSES_PER_DEVICE = 8
 MAX_WATCH_ENTRY_CHARS = 128
+# Dashboard API key (host protocol v10): sent to the host service, which
+# presents it as ``Authorization: Bearer <key>`` when probing the local
+# inference API. Needed for servers started with an API key (llama-server
+# --api-key, Strata API_KEY) — without it their /metrics answers 401 and the
+# inference badge can only report "not measurable".
+MAX_API_KEY_CHARS = 128
+#: Marker on an encrypted ``api_key`` (config file and device export).
+#: Unlike passwords — which predate it and are recognised by the base64
+#: heuristic in ``crypto.is_encrypted`` — API keys are long random
+#: alphanumeric strings the heuristic would misread as ciphertext, so the
+#: field carries an explicit prefix.
+API_KEY_ENC_PREFIX = "enc:"
 DEFAULT_BATCH_TIMEOUT_S = 10
 BATCH_TIMEOUT_MIN_S = 5
 BATCH_TIMEOUT_MAX_S = 3600
@@ -268,9 +280,11 @@ DEFAULT_CONFIG = {
     # Each device: {"id": uuid, "name": str, "mac": str, "ip": str, "username": str,
     #               "password": str, "enabled": bool, "shutdown_method": str,
     #               "allow_batch": bool, "batches": [{"id","name","script","timeout"}],
-    #               "watch_processes": ["llama-server.exe", ...], "os": str}
+    #               "watch_processes": ["llama-server.exe", ...],
+    #               "api_key": str, "os": str}
     # ("allow_batch"/"batches" are optional, see get_device_batches;
     #  "watch_processes" is optional, see get_device_watch_processes;
+    #  "api_key" is optional and encrypted at rest, see get_device_api_key;
     #  "os" is optional, see get_device_os — detected platform, never migrated)
     "network": {
         "broadcast_ip": "255.255.255.255",
@@ -1019,6 +1033,41 @@ class ConfigManager:
                 return True
         return False
 
+    @staticmethod
+    def get_device_api_key(device: dict) -> str:
+        """Return the (validated) dashboard API key of *device*.
+
+        The key is what the inference API on a watched port expects in
+        ``Authorization: Bearer <key>`` — servers started with an API key
+        (llama-server ``--api-key``, Strata ``API_KEY``) answer 401 on
+        ``/metrics`` without it, so the dashboard can only show the amber
+        "activity not measurable" bolt. Stored encrypted (see
+        :meth:`_encrypt_devices`); malformed or oversized values degrade to
+        an empty string so a hand-edited config never breaks a save.
+        """
+        key = device.get("api_key", "")
+        if not isinstance(key, str):
+            return ""
+        key = key.strip()
+        if not key or len(key) > MAX_API_KEY_CHARS:
+            return ""
+        if any(ord(c) < 32 or ord(c) > 126 for c in key):
+            return ""
+        return key
+
+    def set_device_api_key(self, device_id: str, api_key: str) -> bool:
+        """Persist the dashboard API key of a device ("" removes the field)."""
+        cleaned = self.get_device_api_key({"api_key": api_key})
+        for dev in self.config.get("devices", []):
+            if dev["id"] == device_id:
+                if cleaned:
+                    dev["api_key"] = cleaned
+                else:
+                    dev.pop("api_key", None)
+                self.save()
+                return True
+        return False
+
     def set_layout_mode(self, mode: str) -> None:
         """Persist the user's explicit layout choice (takes precedence over the installer hint)."""
         if mode not in VALID_LAYOUT_MODES:
@@ -1169,15 +1218,24 @@ class ConfigManager:
 
     @staticmethod
     def _encrypt_devices(config: dict) -> None:
-        """Encrypt all device passwords in-place before saving."""
+        """Encrypt all device secrets (password, dashboard API key) in-place."""
         for dev in config.get("devices", []):
             pw = dev.get("password", "")
             if pw and not is_encrypted(pw):
                 dev["password"] = encrypt_password(pw)
+            key = dev.get("api_key", "")
+            if isinstance(key, str) and key and not key.startswith(
+                    API_KEY_ENC_PREFIX):
+                clean = ConfigManager.get_device_api_key(dev)
+                # An invalid hand-edited value is dropped rather than raising
+                # inside save() (encrypt_password rejects oversized input).
+                dev["api_key"] = (
+                    API_KEY_ENC_PREFIX + encrypt_password(clean)
+                    if clean else "")
 
     @staticmethod
     def _decrypt_devices(config: dict) -> None:
-        """Decrypt all device passwords in-place after loading."""
+        """Decrypt all device secrets in-place after loading."""
         for dev in config.get("devices", []):
             pw = dev.get("password", "")
             if pw and is_encrypted(pw):
@@ -1185,6 +1243,13 @@ class ConfigManager:
                     dev["password"] = decrypt_password(pw)
                 except Exception:
                     dev["password"] = ""
+            key = dev.get("api_key", "")
+            if isinstance(key, str) and key.startswith(API_KEY_ENC_PREFIX):
+                try:
+                    dev["api_key"] = decrypt_password(
+                        key[len(API_KEY_ENC_PREFIX):])
+                except Exception:
+                    dev["api_key"] = ""
 
     # --- Update Settings ---
 

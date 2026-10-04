@@ -2,7 +2,7 @@
 
 ## 📋 Dokumentinformationen
 
-- **Version:** 2.5.0
+- **Version:** 2.5.1
 - **Datum:** 2026-09-20
 - **Status:** alle kritischen Sicherheitsrisiken behoben
 - **Verantwortlicher:** GitHub Copilot (automatisierte Sicherheitsanalyse)
@@ -279,7 +279,7 @@ Installieren Sie den Host-Service **nur auf Systemen**, die von Wake-on-LAN-Mana
 
 | **Version** | **Datum** | **Sicherheitsverbesserungen** | **Status** |
 |-------------|-----------|--------------------------------|------------|
-| **2.5.0** | 2026-10-02 | Aktuelle Version; keine über 1.6.0 hinausgehenden neuen Sicherheitsrisiken bekannt. Änderungen betreffen funktional **nur den Desktop** (Android/iOS erhielten nur die gleiche Einstellungen-Gliederung, keine neuen Funktionen). **Plattform-Erkennung** arbeitet ausschließlich passiv: Ping-TTL, TCP-Probe auf 445/8765 und Auswertung von DNS-Name/MAC-OUI — keine neuen lauschenden Ports, keine erhöhten Rechte, keine Verbindungen über das LAN hinaus; die Ergebnisse liegen nur in `config.json` im Benutzerordner `~/.wol_app/`. **Turbo VNC:** das Geräte-Passwort wird **nicht** als Argument übergeben (wäre in Prozessliste/Audit sichtbar), sondern in die Zwischenablage gelegt und vorher angekündigt; der Viewer-Pfad ist konfigurierbar und wird vor dem Start geprüft, ein fehlender Viewer bricht mit Hinweis ab. Am Host-Service-Protokoll wurde nichts geändert. | ✅ **AKTUELL** |
+| **2.5.1** | 2026-10-02 | Aktuelle Version; keine über 1.6.0 hinausgehenden neuen Sicherheitsrisiken bekannt. Änderungen betreffen funktional **nur den Desktop** (Android/iOS erhielten nur die gleiche Einstellungen-Gliederung, keine neuen Funktionen). **Plattform-Erkennung** arbeitet ausschließlich passiv: Ping-TTL, TCP-Probe auf 445/8765 und Auswertung von DNS-Name/MAC-OUI — keine neuen lauschenden Ports, keine erhöhten Rechte, keine Verbindungen über das LAN hinaus; die Ergebnisse liegen nur in `config.json` im Benutzerordner `~/.wol_app/`. **Turbo VNC:** das Geräte-Passwort wird **nicht** als Argument übergeben (wäre in Prozessliste/Audit sichtbar), sondern in die Zwischenablage gelegt und vorher angekündigt; der Viewer-Pfad ist konfigurierbar und wird vor dem Start geprüft, ein fehlender Viewer bricht mit Hinweis ab. Am Host-Service-Protokoll wurde nichts geändert. | ✅ **AKTUELL** |
 | **2.3.7** | 2026-09-20 | Keine über 1.6.0 hinausgehenden neuen Sicherheitsrisiken bekannt. Seither: Linux-Host-Service (systemd, PAM-Authentifizierung, Protokoll v4) mit identischer Befehls-Whitelist, Android/iOS-WebView-Clients (verschlüsselte Gerätespeicher-Passwörter), Single-Instance-Lock, ACL-Härtung. **Protokoll v6:** Brute-Force-Throttling (exponentieller Lockout), Replay-Schutz (ts/nonce), Netzwerk-Profil-Gate (öffentliche Netze read-only), Audit-Log, Firewall-Quellscope (Default `LocalSubnet`); RDP: Passwort nicht mehr in `.rdp`-Datei, Zertifikatsprüfung Default „Warnung" (pro Gerät konfigurierbar) | ⚠️ Veraltet |
 | **1.6.0** | 2026-08-05 | Lazy-Permissions-Fix, Logging-Modul, Auto-Re-Encryption von Klartext-Passwörtern | ⚠️ Veraltet |
 | **1.3.3** | 2026-07-18 | Console-Flash behoben (CREATE_NO_WINDOW für takeown/icacls) | ⚠️ Veraltet |

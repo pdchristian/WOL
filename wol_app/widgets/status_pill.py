@@ -20,11 +20,16 @@ _DOT_NAMES = {
 }
 
 #: Inference badge states (host protocol v9 "requests_active") -> QSS name.
-#: "none" hides the bolt entirely (pre-v9 host / nothing watched).
+#: "none" hides the bolt entirely (pre-v9 host / nothing watched). "warn"
+#: keeps the amber colour but draws a diagonal strike through the bolt —
+#: amber alone was indistinguishable from the llama-orange "active" bolt.
 _BOLT_NAMES = {
     "active": "pillBoltActive",
     "idle": "pillBoltIdle",
     "warn": "pillBoltWarn",
+    # Same amber bolt, but the tooltip names the reason: an API key is
+    # configured while the host service is too old (pre-v10) to use it.
+    "warn_key": "pillBoltWarn",
 }
 
 #: tooltip key per inference state
@@ -32,6 +37,7 @@ _BOLT_TIPS = {
     "active": "modern.devices.infer.active",
     "idle": "modern.devices.infer.idle",
     "warn": "modern.devices.infer.warn",
+    "warn_key": "modern.devices.infer.warn_key",
 }
 
 #: Platform glyph in front of the label — icons are not translatable
@@ -106,13 +112,15 @@ class StatusPill(QWidget):
             self._refresh()
 
     def set_inference(self, state: str) -> None:
-        """Show the inference badge: active/idle/warn, or "none" to hide.
+        """Show the inference badge: active/idle/warn/warn_key, or hide it.
 
         Driven by the devices view's poll of host protocol v9
         ``requests_active`` — "active" = a job is running right now,
         "idle" = the watched API answers but nothing runs, "warn" = the
-        API port is open but activity is unmeasurable, "hidden" = the
-        watched server is off (port closed) so the bolt is cleared.
+        API port is open but activity is unmeasurable, "warn_key" = an API
+        key is set but the host service predates v10 and never sends it,
+        "hidden" = the watched server is off (port closed) so the bolt is
+        cleared.
         """
         if state not in _BOLT_NAMES:
             state = "none"

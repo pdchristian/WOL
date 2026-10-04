@@ -82,14 +82,15 @@ LIST_ROW_HEIGHT = 64
 STATUS_SORT_RANK = {"online": 0, "offline": 1, "unknown": 2}
 
 
-def derive_inference_state(response: "dict | None") -> "str | None":
+def derive_inference_state(response: "dict | None",
+                           api_key: str = "") -> "str | None":
     """Badge state for one metrics response (host protocol v9).
 
-    Returns "active" / "idle" / "warn" / "hidden", or None when the response
-    carries no verdict at all (unreachable host, pre-v9, or no port-watched
-    entry) — callers then keep the previous state instead of flickering.
-    "hidden" is a *verdict*: the badge is cleared on purpose. Precedence:
-    active > warn > idle > hidden.
+    Returns "active" / "idle" / "warn" / "warn_key" / "hidden", or None when
+    the response carries no verdict at all (unreachable host, pre-v9, or no
+    port-watched entry) — callers then keep the previous state instead of
+    flickering. "hidden" is a *verdict*: the badge is cleared on purpose.
+    Precedence: active > warn > idle > hidden.
 
     * any watched entry with ``requests_active > 0``  -> "active"
     * any port-watched entry reporting ``requests_active == 0`` -> "idle"
@@ -99,11 +100,20 @@ def derive_inference_state(response: "dict | None") -> "str | None":
       inference server is simply off, so there is nothing to report
     * name-only watch entries are not measurable and ignored; if no entry
       watches a port there is no verdict.
+
+    *api_key* is the dashboard API key configured for the device. When it is
+    set but the host service predates v10 it never reaches the inference
+    server, so every probe is answered 401 — the far more specific
+    "warn_key" verdict is reported instead of the generic "warn".
     """
     if not isinstance(response, dict):
         return None
     protocol = response.get("protocol")
-    if not isinstance(protocol, int) or protocol < 9:
+    if not isinstance(protocol, int):
+        return None
+    if api_key and protocol < 10:
+        return "warn_key"
+    if protocol < 9:
         return None
     processes = response.get("processes")
     if not isinstance(processes, dict):
@@ -1361,6 +1371,7 @@ class DevicesView(QWidget):
                 "username": device.get("username", ""),
                 "password": device.get("password", ""),
                 "watch": watch,
+                "api_key": ConfigManager.get_device_api_key(device),
             })
         return [t for t in targets if t["ip"]]
 
@@ -1392,7 +1403,9 @@ class DevicesView(QWidget):
     def _on_inference_finished(self, results: list) -> None:
         """Apply the badge state derived from each device's metrics reply."""
         for device_id, response in results:
-            state = derive_inference_state(response)
+            device = self.config.get_device_by_id(device_id) or {}
+            state = derive_inference_state(
+                response, ConfigManager.get_device_api_key(device))
             if state is None:
                 continue  # no verdict (pre-v9 host / unreachable) — keep last
             self._inference_states[device_id] = state

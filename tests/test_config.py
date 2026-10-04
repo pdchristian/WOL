@@ -1,5 +1,6 @@
 """Tests for wol_app.config ConfigManager."""
 
+import base64
 import json
 import tempfile
 import unittest
@@ -409,6 +410,75 @@ class TestWindowGeometry(ConfigManagerTestBase):
             self._write_raw({"ui": {"window_geometry": bad}})
             cm = ConfigManager(config_path=str(self.config_path))
             self.assertIsNone(cm.get_window_geometry(), msg=f"bad value: {bad!r}")
+
+
+class TestDeviceApiKey(ConfigManagerTestBase):
+    """Dashboard API key (host protocol v10) storage rules."""
+
+    def test_set_and_get_roundtrip(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.add_device("Blade-18", "AA:BB:CC:DD:EE:01")
+        dev_id = cm.config["devices"][0]["id"]
+        self.assertTrue(cm.set_device_api_key(dev_id, "dummy"))
+        self.assertEqual(
+            ConfigManager.get_device_api_key(cm.get_device_by_id(dev_id)),
+            "dummy")
+
+    def test_stored_encrypted_on_disk(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.add_device("Blade-18", "AA:BB:CC:DD:EE:01")
+        dev_id = cm.config["devices"][0]["id"]
+        cm.set_device_api_key(dev_id, "sk-abcdef0123456789" * 4)
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        raw = saved["devices"][0]["api_key"]
+        # Explicit "enc:" marker — the base64 heuristic alone would misread a
+        # long alphanumeric key as ciphertext and lose it on the next load.
+        self.assertTrue(raw.startswith("enc:"))
+        self.assertNotIn("sk-abcdef", raw)
+        # Reload must hand back the plaintext key
+        cm2 = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(
+            ConfigManager.get_device_api_key(cm2.get_device_by_id(dev_id)),
+            "sk-abcdef0123456789" * 4)
+
+    def test_empty_key_removes_field(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.add_device("PC", "AA:BB:CC:DD:EE:01")
+        dev_id = cm.config["devices"][0]["id"]
+        cm.set_device_api_key(dev_id, "dummy")
+        cm.set_device_api_key(dev_id, "")
+        self.assertNotIn("api_key", cm.get_device_by_id(dev_id))
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        self.assertNotIn("api_key", saved["devices"][0])
+
+    def test_invalid_values_degrade_to_empty(self):
+        for bad in ("", "   ", "x" * 129, "line1\nline2", "tab\there",
+                    "emoji\U0001f600", 42, None):
+            self.assertEqual(ConfigManager.get_device_api_key(
+                {"api_key": bad}), "", msg=f"bad value: {bad!r}")
+
+    def test_legacy_plaintext_key_reencrypted(self):
+        self._write_raw({"devices": [{
+            "id": "1", "name": "PC", "mac": "AA:BB:CC:DD:EE:FF",
+            "api_key": "plaintext-key"}]})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.config["devices"][0]["api_key"], "plaintext-key")
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        self.assertTrue(saved["devices"][0]["api_key"].startswith("enc:"))
+
+    def test_undecryptable_key_does_not_break_load(self):
+        # Valid base64, long enough to attempt decryption, but not our
+        # ciphertext -> decrypt_password() raises and the field is dropped.
+        bogus = base64.b64encode(b"\x00" * 24).decode()
+        self._write_raw({"devices": [{
+            "id": "1", "name": "PC", "mac": "AA:BB:CC:DD:EE:FF",
+            "api_key": f"enc:{bogus}"}]})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(ConfigManager.get_device_api_key(
+            cm.config["devices"][0]), "")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # WOL Host Service — Wire Protocol Specification
 
-**Version:** 9 (Host Service 2.5.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
+**Version:** 10 (Host Service 2.5.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
 
 Referenzimplementierungen:
 
@@ -40,6 +40,7 @@ Referenzimplementierungen:
 | `password` | string | Passwort zu `username`. |
 | `ts` | number | **v6** Anti-Replay: Unix-Timestamp (Sekunden, UTC) beim Senden. Nur für `shutdown`/`reboot`/`run_batch` geprüft. |
 | `nonce` | string | **v6** Anti-Replay: frischer Zufallswert (1–64 Zeichen), pro Request eindeutig. Host lehnt bereits gesehene Nonces ab. |
+| `api_key` | string | **v10** Key, den die Inferenz-API auf einem überwachten Port erwartet (max. 128 Zeichen, nur druckbares ASCII). Der Host sendet ihn als `Authorization: Bearer <key>` bei allen Loopback-Probes (`/v1/models`, `/health`, `/props`, `/metrics`). Nur für `metrics` ausgewertet. |
 | *command-spezifisch* | — | `watch` (metrics), `script`/`timeout` (run_batch) — siehe unten. |
 
 Schema: [`schema/request.json`](schema/request.json)
@@ -101,7 +102,8 @@ Request:
 
 ```json
 {"command": "metrics", "username": "u", "password": "p",
- "watch": ["llama-server.exe:8080", "backup-sync.exe", ":8081"]}
+ "watch": ["llama-server.exe:8080", "backup-sync.exe", ":8081"],
+ "api_key": "secret"}
 ```
 
 * `watch` optional, Liste von Prozessnamen (`name.exe`) oder
@@ -109,6 +111,14 @@ Request:
   werden ignoriert. `:port` = Loopback-Check (250 ms) + Modell-Abfrage (§4.2.1).
   **v7:** Port-only-Einträge (`":8081"` oder nacktes `"8081"`) beobachten nur
   die API auf dem Port — ohne Prozessnamen-Prüfung.
+* `api_key` optional (**v10**): Key für die Inferenz-API der überwachten
+  Ports. Der Host hängt ihn als `Authorization: Bearer <key>` an jede
+  Loopback-Anfrage. Server, die mit API-Key starten (`llama-server
+  --api-key`, Strata `API_KEY`), antworten ohne Key mit **401** auf
+  `/metrics` — dem Dashboard fehlt dann `requests_active`, und der
+  Inferenz-Blitz bleibt bernsteinfarben („Aktivität nicht messbar“), obwohl
+  inferiert wird. Leere, überlange (>`WATCH_API_KEY_MAX_CHARS`) oder
+  nicht-druckbare Werte werden ignoriert; ältere Hosts kennen das Feld nicht.
 
 Antwort (`status: "ok"`):
 
@@ -302,8 +312,9 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 |---|---|---|
 | `DEFAULT_PORT` | 8765 | beide Services |
 | `MAX_REQUEST_BYTES` | 65536 | beide |
-| `PROTOCOL_VERSION` | 9 | beide |
+| `PROTOCOL_VERSION` | 10 | beide |
 | `WATCH_MAX_ENTRIES` | 8 | beide |
+| `WATCH_API_KEY_MAX_CHARS` | 128 | beide |
 | `WATCH_PORT_TIMEOUT_S` | 0.25 | beide |
 | `WATCH_MODELS_TIMEOUT_S` | 0.6 | beide |
 | `WATCH_MAX_MODELS` | 16 | beide |
@@ -376,6 +387,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | 7 | Port-only-Watch-Einträge (`:8080`/`8080`), Port-Probe ohne Prozess-Treffer; `api_up`/`api_kind`/`api_features`/`api_info` pro Watch-Eintrag; JSON-`/metrics`-Mapping (nicht-llama.cpp-Server) | Port-only-Einträge zeigen nichts an; Namens-Watch funktioniert wie bei v3–v5; neue Felder ignorieren |
 | 8 | `os` auf `status` (auth-frei) und `metrics` — Plattform des Hosts (§4.1) | Plattform aus TTL/Fingerprint-Heuristik schätzen oder Spalte leer lassen |
 | 9 | `requests_active` pro Watch-Eintrag (Inferenz laeuft gerade — llama.cpp `requests_processing`+`requests_deferred`, JSON-Server `live.*`) | Inferenz-Badge in der Geraeliste nicht anzeigen |
+| 10 | `api_key` auf `metrics` — `Authorization: Bearer <key>` fuer alle Loopback-Probes der ueberwachten Ports (§4.2) | Feld weglassen; bei Servern mit API-Key bleibt `requests_active`/`model_metrics` unbeantwortbar (Bernstein-Badge) |
 
 Regel: **Nur additive Änderungen.** Neue Felder müssen für ältere Clients
 ignorierbar sein. Neue Pflichtfelder oder Semantic-Änderungen ⇒ neue Major-

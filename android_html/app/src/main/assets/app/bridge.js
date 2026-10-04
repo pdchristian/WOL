@@ -82,7 +82,7 @@
           logs: demoLogs.slice(0, 100), settings: demoSettings,
         };
         break;
-      case "info": r.data = { versionName: "2.4.0-demo", versionCode: 1, protocol: 4 }; break;
+      case "info": r.data = { versionName: "2.5.1-demo", versionCode: 1, protocol: 4 }; break;
       case "saveDevice":
         if (p.password) { /* Demo: verwerfen */ }
         /* Demo: Felder (inkl. batches/allow_batch → Drag-&-Drop-Reihenfolge)

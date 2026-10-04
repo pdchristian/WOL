@@ -100,7 +100,10 @@
     filter:drop-shadow(0 0 5px rgba(249,115,22,.55))}
   /* bereit: Modell geladen, aber idle → gedämpft, kein Puls */
   .infer.idle{color:var(--text-dim);opacity:.5}
-  /* wartend: Watch konfiguriert, API antwortet nicht / Host zu alt */
+  /* wartend: Watch konfiguriert, API antwortet nicht / Host zu alt.
+     Gelb allein ist von llama-orange (aktiv) auf 15 px nicht zu unterscheiden,
+     deshalb zusätzlich ein diagonaler Strich durch den Blitz. Der Freisteller
+     (stroke unten) nutzt --surface-hover = Pill-Hintergrund. */
   .infer.warn{color:var(--unknown);opacity:.85}
   @keyframes zap{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.9)}}
 
@@ -178,8 +181,8 @@
       <b>Inferenz läuft</b> — Modell verarbeitet gerade Tokens</span>
     <span><span class="statusPill"><i class="infer idle"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/></svg></i><span class="dot dotOnline"></span><span class="pillText">🪟 Windows</span></span>
       Modell geladen, Server idle</span>
-    <span><span class="statusPill"><i class="infer warn"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/></svg></i><span class="dot dotOnline"></span><span class="pillText">🐧 Ubuntu</span></span>
-      Watch eingerichtet, API nicht erreichbar</span>
+    <span><span class="statusPill"><i class="infer warn"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/><path d="M4.5 3.5 19.5 20.5" stroke="var(--surface-hover)" stroke-width="6" stroke-linecap="round" fill="none"/><path d="M4.5 3.5 19.5 20.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" fill="none"/></svg></i><span class="dot dotOnline"></span><span class="pillText">🐧 Ubuntu</span></span>
+      Watch eingerichtet, API antwortet nicht — Blitz durchgestrichen</span>
     <span><span class="statusPill"><span class="dot dotOffline"></span><span class="pillText">🍏 macOS</span></span>
       kein Blitz — Gerät ohne Watch oder Host offline</span>
   </div>
@@ -210,6 +213,10 @@
 <script>
 /* Inferenz-Blitz (SVG, damit Farbe + Puls über CSS steuerbar sind) */
 const ZAP = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/></svg>';
+/* Warn-Blitz: derselbe Blitz + diagonaler Strich (Freisteller in Pill-Farbe) */
+const ZAP_SLASH = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/>'
+  + '<path d="M4.5 3.5 19.5 20.5" stroke="var(--surface-hover)" stroke-width="6" stroke-linecap="round" fill="none"/>'
+  + '<path d="M4.5 3.5 19.5 20.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" fill="none"/></svg>';
 
 /* Seed spiegelt devices.json / das reale Setup (192.168.2.62 = Strata) */
 const devices = [
@@ -247,7 +254,8 @@ function inferTip(d){
 
 function inferEl(d){
   if (d.state === "none") return "";
-  return `<i class="infer ${d.state}" title="${esc(inferTip(d))}">${ZAP}</i>`;
+  const glyph = d.state === "warn" ? ZAP_SLASH : ZAP;
+  return `<i class="infer ${d.state}" title="${esc(inferTip(d))}">${glyph}</i>`;
 }
 
 /* Pill mit integriertem Blitz: [⚡ · ● · Icon Text] — ohne Inferenz exakt der heutige Pill */
