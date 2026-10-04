@@ -20,7 +20,7 @@ eigene Änderungen trägt. ``tests/test_version_sync.py`` stellt sicher, dass
 jede Linie mit ihren Build-Dateien übereinstimmt.
 """
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 
 # Android/iOS WebView clients — 2.4.0: settings grouped like the desktop.
 MOBILE_VERSION = "2.4.0"

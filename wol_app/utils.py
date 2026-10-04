@@ -1406,20 +1406,30 @@ def set_app_user_model_id(app_id: str) -> bool:
 
 
 def force_window_foreground(widget) -> bool:
-    """Bring a top-level window to the foreground, bypassing the Windows
-    foreground lock.
+    """Bring a top-level window to the foreground, bypassing the platform's
+    "a background process may not steal focus" rule.
 
-    A *backgrounded* process is normally not allowed to call
-    ``SetForegroundWindow`` — Windows refuses and only flashes the taskbar
-    button instead. That is exactly what happens when a second launch asks a
-    minimized single-instance app to raise its window: ``showNormal()`` +
-    ``raise_()`` + ``activateWindow()`` un-minimise the window but it stays
-    behind the other windows, so the user sees it as "still in the taskbar".
+    That rule is what breaks the single-instance raise request: a second
+    launch tells the running instance to show itself, but the running
+    instance is a *background* application, so ``showNormal()`` + ``raise_()``
+    + ``activateWindow()`` only un-minimise the window — it stays behind the
+    other windows (Windows: the taskbar button just flashes; macOS: the Dock
+    icon bounces once and the window stays miniaturised/unfocused).
 
-    Attaching our input thread to the current foreground thread (the classic
-    Raymond Chen trick) makes ``SetForegroundWindow`` succeed. No-op off
-    Windows; returns True when the foreground call was attempted.
+    * Windows: attach our input thread to the current foreground thread (the
+      classic Raymond Chen trick) so ``SetForegroundWindow`` is accepted.
+    * macOS: deminiaturise the ``NSWindow`` and activate the application with
+      ``activateIgnoringOtherApps`` (PyObjC, bundled by the macOS build; a
+      ctypes ``objc_msgSend`` fallback covers environments without it). A
+      second launch does not even reach the ``RAISE`` request there — see
+      :func:`install_macos_reopen_handler`, which calls this from the Cocoa
+      reopen event.
+
+    No-op on other platforms; returns True when the foreground call was
+    attempted.
     """
+    if sys.platform == "darwin":
+        return _force_window_foreground_macos(widget)
     if os.name != "nt":
         return False
     try:
@@ -1447,6 +1457,181 @@ def force_window_foreground(widget) -> bool:
         finally:
             if attached:
                 user32.AttachThreadInput(cur_tid, fg_tid, False)
+        return True
+    except Exception:
+        return False
+
+
+def _force_window_foreground_macos(widget) -> bool:
+    """macOS counterpart of :func:`force_window_foreground`.
+
+    A second launch of the app either asks the running process to show
+    itself (``RAISE`` over the single-instance socket, e.g. ``open -n`` or a
+    terminal launch) or, far more often, only re-activates it through
+    LaunchServices — in that case :func:`install_macos_reopen_handler` calls
+    this from the Cocoa reopen event. Either way the process is a
+    background application at that moment, and Qt's
+    ``raise_()``/``activateWindow()`` cannot cross the AppKit activation
+    boundary, so the AppKit objects behind the Qt window are used directly:
+
+    * ``deminiaturize:`` — a window sitting in the Dock stays there otherwise
+      (``showNormal()`` un-hides but does not un-miniaturise it),
+    * ``activateIgnoringOtherApps:`` — makes the app itself frontmost, which
+      is what brings it "out of the Dock" for the user.
+
+    Needs PyObjC (``pyobjc-framework-Cocoa``, pulled in by requirements.txt
+    on macOS and bundled by the .app build); without it the same AppKit
+    calls are made through the Objective-C runtime via ctypes, so the fix
+    also works in a plain venv. Returns True when activation was attempted.
+    """
+    try:
+        import objc  # noqa: F401  (fails first when PyObjC is not installed)
+        from AppKit import NSApplication, NSRunningApplication  # type: ignore
+
+        nswin = None
+        win_id = int(widget.winId() or 0)
+        if win_id:
+            # winId() is the QNSView, the NSWindow hangs below it.
+            view = objc.objc_object(c_void_p=win_id)
+            candidate = view.window()
+            if candidate is not None and candidate.respondsToSelector_(
+                    "isMiniaturized"):
+                nswin = candidate
+            if nswin is not None and not nswin.isMiniaturized():
+                nswin = None  # plain visible window — activation is enough
+        if nswin is not None:
+            nswin.deminiaturize_(None)
+        app = NSApplication.sharedApplication()
+        if app.isHidden():
+            app.unhide_(None)
+        # Deprecated since macOS 14 but still the only call that reliably
+        # steals focus for a background app; NSRunningApplication.activateWithOptions_
+        # is tried as well (no-op on older systems, honoured on newer ones).
+        app.activateIgnoringOtherApps_(True)
+        current = NSRunningApplication.currentApplication()
+        if current is not None:
+            current.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+        if nswin is not None:
+            nswin.makeKeyAndOrderFront_(None)
+        return True
+    except Exception:
+        return _force_window_foreground_macos_ctypes(widget)
+
+
+def _force_window_foreground_macos_ctypes(widget) -> bool:
+    """PyObjC-free fallback: drive the Objective-C runtime with ctypes.
+
+    ``winId()`` is the ``QNSView*`` on macOS (its ``window`` selector yields
+    the ``NSWindow*``) and ``[NSApplication sharedApplication]`` returns the
+    ``QNSApplication`` instance Qt created; everything else is plain
+    ``objc_msgSend``. (``objc_getVariable("NSApp")`` would be the shorter
+    route, but that symbol is not exported by the current runtime.)
+    """
+    import ctypes
+    import ctypes.util
+
+    objc_lib = ctypes.CDLL(ctypes.util.find_library("objc") or "libobjc.A.dylib")
+    objc_lib.sel_registerName.restype = ctypes.c_void_p
+    objc_lib.sel_registerName.argtypes = [ctypes.c_char_p]
+    objc_lib.objc_getClass.restype = ctypes.c_void_p
+    objc_lib.objc_getClass.argtypes = [ctypes.c_char_p]
+    objc_lib.objc_msgSend.restype = ctypes.c_void_p
+
+    def send(target: int, selector: str, *extra) -> int:
+        # Extra args are BOOL/flag values; passing them as pointer-sized
+        # arguments matches the arm64/x86_64 calling convention for both.
+        objc_lib.objc_msgSend.argtypes = (
+            [ctypes.c_void_p, ctypes.c_void_p] + [ctypes.c_void_p] * len(extra))
+        return objc_lib.objc_msgSend(
+            target, objc_lib.sel_registerName(selector.encode()), *extra) or 0
+
+    view = int(widget.winId() or 0)
+    win = send(view, "window") if view else 0
+    minimized = bool(win) and bool(send(win, "isMiniaturized"))
+    if minimized:
+        send(win, "deminiaturize:", 0)
+    # The shared application instance Qt created (autoreleased — not retained).
+    nsapp = send(objc_lib.objc_getClass(b"NSApplication"), "sharedApplication")
+    if not nsapp:
+        return False
+    if send(nsapp, "isHidden"):
+        send(nsapp, "unhide:", 0)
+    # Deprecated since macOS 14 but still effective; the modern
+    # NSRunningApplication call is issued as well (harmless on older systems).
+    send(nsapp, "activateIgnoringOtherApps:", 1)
+    current = send(objc_lib.objc_getClass(b"NSRunningApplication"),
+                   "currentApplication")
+    if current:
+        # NSApplicationActivateIgnoringOtherApps = 1 << 1
+        send(current, "activateWithOptions:", 1 << 1)
+    if minimized:
+        send(win, "makeKeyAndOrderFront:", 0)
+    return True
+
+
+# Keeps the installed ObjC delegate alive: NSApplication holds its delegate
+# weakly, and the callback must not be collected either.
+_macos_reopen_state: dict = {}
+
+
+def install_macos_reopen_handler(callback) -> bool:
+    """macOS: run ``callback()`` when the user launches the app a second time.
+
+    On macOS a second launch never creates a second process: LaunchServices
+    activates the running instance and delivers a *reopen* Apple Event, so
+    the local-socket ``RAISE`` handshake of :mod:`wol_app.single_instance`
+    is bypassed and a miniaturised window stays miniaturised. Overriding
+    ``applicationShouldHandleReopen:hasVisibleWindows:`` on Qt's Cocoa
+    delegate restores the Windows/Linux behaviour.
+
+    The delegate subclasses the class Qt already installed, so every other
+    Cocoa callback (quit, file/URL opening, termination) keeps working.
+    No-op on other platforms; returns True when the handler was installed.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        import objc
+        from AppKit import NSApplication
+    except Exception:
+        return False
+    try:
+        app = NSApplication.sharedApplication()
+        previous = app.delegate()
+        if previous is None:
+            return False
+
+        # Re-installing (e.g. after a settings reload) only swaps the callback;
+        # the delegate must not be subclassed over and over.
+        if _macos_reopen_state.get("delegate") is previous:
+            _macos_reopen_state["callback"] = callback
+            return True
+
+        class _ReopenDelegate(type(previous)):
+            def applicationShouldHandleReopen_hasVisibleWindows_(
+                    self, sender, visible):
+                handler = _macos_reopen_state.get("callback")
+                if handler is not None:
+                    try:
+                        handler()
+                    except Exception:
+                        pass
+                # Qt/AppKit implement reopen as well (de-hide, activate);
+                # keep that behaviour on top of our own raise.
+                try:
+                    return bool(objc.super(
+                        _ReopenDelegate, self
+                    ).applicationShouldHandleReopen_hasVisibleWindows_(
+                        sender, visible))
+                except Exception:
+                    return True
+
+        delegate = _ReopenDelegate.alloc().init()
+        if delegate is None:
+            return False
+        app.setDelegate_(delegate)
+        _macos_reopen_state["delegate"] = delegate
+        _macos_reopen_state["callback"] = callback
         return True
     except Exception:
         return False

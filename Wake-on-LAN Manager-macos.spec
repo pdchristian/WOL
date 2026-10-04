@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
-# Wake-on-LAN Manager Version 2.5.0 - Service Watch Edition
+# Wake-on-LAN Manager Version 2.5.1 - Service Watch Edition
 # macOS application bundle (Apple Silicon / arm64), unsigned
 
 import os
@@ -113,6 +113,11 @@ a = Analysis(
         # INSTALL_DIR, ...); both import pamela/psutil only lazily.
         'wol_host_service_linux',
         'wol_host_service_macos',
+        # Second-launch raise (utils.force_window_foreground) imports AppKit
+        # lazily at runtime -> invisible to the static analysis.
+        'AppKit',
+        'Foundation',
+        'objc',
     ],
     hookspath=[],
     hooksconfig={},

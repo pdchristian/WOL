@@ -1,9 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 2.5.0 - Inference Badge Edition**
+**Version 2.5.1 - Second-Launch Raise Edition**
 
 A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.5.1:** **Second launch raises the minimized app (desktop)** — with *only one instance* allowed (default) and the window minimized, starting the app again now opens it out of the taskbar (Windows) / out of the Dock (macOS) instead of only flashing the button. Implemented platform-correctly in `utils.force_window_foreground()` (Windows `AttachThreadInput` + `SetForegroundWindow`; macOS `NSWindow.deminiaturize:` + app activation, PyObjC with a ctypes fallback). On macOS a second launch never starts a second process — LaunchServices re-activates the running app — so `utils.install_macos_reopen_handler()` hooks the Cocoa *reopen* event and runs the same raise code there.
 > **New in 2.5.0:** **Inference badge (desktop only)** — a lightning bolt inside the status pill (left of the online dot, in the card *and* the list row) shows whether a watched API server on the host is running an inference job **right now**: the Host Service reports a fresh `requests_active` count per watch entry (protocol **v9** — llama.cpp `requests_processing` + `requests_deferred`, or JSON `live.*` for other OpenAI servers). Orange = job running · dimmed = server idle · amber = API port open but unmeasurable · hidden when the watched server is off (port closed) or on older hosts. A new **interval drop-down** (5/10/15/30 s, default 10 s) in the devices toolbar controls how often it polls. Requires the updated **WOL Host Service** (Windows · Ubuntu · macOS).
 > **New in 2.4.0:** **Platform-aware remote access (desktop only)** — every device card and list row now shows the detected operating system next to the online dot (`🪟 Windows` / `🍏 macOS` / `🐧 Linux`, `~` marks an estimate, `❓` when nothing was detected), and the Remote buttons open the right client for that platform: **Remotedesktop (`mstsc`) for Windows, TurboVNC for macOS/Linux** — configurable per platform in the regrouped **Settings → Remote access** screen (the former *Remote Einstellungen* menu is now part of Settings). Devices stored without a platform are **fingerprinted automatically** at startup (passive TTL/SMB/name/OUI probes, results persisted). The **Android and iOS** apps move to 2.4.0 as well and their Settings screen is **grouped the same way** (*Network* · *Appearance* · *Miscellaneous*) — no new settings on mobile.
 > **New in 2.3.6:** **Apple Watch app** (watchOS 10+, companion to the iOS app) and **security hardening** — Remote Desktop credentials are never written to the temporary `.rdp` file again (Windows Credential Manager / `mstsc` prompt only) with a per-device **certificate-verification level** (default *warn*), and **privileged host-service commands are read-only on public networks**. Plus: **token throughput (tokens/s)** in the dashboard model line, a **power button on the list view** and dashboard navigation buttons, **unified version numbering** across all apps, and assorted fixes.
@@ -137,6 +138,18 @@ Settings). Build and installation details, platform decisions and known
 limitations: [docs/macos/README.md](docs/macos/README.md).
 
 ## 📝 Changelog
+
+### Version 2.5.1 - Second-Launch Raise Edition (2026-10-04)
+
+> Desktop only (Windows · Ubuntu · macOS); the Android and iOS clients keep their release line (2.4.0).
+
+#### 🔁 A second launch brings the minimized app back to the front
+- **The problem:** with *only one instance* enabled (default) and the window minimized, starting the app again reached the running process but did not show it — Windows flashed the taskbar button, macOS left the window in the Dock. The app looked like it "did not start"
+- **Why:** the running instance is a *background* application at that moment, and a background process may not steal focus. `showNormal()` + `raise_()` + `activateWindow()` un-minimise the window, but it stays behind everything else
+- **Windows fix:** `utils.force_window_foreground()` attaches our input thread to the foreground thread (the classic `AttachThreadInput` trick) so `SetForegroundWindow` is accepted; the window is only restored when it is actually iconic — a maximized window stays maximized
+- **macOS fix, part 1 — the second launch never happens:** macOS does not start a second process for an app that is already running. LaunchServices activates the running one and sends a *reopen* Apple Event, so the `RAISE` handshake is bypassed entirely and nothing showed. `utils.install_macos_reopen_handler()` (called from `run_modern_window()`) subclasses Qt's `QCocoaApplicationDelegate` and answers `applicationShouldHandleReopen:hasVisibleWindows:` with `bring_to_front()`, keeping Qt's own implementation in the chain
+- **macOS fix, part 2 — getting it out of the Dock:** the `NSWindow` behind `winId()` (which is the `QNSView`) is resolved and `deminiaturize:`d, a hidden app is un-hidden, then the app is activated (`activateIgnoringOtherApps:` + `NSRunningApplication.activateWithOptions:`). PyObjC is used when available (`pyobjc-framework-Cocoa`, new macOS requirement, bundled into the .app); without it the same calls run through the Objective-C runtime via ctypes, so a plain venv behaves identically
+- Both window layouts (`MainWindow`, `ModernMainWindow`) call it from `bring_to_front()`, i.e. from the single-instance `RAISE` handler and from the reopen event; covered by `tests/test_macos_support.py::TestSecondLaunchRaise` and `::TestReopenEventHandler`
 
 ### Version 2.5.0 - Inference Badge Edition (2026-10-03)
 

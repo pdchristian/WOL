@@ -814,8 +814,9 @@ class MainWindow(QMainWindow):
         """Restore and focus the window (single-instance raise request).
 
         ``activateWindow()`` alone fails while the process is backgrounded
-        (Windows foreground lock — only the taskbar button flashes), so the
-        Win32 force-foreground helper is applied as well.
+        (Windows foreground lock — only the taskbar button flashes; macOS
+        keeps the window miniaturised in the Dock), so the platform
+        force-foreground helper is applied as well.
         """
         self.showNormal()
         self.raise_()
