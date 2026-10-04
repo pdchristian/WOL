@@ -1405,6 +1405,53 @@ def set_app_user_model_id(app_id: str) -> bool:
         return False
 
 
+def force_window_foreground(widget) -> bool:
+    """Bring a top-level window to the foreground, bypassing the Windows
+    foreground lock.
+
+    A *backgrounded* process is normally not allowed to call
+    ``SetForegroundWindow`` — Windows refuses and only flashes the taskbar
+    button instead. That is exactly what happens when a second launch asks a
+    minimized single-instance app to raise its window: ``showNormal()`` +
+    ``raise_()`` + ``activateWindow()`` un-minimise the window but it stays
+    behind the other windows, so the user sees it as "still in the taskbar".
+
+    Attaching our input thread to the current foreground thread (the classic
+    Raymond Chen trick) makes ``SetForegroundWindow`` succeed. No-op off
+    Windows; returns True when the foreground call was attempted.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        hwnd = int(widget.winId())
+        if not hwnd:
+            return False
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        # Only un-minimise when the window is actually iconic — SW_RESTORE on
+        # a maximized window would un-maximize it, which is not wanted here.
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        fg = user32.GetForegroundWindow()
+        fg_tid = user32.GetWindowThreadProcessId(fg, None)
+        cur_tid = kernel32.GetCurrentThreadId()
+        attached = bool(fg_tid) and fg_tid != cur_tid
+        if attached:
+            user32.AttachThreadInput(cur_tid, fg_tid, True)
+        try:
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.SetActiveWindow(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(cur_tid, fg_tid, False)
+        return True
+    except Exception:
+        return False
+
+
 def _app_icon_dir() -> str:
     """Directory holding icon.ico / icon_modern.ico (install dir or project root)."""
     import sys

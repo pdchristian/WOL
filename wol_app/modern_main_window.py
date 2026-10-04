@@ -46,7 +46,7 @@ from wol_app.app_core import HEADLESS_MODE
 from wol_app.modern_theme import DARK, LIGHT, app_icon_pixmap, apply_modern_theme
 from wol_app.schedule_runner import dispatch_schedule_action
 from wol_app.translations import Translations
-from wol_app.utils import get_resource_path
+from wol_app.utils import force_window_foreground, get_resource_path
 from wol_app.views.dashboard_view import DeviceDashboardView
 from wol_app.views.devices_view import DevicesView
 from wol_app.views.logs_view import LogsView
@@ -649,8 +649,14 @@ class ModernMainWindow(QMainWindow):
             self._tray.hide()
 
     def bring_to_front(self) -> None:
-        """Restore and focus the window (single-instance raise request)."""
+        """Restore and focus the window (single-instance raise request).
+
+        ``activateWindow()`` alone fails while the process is backgrounded
+        (Windows foreground lock — only the taskbar button flashes), so the
+        Win32 force-foreground helper is applied as well.
+        """
         self._show_from_tray()
+        force_window_foreground(self)
 
     def _show_from_tray(self) -> None:
         """Restore the window from the notification area.
