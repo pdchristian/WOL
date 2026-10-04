@@ -18,6 +18,7 @@ existiert als eigene macOS-Variante (launchd, PAM).
 | M7 | Tests: `tests/test_macos_support.py` + Windows-only-Tests plattformfest gemacht; Full-Suite grün auf macOS | ✅ fertig (486 passed, 5 skipped) |
 | M8 | Build-Verifikation auf echter Hardware (App-Start, DMG-Mount, Service-Freeze) | ✅ fertig |
 | M9 | Host Service in die .app einbetten: Erststart-Abfrage + Installieren/Aktualisieren/Entfernen in den Einstellungen (`wol_app/host_service_installer.py`) | ✅ fertig (Build + 542-Testsuite grün) |
+| M10 | Zweitstart holt das minimierte Fenster aus dem Dock (Single Instance): Cocoa-Reopen-Event (`install_macos_reopen_handler`) + `utils.force_window_foreground` → `NSWindow.deminiaturize:` + App-Aktivierung, PyObjC mit ctypes-Fallback | ✅ fertig (2.5.1) |
 
 ## Build & Distribution
 
@@ -92,6 +93,25 @@ Payload in der .app fehlt.
   `Applications` — daher kein automatischer Install wie unter Windows.
 - **Konfiguration:** wie immer `~/.wol_app/` (`config.json`, `master_key.dat`
   AES-256-GCM; auf macOS ohne DPAPI — identische KDF wie der Linux/Ubuntu-Pfad).
+- **Zweitstart / Fenster holen (2.5.1):** die Single-Instance-Sperre
+  (`wol_app/single_instance.py`) funktioniert auf macOS wie auf Windows/Linux
+  (`QLockFile` + `QLocalServer` über den User-Ordner). **Entscheidend:** ein
+  zweiter Start erzeugt auf macOS gar keinen zweiten Prozess – LaunchServices
+  aktiviert die laufende App und schickt ein Reopen-Apple-Event, der `RAISE`
+  über den Socket läuft also niemals. `utils.install_macos_reopen_handler()`
+  unterschreibt deshalb die Qt-Delegate-Klasse (`QCocoaApplicationDelegate`) und
+  beantwortet `applicationShouldHandleReopen:hasVisibleWindows:` mit
+  `bring_to_front()`; Qt-eigene Behandlung bleibt über `objc.super` erhalten.
+  Beim `RAISE` (z. B. `open -n` oder Start aus dem Terminal) ruft
+  `bring_to_front()` zusätzlich `utils.force_window_foreground()` auf: Qt kann
+  die AppKit-Aktivierungsgrenze nicht überwinden, ein minimiertes Fenster
+  bliebe im Dock. `winId()` ist auf macOS die `QNSView` – darüber wird die
+  `NSWindow` geholt, `deminiaturize:` aufgerufen und die App aktiviert
+  (`activateIgnoringOtherApps:` plus `NSRunningApplication.activateWithOptions_`).
+  PyObjC (`pyobjc-framework-Cocoa`, nur `sys_platform == "darwin"`) wird von der
+  Spec als `hiddenimports` eingebunden; fehlt es (z. B. nacktes venv), laufen
+  dieselben Selektoren über `objc_msgSend` via ctypes. Maximierte Fenster bleiben
+  maximiert (restore nur bei tatsächlich minimiertem Fenster).
 - **venv-Name:** auf macOS/Linux `.venv`, Windows `venv`. Build-Skripte
   prüfen das explicit.
 

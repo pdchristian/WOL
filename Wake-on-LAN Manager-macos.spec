@@ -113,6 +113,11 @@ a = Analysis(
         # INSTALL_DIR, ...); both import pamela/psutil only lazily.
         'wol_host_service_linux',
         'wol_host_service_macos',
+        # Second-launch raise (utils.force_window_foreground) imports AppKit
+        # lazily at runtime -> invisible to the static analysis.
+        'AppKit',
+        'Foundation',
+        'objc',
     ],
     hookspath=[],
     hooksconfig={},

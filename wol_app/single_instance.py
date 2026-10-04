@@ -1,4 +1,4 @@
-"""Single-instance lock for the Wake-on-LAN application (Windows + Linux).
+"""Single-instance lock for the Wake-on-LAN application (Windows + Linux + macOS).
 
 By default only one instance of the application runs per config file. A
 second launch tells the running instance to bring its window to the front

@@ -228,6 +228,193 @@ class TestSmbShutdownGuard:
         assert any(log[2] == "ERROR" for log in cfg.logs)
 
 
+class TestSecondLaunchRaise:
+    """`force_window_foreground` — the macOS half of the single-instance raise.
+
+    A minimized window stays in the Dock when a second launch asks the
+    running instance to show itself (Qt's `activateWindow()` cannot cross the
+    AppKit activation boundary), so the AppKit calls have to be issued.
+    """
+
+    class _Widget:
+        def __init__(self, win_id=0x1000):
+            self._win_id = win_id
+
+        def winId(self):
+            return self._win_id
+
+    def test_darwin_uses_appkit_and_deminiaturizes(self, monkeypatch):
+        monkeypatch.setattr(utils.sys, "platform", "darwin")
+        nswin = MagicMock()
+        nswin.isMiniaturized.return_value = True
+        nswin.respondsToSelector_.return_value = True
+        objc_mod = MagicMock()
+        objc_mod.objc_object.return_value.window.return_value = nswin
+        appkit = MagicMock()
+        appkit.NSApplication.sharedApplication.return_value = MagicMock()
+        appkit.NSRunningApplication.currentApplication.return_value = MagicMock()
+        monkeypatch.setitem(sys.modules, "objc", objc_mod)
+        monkeypatch.setitem(sys.modules, "AppKit", appkit)
+
+        assert utils.force_window_foreground(self._Widget()) is True
+        nswin.deminiaturize_.assert_called_once_with(None)
+        nswin.makeKeyAndOrderFront_.assert_called_once_with(None)
+        appkit.NSApplication.sharedApplication.return_value \
+            .activateIgnoringOtherApps_.assert_called_once_with(True)
+
+    def test_darwin_plain_visible_window_is_only_activated(self, monkeypatch):
+        monkeypatch.setattr(utils.sys, "platform", "darwin")
+        nswin = MagicMock()
+        nswin.isMiniaturized.return_value = False
+        nswin.respondsToSelector_.return_value = True
+        objc_mod = MagicMock()
+        objc_mod.objc_object.return_value.window.return_value = nswin
+        appkit = MagicMock()
+        appkit.NSApplication.sharedApplication.return_value = MagicMock()
+        appkit.NSRunningApplication.currentApplication.return_value = MagicMock()
+        monkeypatch.setitem(sys.modules, "objc", objc_mod)
+        monkeypatch.setitem(sys.modules, "AppKit", appkit)
+
+        assert utils.force_window_foreground(self._Widget()) is True
+        # A maximized window must not be un-maximized by a raise request.
+        nswin.deminiaturize_.assert_not_called()
+        nswin.makeKeyAndOrderFront_.assert_not_called()
+
+    def test_darwin_without_pyobjc_uses_ctypes_fallback(self, monkeypatch):
+        monkeypatch.setattr(utils.sys, "platform", "darwin")
+        for name in ("objc", "AppKit", "Foundation"):
+            monkeypatch.setitem(sys.modules, name, None)  # forces ImportError
+        fallback = MagicMock(return_value=True)
+        monkeypatch.setattr(utils, "_force_window_foreground_macos_ctypes",
+                            fallback)
+
+        assert utils.force_window_foreground(self._Widget()) is True
+        fallback.assert_called_once()
+
+    def test_darwin_without_winid_still_activates(self, monkeypatch):
+        monkeypatch.setattr(utils.sys, "platform", "darwin")
+        objc_mod = MagicMock()
+        appkit = MagicMock()
+        appkit.NSApplication.sharedApplication.return_value = MagicMock()
+        appkit.NSRunningApplication.currentApplication.return_value = MagicMock()
+        monkeypatch.setitem(sys.modules, "objc", objc_mod)
+        monkeypatch.setitem(sys.modules, "AppKit", appkit)
+
+        assert utils.force_window_foreground(self._Widget(win_id=0)) is True
+        objc_mod.objc_object.assert_not_called()
+
+    def test_linux_stays_noop(self, monkeypatch):
+        monkeypatch.setattr(utils.sys, "platform", "linux")
+        monkeypatch.setattr(utils.os, "name", "posix")
+        fallback = MagicMock(return_value=True)
+        monkeypatch.setattr(utils, "_force_window_foreground_macos_ctypes",
+                            fallback)
+        assert utils.force_window_foreground(self._Widget()) is False
+        fallback.assert_not_called()
+
+
+class TestReopenEventHandler:
+    """`install_macos_reopen_handler` — why the socket RAISE is not enough.
+
+    macOS never starts a second process for an already running app:
+    LaunchServices activates the running one and sends a reopen Apple Event,
+    so `ensure_primary_instance()` never runs and a miniaturised window
+    stays in the Dock. The Cocoa delegate has to answer that event instead.
+    """
+
+    class _BaseDelegate:
+        """Stand-in for Qt's QCocoaApplicationDelegate."""
+
+        reopen_calls = 0
+
+        def __init__(self):
+            pass
+
+        @classmethod
+        def alloc(cls):
+            return cls()
+
+        def init(self):
+            return self
+
+        def applicationShouldHandleReopen_hasVisibleWindows_(self, sender,
+                                                              visible):
+            type(self).reopen_calls += 1
+            return True
+
+    def _install(self, monkeypatch, callback):
+        base = self._BaseDelegate()
+        current = {"delegate": base}
+        app_obj = MagicMock()
+        # NSApplication keeps its delegate weakly: delegate() must return
+        # whatever setDelegate_ was last given.
+        app_obj.delegate.side_effect = lambda: current["delegate"]
+        app_obj.setDelegate_.side_effect = (
+            lambda d: current.__setitem__("delegate", d))
+        appkit = MagicMock()
+        appkit.NSApplication.sharedApplication.return_value = app_obj
+        objc_mod = MagicMock()
+        # objc.super(cls, self) -> the superclass implementation chain
+        objc_mod.super.side_effect = lambda cls, inst: base
+        monkeypatch.setattr(utils.sys, "platform", "darwin")
+        monkeypatch.setitem(sys.modules, "objc", objc_mod)
+        monkeypatch.setitem(sys.modules, "AppKit", appkit)
+        monkeypatch.setattr(utils, "_macos_reopen_state", {})
+        return app_obj
+
+    def test_non_darwin_is_noop(self, monkeypatch):
+        monkeypatch.setattr(utils.sys, "platform", "linux")
+        assert utils.install_macos_reopen_handler(lambda: None) is False
+
+    def test_without_pyobjc_is_noop(self, monkeypatch):
+        monkeypatch.setattr(utils.sys, "platform", "darwin")
+        for name in ("objc", "AppKit"):
+            monkeypatch.setitem(sys.modules, name, None)  # forces ImportError
+        assert utils.install_macos_reopen_handler(lambda: None) is False
+
+    def test_reopen_runs_the_raise_callback(self, monkeypatch):
+        app_obj = self._install(monkeypatch, None)
+        calls = []
+        assert utils.install_macos_reopen_handler(lambda: calls.append("raise")) is True
+        app_obj.setDelegate_.assert_called_once()
+        delegate = app_obj.setDelegate_.call_args[0][0]
+        # AppKit calls this when the user re-opens the running app.
+        assert delegate.applicationShouldHandleReopen_hasVisibleWindows_(
+            None, True) is True
+        assert calls == ["raise"]
+
+    def test_qt_delegate_behaviour_is_preserved(self, monkeypatch):
+        app_obj = self._install(monkeypatch, None)
+        assert utils.install_macos_reopen_handler(lambda: None) is True
+        delegate = app_obj.setDelegate_.call_args[0][0]
+        before = self._BaseDelegate.reopen_calls
+        delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, True)
+        # The Qt implementation stays in the chain (de-hide, activate, ...).
+        assert self._BaseDelegate.reopen_calls == before + 1
+        assert isinstance(delegate, self._BaseDelegate)
+
+    def test_callback_must_not_break_the_reopen_chain(self, monkeypatch):
+        app_obj = self._install(monkeypatch, None)
+
+        def boom():
+            raise RuntimeError("window gone")
+
+        assert utils.install_macos_reopen_handler(boom) is True
+        delegate = app_obj.setDelegate_.call_args[0][0]
+        assert delegate.applicationShouldHandleReopen_hasVisibleWindows_(
+            None, False) is True
+
+    def test_reinstall_swaps_callback_without_re_subclassing(self, monkeypatch):
+        app_obj = self._install(monkeypatch, None)
+        first, second = [], []
+        assert utils.install_macos_reopen_handler(lambda: first.append(1)) is True
+        delegate = app_obj.setDelegate_.call_args[0][0]
+        assert utils.install_macos_reopen_handler(lambda: second.append(1)) is True
+        app_obj.setDelegate_.assert_called_once()  # not installed twice
+        delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, True)
+        assert first == [] and second == [1]
+
+
 # ── Bundled host-service installer (macOS first-start / settings row) ─────
 
 import shlex  # noqa: E402
