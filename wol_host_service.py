@@ -117,7 +117,13 @@ MAX_REQUEST_BYTES = 65536
 # v8 reports the host platform in "os" - on the unauthenticated "status"
 #    response and on "metrics". Values: "windows", "macos", or the Linux
 #    distribution id ("ubuntu", "debian", ...; "linux" when not readable).
-PROTOCOL_VERSION = 8
+# v9 adds "requests_active" per watch entry with an open API port: how many
+#    inference requests the server is processing RIGHT NOW (llama.cpp
+#    Prometheus gauges llamacpp:requests_processing + requests_deferred;
+#    JSON servers such as Strata map live.state/live.queued/live.tok_s onto
+#    1/0). Unlike the latched throughput gauges this is a fresh reading -
+#    the device-list inference badge relies on it.
+PROTOCOL_VERSION = 9
 
 # Max number of entries in a "watch" list (client configures e.g.
 # ["llama-server.exe", "ollama.exe:11434"] - keep the loop bounded).
@@ -786,6 +792,19 @@ _PROMPT_TOKENS_TOTAL_RE = re.compile(
 _N_DECODE_TOTAL_RE = re.compile(
     r"^llamacpp:n_decode_total(?:\s*\{[^}]*\})?\s+"
     r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+# Protocol v9 "requests_active": llama.cpp keeps these two gauges at the
+# TRUE current slot/queue count (they do not latch like the throughput
+# gauges), so their sum is a reliable "inference running right now" signal.
+_REQUESTS_PROCESSING_RE = re.compile(
+    r"^llamacpp:requests_processing(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+_REQUESTS_DEFERRED_RE = re.compile(
+    r"^llamacpp:requests_deferred(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+# JSON /metrics "live.state"/"live.phase" values that mean "nothing
+# running" (Strata reports null throughput while idle). Any other present
+# value counts as busy.
+_API_IDLE_STATES = ("idle", "waiting", "ready")
 
 # llama.cpp zeroes the two throughput gauges while the server idles, so a
 # 0 reading means "nothing measured since the last request", not "no
@@ -1035,6 +1054,58 @@ def _probe_api_identity(port: int, api_up: bool = False) -> dict:
     return result
 
 
+def _fetch_api_activity(port: int) -> "int | None":
+    """How many inference requests the API is processing right now (v9).
+
+    One plain ``GET /metrics`` (no model filter) per poll, understood in
+    both body formats:
+
+    * **Prometheus text** (llama.cpp): ``llamacpp:requests_processing`` +
+      ``llamacpp:requests_deferred`` summed - unlike the throughput gauges
+      these report the true current count, no latching needed.
+    * **JSON** (other OpenAI servers, e.g. Strata): busy (1) when
+      ``live.queued`` > 0, ``live.state``/``live.phase`` names a non-idle
+      phase, or ``live.tok_s``/``live.prefill_tok_s_mean`` > 0; idle (0)
+      otherwise.
+
+    ``None`` when nothing is readable (no /metrics endpoint, timeout,
+    non-200, unparseable) so the field is simply absent and the client
+    hides its badge instead of guessing.
+    """
+    status, text = _http_get_loopback(port, "/metrics",
+                                      "text/plain, application/json",
+                                      max_bytes=32_768)
+    if status != 200 or not text:
+        return None
+    if text.lstrip()[:1] == "{":
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        live = payload.get("live")
+        if not isinstance(live, dict):
+            return None
+        queued = _json_number(live, ("queued",))
+        if queued is not None and queued > 0:
+            return 1
+        for key in ("state", "phase"):
+            value = str(live.get(key) or "").strip().lower()
+            if value and value not in _API_IDLE_STATES:
+                return 1
+        for key in ("tok_s", "prefill_tok_s_mean"):
+            value = _json_number(live, (key,))
+            if value is not None and value > 0:
+                return 1
+        return 0
+    processing = _parse_prometheus_gauge(text, _REQUESTS_PROCESSING_RE)
+    deferred = _parse_prometheus_gauge(text, _REQUESTS_DEFERRED_RE)
+    if processing is None and deferred is None:
+        return None
+    return int(max(0.0, processing or 0.0) + max(0.0, deferred or 0.0))
+
+
 def _model_from_argv(argv: list) -> str:
     """Best-effort model name from a llama.cpp-style command line.
 
@@ -1173,6 +1244,11 @@ def _watched_processes(watch: list) -> dict:
             with ThreadPoolExecutor(max_workers=len(ready)) as pool:
                 model_futures = {pool.submit(_fetch_models_and_up, p): e
                                  for e, p in ready}
+                # v9: the "inference running right now" probe runs in the
+                # SAME pool as the model list - one extra loopback GET per
+                # open port, never a serial round-trip on top.
+                activity_futures = {pool.submit(_fetch_api_activity, p): e
+                                    for e, p in ready}
                 for fut in model_futures:
                     try:
                         names, api_up = fut.result()
@@ -1183,6 +1259,13 @@ def _watched_processes(watch: list) -> dict:
                         entry["models"] = names
                     if api_up:
                         entry["api_up"] = True
+                for fut in activity_futures:
+                    try:
+                        active = fut.result()
+                    except Exception:
+                        active = None
+                    if active is not None:
+                        activity_futures[fut]["requests_active"] = int(active)
             # Capability probe (protocol v7): which endpoints answer, what
             # the server is, and the display extras. TTL-cached per port
             # (WATCH_PROBE_TTL_S) so the identity probes run at most every
@@ -1248,8 +1331,9 @@ def collect_metrics(watch: "list | None" = None) -> dict:
 
     Watch entries with an open API port additionally report ``models``
     (v4), ``model_metrics`` (v5: per-model prompt/generation throughput in
-    tokens/s from ``GET /metrics?model=<name>``) and the v7 capability
-    fields ``api_up``/``api_kind``/``api_features``/``api_info``.
+    tokens/s from ``GET /metrics?model=<name>``), the v7 capability fields
+    ``api_up``/``api_kind``/``api_features``/``api_info`` and the v9
+    ``requests_active`` count (see :func:`_fetch_api_activity`).
 
     All sizes are bytes, percentages 0-100. psutil is imported lazily so a
     broken/missing psutil in an old build only degrades this command.

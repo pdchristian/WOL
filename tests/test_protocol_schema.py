@@ -159,6 +159,23 @@ class TestNegativeExamples:
             "Qwen3.8-Flash-256k-62": {"prompt_tps": "261.15"}}
         assert_invalid("response-metrics", payload)
 
+    def test_metrics_watch_requests_active_ok(self):
+        """v9: the shipped example carries requests_active -> valid."""
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        assert payload["processes"]["llama-server.exe:8080"][
+            "requests_active"] == 2
+        assert_valid("response-metrics", payload)
+
+    def test_metrics_watch_requests_active_rejects_negative(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["processes"]["llama-server.exe:8080"]["requests_active"] = -1
+        assert_invalid("response-metrics", payload)
+
+    def test_metrics_watch_requests_active_rejects_string(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["processes"]["llama-server.exe:8080"]["requests_active"] = "2"
+        assert_invalid("response-metrics", payload)
+
     def test_metrics_watch_model_metrics_partial_entry_ok(self):
         # A model with only one readable gauge is allowed (keys optional).
         payload = _load(EXAMPLES_DIR / "response-metrics-full.json")

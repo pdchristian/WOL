@@ -214,6 +214,12 @@ SIDEBAR_SNAP_WIDTH = 120
 DEFAULT_DASHBOARD_INTERVAL_MS = 3000
 DASHBOARD_INTERVAL_MIN_MS = 2000
 DASHBOARD_INTERVAL_MAX_MS = 60_000
+# Devices view: how often the inference-activity badge (host protocol v9,
+# "requests_active") is polled per device. Persisted under
+# ui.inference_interval_ms; the picker offers 5/10/15/30 s.
+DEFAULT_INFERENCE_INTERVAL_MS = 10_000
+INFERENCE_INTERVAL_MIN_MS = 5_000
+INFERENCE_INTERVAL_MAX_MS = 30_000
 MAX_BATCHES_PER_DEVICE = 50
 MAX_BATCH_SCRIPT_CHARS = 32_000  # must match the host service limit
 # Watched processes per device (dashboard service chips, host protocol v3).
@@ -323,6 +329,9 @@ DEFAULT_CONFIG = {
         # Device dashboard: metrics poll interval in milliseconds
         # (clamped to DASHBOARD_INTERVAL_MIN_MS..DASHBOARD_INTERVAL_MAX_MS).
         "dashboard_interval_ms": DEFAULT_DASHBOARD_INTERVAL_MS,
+        # Devices view: inference-activity poll interval in milliseconds
+        # (clamped to INFERENCE_INTERVAL_MIN_MS..INFERENCE_INTERVAL_MAX_MS).
+        "inference_interval_ms": DEFAULT_INFERENCE_INTERVAL_MS,
     },
     "updates": {
         "auto_check_enabled": True,
@@ -882,6 +891,24 @@ class ConfigManager:
         value = int(interval_ms)
         value = min(max(value, DASHBOARD_INTERVAL_MIN_MS), DASHBOARD_INTERVAL_MAX_MS)
         self.config.setdefault("ui", {})["dashboard_interval_ms"] = value
+        self.save()
+
+    # --- Inference-activity badge (devices view, host protocol v9) ---
+
+    def get_inference_interval_ms(self) -> int:
+        """Return the inference-activity poll interval (ms, clamped)."""
+        try:
+            value = int(self.config.get("ui", {}).get(
+                "inference_interval_ms", DEFAULT_INFERENCE_INTERVAL_MS))
+        except (TypeError, ValueError):
+            return DEFAULT_INFERENCE_INTERVAL_MS
+        return min(max(value, INFERENCE_INTERVAL_MIN_MS), INFERENCE_INTERVAL_MAX_MS)
+
+    def set_inference_interval_ms(self, interval_ms: int) -> None:
+        """Persist the inference-activity poll interval (clamped to the range)."""
+        value = int(interval_ms)
+        value = min(max(value, INFERENCE_INTERVAL_MIN_MS), INFERENCE_INTERVAL_MAX_MS)
+        self.config.setdefault("ui", {})["inference_interval_ms"] = value
         self.save()
 
     @staticmethod

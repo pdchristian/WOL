@@ -705,6 +705,175 @@ class TestApiCapabilityProbe:
         assert info["models"] == ["srv-model"]
 
 
+class TestRequestsActive:
+    """Protocol v9 "requests_active": is an inference job running right now?"""
+
+    def test_prometheus_processing_plus_deferred(self, monkeypatch):
+        body = (
+            "# TYPE llamacpp:requests_processing gauge\n"
+            'llamacpp:requests_processing{model="m"} 2\n'
+            "# TYPE llamacpp:requests_deferred gauge\n"
+            "llamacpp:requests_deferred 3\n")
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda port, path, accept, max_bytes=262_144:
+                            (200, body) if path == "/metrics" else (404, ""))
+        assert wol_host_service._fetch_api_activity(8080) == 5
+
+    def test_prometheus_both_zero_is_idle(self, monkeypatch):
+        body = ("llamacpp:requests_processing 0\n"
+                "llamacpp:requests_deferred 0\n")
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
+        assert wol_host_service._fetch_api_activity(8080) == 0
+
+    def test_prometheus_only_processing_present(self, monkeypatch):
+        """One gauge missing is fine — the other alone is the count."""
+        monkeypatch.setattr(
+            wol_host_service, "_http_get_loopback",
+            lambda *a, **k: (200, "llamacpp:requests_processing 1\n"))
+        assert wol_host_service._fetch_api_activity(8080) == 1
+
+    def test_prometheus_no_gauges_returns_none(self, monkeypatch):
+        """A /metrics body without either gauge = not measurable."""
+        monkeypatch.setattr(
+            wol_host_service, "_http_get_loopback",
+            lambda *a, **k: (200, "llamacpp:prompt_tokens_total 5\n"))
+        assert wol_host_service._fetch_api_activity(8080) is None
+
+    def test_json_queued_counts_as_active(self, monkeypatch):
+        body = json.dumps({"live": {"queued": 2, "state": "idle"}})
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
+        assert wol_host_service._fetch_api_activity(8081) == 1
+
+    def test_json_non_idle_state_counts_as_active(self, monkeypatch):
+        body = json.dumps({"live": {"state": "decoding", "tok_s": None}})
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
+        assert wol_host_service._fetch_api_activity(8081) == 1
+
+    def test_json_throughput_above_zero_counts_as_active(self, monkeypatch):
+        body = json.dumps({"live": {"state": "idle", "tok_s": 0,
+                                    "prefill_tok_s_mean": 210.0}})
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
+        assert wol_host_service._fetch_api_activity(8081) == 1
+
+    def test_json_idle_returns_zero(self, monkeypatch):
+        body = json.dumps({"live": {"queued": 0, "state": "idle",
+                                    "tok_s": None}})
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
+        assert wol_host_service._fetch_api_activity(8081) == 0
+
+    def test_json_without_live_returns_none(self, monkeypatch):
+        monkeypatch.setattr(
+            wol_host_service, "_http_get_loopback",
+            lambda *a, **k: (200, json.dumps({"totals": {}})))
+        assert wol_host_service._fetch_api_activity(8081) is None
+
+    def test_degrades_to_none(self, monkeypatch):
+        # non-200 -> None
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (404, ""))
+        assert wol_host_service._fetch_api_activity(8080) is None
+        # no answer at all -> None
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (None, ""))
+        assert wol_host_service._fetch_api_activity(8080) is None
+        # unparseable JSON-looking body -> None
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, "{not json"))
+        assert wol_host_service._fetch_api_activity(8080) is None
+
+    def test_watched_processes_reports_requests_active(self, monkeypatch):
+        """v9: the watch entry carries requests_active when measurable."""
+        proc = mock.MagicMock()
+        proc.info = {"pid": 4711, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 0.0
+        proc.memory_info.return_value = mock.MagicMock(rss=1)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe", "-m", "a.gguf"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: True)
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_models_and_up",
+            lambda port: (["m"], True))
+        monkeypatch.setattr(wol_host_service, "_probe_api_identity",
+                            lambda port, api_up=False: {})
+        monkeypatch.setattr(wol_host_service, "_fetch_model_metrics",
+                            lambda port, name: None)
+        monkeypatch.setattr(wol_host_service, "_fetch_api_activity",
+                            lambda port: 2)
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        assert result["llama-server.exe:8080"]["requests_active"] == 2
+
+    def test_watched_processes_omits_field_when_unmeasurable(self, monkeypatch):
+        """No /metrics answer -> the key is absent, the client hides its badge."""
+        proc = mock.MagicMock()
+        proc.info = {"pid": 4711, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 0.0
+        proc.memory_info.return_value = mock.MagicMock(rss=1)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: True)
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_models_and_up",
+            lambda port: (["m"], True))
+        monkeypatch.setattr(wol_host_service, "_probe_api_identity",
+                            lambda port, api_up=False: {})
+        monkeypatch.setattr(wol_host_service, "_fetch_model_metrics",
+                            lambda port, name: None)
+        monkeypatch.setattr(wol_host_service, "_fetch_api_activity",
+                            lambda port: None)
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        assert "requests_active" not in result["llama-server.exe:8080"]
+
+    def test_watched_processes_no_activity_fetch_when_port_closed(
+            self, monkeypatch):
+        """Closed API port -> /metrics is never queried for activity."""
+        proc = mock.MagicMock()
+        proc.info = {"pid": 1, "name": "llama-server.exe"}
+        proc.cpu_percent.return_value = 0.0
+        proc.memory_info.return_value = mock.MagicMock(rss=1)
+        proc.create_time.return_value = 0
+        proc.cmdline.return_value = ["llama-server.exe"]
+        fake_psutil = mock.MagicMock()
+        fake_psutil.process_iter.return_value = [proc]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+        monkeypatch.setattr(wol_host_service, "_check_port_loopback",
+                            lambda port: False)
+        called = []
+        monkeypatch.setattr(
+            wol_host_service, "_fetch_api_activity",
+            lambda port: called.append(port) or None)
+        wol_host_service._WATCH_PROCS.clear()
+        try:
+            result = wol_host_service._watched_processes(
+                ["llama-server.exe:8080"])
+        finally:
+            wol_host_service._WATCH_PROCS.clear()
+        assert called == []
+        assert "requests_active" not in result["llama-server.exe:8080"]
+
+
 class TestBatchGating:
     def test_default_is_disabled(self, tmp_path, monkeypatch):
         monkeypatch.setattr(wol_host_service, "_CONFIG_FILE",

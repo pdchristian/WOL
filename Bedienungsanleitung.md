@@ -170,7 +170,7 @@ Die zuletzt gewählte Ansicht wird **gespeichert** und beim nächsten Start wied
 
 #### Kachelansicht
 Jedes Gerät wird als **Karte** dargestellt:
-- **Name** und rechts oben die **Status-/Plattform-Anzeige** (Pill): Status-Punkt (🟢 online / 🔴 offline / 🟡 unbekannt) zusammen mit dem erkannten Betriebssystem (🪟 Windows / 🍏 macOS / 🐧 Linux). Geschätzte Plattformen sind mit `~` markiert, ohne Erkennung steht **❓ Unbekannt**. Der Tooltip der Anzeige erklärt, wie der Wert zustande kam.
+- **Name** und rechts oben die **Status-/Plattform-Anzeige** (Pill): Status-Punkt (🟢 online / 🔴 offline / 🟡 unbekannt) zusammen mit dem erkannten Betriebssystem (🪟 Windows / 🍏 macOS / 🐧 Linux). Geschätzte Plattformen sind mit `~` markiert, ohne Erkennung steht **❓ Unbekannt**. Der Tooltip der Anzeige erklärt, wie der Wert zustande kam. Läuft auf einem überwachten API-Server gerade ein Inferenz-Job, erscheint **links neben dem Status-Punkt ein Blitz** (⚡) – siehe [Inferenz-Anzeige](#inferenz-anzeige-blitz-in-der-statusanzeige).
 - **IP- und MAC-Adresse**
 - **Remote-Desktop-Kacheln** (🖥️ Vollbild / 🪟 Fenster) und **📊 Dashboard** (öffnet das [Geräte-Dashboard](#geräte-dashboard-performance--batches))
 - **Aktions-Button:**
@@ -181,13 +181,25 @@ Jedes Gerät wird als **Karte** dargestellt:
 Jedes Gerät wird als **Zeile** dargestellt:
 - **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
 - **Name** sowie **IP- und MAC-Adresse** in einer Mono-Zeile darunter
-- **Status-/Plattform-Anzeige** (wie in der Kachel) rechts neben der Zeile
+- **Status-/Plattform-Anzeige** (wie in der Kachel) rechts neben der Zeile – inklusive des Inferenz-Blitzes (⚡), siehe [Inferenz-Anzeige](#inferenz-anzeige-blitz-in-der-statusanzeige)
 - **Drei Aktions-Icons rechts:**
   - 🖥️ **Remote Vollbild** – startet die Remote-Sitzung im Vollbild
   - 🪟 **Remote Fenster** – startet die Remote-Sitzung im Fenster
   - ✏️ **Bearbeiten** – öffnet den Geräte-Dialog (alternativ **Doppelklick** auf die Zeile)
 
 > **Welches Programm die Remote-Icons öffnen**, hängt von der Plattform des Geräts ab: Windows → Remotedesktop (`mstsc`), macOS/Linux → **Turbo VNC**. Die Tooltipps der Icons nennen das Programm, siehe [Welcher Client gestartet wird](#welcher-client-gestartet-wird-rdp-oder-turbo-vnc).
+
+#### Inferenz-Anzeige (Blitz in der Statusanzeige)
+Haben Sie für ein Gerät **überwachte Prozesse** mit API-Port hinterlegt (z. B. `llama-server.exe:8080`, siehe [Geräte-Dashboard](#geräte-dashboard-performance--batches)), zeigt die Statusanzeige zusätzlich einen **Blitz (⚡) links neben dem Status-Punkt** – in Kachel **und** Liste. Er beantwortet auf einen Blick die Frage *„Läuft da gerade ein Inferenz-Job?“*:
+
+- **Oranger Blitz** – der überwachte Server verarbeitet **gerade jetzt** eine oder mehrere Anfragen.
+- **Grauer (abgedunkelter) Blitz** – der Server ist erreichbar, aber **idle** (nichts läuft).
+- **Bernsteinfarbener Blitz** – der API-Port ist erreichbar, die Aktivität ist aber **nicht messbar** (der Server antwortet nicht auf `/metrics`).
+- **Kein Blitz** – das Gerät hat keine überwachten Prozesse mit Port, der überwachte Server ist **ausgeschaltet** (sein API-Port antwortet nicht – dann gibt es nichts zu melden), oder der Host Service ist **zu alt** (Protokoll unter v9). Dann wird nichts geraten, sondern die Anzeige ausgeblendet.
+
+Der Blitz braucht den aktualisierten **Host Service ab Protokoll v9** (Windows · Ubuntu · macOS); ältere Hosts lassen ihn weg. Abgefragt werden die echten aktuellen Zähler des Servers (bei llama.cpp `requests_processing` + `requests_deferred`), **nicht** der zuletzt gemessene Durchsatz – deshalb ist das Signal zuverlässig, auch wenn die t/s-Werte im Dashboard noch den letzten Wert zeigen.
+
+**Abfrageintervall:** In der Symbolleiste der Geräteansicht steht ein **Intervall-Dropdown** (5 / 10 / 15 / 30 Sekunden, Standard **10 s**). Es steuert nur den Blitz – die Status-Punkte (online/offline) bleiben wie gewohnt alle 30 Sekunden frisch. Geräte **ohne Zugangsdaten**, **ohne überwachte Prozesse** oder die gerade **offline** sind, werden übersprungen. Die Einstellung wird gespeichert (`config.json` → `"inference_interval_ms"`).
 
 #### Plattform-Erkennung
 Damit die Anzeige und die Remote-Icons funktionieren, muss die Plattform des Geräts bekannt sein:
@@ -711,4 +723,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.4.0 | Wake-on-LAN Manager*
+*Version 2.5.0 | Wake-on-LAN Manager*

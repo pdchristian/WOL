@@ -176,6 +176,21 @@ def _grid_view_url(color: str, glyph_px: int = 16, canvas: int = 36) -> str:
     return _glyph_canvas(color, rects, "grid_view", glyph_px, canvas)
 
 
+def _bolt_url(color: str, glyph_px: int = 13, canvas: int = 15) -> str:
+    """Filled lightning bolt (feather "zap") for the inference badge.
+
+    The devices view shows this glyph inside the status pill (left of the
+    online dot) while a watched inference server on the host has requests
+    in flight (host protocol v9 ``requests_active``). Filled, not stroked —
+    at 13 px a stroke outline reads as noise.
+    """
+    paths = (
+        f'<path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z" fill="{color}" '
+        'stroke="none"/>'
+    )
+    return _glyph_canvas(color, paths, "infer_bolt", glyph_px, canvas)
+
+
 def _checkmark_url(color: str) -> str:
     """Return a file URL of a checkmark SVG for checked checkbox indicators."""
     svg = (
@@ -607,6 +622,22 @@ QPushButton#smallDanger:hover {{
 #pillDotOnline {{ background: {t['online']}; border-radius: 4px; max-width: 9px; max-height: 9px; }}
 #pillDotOffline {{ background: {t['offline']}; border-radius: 4px; max-width: 9px; max-height: 9px; }}
 #pillDotUnknown {{ background: {t['unknown']}; border-radius: 4px; max-width: 9px; max-height: 9px; }}
+/* Inference badge (host protocol v9): lightning bolt left of the dot —
+   llama-orange while a job runs, dimmed while the server idles, amber when
+   the host answers but the activity is unmeasurable. Mirrors .infer in
+   design_prototype/Inferenz_Kachel.html */
+#pillBoltActive {{
+    image: url("{_bolt_url(t['svc'])}");
+    max-width: 15px; max-height: 15px;
+}}
+#pillBoltIdle {{
+    image: url("{_bolt_url(t['text_dim'])}");
+    max-width: 15px; max-height: 15px;
+}}
+#pillBoltWarn {{
+    image: url("{_bolt_url(t['unknown'])}");
+    max-width: 15px; max-height: 15px;
+}}
 
 /* Settings screen groups (card per section, prototype .settingsGroup) */
 #settingsGroup {{

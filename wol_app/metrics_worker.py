@@ -101,6 +101,86 @@ class MetricsWorker(_CancellableWorker):
             self.failed.emit(str(result))
 
 
+class InferenceSweepWorker(QObject):
+    """Poll the inference-activity badge state for many devices at once.
+
+    One ``metrics`` request per device (with the device's watch list), run in
+    a small thread pool like :class:`wol_app.app_core.StatusWorker` — the
+    devices view owns the timer and only starts the next sweep when the
+    previous one finished (single-flight). Each result carries the full
+    metrics response so the view can derive the badge state from
+    ``processes[*]["requests_active"]`` (host protocol v9); ``None`` means
+    the host was unreachable or rejected the request.
+
+    Unlike :class:`_CancellableWorker` the sockets are not individually
+    closable (many run at once), so ``cancel`` only stops collecting results;
+    the per-request timeout bounds the tail.
+    """
+
+    # Emits list of (device_id, metrics_response_dict | None).
+    finished = pyqtSignal(list)
+
+    # Max concurrent metrics requests (hosts answer in ~1 s; 8 keeps a
+    # sweep of the 8-device watch limit comfortably parallel).
+    MAX_CONCURRENT = 8
+
+    def __init__(
+        self,
+        devices: "list[dict]",
+        timeout: float = 4.0,
+    ) -> None:
+        super().__init__()
+        # Each device dict: {"id", "ip", "username", "password", "watch"}.
+        self.devices = devices
+        self.timeout = timeout
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """Stop collecting results (in-flight requests finish on timeout)."""
+        self._cancelled = True
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
+
+    def run(self) -> None:
+        import concurrent.futures
+
+        if self._cancelled or not self.devices:
+            self.finished.emit([])
+            return
+
+        def _fetch(device: dict):
+            ok, result = get_metrics(
+                device["ip"], device.get("username", ""),
+                device.get("password", ""),
+                timeout=self.timeout, watch=device.get("watch") or None,
+            )
+            return result if ok and isinstance(result, dict) else None
+
+        results: "dict[str, dict | None]" = {}
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(self.MAX_CONCURRENT, len(self.devices))
+        ) as pool:
+            futures = {pool.submit(_fetch, d): d["id"] for d in self.devices}
+            for future in concurrent.futures.as_completed(futures):
+                if self._cancelled:
+                    break
+                device_id = futures[future]
+                try:
+                    results[device_id] = future.result()
+                except Exception:
+                    results[device_id] = None
+
+        if self._cancelled:
+            return  # view closed — do not signal into a dying view
+        ordered = [
+            (d["id"], results.get(d["id"]))
+            for d in self.devices if d["id"] in results
+        ]
+        self.finished.emit(ordered)
+
+
 class BatchWorker(_CancellableWorker):
     """Run one batch script on the WOL Host Service of one device."""
 

@@ -75,6 +75,34 @@ class TestConfigNetwork(ConfigManagerTestBase):
         self.assertEqual(cm.get_network_settings()["broadcast_port"], 7)
 
 
+class TestInferenceInterval(ConfigManagerTestBase):
+    """ui.inference_interval_ms — devices-view inference badge poll cadence."""
+
+    def test_default_is_10_seconds(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_inference_interval_ms(), 10_000)
+
+    def test_set_and_persist(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_inference_interval_ms(15_000)
+        self.assertEqual(cm.get_inference_interval_ms(), 15_000)
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        self.assertEqual(saved["ui"]["inference_interval_ms"], 15_000)
+
+    def test_clamped_to_range(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_inference_interval_ms(1_000)
+        self.assertEqual(cm.get_inference_interval_ms(), 5_000)
+        cm.set_inference_interval_ms(120_000)
+        self.assertEqual(cm.get_inference_interval_ms(), 30_000)
+
+    def test_garbage_falls_back_to_default(self):
+        self._write_raw({"ui": {"inference_interval_ms": "not-a-number"}})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_inference_interval_ms(), 10_000)
+
+
 class TestConfigShutdownMethod(ConfigManagerTestBase):
     def test_default_shutdown_method_is_host_service(self):
         cm = ConfigManager(config_path=str(self.config_path))

@@ -1,6 +1,6 @@
 # WOL Host Service — Wire Protocol Specification
 
-**Version:** 8 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
+**Version:** 9 (Host Service 2.5.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
 
 Referenzimplementierungen:
 
@@ -115,7 +115,7 @@ Antwort (`status: "ok"`):
 ```json
 {
   "status": "ok",
-  "protocol": 8,
+  "protocol": 9,
   "hostname": "FRACTAL",
   "os": "windows",
   "cpu": 63.4,
@@ -139,7 +139,8 @@ Antwort (`status: "ok"`):
       "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"],
       "model_metrics": {
         "Qwen3.8-Flash-256k-62": { "prompt_tps": 261.15, "predicted_tps": 26.65, "total_tokens": 77427 }
-      }
+      },
+      "requests_active": 2
     },
     ":8081": {
       "running": false,
@@ -150,7 +151,8 @@ Antwort (`status: "ok"`):
       "models": ["qwen3.8-flash-next-iq3_s"],
       "model_metrics": {
         "qwen3.8-flash-next-iq3_s": { "prompt_tps": 398.0, "predicted_tps": 72.2, "total_tokens": 19456405 }
-      }
+      },
+      "requests_active": 0
     },
     "backup-sync.exe": { "running": false }
   }
@@ -233,6 +235,21 @@ felder (`status`, `protocol`, `hostname`, `os`) sind immer vorhanden.
   uebernommen (nur wenn > 0). Einzelne Keys fehlen, wenn nur ein Wert lesbar
   war (NaN/Inf = nicht messbar); kein Feld, wenn gar nichts messbar war
   (Dashboard zeigt dann die Modell-Zeile ohne t/s).
+* `requests_active` (int ≥ 0, **v9**): **nur wenn `api_port_open` und
+  `/metrics` lesbar** — wie viele Inferenz-Requests der Server **gerade
+  jetzt** verarbeitet. Frisch gelesen (im Gegensatz zu den latched
+  Durchsatz-Gauges), daher verlaessliches "Job laeuft"-Signal fuer die
+  Geraeliste. Ein einziges `GET /metrics` (ohne model-Filter) pro Poll,
+  parallel zur Modell-Liste:
+  * **Prometheus-Text** (llama.cpp): `llamacpp:requests_processing` +
+    `llamacpp:requests_deferred` (Summe; beide Gauges melden die echte
+    aktuelle Slot-/Queue-Anzahl, kein Latching).
+  * **JSON** (andere OpenAI-Server, z. B. Strata): 1 wenn `live.queued` > 0
+    oder `live.state`/`live.phase` eine nicht-Idle-Phase nennt
+    (Idle = `idle`/`waiting`/`ready`) oder `live.tok_s` /
+    `live.prefill_tok_s_mean` > 0; sonst 0.
+  Kein Feld, wenn `/metrics` nicht antwortet/parsebar (Client verbirgt dann
+  sein Inferenz-Badge statt zu raten).
 
 Schema: [`schema/response-metrics.json`](schema/response-metrics.json)
 
@@ -285,7 +302,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 |---|---|---|
 | `DEFAULT_PORT` | 8765 | beide Services |
 | `MAX_REQUEST_BYTES` | 65536 | beide |
-| `PROTOCOL_VERSION` | 8 | beide |
+| `PROTOCOL_VERSION` | 9 | beide |
 | `WATCH_MAX_ENTRIES` | 8 | beide |
 | `WATCH_PORT_TIMEOUT_S` | 0.25 | beide |
 | `WATCH_MODELS_TIMEOUT_S` | 0.6 | beide |
@@ -358,6 +375,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | 6 | Anti-Replay `ts`/`nonce` auf `shutdown`/`reboot`/`run_batch` (§4.3/§4.4); Auth-Throttling mit `retry_after` (§3); Audit-Log; Firewall-Quellscope | Requests ohne `ts`/`nonce` senden (Host-Accept solange `require_replay` aus); `retry_after` ignorieren |
 | 7 | Port-only-Watch-Einträge (`:8080`/`8080`), Port-Probe ohne Prozess-Treffer; `api_up`/`api_kind`/`api_features`/`api_info` pro Watch-Eintrag; JSON-`/metrics`-Mapping (nicht-llama.cpp-Server) | Port-only-Einträge zeigen nichts an; Namens-Watch funktioniert wie bei v3–v5; neue Felder ignorieren |
 | 8 | `os` auf `status` (auth-frei) und `metrics` — Plattform des Hosts (§4.1) | Plattform aus TTL/Fingerprint-Heuristik schätzen oder Spalte leer lassen |
+| 9 | `requests_active` pro Watch-Eintrag (Inferenz laeuft gerade — llama.cpp `requests_processing`+`requests_deferred`, JSON-Server `live.*`) | Inferenz-Badge in der Geraeliste nicht anzeigen |
 
 Regel: **Nur additive Änderungen.** Neue Felder müssen für ältere Clients
 ignorierbar sein. Neue Pflichtfelder oder Semantic-Änderungen ⇒ neue Major-

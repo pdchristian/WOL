@@ -22,10 +22,12 @@ from wol_app.config import DEVICES_VIEW_LIST  # noqa: E402
 from wol_app.views.devices_view import (  # noqa: E402
     CARD_MIN_WIDTH,
     GRID_SPACING,
+    INFERENCE_INTERVAL_CHOICES_MS,
     PAGE_MARGIN_H,
     DeviceCard,
     DeviceListRow,
     DevicesView,
+    derive_inference_state,
 )
 
 # Translation keys asserted below — must exist in every locale so the
@@ -653,3 +655,190 @@ class TestPlatformDetection:
         assert started == [True]
         # All three devices lack a platform -> the memory is cleared again.
         assert view._os_probed == set()
+
+
+class TestInferenceBadge:
+    """Protocol v9 "requests_active" -> lightning bolt inside the pill."""
+
+    # ── State derivation (pure function) ────────────────────────────────
+
+    def test_no_response_is_no_verdict(self):
+        assert derive_inference_state(None) is None
+        assert derive_inference_state("garbage") is None
+
+    def test_pre_v9_host_is_no_verdict(self):
+        resp = {"protocol": 8, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080,
+                                      "api_port_open": True, "running": True}}}
+        assert derive_inference_state(resp) is None
+
+    def test_requests_active_above_zero_is_active(self):
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "running": True, "requests_active": 2}}}
+        assert derive_inference_state(resp) == "active"
+
+    def test_active_wins_over_idle_and_warn(self):
+        resp = {"protocol": 9, "processes": {
+            ":8081": {"api_port": 8081, "api_port_open": True,
+                      "running": False, "requests_active": 0},
+            "gone.exe:8090": {"api_port": 8090, "api_port_open": False,
+                              "running": False},
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "running": True, "requests_active": 1}}}
+        assert derive_inference_state(resp) == "active"
+
+    def test_zero_requests_is_idle(self):
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "running": True, "requests_active": 0}}}
+        assert derive_inference_state(resp) == "idle"
+
+    def test_open_port_without_field_is_warn(self):
+        """v9 host, API up but /metrics unreadable -> amber bolt."""
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "api_up": True, "running": True}}}
+        assert derive_inference_state(resp) == "warn"
+
+    def test_closed_port_hides_badge(self):
+        """Watched API port down = server off — no bolt at all."""
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": False,
+                                      "running": True}}}
+        assert derive_inference_state(resp) == "hidden"
+
+    def test_unmeasurable_open_port_outranks_closed_port(self):
+        """One open-but-unmeasurable port keeps the amber warn verdict."""
+        resp = {"protocol": 9, "processes": {
+            "gone.exe:8090": {"api_port": 8090, "api_port_open": False,
+                              "running": False},
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "api_up": True, "running": True}}}
+        assert derive_inference_state(resp) == "warn"
+
+    def test_idle_outranks_closed_port(self):
+        resp = {"protocol": 9, "processes": {
+            "gone.exe:8090": {"api_port": 8090, "api_port_open": False,
+                              "running": False},
+            "x:8080": {"api_port": 8080, "api_port_open": True,
+                       "running": True, "requests_active": 0}}}
+        assert derive_inference_state(resp) == "idle"
+
+    def test_name_only_entries_have_no_verdict(self):
+        resp = {"protocol": 9, "processes": {
+            "backup-sync.exe": {"running": True, "pid": 5}}}
+        assert derive_inference_state(resp) is None
+
+    # ── Card / row / pill plumbing ──────────────────────────────────────
+
+    def test_card_bolt_object_names(self, qapp, config_with_devices):
+        card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
+        assert not card.pill.bolt.isVisibleTo(card)
+        card.set_inference("active")
+        assert card.pill.bolt.objectName() == "pillBoltActive"
+        assert card.pill.bolt.isVisibleTo(card)
+        card.set_inference("idle")
+        assert card.pill.bolt.objectName() == "pillBoltIdle"
+        card.set_inference("none")
+        assert not card.pill.bolt.isVisibleTo(card)
+
+    def test_row_bolt_shows_through_pill(self, qapp, config_with_devices):
+        row = DeviceListRow(config_with_devices.config["devices"][0], "online", set())
+        row.set_inference("warn")
+        assert row.pill.bolt.objectName() == "pillBoltWarn"
+
+    def test_bolt_tooltip_added(self, qapp, config_with_devices):
+        card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
+        assert Translations.tr("modern.devices.infer.active") not in card.pill.toolTip()
+        card.set_inference("active")
+        assert Translations.tr("modern.devices.infer.active") in card.pill.toolTip()
+
+    # ── View wiring ─────────────────────────────────────────────────────
+
+    def test_interval_combo_defaults_to_config_value(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        assert view.inference_combo.currentData() == 10_000
+        assert [view.inference_combo.itemData(i)
+                for i in range(view.inference_combo.count())] == \
+            list(INFERENCE_INTERVAL_CHOICES_MS)
+
+    def test_interval_change_persists_and_retimes(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        idx = view.inference_combo.findData(30_000)
+        view.inference_combo.setCurrentIndex(idx)
+        assert config_with_devices.get_inference_interval_ms() == 30_000
+        assert view._inference_timer.interval() == 30_000
+
+    def test_stored_off_interval_gets_own_entry(self, qapp, config_with_devices):
+        config_with_devices.set_inference_interval_ms(7_000)  # clamps to 7000
+        view = DevicesView(config_with_devices)
+        assert view.inference_combo.currentData() == 7_000
+
+    def test_targets_require_watch_and_credentials(self, qapp, config_with_devices):
+        devices = config_with_devices.config["devices"]
+        devices[0]["username"] = "u"
+        devices[0]["password"] = "p"
+        devices[0]["watch_processes"] = ["llama-server.exe:8080"]
+        devices[1]["watch_processes"] = ["llama-server.exe:8080"]  # no creds
+        devices[2]["username"] = "u"
+        devices[2]["password"] = "p"  # disabled + no watch
+        view = DevicesView(config_with_devices)
+        targets = view._inference_targets()
+        assert [t["id"] for t in targets] == ["d1"]
+        assert targets[0]["watch"] == ["llama-server.exe:8080"]
+
+    def test_targets_skip_offline_devices(self, qapp, config_with_devices):
+        device = config_with_devices.config["devices"][0]
+        device["username"] = "u"
+        device["password"] = "p"
+        device["watch_processes"] = ["x.exe:8080"]
+        view = DevicesView(config_with_devices)
+        assert [t["id"] for t in view._inference_targets()] == ["d1"]
+        view._statuses["d1"] = "offline"
+        assert view._inference_targets() == []
+
+    def test_finished_updates_cards_rows_and_cache(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "running": True, "requests_active": 3}}}
+        view._on_inference_finished([("d1", resp), ("d2", None)])
+        assert view._inference_states == {"d1": "active"}
+        assert view._cards["d1"].pill.bolt.objectName() == "pillBoltActive"
+        assert view._rows["d1"].pill.bolt.objectName() == "pillBoltActive"
+        assert not view._rows["d2"].pill.bolt.isVisibleTo(view._rows["d2"])
+
+    def test_no_verdict_keeps_previous_state(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        resp = {"protocol": 9, "processes": {
+            "x:8080": {"api_port": 8080, "api_port_open": True,
+                       "running": True, "requests_active": 1}}}
+        view._on_inference_finished([("d1", resp)])
+        view._on_inference_finished([("d1", None)])  # host unreachable now
+        assert view._inference_states["d1"] == "active"
+        assert view._cards["d1"].pill.bolt.objectName() == "pillBoltActive"
+
+    def test_hidden_verdict_clears_a_shown_bolt(self, qapp, config_with_devices):
+        """Server stops (port closes) -> the badge is cleared, not stuck."""
+        view = DevicesView(config_with_devices)
+        view._on_inference_finished([("d1", {"protocol": 9, "processes": {
+            "x:8080": {"api_port": 8080, "api_port_open": True,
+                       "running": True, "requests_active": 1}}})])
+        assert view._cards["d1"].pill.bolt.isVisibleTo(view._cards["d1"])
+        view._on_inference_finished([("d1", {"protocol": 9, "processes": {
+            "x:8080": {"api_port": 8080, "api_port_open": False,
+                       "running": False}}})])
+        assert view._inference_states["d1"] == "hidden"
+        assert not view._cards["d1"].pill.bolt.isVisibleTo(view._cards["d1"])
+        assert not view._rows["d1"].pill.bolt.isVisibleTo(view._rows["d1"])
+
+    def test_rebuild_reapplies_cached_state(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        resp = {"protocol": 9, "processes": {
+            "x:8080": {"api_port": 8080, "api_port_open": True,
+                       "running": True, "requests_active": 0}}}
+        view._on_inference_finished([("d1", resp)])
+        view.refresh_devices()  # sort/filter/edit rebuild
+        assert view._cards["d1"].pill.bolt.objectName() == "pillBoltIdle"
+        assert view._rows["d1"].pill.bolt.objectName() == "pillBoltIdle"

@@ -3,7 +3,7 @@
 | Field               | Value                                                                  |
 |---------------------|------------------------------------------------------------------------|
 | **title**           | Wake-on-LAN Manager                                                    |
-| **version**         | 2.4.0                                                                 |
+| **version**         | 2.5.0                                                                 |
 | **okf_version**     | 1.0                                                                   |
 | **created**         | 2026-07-21                                                            |
 | **language**        | en                                                                    |
@@ -533,7 +533,7 @@ Translations.tr("scan.scanning_subnet", ip="192.168.1.0")
 # → "Scanning subnet 192.168.1.0..."
 ```
 
-### 5.5 WOL Host Service Protocol (TCP 8765, JSON lines, protocol v8)
+### 5.5 WOL Host Service Protocol (TCP 8765, JSON lines, protocol v9)
 
 One JSON object per line in, one JSON object per line out. All commands
 authenticate first with `validate_credentials(username, password)`
@@ -543,7 +543,7 @@ authenticate first with `validate_credentials(username, password)`
 |---------|---------|----------|
 | `status` | `{"command":"status"}` (no auth) | `{"status":"ok","message":"online","os"}` — `os` added in protocol v8 |
 | `shutdown` | `{"command":"shutdown","username","password"}` | `{"status":"ok"\|"error","message"}` |
-| `metrics` (v2) | `{"command":"metrics","username","password"}` | `{"status":"ok","protocol":8,"hostname","os","cpu","cpu_count","ram_used","ram_total","uptime","gpu","vram_used","vram_total","gpu_name"}` — bytes / per-cent, each field `null` when unavailable |
+| `metrics` (v2) | `{"command":"metrics","username","password"}` | `{"status":"ok","protocol":9,"hostname","os","cpu","cpu_count","ram_used","ram_total","uptime","gpu","vram_used","vram_total","gpu_name"}` — bytes / per-cent, each field `null` when unavailable; with `watch` a `processes` map (v3), per-model `model_metrics` (v5) and per-entry `requests_active` (v9) |
 | `run_batch` (v2) | `{"command":"run_batch","username","password","script","timeout"}` | `{"status":"ok","exit_code","stdout","stderr","duration_ms","truncated"}` or `{"status":"error","message"}` |
 
 **`os` field (protocol v8):** platform id reported by the service — `windows`
@@ -555,6 +555,18 @@ unauthenticated `status` response on purpose, so a scanner can label a host
 without credentials; the schemas keep it optional for backwards compatibility
 with older services. Client side: `host_service_client.get_host_os()`
 (returns `""` for `protocol < 8`).
+
+**`requests_active` field (protocol v9):** how many inference requests a
+watched API server is processing *right now* — the clean "a job is running"
+signal for the devices-view lightning-bolt badge (unlike the latched
+throughput gauges in `model_metrics`). Only present on a port-watched entry
+whose `/metrics` is readable; `_fetch_api_activity(port)` sums the llama.cpp
+Prometheus gauges `llamacpp:requests_processing` + `llamacpp:requests_deferred`
+(true current counts, no latching), or for a JSON server (e.g. Strata) maps
+`live.queued > 0` / a non-idle `live.state`/`live.phase` / `live.tok_s` > 0 to
+`1`, else `0`. Absent when `/metrics` is unreadable, so the client hides its
+badge instead of guessing. Fetched in the same `_watched_processes` thread pool
+as the model list (one extra `GET /metrics`, no model filter).
 
 **`metrics` implementation (`wol_host_service.py`):**
 - CPU/RAM/uptime via `psutil` (lazy import — the service still starts without it);
@@ -598,7 +610,7 @@ Professional Windows installer with registry-based Add/Remove Programs integrati
 | Field          | Value                                |
 |----------------|--------------------------------------|
 | App Name       | "Wake-on-LAN Manager"                |
-| Version        | 2.4.0 (from `wol_app.__version__`)   |
+| Version        | 2.5.0 (from `wol_app.__version__`)   |
 | Publisher      | "pdchristian"                        |
 | Install Dir    | `%ProgramFiles%\Wake-on-LAN Manager` |
 | Registry Key   | `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WakeOnLAN` |
@@ -606,7 +618,7 @@ Professional Windows installer with registry-based Add/Remove Programs integrati
 **Registry Values Written:**
 ```
 DisplayName     = "Wake-on-LAN Manager"
-DisplayVersion  = "2.4.0"
+DisplayVersion  = "2.5.0"
 Publisher       = "pdchristian"
 InstallLocation = <actual path>
 UninstallString = "<path>\uninstall.exe"
@@ -1111,7 +1123,8 @@ Application starts
 
 | Version | Date       | Edition                    | Key Changes                                    |
 |---------|------------|----------------------------|-------------------------------------------------|
-| 2.4.0   | 2026-10-02 | Platform Edition           | Current version. Platform work is **desktop-only** (Windows/Ubuntu/macOS — see the two release lines `__version__` / `MOBILE_VERSION`): status/platform **pill** in card *and* list (`widgets/status_pill.py`), **automatic platform backfill** for stored devices (`app_core.OsDetectWorker`, new `os_confidence` device key, `MACOS_NAME_HINTS` tie-break), Remote buttons **routed per platform** (`remote_desktop.resolve_remote_protocol()` → `mstsc` for Windows, TurboVNC for macOS/Linux via `utils.launch_vnc`, password only via clipboard) and the **settings screen regrouped** (Network / Appearance / Remote access / Misc, former *Remote Einstellungen* integrated). The Android/iOS clients (also 2.4.0, `versionCode` 8) got the **same settings grouping** without new fields — section 8.0.1 |
+| 2.5.0   | 2026-10-03 | Inference Badge Edition    | Current version. **Inference badge (desktop only, host protocol v9):** a lightning bolt inside the status pill — left of the online dot, in the card *and* the list row — shows whether a watched API server on the host is processing requests *right now*: new `requests_active` field per watch entry (`_fetch_api_activity` sums llama.cpp `llamacpp:requests_processing` + `requests_deferred`, or maps JSON `live.queued`/`live.state`/`live.tok_s` to 1/0), fetched in the same `_watched_processes` pool (one extra `GET /metrics`). Orange = job running, dimmed = server idle, amber = API up but unmeasurable, hidden on pre-v9 hosts. Own **interval drop-down** (5/10/15/30 s, default 10 s) in the devices toolbar (`ui.inference_interval_ms`), `metrics_worker.InferenceSweepWorker` single-flight sweep (skips credential-less / watch-less / offline devices). Windows + Linux/macOS host service both at protocol v9; `protocol/` schema + SPEC updated. Follow-up fix: a **closed** watched API port no longer shows the amber `warn` bolt — the server being off means there is nothing to report, so the badge is simply hidden (`derive_inference_state` returns `"hidden"`, a real verdict that clears a previously shown bolt); amber is reserved for an open port whose `/metrics` is unreadable (badge precedence active > warn > idle > hidden) |
+| 2.4.0   | 2026-10-02 | Platform Edition           | Platform work is **desktop-only** (Windows/Ubuntu/macOS — see the two release lines `__version__` / `MOBILE_VERSION`): status/platform **pill** in card *and* list (`widgets/status_pill.py`), **automatic platform backfill** for stored devices (`app_core.OsDetectWorker`, new `os_confidence` device key, `MACOS_NAME_HINTS` tie-break), Remote buttons **routed per platform** (`remote_desktop.resolve_remote_protocol()` → `mstsc` for Windows, TurboVNC for macOS/Linux via `utils.launch_vnc`, password only via clipboard) and the **settings screen regrouped** (Network / Appearance / Remote access / Misc, former *Remote Einstellungen* integrated). The Android/iOS clients (also 2.4.0, `versionCode` 8) got the **same settings grouping** without new fields — section 8.0.1 |
 | 2.3.7   | 2026-09-11 | Mobile Refinement Edition  | 2.3.x series: **macOS port (Apple Silicon, unsigned .dmg + launchd/PAM Host Service, section 8.4)**, Android HTML WebView client `android_html/` (2.3.0, native Compose app removed in 2.3.1), iOS app with `Ipv4Resolver`, Remote Desktop via Windows App URI (2.3.3, fullscreen-only on mobile since 2.3.5), Wi-Fi-only network scan (2.3.4), dashboard swipe between devices, password sync for devices sharing a user, `watch_processes` in export, close-to-tray + single-instance settings, token/s display in dashboard, **batch library drag & drop reorder** (desktop `BatchListWidget` + Android/iOS title-only list with grip, section 8.3) |
 | 2.3.0   | 2026-09-08 | Android HTML Edition       | Standalone Android client (`android_html/`): WebView shell + Kotlin bridge, Host Service protocol v4 dashboard, batch console, network scanner, schedules, CSV/JSON log export; `devices.json` compatible with Windows |
 | 2.2.3   | 2026-09-08 | Hostname Fix Edition       | Status ping resolves host names to IPv4 first (`resolve_ipv4_all` in `utils.py`, `ping -4`): Windows preferred AAAA records (IPv6 replies lack `TTL=` → false offline) and a Fritz!Box may return several A records (stale DHCP lease + current) in nondeterministic order — every candidate is now probed until one replies; unresolvable names report `unknown` with a resolve hint; `send_wake_packet` interface selection also resolves names |
