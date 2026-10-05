@@ -9,8 +9,17 @@ from datetime import datetime
 from pathlib import Path
 
 from wol_app.crypto import decrypt_password, encrypt_password, is_encrypted
+from wol_app.os_detect import (
+    CONFIDENCE_HIGH,
+    CONFIDENCE_LOW,
+    CONFIDENCE_MEDIUM,
+)
 from wol_app.utils import (
+    OS_LINUX,
+    OS_MACOS,
+    OS_WINDOWS,
     ensure_user_data_dir,
+    normalize_os,
     update_shortcut_icons,
     validate_device_name,
     validate_mac,
@@ -122,6 +131,16 @@ SHUTDOWN_METHOD_HOST_SERVICE = "host_service"
 SHUTDOWN_METHOD_SMB = "smb"
 VALID_SHUTDOWN_METHODS = (SHUTDOWN_METHOD_HOST_SERVICE, SHUTDOWN_METHOD_SMB)
 
+# Platform ids for the optional per-device "os" key (OS_WINDOWS/OS_MACOS/
+# OS_LINUX, normalize_os) are defined in wol_app.utils: the host service
+# reports them verbatim (protocol v8) and the network scan derives them
+# from passive fingerprints. Unknown Linux distributions collapse to "linux".
+
+# How a stored platform was obtained — mirrors the CONFIDENCE_* constants of
+# wol_app.os_detect. "high" is authoritative (host service), "medium"/"low"
+# are estimates the UI marks with "~"; "" means "never recorded".
+VALID_OS_CONFIDENCES = (CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, CONFIDENCE_LOW)
+
 # Remote desktop resolutions offered in the settings dialog (windowed mode).
 # Order matters: it defines the order in the resolution drop-down.
 REMOTE_DESKTOP_RESOLUTIONS = (
@@ -145,6 +164,24 @@ REMOTE_DESKTOP_RESOLUTION_AUTO = "auto"
 REMOTE_DESKTOP_AUTO_FRACTION = 0.84
 # Minimum auto-resolution size (width, height) to keep the window usable.
 REMOTE_DESKTOP_AUTO_MIN = (1280, 720)
+
+# ── Remote access protocol per platform ────────────────────────────────────
+# Which client opens the "Remote" buttons for a device, keyed by the detected
+# platform (device "os" key). Windows desktops speak RDP (mstsc), macOS Screen
+# Sharing and Linux x11vnc speak VNC, so TurboVNC is the default there. A
+# device with no detected platform keeps the historical RDP behaviour.
+REMOTE_PROTOCOL_RDP = "rdp"
+REMOTE_PROTOCOL_VNC = "vnc"
+VALID_REMOTE_PROTOCOLS = (REMOTE_PROTOCOL_RDP, REMOTE_PROTOCOL_VNC)
+DEFAULT_REMOTE_PROTOCOL_BY_OS = {
+    OS_WINDOWS: REMOTE_PROTOCOL_RDP,
+    OS_MACOS: REMOTE_PROTOCOL_VNC,
+    OS_LINUX: REMOTE_PROTOCOL_VNC,
+}
+# Standard RFB port (display :0); display :n is served on 5900 + n.
+DEFAULT_VNC_PORT = 5900
+VNC_PORT_MIN = 1
+VNC_PORT_MAX = 65535
 
 # Registry location where the Inno Setup installer records the UI layout
 # chosen at install time ("modern" or "classic"). Read on first start only;
@@ -177,12 +214,30 @@ SIDEBAR_SNAP_WIDTH = 120
 DEFAULT_DASHBOARD_INTERVAL_MS = 3000
 DASHBOARD_INTERVAL_MIN_MS = 2000
 DASHBOARD_INTERVAL_MAX_MS = 60_000
+# Devices view: how often the inference-activity badge (host protocol v9,
+# "requests_active") is polled per device. Persisted under
+# ui.inference_interval_ms; the picker offers 5/10/15/30 s.
+DEFAULT_INFERENCE_INTERVAL_MS = 10_000
+INFERENCE_INTERVAL_MIN_MS = 5_000
+INFERENCE_INTERVAL_MAX_MS = 30_000
 MAX_BATCHES_PER_DEVICE = 50
 MAX_BATCH_SCRIPT_CHARS = 32_000  # must match the host service limit
 # Watched processes per device (dashboard service chips, host protocol v3).
 # Entries: "name.exe" or "name.exe:port" (port = "running AND API reachable").
 MAX_WATCH_PROCESSES_PER_DEVICE = 8
 MAX_WATCH_ENTRY_CHARS = 128
+# Dashboard API key (host protocol v10): sent to the host service, which
+# presents it as ``Authorization: Bearer <key>`` when probing the local
+# inference API. Needed for servers started with an API key (llama-server
+# --api-key, Strata API_KEY) — without it their /metrics answers 401 and the
+# inference badge can only report "not measurable".
+MAX_API_KEY_CHARS = 128
+#: Marker on an encrypted ``api_key`` (config file and device export).
+#: Unlike passwords — which predate it and are recognised by the base64
+#: heuristic in ``crypto.is_encrypted`` — API keys are long random
+#: alphanumeric strings the heuristic would misread as ciphertext, so the
+#: field carries an explicit prefix.
+API_KEY_ENC_PREFIX = "enc:"
 DEFAULT_BATCH_TIMEOUT_S = 10
 BATCH_TIMEOUT_MIN_S = 5
 BATCH_TIMEOUT_MAX_S = 3600
@@ -225,9 +280,12 @@ DEFAULT_CONFIG = {
     # Each device: {"id": uuid, "name": str, "mac": str, "ip": str, "username": str,
     #               "password": str, "enabled": bool, "shutdown_method": str,
     #               "allow_batch": bool, "batches": [{"id","name","script","timeout"}],
-    #               "watch_processes": ["llama-server.exe", ...]}
+    #               "watch_processes": ["llama-server.exe", ...],
+    #               "api_key": str, "os": str}
     # ("allow_batch"/"batches" are optional, see get_device_batches;
-    #  "watch_processes" is optional, see get_device_watch_processes)
+    #  "watch_processes" is optional, see get_device_watch_processes;
+    #  "api_key" is optional and encrypted at rest, see get_device_api_key;
+    #  "os" is optional, see get_device_os — detected platform, never migrated)
     "network": {
         "broadcast_ip": "255.255.255.255",
         "broadcast_port": 9,
@@ -285,11 +343,23 @@ DEFAULT_CONFIG = {
         # Device dashboard: metrics poll interval in milliseconds
         # (clamped to DASHBOARD_INTERVAL_MIN_MS..DASHBOARD_INTERVAL_MAX_MS).
         "dashboard_interval_ms": DEFAULT_DASHBOARD_INTERVAL_MS,
+        # Devices view: inference-activity poll interval in milliseconds
+        # (clamped to INFERENCE_INTERVAL_MIN_MS..INFERENCE_INTERVAL_MAX_MS).
+        "inference_interval_ms": DEFAULT_INFERENCE_INTERVAL_MS,
     },
     "updates": {
         "auto_check_enabled": True,
         "check_interval_hours": 24,
         "last_check_timestamp": None,
+    },
+    # Remote access: which protocol reaches a device, and how the VNC client
+    # is started. "protocol_by_os" is keyed by the platform ids of the device
+    # "os" key; devices without a detected platform always use RDP.
+    # "vnc_viewer_path" empty = auto-detect the installed TurboVNC viewer.
+    "remote": {
+        "protocol_by_os": dict(DEFAULT_REMOTE_PROTOCOL_BY_OS),
+        "vnc_viewer_path": "",
+        "vnc_port": DEFAULT_VNC_PORT,
     },
 }
 
@@ -492,7 +562,8 @@ class ConfigManager:
     def update_device(self, device_id: str, **kwargs) -> bool:
         """Update device fields with validation.
 
-        Updates name, mac, ip, enabled, username, password, shutdown_method.
+        Updates name, mac, ip, enabled, username, password, shutdown_method,
+        rdp_auth_level, os, os_confidence.
         """
         for dev in self.config.get("devices", []):
             if dev["id"] == device_id:
@@ -522,6 +593,20 @@ class ConfigManager:
                     except (TypeError, ValueError):
                         level = 1
                     dev["rdp_auth_level"] = level if level in (0, 1, 2) else 1
+                if "os" in kwargs:
+                    # Detected platform ("windows"/"macos"/"linux", "" =
+                    # unknown). Normalized so distribution ids collapse.
+                    dev["os"] = self.normalize_os(kwargs["os"])
+                if "os_confidence" in kwargs:
+                    # Confidence of the platform reading; cleared together
+                    # with the platform itself so a stale estimate can never
+                    # decorate a value that is gone.
+                    confidence = kwargs["os_confidence"]
+                    dev["os_confidence"] = (
+                        confidence if confidence in VALID_OS_CONFIDENCES else ""
+                    )
+                if not dev.get("os"):
+                    dev.pop("os_confidence", None)
                 self.save()
                 return True
         return False
@@ -552,6 +637,47 @@ class ConfigManager:
         except (TypeError, ValueError):
             return 1
         return level if level in (0, 1, 2) else 1
+
+    # --- Platform ("os") ---
+
+    @staticmethod
+    def normalize_os(value: object) -> str:
+        """Collapse a platform id to ``windows``/``macos``/``linux`` ("" = unknown)."""
+        return normalize_os(value)
+
+    @classmethod
+    def get_device_os(cls, device: dict) -> str:
+        """Return the platform of *device* ("" when never detected).
+
+        Devices predating the ``os`` key simply report "" — nothing is
+        migrated, the value is re-detectable at any time.
+        """
+        return cls.normalize_os(device.get("os", ""))
+
+    @staticmethod
+    def get_device_os_confidence(device: dict) -> str:
+        """Confidence of the stored platform ("" when not recorded).
+
+        ``high`` = reported by the host service, ``medium``/``low`` = passive
+        fingerprint; the UI shows estimates with a ``~`` prefix.
+        """
+        value = device.get("os_confidence", "")
+        return value if value in VALID_OS_CONFIDENCES else ""
+
+    def set_device_os(
+        self, device_id: str, value: object, confidence: str = ""
+    ) -> bool:
+        """Store the detected platform of a device ("" clears it).
+
+        *confidence* records how the value was obtained (see
+        :data:`VALID_OS_CONFIDENCES`); an invalid value is dropped rather
+        than stored, so the UI never claims more certainty than it has.
+        """
+        return self.update_device(
+            device_id,
+            os=self.normalize_os(value),
+            os_confidence=confidence if confidence in VALID_OS_CONFIDENCES else "",
+        )
 
     def get_default_shutdown_method(self) -> str:
         """Return the default shutdown method for newly added devices."""
@@ -781,6 +907,24 @@ class ConfigManager:
         self.config.setdefault("ui", {})["dashboard_interval_ms"] = value
         self.save()
 
+    # --- Inference-activity badge (devices view, host protocol v9) ---
+
+    def get_inference_interval_ms(self) -> int:
+        """Return the inference-activity poll interval (ms, clamped)."""
+        try:
+            value = int(self.config.get("ui", {}).get(
+                "inference_interval_ms", DEFAULT_INFERENCE_INTERVAL_MS))
+        except (TypeError, ValueError):
+            return DEFAULT_INFERENCE_INTERVAL_MS
+        return min(max(value, INFERENCE_INTERVAL_MIN_MS), INFERENCE_INTERVAL_MAX_MS)
+
+    def set_inference_interval_ms(self, interval_ms: int) -> None:
+        """Persist the inference-activity poll interval (clamped to the range)."""
+        value = int(interval_ms)
+        value = min(max(value, INFERENCE_INTERVAL_MIN_MS), INFERENCE_INTERVAL_MAX_MS)
+        self.config.setdefault("ui", {})["inference_interval_ms"] = value
+        self.save()
+
     @staticmethod
     def get_device_batches(device: dict) -> list:
         """Return the (validated) batch list stored on *device*.
@@ -885,6 +1029,41 @@ class ConfigManager:
         for dev in self.config.get("devices", []):
             if dev["id"] == device_id:
                 dev["watch_processes"] = cleaned
+                self.save()
+                return True
+        return False
+
+    @staticmethod
+    def get_device_api_key(device: dict) -> str:
+        """Return the (validated) dashboard API key of *device*.
+
+        The key is what the inference API on a watched port expects in
+        ``Authorization: Bearer <key>`` — servers started with an API key
+        (llama-server ``--api-key``, Strata ``API_KEY``) answer 401 on
+        ``/metrics`` without it, so the dashboard can only show the amber
+        "activity not measurable" bolt. Stored encrypted (see
+        :meth:`_encrypt_devices`); malformed or oversized values degrade to
+        an empty string so a hand-edited config never breaks a save.
+        """
+        key = device.get("api_key", "")
+        if not isinstance(key, str):
+            return ""
+        key = key.strip()
+        if not key or len(key) > MAX_API_KEY_CHARS:
+            return ""
+        if any(ord(c) < 32 or ord(c) > 126 for c in key):
+            return ""
+        return key
+
+    def set_device_api_key(self, device_id: str, api_key: str) -> bool:
+        """Persist the dashboard API key of a device ("" removes the field)."""
+        cleaned = self.get_device_api_key({"api_key": api_key})
+        for dev in self.config.get("devices", []):
+            if dev["id"] == device_id:
+                if cleaned:
+                    dev["api_key"] = cleaned
+                else:
+                    dev.pop("api_key", None)
                 self.save()
                 return True
         return False
@@ -1039,15 +1218,24 @@ class ConfigManager:
 
     @staticmethod
     def _encrypt_devices(config: dict) -> None:
-        """Encrypt all device passwords in-place before saving."""
+        """Encrypt all device secrets (password, dashboard API key) in-place."""
         for dev in config.get("devices", []):
             pw = dev.get("password", "")
             if pw and not is_encrypted(pw):
                 dev["password"] = encrypt_password(pw)
+            key = dev.get("api_key", "")
+            if isinstance(key, str) and key and not key.startswith(
+                    API_KEY_ENC_PREFIX):
+                clean = ConfigManager.get_device_api_key(dev)
+                # An invalid hand-edited value is dropped rather than raising
+                # inside save() (encrypt_password rejects oversized input).
+                dev["api_key"] = (
+                    API_KEY_ENC_PREFIX + encrypt_password(clean)
+                    if clean else "")
 
     @staticmethod
     def _decrypt_devices(config: dict) -> None:
-        """Decrypt all device passwords in-place after loading."""
+        """Decrypt all device secrets in-place after loading."""
         for dev in config.get("devices", []):
             pw = dev.get("password", "")
             if pw and is_encrypted(pw):
@@ -1055,6 +1243,13 @@ class ConfigManager:
                     dev["password"] = decrypt_password(pw)
                 except Exception:
                     dev["password"] = ""
+            key = dev.get("api_key", "")
+            if isinstance(key, str) and key.startswith(API_KEY_ENC_PREFIX):
+                try:
+                    dev["api_key"] = decrypt_password(
+                        key[len(API_KEY_ENC_PREFIX):])
+                except Exception:
+                    dev["api_key"] = ""
 
     # --- Update Settings ---
 
@@ -1130,6 +1325,75 @@ class ConfigManager:
             raise ValueError(f"Invalid remote desktop resolution: {resolution}")
         ui = self.config.setdefault("ui", {})
         ui["remote_desktop_resolution"] = resolution
+        self.save()
+
+    # --- Remote access (protocol routing + VNC client) ---
+
+    def _remote_section(self) -> dict:
+        """The ``remote`` config section, created empty when absent.
+
+        Configs written before this feature have no ``remote`` key; the load
+        merge normally materialises it, but a stub config (tests) or a hand
+        edited file may not, so callers always get a usable dict.
+        """
+        section = self.config.setdefault("remote", {})
+        return section if isinstance(section, dict) else {}
+
+    def get_remote_protocol(self, os_id: str) -> str:
+        """Protocol used to reach a device of platform *os_id*.
+
+        *os_id* is the normalised platform id of the device (``windows`` /
+        ``macos`` / ``linux``); anything unknown — including the empty string
+        of a device whose platform was never detected — falls back to RDP, the
+        behaviour all versions before 2.4 shipped. Values outside
+        ``VALID_REMOTE_PROTOCOLS`` in a hand-edited config also fall back.
+        """
+        mapping = self._remote_section().get("protocol_by_os")
+        default = DEFAULT_REMOTE_PROTOCOL_BY_OS.get(
+            normalize_os(os_id), REMOTE_PROTOCOL_RDP
+        )
+        if not isinstance(mapping, dict):
+            return default
+        protocol = mapping.get(normalize_os(os_id), default)
+        return protocol if protocol in VALID_REMOTE_PROTOCOLS else default
+
+    def set_remote_protocol(self, os_id: str, protocol: str) -> None:
+        """Set the protocol used for devices of platform *os_id*."""
+        platform_id = normalize_os(os_id)
+        if platform_id not in DEFAULT_REMOTE_PROTOCOL_BY_OS:
+            raise ValueError(f"Invalid platform id: {os_id}")
+        if protocol not in VALID_REMOTE_PROTOCOLS:
+            raise ValueError(f"Invalid remote protocol: {protocol}")
+        mapping = self._remote_section().setdefault("protocol_by_os", {})
+        mapping[platform_id] = protocol
+        self.save()
+
+    def get_vnc_viewer_path(self) -> str:
+        """Configured VNC viewer executable ("" = auto-detect)."""
+        value = self._remote_section().get("vnc_viewer_path", "")
+        return value if isinstance(value, str) else ""
+
+    def set_vnc_viewer_path(self, path: str) -> None:
+        """Set the VNC viewer executable; "" restores auto-detection."""
+        if not isinstance(path, str):
+            raise ValueError("VNC viewer path must be a string")
+        self._remote_section()["vnc_viewer_path"] = path.strip()
+        self.save()
+
+    def get_vnc_port(self) -> int:
+        """TCP port the VNC client connects to (clamped to a valid range)."""
+        try:
+            port = int(self._remote_section().get("vnc_port", DEFAULT_VNC_PORT))
+        except (TypeError, ValueError):
+            return DEFAULT_VNC_PORT
+        return max(VNC_PORT_MIN, min(port, VNC_PORT_MAX))
+
+    def set_vnc_port(self, port: int) -> None:
+        """Set the VNC port (1..65535)."""
+        port = int(port)
+        if not VNC_PORT_MIN <= port <= VNC_PORT_MAX:
+            raise ValueError(f"Invalid VNC port: {port}")
+        self._remote_section()["vnc_port"] = port
         self.save()
 
 

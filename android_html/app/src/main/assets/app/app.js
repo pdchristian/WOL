@@ -79,6 +79,7 @@ de:{
  "logs.exported":"Protokoll exportiert nach {path}","logs.unknown":"Unbekannt",
  /* Einstellungen */
  "set.subtitle":"Applikation & Netzwerk konfigurieren",
+ "set.group.network":"Netzwerk","set.group.appearance":"Darstellung","set.group.misc":"Sonstiges",
  "set.broadcast_ip":"Broadcast-IP","set.broadcast_port":"Broadcast-Port","set.language":"Sprache",
  "set.display":"Anzeigemodus","set.design":"App-Design","set.design.hint":"Eine Änderung des Designs erfordert einen Neustart der App.",
  "set.auto_update":"Automatisch nach Updates suchen","set.interval":"Prüfintervall",
@@ -203,6 +204,7 @@ en:{
  "logs.export":"Export CSV","logs.empty":"No log entries.",
  "logs.exported":"Log exported to {path}","logs.unknown":"Unknown",
  "set.subtitle":"Configure application & network",
+ "set.group.network":"Network","set.group.appearance":"Appearance","set.group.misc":"Miscellaneous",
  "set.broadcast_ip":"Broadcast IP","set.broadcast_port":"Broadcast port","set.language":"Language",
  "set.display":"Display mode","set.design":"App design","set.design.hint":"Changing the design requires an app restart.",
  "set.auto_update":"Automatically check for updates","set.interval":"Check interval",
@@ -324,6 +326,7 @@ fr:{
  "logs.export":"Exporter CSV","logs.empty":"Aucune entrée de journal.",
  "logs.exported":"Journal exporté vers {path}","logs.unknown":"Inconnu",
  "set.subtitle":"Configurer l'application et le réseau",
+ "set.group.network":"Réseau","set.group.appearance":"Apparence","set.group.misc":"Divers",
  "set.broadcast_ip":"IP de diffusion","set.broadcast_port":"Port de diffusion","set.language":"Langue",
  "set.display":"Mode d'affichage","set.design":"Design de l'app","set.design.hint":"Un changement de design exige un redémarrage.",
  "set.auto_update":"Rechercher les mises à jour","set.interval":"Intervalle",
@@ -445,6 +448,7 @@ es:{
  "logs.export":"Exportar CSV","logs.empty":"No hay entradas de registro.",
  "logs.exported":"Registro exportado a {path}","logs.unknown":"Desconocido",
  "set.subtitle":"Configurar aplicación y red",
+ "set.group.network":"Red","set.group.appearance":"Apariencia","set.group.misc":"Otros",
  "set.broadcast_ip":"IP de difusión","set.broadcast_port":"Puerto de difusión","set.language":"Idioma",
  "set.display":"Modo de visualización","set.design":"Diseño de la app","set.design.hint":"Cambiar el diseño requiere reiniciar la app.",
  "set.auto_update":"Buscar actualizaciones automáticamente","set.interval":"Intervalo",
@@ -523,7 +527,7 @@ const Native = (typeof window !== "undefined" && window.Native) ? window.Native 
 
 /* Versionsname kommt von nativ ("info" → BuildConfig); Fallback nur für Browser-Vorschau.
    Die verbindliche Nummer steht in wol_app/__init__.py (wird beim Build synchronisiert). */
-let APP_VERSION = "2.3.7";
+let APP_VERSION = "2.5.1";
 
 /* Reine Laufzeit-Felder pro Gerät (nie persistiert). */
 function rtDefaults() {
@@ -1356,30 +1360,36 @@ function renderSettings() {
   $("#s-set").innerHTML = `
     <div class="toprow"><div><div class="pageTitle">${esc(t("nav.settings"))}</div>
       <div class="pageSub">${esc(t("set.subtitle"))}</div></div></div>
-    <div class="field"><label>${esc(t("set.broadcast_ip"))}</label>
-      <input class="inp" id="st-ip" value="${esc(s.broadcastIp)}" placeholder="255.255.255.255"></div>
-    <div class="field"><label>${esc(t("set.broadcast_port"))}</label>
-      <input class="inp" id="st-port" type="number" min="1" max="65535" value="${s.broadcastPort}"></div>
-    <div class="field"><label>${esc(t("set.language"))}</label>
-      <select class="sel" id="st-lang" style="width:100%">
-        <option value="de" ${s.language==="de"?"selected":""}>Deutsch</option>
-        <option value="en" ${s.language==="en"?"selected":""}>English</option>
-        <option value="fr" ${s.language==="fr"?"selected":""}>Français</option>
-        <option value="es" ${s.language==="es"?"selected":""}>Español</option></select></div>
-    <div class="field"><label>${esc(t("set.display"))}</label>
-      <select class="sel" id="st-disp" style="width:100%">
-        <option value="auto" ${s.displayMode==="auto"?"selected":""}>${esc(t("disp.auto"))}</option>
-        <option value="light" ${s.displayMode==="light"?"selected":""}>${esc(t("disp.light"))}</option>
-        <option value="dark" ${s.displayMode==="dark"?"selected":""}>${esc(t("disp.dark"))}</option></select></div>
-    <div class="togRow" style="padding:6px 0"><div>${esc(t("set.auto_update"))}</div>
-      <div class="toggle ${s.autoUpdate?"on":""}" data-act="set-toggle" data-key="autoUpdate"></div></div>
-    <div class="field" style="margin-top:12px"><label>${esc(t("set.interval"))}</label>
-      <select class="sel" id="st-int" style="width:100%">
-        <option value="24" ${s.interval==="24"?"selected":""}>${esc(t("int.day"))}</option>
-        <option value="168" ${s.interval==="168"?"selected":""}>${esc(t("int.week"))}</option>
-        <option value="720" ${s.interval==="720"?"selected":""}>${esc(t("int.month"))}</option></select></div>
-    <div class="field"><label>${esc(t("set.max_logs"))}</label>
-      <input class="inp" id="st-maxlogs" type="number" min="10" max="10000" step="50" value="${s.maxLogs}"></div>
+    <div class="group"><h2>${esc(t("set.group.network"))}</h2>
+      <div class="field"><label>${esc(t("set.broadcast_ip"))}</label>
+        <input class="inp" id="st-ip" value="${esc(s.broadcastIp)}" placeholder="255.255.255.255"></div>
+      <div class="field"><label>${esc(t("set.broadcast_port"))}</label>
+        <input class="inp" id="st-port" type="number" min="1" max="65535" value="${s.broadcastPort}"></div>
+    </div>
+    <div class="group"><h2>${esc(t("set.group.appearance"))}</h2>
+      <div class="field"><label>${esc(t("set.language"))}</label>
+        <select class="sel" id="st-lang" style="width:100%">
+          <option value="de" ${s.language==="de"?"selected":""}>Deutsch</option>
+          <option value="en" ${s.language==="en"?"selected":""}>English</option>
+          <option value="fr" ${s.language==="fr"?"selected":""}>Français</option>
+          <option value="es" ${s.language==="es"?"selected":""}>Español</option></select></div>
+      <div class="field"><label>${esc(t("set.display"))}</label>
+        <select class="sel" id="st-disp" style="width:100%">
+          <option value="auto" ${s.displayMode==="auto"?"selected":""}>${esc(t("disp.auto"))}</option>
+          <option value="light" ${s.displayMode==="light"?"selected":""}>${esc(t("disp.light"))}</option>
+          <option value="dark" ${s.displayMode==="dark"?"selected":""}>${esc(t("disp.dark"))}</option></select></div>
+    </div>
+    <div class="group"><h2>${esc(t("set.group.misc"))}</h2>
+      <div class="field"><label>${esc(t("set.max_logs"))}</label>
+        <input class="inp" id="st-maxlogs" type="number" min="10" max="10000" step="50" value="${s.maxLogs}"></div>
+      <div class="togRow"><div>${esc(t("set.auto_update"))}</div>
+        <div class="toggle ${s.autoUpdate?"on":""}" data-act="set-toggle" data-key="autoUpdate"></div></div>
+      <div class="field"><label>${esc(t("set.interval"))}</label>
+        <select class="sel" id="st-int" style="width:100%">
+          <option value="24" ${s.interval==="24"?"selected":""}>${esc(t("int.day"))}</option>
+          <option value="168" ${s.interval==="168"?"selected":""}>${esc(t("int.week"))}</option>
+          <option value="720" ${s.interval==="720"?"selected":""}>${esc(t("int.month"))}</option></select></div>
+    </div>
     <div class="infoBlock">${esc(t("set.info"))}</div>
     <div class="toolbar" style="justify-content:flex-end;margin-top:14px">
       <button class="btn small" data-act="set-reset">${esc(t("set.reset"))}</button>

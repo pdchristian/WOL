@@ -22,11 +22,14 @@ from wol_app.config import DEVICES_VIEW_LIST  # noqa: E402
 from wol_app.views.devices_view import (  # noqa: E402
     CARD_MIN_WIDTH,
     GRID_SPACING,
+    INFERENCE_INTERVAL_CHOICES_MS,
     PAGE_MARGIN_H,
     DeviceCard,
     DeviceListRow,
     DevicesView,
+    derive_inference_state,
 )
+from wol_app.widgets.status_pill import StatusPill  # noqa: E402
 
 # Translation keys asserted below — must exist in every locale so the
 # locale-synchronous assertions never fall back to the raw key string.
@@ -68,13 +71,13 @@ class TestDeviceCard:
         card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
         assert card.action_btn.text() == Translations.tr("modern.devices.button.wake")
         assert card.action_btn.objectName() == "wakeButton"
-        assert card.dot.objectName() == "dotOffline"
+        assert card.pill.dot.objectName() == "pillDotOffline"
 
     def test_online_card_shows_shutdown_button(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
         assert card.action_btn.text() == Translations.tr("button.shutdown")
         assert card.action_btn.objectName() == "shutdownButton"
-        assert card.dot.objectName() == "dotOnline"
+        assert card.pill.dot.objectName() == "pillDotOnline"
 
     def test_status_swap_updates_button(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
@@ -82,7 +85,7 @@ class TestDeviceCard:
         assert card.action_btn.objectName() == "shutdownButton"
         card.set_status("unknown")
         assert card.action_btn.objectName() == "wakeButton"
-        assert card.dot.objectName() == "dotUnknown"
+        assert card.pill.dot.objectName() == "pillDotUnknown"
 
     def test_action_click_emits_wake_or_shutdown(self, qapp, config_with_devices):
         card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
@@ -452,3 +455,435 @@ class TestLocaleKeyConsistency:
         keys = self._locale_keys(lang)
         missing = [k for k in _NAME_KEYS if k not in keys]
         assert not missing, f"Keys missing from {lang}.json: {missing}"
+
+
+class TestPlatformPill:
+    """Status + platform chip on cards and rows, and the client tooltips."""
+
+    def test_card_pill_shows_detected_platform(self, qapp, config_with_devices):
+        device = dict(config_with_devices.config["devices"][0], os="ubuntu")
+        card = DeviceCard(device, "online", set())
+        assert "Linux" in card.pill.text.text()
+        assert card.pill.dot.objectName() == "pillDotOnline"
+
+    def test_card_pill_marks_unknown_platform(self, qapp, config_with_devices):
+        card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
+        assert Translations.tr("scan_dialog.os.unknown") in card.pill.text.text()
+
+    def test_list_row_keeps_dot_and_adds_pill(self, qapp, config_with_devices):
+        device = dict(config_with_devices.config["devices"][0], os="windows")
+        row = DeviceListRow(device, "online", set())
+        assert row.dot.objectName() == "dotOnline"
+        assert "Windows" in row.pill.text.text()
+        assert row.pill.dot.objectName() == "pillDotOnline"
+
+    def test_status_update_moves_pill_dot(self, qapp, config_with_devices):
+        card = DeviceCard(config_with_devices.config["devices"][0], "offline", set())
+        card.set_status("online")
+        assert card.pill.dot.objectName() == "pillDotOnline"
+
+    def test_estimate_and_service_show_platform_without_tilde(self, qapp):
+        from wol_app.widgets.status_pill import StatusPill
+
+        estimated = StatusPill("windows", "ttl", "online")
+        assert "Windows" in estimated.text.text()
+        assert not estimated.text.text().startswith("~")
+        service = StatusPill("windows", "high", "online")
+        assert "Windows" in service.text.text()
+        assert not service.text.text().startswith("~")
+        # the confidence is still spelled out in the tooltip, not the label
+        assert Translations.tr("scan_dialog.os.tip_estimate") in estimated.toolTip()
+        assert Translations.tr("scan_dialog.os.tip_service") in service.toolTip()
+
+    def test_pill_tooltip_combines_status_and_platform(self, qapp):
+        from wol_app.widgets.status_pill import StatusPill
+
+        pill = StatusPill("linux", "", "online")
+        tip = pill.toolTip()
+        assert Translations.tr("status.online") in tip
+        assert Translations.tr("modern.devices.pill_detected") in tip
+        pill.set_platform("", "")
+        assert Translations.tr("modern.devices.pill_unknown") in pill.toolTip()
+
+    def test_remote_tooltips_name_the_client_for_the_protocol(
+            self, qapp, config_with_devices):
+        from wol_app.config import REMOTE_PROTOCOL_VNC
+
+        device = dict(config_with_devices.config["devices"][0], os="linux")
+        card = DeviceCard(
+            device, "online", set(), remote_protocol=REMOTE_PROTOCOL_VNC)
+        assert card.remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_vnc"))
+        assert card.remote_win_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_vnc"))
+        # default (windows / unknown) keeps the RDP client in the tooltip
+        plain = DeviceCard(config_with_devices.config["devices"][0], "online", set())
+        assert plain.remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_rdp"))
+
+    def test_view_routes_protocol_per_device(self, qapp, config_with_devices):
+        config_with_devices.config["devices"][0]["os"] = "linux"
+        view = DevicesView(config_with_devices)
+        assert view._cards["d1"].remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_vnc"))
+        assert view._cards["d2"].remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_rdp"))
+
+
+class TestPlatformDetection:
+    """Automatic platform fingerprinting for devices without a stored platform."""
+
+    def test_probe_targets_resolves_hostnames(self, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+
+        monkeypatch.setattr(
+            "wol_app.utils.resolve_ipv4_all",
+            lambda v: ["10.0.0.9", "10.0.0.10"])
+        targets, hint = OsDetectWorker.probe_targets(
+            {"ip": "ubuntu-mercury.fritz.box", "name": "mercury"})
+        assert targets == ["10.0.0.9", "10.0.0.10"]
+        assert hint == "ubuntu-mercury.fritz.box"
+
+    def test_probe_targets_keeps_plain_ipv4(self):
+        from wol_app.app_core import OsDetectWorker
+
+        assert OsDetectWorker.probe_targets(
+            {"ip": "10.0.0.5", "name": "PC"}) == (["10.0.0.5"], "PC")
+
+    def test_probe_targets_unresolvable_name_is_tried_as_is(self, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+
+        monkeypatch.setattr("wol_app.utils.resolve_ipv4_all", lambda v: [])
+        assert OsDetectWorker.probe_targets({"ip": "gone.local"}) == (
+            ["gone.local"], "gone.local")
+
+    def test_worker_tries_further_addresses_until_one_answers(
+            self, config_with_devices, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+
+        config_with_devices.config["devices"][0]["ip"] = "pc.fritz.box"
+        monkeypatch.setattr(
+            "wol_app.utils.resolve_ipv4_all",
+            lambda v: ["10.0.0.1", "10.0.0.2"])
+
+        def fake_fingerprint(ip, hostname="", mac="", **_kw):
+            if ip == "10.0.0.1":
+                return "", "", ""       # stale lease, no signal at all
+            return "windows", "medium", "fingerprint"
+
+        monkeypatch.setattr("wol_app.os_detect.fingerprint_host",
+                            fake_fingerprint)
+        worker = OsDetectWorker(config_with_devices)
+        results: list = []
+        worker.finished.connect(results.extend)
+        worker.run()
+
+        d1 = next(r for r in results if r[0] == "d1")
+        assert d1[1:3] == ("windows", "medium")
+
+    def test_worker_probes_only_devices_without_platform(
+            self, config_with_devices, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+        from wol_app.os_detect import CONFIDENCE_MEDIUM
+
+        config_with_devices.config["devices"][0]["os"] = "windows"
+        probed: list[str] = []
+
+        def fake_fingerprint(ip, hostname="", mac="", **_kw):
+            probed.append(hostname or ip)
+            return "linux", CONFIDENCE_MEDIUM, "fingerprint"
+
+        monkeypatch.setattr("wol_app.os_detect.fingerprint_host",
+                            fake_fingerprint)
+        worker = OsDetectWorker(config_with_devices)
+        results: list = []
+        worker.finished.connect(results.extend)
+        worker.run()
+
+        # d1 already has a platform and d3 is disabled -> only d2 is probed.
+        assert sorted(r[0] for r in results) == ["d2"]
+        assert all(r[1] == "linux" for r in results)
+        assert len(probed) == 1
+
+    def test_worker_survives_probe_errors(self, config_with_devices, monkeypatch):
+        from wol_app.app_core import OsDetectWorker
+
+        def boom(*_a, **_kw):
+            raise OSError("network down")
+
+        monkeypatch.setattr("wol_app.os_detect.fingerprint_host", boom)
+        worker = OsDetectWorker(config_with_devices)
+        results: list = []
+        worker.finished.connect(results.extend)
+        worker.run()
+        assert results
+        assert all(r[1] == "" for r in results)
+
+    def test_headless_mode_skips_detection(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        assert view._os_thread is None
+
+    def test_results_persist_and_update_the_cards(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        view._on_platforms_finished([("d1", "linux", "low", "fingerprint")])
+
+        stored = config_with_devices.get_device_by_id("d1")
+        assert stored["os"] == "linux"
+        assert stored["os_confidence"] == "low"
+        # Rebuilt cards show the platform and route the Remote buttons to VNC.
+        card = view._cards["d1"]
+        assert "Linux" in card.pill.text.text()
+        assert not card.pill.text.text().startswith("~")
+        assert card.remote_fs_btn.toolTip().endswith(
+            Translations.tr("modern.devices.client_vnc"))
+
+    def test_unknown_result_leaves_device_untouched(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        view._on_platforms_finished([("d1", "", "", "")])
+        stored = config_with_devices.get_device_by_id("d1")
+        assert "os" not in stored or not stored["os"]
+        assert "d1" in view._os_probed
+
+    def test_manual_refresh_forgets_missing_platforms(self, qapp,
+                                                       config_with_devices,
+                                                       monkeypatch):
+        view = DevicesView(config_with_devices)
+        view._os_probed = {"d1", "d2", "d3"}
+        started: list[bool] = []
+        monkeypatch.setattr(view, "refresh_statuses", lambda: started.append(True))
+        monkeypatch.setattr(view, "detect_missing_platforms", lambda: None)
+        view._on_refresh_clicked()
+        assert started == [True]
+        # All three devices lack a platform -> the memory is cleared again.
+        assert view._os_probed == set()
+
+
+class TestInferenceBadge:
+    """Protocol v9 "requests_active" -> lightning bolt inside the pill."""
+
+    # ── State derivation (pure function) ────────────────────────────────
+
+    def test_no_response_is_no_verdict(self):
+        assert derive_inference_state(None) is None
+        assert derive_inference_state("garbage") is None
+
+    def test_pre_v9_host_is_no_verdict(self):
+        resp = {"protocol": 8, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080,
+                                      "api_port_open": True, "running": True}}}
+        assert derive_inference_state(resp) is None
+
+    def test_requests_active_above_zero_is_active(self):
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "running": True, "requests_active": 2}}}
+        assert derive_inference_state(resp) == "active"
+
+    def test_active_wins_over_idle_and_warn(self):
+        resp = {"protocol": 9, "processes": {
+            ":8081": {"api_port": 8081, "api_port_open": True,
+                      "running": False, "requests_active": 0},
+            "gone.exe:8090": {"api_port": 8090, "api_port_open": False,
+                              "running": False},
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "running": True, "requests_active": 1}}}
+        assert derive_inference_state(resp) == "active"
+
+    def test_zero_requests_is_idle(self):
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "running": True, "requests_active": 0}}}
+        assert derive_inference_state(resp) == "idle"
+
+    def test_open_port_without_field_is_warn(self):
+        """v9 host, API up but /metrics unreadable -> amber bolt."""
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "api_up": True, "running": True}}}
+        assert derive_inference_state(resp) == "warn"
+
+    def test_closed_port_hides_badge(self):
+        """Watched API port down = server off — no bolt at all."""
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": False,
+                                      "running": True}}}
+        assert derive_inference_state(resp) == "hidden"
+
+    def test_unmeasurable_open_port_outranks_closed_port(self):
+        """One open-but-unmeasurable port keeps the amber warn verdict."""
+        resp = {"protocol": 9, "processes": {
+            "gone.exe:8090": {"api_port": 8090, "api_port_open": False,
+                              "running": False},
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "api_up": True, "running": True}}}
+        assert derive_inference_state(resp) == "warn"
+
+    def test_idle_outranks_closed_port(self):
+        resp = {"protocol": 9, "processes": {
+            "gone.exe:8090": {"api_port": 8090, "api_port_open": False,
+                              "running": False},
+            "x:8080": {"api_port": 8080, "api_port_open": True,
+                       "running": True, "requests_active": 0}}}
+        assert derive_inference_state(resp) == "idle"
+
+    def test_name_only_entries_have_no_verdict(self):
+        resp = {"protocol": 9, "processes": {
+            "backup-sync.exe": {"running": True, "pid": 5}}}
+        assert derive_inference_state(resp) is None
+
+    # ── API key vs. host service version (protocol v10) ─────────────────
+
+    def test_api_key_on_pre_v10_host_explains_itself(self):
+        """Key configured, host too old to send it -> warn_key verdict."""
+        resp = {"protocol": 9, "processes": {
+            "strata.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                "api_up": True, "running": True}}}
+        assert derive_inference_state(resp, "dummy") == "warn_key"
+        # even a pre-v9 host is explained instead of staying silent
+        old = {"protocol": 8, "processes": {}}
+        assert derive_inference_state(old, "dummy") == "warn_key"
+
+    def test_api_key_with_v10_host_keeps_plain_warn(self):
+        resp = {"protocol": 10, "processes": {
+            "strata.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                "api_up": True, "running": True}}}
+        assert derive_inference_state(resp, "dummy") == "warn"
+        assert derive_inference_state(resp) == "warn"
+
+    def test_api_key_still_reports_active(self):
+        resp = {"protocol": 10, "processes": {
+            "strata.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                "api_up": True, "running": True,
+                                "requests_active": 3}}}
+        assert derive_inference_state(resp, "dummy") == "active"
+
+    def test_warn_key_bolt_reuses_amber_style_with_own_tip(self, qapp):
+        pill = StatusPill(os_id="windows", status="online")
+        pill.set_inference("warn_key")
+        assert pill.bolt.objectName() == "pillBoltWarn"
+        assert pill.bolt.isVisibleTo(pill)
+        assert Translations.tr("modern.devices.infer.warn_key") in pill.toolTip()
+
+    # ── Card / row / pill plumbing ──────────────────────────────────────
+
+    def test_card_bolt_object_names(self, qapp, config_with_devices):
+        card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
+        assert not card.pill.bolt.isVisibleTo(card)
+        card.set_inference("active")
+        assert card.pill.bolt.objectName() == "pillBoltActive"
+        assert card.pill.bolt.isVisibleTo(card)
+        card.set_inference("idle")
+        assert card.pill.bolt.objectName() == "pillBoltIdle"
+        card.set_inference("none")
+        assert not card.pill.bolt.isVisibleTo(card)
+
+    def test_row_bolt_shows_through_pill(self, qapp, config_with_devices):
+        row = DeviceListRow(config_with_devices.config["devices"][0], "online", set())
+        row.set_inference("warn")
+        assert row.pill.bolt.objectName() == "pillBoltWarn"
+
+    def test_bolt_tooltip_added(self, qapp, config_with_devices):
+        card = DeviceCard(config_with_devices.config["devices"][0], "online", set())
+        assert Translations.tr("modern.devices.infer.active") not in card.pill.toolTip()
+        card.set_inference("active")
+        assert Translations.tr("modern.devices.infer.active") in card.pill.toolTip()
+
+    # ── View wiring ─────────────────────────────────────────────────────
+
+    def test_interval_combo_defaults_to_config_value(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        assert view.inference_combo.currentData() == 10_000
+        assert [view.inference_combo.itemData(i)
+                for i in range(view.inference_combo.count())] == \
+            list(INFERENCE_INTERVAL_CHOICES_MS)
+
+    def test_interval_change_persists_and_retimes(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        idx = view.inference_combo.findData(30_000)
+        view.inference_combo.setCurrentIndex(idx)
+        assert config_with_devices.get_inference_interval_ms() == 30_000
+        assert view._inference_timer.interval() == 30_000
+
+    def test_stored_off_interval_gets_own_entry(self, qapp, config_with_devices):
+        config_with_devices.set_inference_interval_ms(7_000)  # clamps to 7000
+        view = DevicesView(config_with_devices)
+        assert view.inference_combo.currentData() == 7_000
+
+    def test_targets_require_watch_and_credentials(self, qapp, config_with_devices):
+        devices = config_with_devices.config["devices"]
+        devices[0]["username"] = "u"
+        devices[0]["password"] = "p"
+        devices[0]["watch_processes"] = ["llama-server.exe:8080"]
+        devices[1]["watch_processes"] = ["llama-server.exe:8080"]  # no creds
+        devices[2]["username"] = "u"
+        devices[2]["password"] = "p"  # disabled + no watch
+        view = DevicesView(config_with_devices)
+        targets = view._inference_targets()
+        assert [t["id"] for t in targets] == ["d1"]
+        assert targets[0]["watch"] == ["llama-server.exe:8080"]
+
+    def test_targets_carry_dashboard_api_key(self, qapp, config_with_devices):
+        """v10: the sweep sends the device's key so /metrics is measurable."""
+        device = config_with_devices.config["devices"][0]
+        device["username"] = "u"
+        device["password"] = "p"
+        device["watch_processes"] = ["strata:8080"]
+        config_with_devices.set_device_api_key(device["id"], "dummy")
+        view = DevicesView(config_with_devices)
+        targets = view._inference_targets()
+        assert targets[0]["api_key"] == "dummy"
+
+    def test_targets_skip_offline_devices(self, qapp, config_with_devices):
+        device = config_with_devices.config["devices"][0]
+        device["username"] = "u"
+        device["password"] = "p"
+        device["watch_processes"] = ["x.exe:8080"]
+        view = DevicesView(config_with_devices)
+        assert [t["id"] for t in view._inference_targets()] == ["d1"]
+        view._statuses["d1"] = "offline"
+        assert view._inference_targets() == []
+
+    def test_finished_updates_cards_rows_and_cache(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        resp = {"protocol": 9, "processes": {
+            "llama-server.exe:8080": {"api_port": 8080, "api_port_open": True,
+                                      "running": True, "requests_active": 3}}}
+        view._on_inference_finished([("d1", resp), ("d2", None)])
+        assert view._inference_states == {"d1": "active"}
+        assert view._cards["d1"].pill.bolt.objectName() == "pillBoltActive"
+        assert view._rows["d1"].pill.bolt.objectName() == "pillBoltActive"
+        assert not view._rows["d2"].pill.bolt.isVisibleTo(view._rows["d2"])
+
+    def test_no_verdict_keeps_previous_state(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        resp = {"protocol": 9, "processes": {
+            "x:8080": {"api_port": 8080, "api_port_open": True,
+                       "running": True, "requests_active": 1}}}
+        view._on_inference_finished([("d1", resp)])
+        view._on_inference_finished([("d1", None)])  # host unreachable now
+        assert view._inference_states["d1"] == "active"
+        assert view._cards["d1"].pill.bolt.objectName() == "pillBoltActive"
+
+    def test_hidden_verdict_clears_a_shown_bolt(self, qapp, config_with_devices):
+        """Server stops (port closes) -> the badge is cleared, not stuck."""
+        view = DevicesView(config_with_devices)
+        view._on_inference_finished([("d1", {"protocol": 9, "processes": {
+            "x:8080": {"api_port": 8080, "api_port_open": True,
+                       "running": True, "requests_active": 1}}})])
+        assert view._cards["d1"].pill.bolt.isVisibleTo(view._cards["d1"])
+        view._on_inference_finished([("d1", {"protocol": 9, "processes": {
+            "x:8080": {"api_port": 8080, "api_port_open": False,
+                       "running": False}}})])
+        assert view._inference_states["d1"] == "hidden"
+        assert not view._cards["d1"].pill.bolt.isVisibleTo(view._cards["d1"])
+        assert not view._rows["d1"].pill.bolt.isVisibleTo(view._rows["d1"])
+
+    def test_rebuild_reapplies_cached_state(self, qapp, config_with_devices):
+        view = DevicesView(config_with_devices)
+        resp = {"protocol": 9, "processes": {
+            "x:8080": {"api_port": 8080, "api_port_open": True,
+                       "running": True, "requests_active": 0}}}
+        view._on_inference_finished([("d1", resp)])
+        view.refresh_devices()  # sort/filter/edit rebuild
+        assert view._cards["d1"].pill.bolt.objectName() == "pillBoltIdle"
+        assert view._rows["d1"].pill.bolt.objectName() == "pillBoltIdle"

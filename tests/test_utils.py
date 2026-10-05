@@ -17,9 +17,12 @@ from wol_app.utils import (
     _monitor_mstsc_fast_exit,
     _register_rdp_credentials,
     auto_rdp_resolution,
+    build_vnc_args,
     ensure_user_data_dir,
+    find_vnc_viewer,
     get_ip_key,
     launch_remote_desktop,
+    launch_vnc,
     retry_remote_desktop_without_password,
     validate_device_name,
     validate_hostname,
@@ -741,6 +744,68 @@ class TestIsElevated(unittest.TestCase):
 
         with patch("wol_app.utils.os.name", "posix"):
             self.assertFalse(_is_elevated())
+
+
+class TestVncLaunch(unittest.TestCase):
+    """TurboVNC discovery and command line (``utils.launch_vnc``)."""
+
+    def test_build_vnc_args_fullscreen_uses_literal_port(self):
+        # "::" addresses a literal TCP port; ":1" would mean display 1.
+        self.assertEqual(
+            build_vnc_args("vncviewerw.bat", "192.168.2.50", 5900, True),
+            ["vncviewerw.bat", "-FullScreen", "1", "192.168.2.50::5900"],
+        )
+
+    def test_build_vnc_args_windowed(self):
+        self.assertEqual(
+            build_vnc_args("vncviewer", "host.local", 5901, False),
+            ["vncviewer", "host.local::5901"],
+        )
+
+    def test_launch_vnc_requires_ip(self):
+        with self.assertRaises(ValueError):
+            launch_vnc("")
+
+    def test_launch_vnc_without_viewer_raises_runtime_error(self):
+        with patch("wol_app.utils.find_vnc_viewer", return_value=""):
+            with self.assertRaises(RuntimeError):
+                launch_vnc("10.0.0.1")
+
+    def test_launch_vnc_prefers_configured_path(self):
+        with patch("wol_app.utils.find_vnc_viewer") as detect, \
+                patch("wol_app.utils.subprocess.Popen") as popen:
+            cmd = launch_vnc(
+                "10.0.0.1", port=5901,
+                viewer_path=r"C:\Tools\vncviewerw.bat", fullscreen=False,
+            )
+        detect.assert_not_called()
+        self.assertEqual(cmd, [r"C:\Tools\vncviewerw.bat", "10.0.0.1::5901"])
+        self.assertEqual(popen.call_args.args[0], cmd)
+
+    def test_launch_vnc_auto_detects_viewer(self):
+        with patch("wol_app.utils.find_vnc_viewer", return_value="/usr/bin/vncviewer"), \
+                patch("wol_app.utils.subprocess.Popen") as popen:
+            cmd = launch_vnc("10.0.0.1")
+        self.assertEqual(
+            cmd, ["/usr/bin/vncviewer", "-FullScreen", "1", "10.0.0.1::5900"])
+        popen.assert_called_once()
+
+    def test_find_vnc_viewer_finds_turbovnc_launcher(self):
+        directory = os.path.join("C:", os.sep, "Program Files", "TurboVNC")
+        with patch("wol_app.utils._vnc_candidate_dirs", return_value=[directory]), \
+                patch("wol_app.utils.os.path.isfile", return_value=True):
+            self.assertEqual(
+                find_vnc_viewer(), os.path.join(directory, "vncviewerw.bat"))
+
+    def test_find_vnc_viewer_falls_back_to_path(self):
+        with patch("wol_app.utils._vnc_candidate_dirs", return_value=[]), \
+                patch("wol_app.utils.shutil.which", return_value="/opt/TurboVNC/bin/vncviewer"):
+            self.assertEqual(find_vnc_viewer(), "/opt/TurboVNC/bin/vncviewer")
+
+    def test_find_vnc_viewer_returns_empty_when_absent(self):
+        with patch("wol_app.utils._vnc_candidate_dirs", return_value=[]), \
+                patch("wol_app.utils.shutil.which", return_value=None):
+            self.assertEqual(find_vnc_viewer(), "")
 
 
 if __name__ == "__main__":

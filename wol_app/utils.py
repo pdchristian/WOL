@@ -14,6 +14,8 @@ import threading
 import time
 from pathlib import Path
 
+from wol_app.translations import Translations
+
 # ── Validation ──────────────────────────────────────────────────────────────
 
 def validate_ip(ip: str) -> bool:
@@ -127,6 +129,23 @@ def validate_password(password: str) -> bool:
     if len(password) > 128:
         return False
     if any(ord(c) > 126 for c in password):
+        return False
+    return True
+
+
+def validate_api_key(api_key: str) -> bool:
+    """Validate a dashboard API key for safety.
+
+    The key travels to the host service and ends up in an ``Authorization``
+    header of the local inference-API probes, so control characters (CR/LF
+    included) and non-ASCII are rejected. The length cap must match
+    ``ConfigManager.MAX_API_KEY_CHARS``.
+    """
+    if not api_key:
+        return True  # API key is optional
+    if len(api_key) > 128:
+        return False
+    if any(ord(c) < 32 or ord(c) > 126 for c in api_key):
         return False
     return True
 
@@ -1149,6 +1168,106 @@ def retry_remote_desktop_without_password(
     )
 
 
+# ── VNC (TurboVNC) ─────────────────────────────────────────────────────────
+
+# TurboVNC ships no native viewer binary on Windows: the viewer is a Java jar
+# behind ``vncviewer.bat`` / ``vncviewerw.bat``. The "w" variant starts javaw
+# (no console window) and is therefore preferred.
+_VNC_WINDOWS_LAUNCHERS = ("vncviewerw.bat", "vncviewer.bat")
+_VNC_WINDOWS_DIR_NAMES = ("TurboVNC", "Turbo VNC")
+# Executable names looked up on the PATH (Linux/macOS installs, RealVNC-style
+# viewers that also answer to "vncviewer").
+_VNC_PATH_NAMES = ("vncviewer", "vncviewer.exe")
+
+
+def _vnc_candidate_dirs() -> list[str]:
+    """Install directories that may hold a Windows VNC viewer."""
+    roots: list[str] = []
+    for var in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
+        root = os.environ.get(var, "")
+        if root and root not in roots:
+            roots.append(root)
+    return [
+        os.path.join(root, name)
+        for root in roots
+        for name in _VNC_WINDOWS_DIR_NAMES
+    ]
+
+
+def find_vnc_viewer() -> str:
+    """Locate a VNC viewer executable ("" when none was found).
+
+    Search order: the TurboVNC default install directories (Windows), then the
+    ``PATH`` (Linux/macOS installs put ``vncviewer`` in ``/usr/local/bin`` or
+    ``/opt/TurboVNC/bin``). Never raises — an empty result simply means the
+    caller should tell the user to install or configure a client.
+    """
+    if sys.platform == "win32":
+        for directory in _vnc_candidate_dirs():
+            for launcher in _VNC_WINDOWS_LAUNCHERS:
+                candidate = os.path.join(directory, launcher)
+                if os.path.isfile(candidate):
+                    return candidate
+    for name in _VNC_PATH_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    return ""
+
+
+def build_vnc_args(
+    viewer: str,
+    ip: str,
+    port: int = 5900,
+    fullscreen: bool = True,
+) -> list[str]:
+    """Command line that opens a direct VNC connection to *ip*:*port*.
+
+    TurboVNC addresses a literal TCP port with the doubled-colon form
+    ``host::port`` (``host:1`` would mean display 1, i.e. port 5901), and
+    ``-FullScreen 1`` starts the viewer full-screen. No credentials are ever
+    part of the command line — the viewer prompts for the password (the caller
+    may pre-fill the clipboard).
+    """
+    args = [viewer]
+    if fullscreen:
+        args += ["-FullScreen", "1"]
+    args.append(f"{ip}::{int(port)}")
+    return args
+
+
+def launch_vnc(
+    ip: str,
+    port: int = 5900,
+    viewer_path: str = "",
+    fullscreen: bool = True,
+) -> list[str]:
+    """Open a VNC session to *ip*:*port* with the installed TurboVNC viewer.
+
+    *viewer_path* overrides the auto-detection (empty = :func:`find_vnc_viewer`).
+    Returns the command line that was started so the caller can log it.
+
+    Raises:
+        ValueError: if *ip* is empty.
+        RuntimeError: if no VNC viewer is installed or configured.
+        OSError: if the viewer could not be started.
+    """
+    if not ip:
+        raise ValueError("IP address is empty")
+    viewer = (viewer_path or "").strip() or find_vnc_viewer()
+    if not viewer:
+        raise RuntimeError(
+            "No VNC viewer found. Install TurboVNC or set its path in the "
+            "remote access settings."
+        )
+    cmd = build_vnc_args(viewer, ip, port=port, fullscreen=fullscreen)
+    # CREATE_NO_WINDOW hides the console of TurboVNC's .bat launcher (the Java
+    # viewer itself is a GUI process). shell=False: no command injection.
+    creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    subprocess.Popen(cmd, creationflags=creationflags)
+    return cmd
+
+
 # ── Sorting helpers ────────────────────────────────────────────────────────
 
 def ip_sort_key(ip: str) -> tuple:
@@ -1176,6 +1295,57 @@ def get_ip_key(ip_str: str) -> tuple:
         return tuple(parts)
     except (ValueError, AttributeError):
         return (0, 0, 0, 0)
+
+
+# Normalized platform ids stored per device ("os" key) and reported by the
+# host service (protocol v8). Lives here so both config and the network
+# scanner can use it without importing each other.
+OS_WINDOWS = "windows"
+OS_MACOS = "macos"
+OS_LINUX = "linux"
+VALID_OS_IDS = (OS_WINDOWS, OS_MACOS, OS_LINUX)
+
+#: locale key for each platform id (used by the scan UIs)
+OS_LABEL_KEYS = {
+    OS_WINDOWS: "scan_dialog.os.windows",
+    OS_MACOS: "scan_dialog.os.macos",
+    OS_LINUX: "scan_dialog.os.linux",
+}
+
+
+def normalize_os(value: object) -> str:
+    """Collapse a platform id to ``windows``/``macos``/``linux`` ("" = unknown).
+
+    The host service reports the concrete distribution (``ubuntu``,
+    ``debian``, …); the UI groups everything else under ``linux`` so the
+    scan table and the stored device records stay consistent.
+    """
+    if not isinstance(value, str):
+        return ""
+    ident = value.strip().lower()
+    if ident in VALID_OS_IDS:
+        return ident
+    if ident == "darwin" or ident.startswith("macos"):
+        return OS_MACOS
+    if ident == "win32" or ident.startswith("windows"):
+        return OS_WINDOWS
+    if ident and ident != "unknown":
+        return OS_LINUX
+    return ""
+
+
+def os_display_text(os_id: str, confidence: str) -> str:
+    """Platform label for a device/host ("" when unknown, ``~`` = estimated).
+
+    Shared by the scan results and the platform pill on the device cards and
+    rows: only a high-confidence reading (the host service answered) is shown
+    as a bare label, everything derived from TTL/SMB/OUI hints gets a ``~``.
+    """
+    label_key = OS_LABEL_KEYS.get(os_id)
+    if label_key is None:
+        return ""
+    text = Translations.tr(label_key)
+    return text if confidence == "high" else f"~ {text}"
 
 
 def make_sort_key(column: int, is_ip: bool = False):
@@ -1247,6 +1417,238 @@ def set_app_user_model_id(app_id: str) -> bool:
         import ctypes
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+        return True
+    except Exception:
+        return False
+
+
+def force_window_foreground(widget) -> bool:
+    """Bring a top-level window to the foreground, bypassing the platform's
+    "a background process may not steal focus" rule.
+
+    That rule is what breaks the single-instance raise request: a second
+    launch tells the running instance to show itself, but the running
+    instance is a *background* application, so ``showNormal()`` + ``raise_()``
+    + ``activateWindow()`` only un-minimise the window — it stays behind the
+    other windows (Windows: the taskbar button just flashes; macOS: the Dock
+    icon bounces once and the window stays miniaturised/unfocused).
+
+    * Windows: attach our input thread to the current foreground thread (the
+      classic Raymond Chen trick) so ``SetForegroundWindow`` is accepted.
+    * macOS: deminiaturise the ``NSWindow`` and activate the application with
+      ``activateIgnoringOtherApps`` (PyObjC, bundled by the macOS build; a
+      ctypes ``objc_msgSend`` fallback covers environments without it). A
+      second launch does not even reach the ``RAISE`` request there — see
+      :func:`install_macos_reopen_handler`, which calls this from the Cocoa
+      reopen event.
+
+    No-op on other platforms; returns True when the foreground call was
+    attempted.
+    """
+    if sys.platform == "darwin":
+        return _force_window_foreground_macos(widget)
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        hwnd = int(widget.winId())
+        if not hwnd:
+            return False
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        # Only un-minimise when the window is actually iconic — SW_RESTORE on
+        # a maximized window would un-maximize it, which is not wanted here.
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        fg = user32.GetForegroundWindow()
+        fg_tid = user32.GetWindowThreadProcessId(fg, None)
+        cur_tid = kernel32.GetCurrentThreadId()
+        attached = bool(fg_tid) and fg_tid != cur_tid
+        if attached:
+            user32.AttachThreadInput(cur_tid, fg_tid, True)
+        try:
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.SetActiveWindow(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(cur_tid, fg_tid, False)
+        return True
+    except Exception:
+        return False
+
+
+def _force_window_foreground_macos(widget) -> bool:
+    """macOS counterpart of :func:`force_window_foreground`.
+
+    A second launch of the app either asks the running process to show
+    itself (``RAISE`` over the single-instance socket, e.g. ``open -n`` or a
+    terminal launch) or, far more often, only re-activates it through
+    LaunchServices — in that case :func:`install_macos_reopen_handler` calls
+    this from the Cocoa reopen event. Either way the process is a
+    background application at that moment, and Qt's
+    ``raise_()``/``activateWindow()`` cannot cross the AppKit activation
+    boundary, so the AppKit objects behind the Qt window are used directly:
+
+    * ``deminiaturize:`` — a window sitting in the Dock stays there otherwise
+      (``showNormal()`` un-hides but does not un-miniaturise it),
+    * ``activateIgnoringOtherApps:`` — makes the app itself frontmost, which
+      is what brings it "out of the Dock" for the user.
+
+    Needs PyObjC (``pyobjc-framework-Cocoa``, pulled in by requirements.txt
+    on macOS and bundled by the .app build); without it the same AppKit
+    calls are made through the Objective-C runtime via ctypes, so the fix
+    also works in a plain venv. Returns True when activation was attempted.
+    """
+    try:
+        import objc  # noqa: F401  (fails first when PyObjC is not installed)
+        from AppKit import NSApplication, NSRunningApplication  # type: ignore
+
+        nswin = None
+        win_id = int(widget.winId() or 0)
+        if win_id:
+            # winId() is the QNSView, the NSWindow hangs below it.
+            view = objc.objc_object(c_void_p=win_id)
+            candidate = view.window()
+            if candidate is not None and candidate.respondsToSelector_(
+                    "isMiniaturized"):
+                nswin = candidate
+            if nswin is not None and not nswin.isMiniaturized():
+                nswin = None  # plain visible window — activation is enough
+        if nswin is not None:
+            nswin.deminiaturize_(None)
+        app = NSApplication.sharedApplication()
+        if app.isHidden():
+            app.unhide_(None)
+        # Deprecated since macOS 14 but still the only call that reliably
+        # steals focus for a background app; NSRunningApplication.activateWithOptions_
+        # is tried as well (no-op on older systems, honoured on newer ones).
+        app.activateIgnoringOtherApps_(True)
+        current = NSRunningApplication.currentApplication()
+        if current is not None:
+            current.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+        if nswin is not None:
+            nswin.makeKeyAndOrderFront_(None)
+        return True
+    except Exception:
+        return _force_window_foreground_macos_ctypes(widget)
+
+
+def _force_window_foreground_macos_ctypes(widget) -> bool:
+    """PyObjC-free fallback: drive the Objective-C runtime with ctypes.
+
+    ``winId()`` is the ``QNSView*`` on macOS (its ``window`` selector yields
+    the ``NSWindow*``) and ``[NSApplication sharedApplication]`` returns the
+    ``QNSApplication`` instance Qt created; everything else is plain
+    ``objc_msgSend``. (``objc_getVariable("NSApp")`` would be the shorter
+    route, but that symbol is not exported by the current runtime.)
+    """
+    import ctypes
+    import ctypes.util
+
+    objc_lib = ctypes.CDLL(ctypes.util.find_library("objc") or "libobjc.A.dylib")
+    objc_lib.sel_registerName.restype = ctypes.c_void_p
+    objc_lib.sel_registerName.argtypes = [ctypes.c_char_p]
+    objc_lib.objc_getClass.restype = ctypes.c_void_p
+    objc_lib.objc_getClass.argtypes = [ctypes.c_char_p]
+    objc_lib.objc_msgSend.restype = ctypes.c_void_p
+
+    def send(target: int, selector: str, *extra) -> int:
+        # Extra args are BOOL/flag values; passing them as pointer-sized
+        # arguments matches the arm64/x86_64 calling convention for both.
+        objc_lib.objc_msgSend.argtypes = (
+            [ctypes.c_void_p, ctypes.c_void_p] + [ctypes.c_void_p] * len(extra))
+        return objc_lib.objc_msgSend(
+            target, objc_lib.sel_registerName(selector.encode()), *extra) or 0
+
+    view = int(widget.winId() or 0)
+    win = send(view, "window") if view else 0
+    minimized = bool(win) and bool(send(win, "isMiniaturized"))
+    if minimized:
+        send(win, "deminiaturize:", 0)
+    # The shared application instance Qt created (autoreleased — not retained).
+    nsapp = send(objc_lib.objc_getClass(b"NSApplication"), "sharedApplication")
+    if not nsapp:
+        return False
+    if send(nsapp, "isHidden"):
+        send(nsapp, "unhide:", 0)
+    # Deprecated since macOS 14 but still effective; the modern
+    # NSRunningApplication call is issued as well (harmless on older systems).
+    send(nsapp, "activateIgnoringOtherApps:", 1)
+    current = send(objc_lib.objc_getClass(b"NSRunningApplication"),
+                   "currentApplication")
+    if current:
+        # NSApplicationActivateIgnoringOtherApps = 1 << 1
+        send(current, "activateWithOptions:", 1 << 1)
+    if minimized:
+        send(win, "makeKeyAndOrderFront:", 0)
+    return True
+
+
+# Keeps the installed ObjC delegate alive: NSApplication holds its delegate
+# weakly, and the callback must not be collected either.
+_macos_reopen_state: dict = {}
+
+
+def install_macos_reopen_handler(callback) -> bool:
+    """macOS: run ``callback()`` when the user launches the app a second time.
+
+    On macOS a second launch never creates a second process: LaunchServices
+    activates the running instance and delivers a *reopen* Apple Event, so
+    the local-socket ``RAISE`` handshake of :mod:`wol_app.single_instance`
+    is bypassed and a miniaturised window stays miniaturised. Overriding
+    ``applicationShouldHandleReopen:hasVisibleWindows:`` on Qt's Cocoa
+    delegate restores the Windows/Linux behaviour.
+
+    The delegate subclasses the class Qt already installed, so every other
+    Cocoa callback (quit, file/URL opening, termination) keeps working.
+    No-op on other platforms; returns True when the handler was installed.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        import objc
+        from AppKit import NSApplication
+    except Exception:
+        return False
+    try:
+        app = NSApplication.sharedApplication()
+        previous = app.delegate()
+        if previous is None:
+            return False
+
+        # Re-installing (e.g. after a settings reload) only swaps the callback;
+        # the delegate must not be subclassed over and over.
+        if _macos_reopen_state.get("delegate") is previous:
+            _macos_reopen_state["callback"] = callback
+            return True
+
+        class _ReopenDelegate(type(previous)):
+            def applicationShouldHandleReopen_hasVisibleWindows_(
+                    self, sender, visible):
+                handler = _macos_reopen_state.get("callback")
+                if handler is not None:
+                    try:
+                        handler()
+                    except Exception:
+                        pass
+                # Qt/AppKit implement reopen as well (de-hide, activate);
+                # keep that behaviour on top of our own raise.
+                try:
+                    return bool(objc.super(
+                        _ReopenDelegate, self
+                    ).applicationShouldHandleReopen_hasVisibleWindows_(
+                        sender, visible))
+                except Exception:
+                    return True
+
+        delegate = _ReopenDelegate.alloc().init()
+        if delegate is None:
+            return False
+        app.setDelegate_(delegate)
+        _macos_reopen_state["delegate"] = delegate
+        _macos_reopen_state["callback"] = callback
         return True
     except Exception:
         return False

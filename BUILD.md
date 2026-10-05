@@ -20,7 +20,7 @@ python3 -m venv .venv
 
 ---
 
-## Windows (v2.3.7)
+## Windows (v2.5.1)
 
 Kompletter Build in einem Schritt:
 
@@ -73,7 +73,14 @@ sudo apt install ./dist/wake-on-lan-manager_*_all.deb
 # → dist/Wake-on-LAN-Manager_<version>_arm64.dmg
 ```
 
-- Erwartet das venv unter `.venv/` (nicht `venv/`).
+- Erwartet das venv unter `.venv/` (nicht `venv/`); `requirements.txt` zieht auf
+  macOS zusätzlich `pyobjc-framework-Cocoa` (Fenster der laufenden Instanz
+  holen beim Zweitstart in den Vordergrund — ohne PyObjC greift der
+  ctypes-Fallback in `utils.force_window_foreground`).
+- Zweitstart bei minimiertem Fenster (Single Instance): die laufende
+  Instanz wird über `bring_to_front()` → `deminiaturize:` + App-Aktivierung
+  aus dem Dock geholt; funktioniert auch im Modus „im Hintergrund
+  weiterlaufen" (Menüleisten-Icon).
 - Baut erst den Host Service (`wol_host_service_macos.spec`) und bettet ihn als
   `Contents/Resources/WOL Host Service` in die App ein — der Build bricht ab,
   wenn die Payload fehlt.

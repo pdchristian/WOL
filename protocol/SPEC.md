@@ -1,6 +1,6 @@
 # WOL Host Service — Wire Protocol Specification
 
-**Version:** 7 (Host Service 2.2.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
+**Version:** 10 (Host Service 2.5.x) · **Port:** TCP **8765** · **Encoding:** UTF-8
 
 Referenzimplementierungen:
 
@@ -40,6 +40,7 @@ Referenzimplementierungen:
 | `password` | string | Passwort zu `username`. |
 | `ts` | number | **v6** Anti-Replay: Unix-Timestamp (Sekunden, UTC) beim Senden. Nur für `shutdown`/`reboot`/`run_batch` geprüft. |
 | `nonce` | string | **v6** Anti-Replay: frischer Zufallswert (1–64 Zeichen), pro Request eindeutig. Host lehnt bereits gesehene Nonces ab. |
+| `api_key` | string | **v10** Key, den die Inferenz-API auf einem überwachten Port erwartet (max. 128 Zeichen, nur druckbares ASCII). Der Host sendet ihn als `Authorization: Bearer <key>` bei allen Loopback-Probes (`/v1/models`, `/health`, `/props`, `/metrics`). Nur für `metrics` ausgewertet. |
 | *command-spezifisch* | — | `watch` (metrics), `script`/`timeout` (run_batch) — siehe unten. |
 
 Schema: [`schema/request.json`](schema/request.json)
@@ -82,11 +83,18 @@ Schema: [`schema/response-error.json`](schema/response-error.json)
 
 ```json
 → {"command": "status"}
-← {"status": "ok", "message": "online"}
+← {"status": "ok", "message": "online", "os": "ubuntu"}
 ```
 
 Dient Clients als Host-Check (Port offen? Dienst läuft?). Benötigt **keine**
 Credentials.
+
+* `os` (**v8**): normalisierte Plattform des Hosts — `"windows"`, `"macos"`
+  oder die Linux-Distribution (`"ubuntu"`, `"debian"`, …; `"linux"` wenn
+  `/etc/os-release` nicht lesbar). Bewusst **auth-frei**, damit der
+  Netzwerk-Scan Geräte ohne Credentials beschriften kann; ein ICMP-Ping
+  verrät die Plattform über das TTL ebenfalls. Ältere Services lassen das
+  Feld weg.
 
 ### 4.2 `metrics` — Dashboard-Metriken (mit Auth)
 
@@ -94,7 +102,8 @@ Request:
 
 ```json
 {"command": "metrics", "username": "u", "password": "p",
- "watch": ["llama-server.exe:8080", "backup-sync.exe", ":8081"]}
+ "watch": ["llama-server.exe:8080", "backup-sync.exe", ":8081"],
+ "api_key": "secret"}
 ```
 
 * `watch` optional, Liste von Prozessnamen (`name.exe`) oder
@@ -102,14 +111,23 @@ Request:
   werden ignoriert. `:port` = Loopback-Check (250 ms) + Modell-Abfrage (§4.2.1).
   **v7:** Port-only-Einträge (`":8081"` oder nacktes `"8081"`) beobachten nur
   die API auf dem Port — ohne Prozessnamen-Prüfung.
+* `api_key` optional (**v10**): Key für die Inferenz-API der überwachten
+  Ports. Der Host hängt ihn als `Authorization: Bearer <key>` an jede
+  Loopback-Anfrage. Server, die mit API-Key starten (`llama-server
+  --api-key`, Strata `API_KEY`), antworten ohne Key mit **401** auf
+  `/metrics` — dem Dashboard fehlt dann `requests_active`, und der
+  Inferenz-Blitz bleibt bernsteinfarben („Aktivität nicht messbar“), obwohl
+  inferiert wird. Leere, überlange (>`WATCH_API_KEY_MAX_CHARS`) oder
+  nicht-druckbare Werte werden ignoriert; ältere Hosts kennen das Feld nicht.
 
 Antwort (`status: "ok"`):
 
 ```json
 {
   "status": "ok",
-  "protocol": 7,
+  "protocol": 9,
   "hostname": "FRACTAL",
+  "os": "windows",
   "cpu": 63.4,
   "cpu_count": 16,
   "ram_used": 12345678901,
@@ -131,7 +149,8 @@ Antwort (`status: "ok"`):
       "models": ["Qwen3.8-Flash-256k-62", "DeepSeek-R1-Distill-32B"],
       "model_metrics": {
         "Qwen3.8-Flash-256k-62": { "prompt_tps": 261.15, "predicted_tps": 26.65, "total_tokens": 77427 }
-      }
+      },
+      "requests_active": 2
     },
     ":8081": {
       "running": false,
@@ -142,7 +161,8 @@ Antwort (`status: "ok"`):
       "models": ["qwen3.8-flash-next-iq3_s"],
       "model_metrics": {
         "qwen3.8-flash-next-iq3_s": { "prompt_tps": 398.0, "predicted_tps": 72.2, "total_tokens": 19456405 }
-      }
+      },
+      "requests_active": 0
     },
     "backup-sync.exe": { "running": false }
   }
@@ -162,9 +182,10 @@ Feld-Semantik:
 | `vram_used`/`vram_total` | int\|null | Bytes — `null` ohne GPU. |
 | `gpu_name` | string\|null | GPU-Produktname. |
 | `hostname` | string | `socket.gethostname()`. |
+| `os` | string | **v8** — Plattform des Hosts (`windows`/`macos`/Linux-Distribution), siehe §4.1. |
 
 **Alle Werte `null` = „nicht ermittelbar“** (psutil/nvidia-smi defekt). Basis-
-felder (`status`, `protocol`, `hostname`) sind immer vorhanden.
+felder (`status`, `protocol`, `hostname`, `os`) sind immer vorhanden.
 
 #### 4.2.1 `processes` (Watch-Liste)
 
@@ -224,6 +245,21 @@ felder (`status`, `protocol`, `hostname`) sind immer vorhanden.
   uebernommen (nur wenn > 0). Einzelne Keys fehlen, wenn nur ein Wert lesbar
   war (NaN/Inf = nicht messbar); kein Feld, wenn gar nichts messbar war
   (Dashboard zeigt dann die Modell-Zeile ohne t/s).
+* `requests_active` (int ≥ 0, **v9**): **nur wenn `api_port_open` und
+  `/metrics` lesbar** — wie viele Inferenz-Requests der Server **gerade
+  jetzt** verarbeitet. Frisch gelesen (im Gegensatz zu den latched
+  Durchsatz-Gauges), daher verlaessliches "Job laeuft"-Signal fuer die
+  Geraeliste. Ein einziges `GET /metrics` (ohne model-Filter) pro Poll,
+  parallel zur Modell-Liste:
+  * **Prometheus-Text** (llama.cpp): `llamacpp:requests_processing` +
+    `llamacpp:requests_deferred` (Summe; beide Gauges melden die echte
+    aktuelle Slot-/Queue-Anzahl, kein Latching).
+  * **JSON** (andere OpenAI-Server, z. B. Strata): 1 wenn `live.queued` > 0
+    oder `live.state`/`live.phase` eine nicht-Idle-Phase nennt
+    (Idle = `idle`/`waiting`/`ready`) oder `live.tok_s` /
+    `live.prefill_tok_s_mean` > 0; sonst 0.
+  Kein Feld, wenn `/metrics` nicht antwortet/parsebar (Client verbirgt dann
+  sein Inferenz-Badge statt zu raten).
 
 Schema: [`schema/response-metrics.json`](schema/response-metrics.json)
 
@@ -276,8 +312,9 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 |---|---|---|
 | `DEFAULT_PORT` | 8765 | beide Services |
 | `MAX_REQUEST_BYTES` | 65536 | beide |
-| `PROTOCOL_VERSION` | 7 | beide |
+| `PROTOCOL_VERSION` | 10 | beide |
 | `WATCH_MAX_ENTRIES` | 8 | beide |
+| `WATCH_API_KEY_MAX_CHARS` | 128 | beide |
 | `WATCH_PORT_TIMEOUT_S` | 0.25 | beide |
 | `WATCH_MODELS_TIMEOUT_S` | 0.6 | beide |
 | `WATCH_MAX_MODELS` | 16 | beide |
@@ -301,7 +338,10 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
   über die Leitung. Niemals über WAN exponieren.
 * Auth-Pflicht für `metrics`, `shutdown`, `reboot`, `run_batch`
   (Windows: `LogonUserW`; Linux: PAM). `status` ist unauthentifiziert und
-  liefert nur die Erreichbarkeit.
+  liefert nur die Erreichbarkeit — seit v8 zusätzlich die Plattform (`os`),
+  was keine vertrauliche Information ist (ein ICMP-Ping verrät sie über das
+  TTL ebenfalls) und Clients eine agentenlose Beschriftung im Netzwerk-Scan
+  erlaubt.
 * `run_batch` führt Code als SYSTEM (Win) / root (Linux) aus — deshalb
   standardmäßig deaktiviert und nur per `--enable-batch` auf der Zielmaschine
   scharf. Clients müssen den Fehlerfall „disabled“ abfangen.
@@ -345,6 +385,9 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | 5 | `model_metrics` pro Watch-Eintrag (`prompt_tps`/`predicted_tps` latchen zuletzt gueltige Werte; `total_tokens` = `prompt_tokens_total` + `n_decode_total`) | Modell-Zeile ohne t/s anzeigen |
 | 6 | Anti-Replay `ts`/`nonce` auf `shutdown`/`reboot`/`run_batch` (§4.3/§4.4); Auth-Throttling mit `retry_after` (§3); Audit-Log; Firewall-Quellscope | Requests ohne `ts`/`nonce` senden (Host-Accept solange `require_replay` aus); `retry_after` ignorieren |
 | 7 | Port-only-Watch-Einträge (`:8080`/`8080`), Port-Probe ohne Prozess-Treffer; `api_up`/`api_kind`/`api_features`/`api_info` pro Watch-Eintrag; JSON-`/metrics`-Mapping (nicht-llama.cpp-Server) | Port-only-Einträge zeigen nichts an; Namens-Watch funktioniert wie bei v3–v5; neue Felder ignorieren |
+| 8 | `os` auf `status` (auth-frei) und `metrics` — Plattform des Hosts (§4.1) | Plattform aus TTL/Fingerprint-Heuristik schätzen oder Spalte leer lassen |
+| 9 | `requests_active` pro Watch-Eintrag (Inferenz laeuft gerade — llama.cpp `requests_processing`+`requests_deferred`, JSON-Server `live.*`) | Inferenz-Badge in der Geraeliste nicht anzeigen |
+| 10 | `api_key` auf `metrics` — `Authorization: Bearer <key>` fuer alle Loopback-Probes der ueberwachten Ports (§4.2) | Feld weglassen; bei Servern mit API-Key bleibt `requests_active`/`model_metrics` unbeantwortbar (Bernstein-Badge) |
 
 Regel: **Nur additive Änderungen.** Neue Felder müssen für ältere Clients
 ignorierbar sein. Neue Pflichtfelder oder Semantic-Änderungen ⇒ neue Major-

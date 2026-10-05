@@ -9,7 +9,7 @@ import pytest  # noqa: E402
 
 pytest.importorskip("PyQt6")
 
-from PyQt6.QtWidgets import QApplication, QDialog  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel  # noqa: E402
 
 from wol_app.config import ConfigManager  # noqa: E402
 from wol_app.translations import Translations  # noqa: E402
@@ -569,3 +569,132 @@ class TestModernScheduleEditDialog:
         dialog._save()
         assert dialog.result() != QDialog.DialogCode.Accepted
         assert len(config.get_schedules()) == 0
+
+
+class TestPlatformColumn:
+    """Platform label in the scan results and in the stored device rows."""
+
+    def test_os_display_text(self, qapp):
+        from wol_app.views.manage_view import os_display_text
+
+        assert os_display_text("windows", "high") == "Windows"
+        assert os_display_text("linux", "medium") == "~ Linux"
+        assert os_display_text("", "") == ""
+        assert os_display_text("ubuntu", "high") == ""  # not normalised yet
+
+    def test_scan_result_row_shows_platform(self, qapp):
+        from wol_app.views.manage_view import ScanResultRow
+
+        host = {"hostname": "pc", "ipv4": "192.168.1.5", "mac": "AA:BB:CC:DD:EE:FF",
+                "os": "windows", "os_confidence": "high"}
+        row = ScanResultRow(host)
+        labels = [lbl.text() for lbl in row.findChildren(QLabel)]
+        assert "192.168.1.5 · AA:BB:CC:DD:EE:FF · Windows" in labels
+
+    def test_scan_result_row_without_platform(self, qapp):
+        from wol_app.views.manage_view import ScanResultRow
+
+        host = {"hostname": "pc", "ipv4": "192.168.1.5", "mac": "AA:BB:CC:DD:EE:FF"}
+        row = ScanResultRow(host)
+        labels = [lbl.text() for lbl in row.findChildren(QLabel)]
+        assert "192.168.1.5 · AA:BB:CC:DD:EE:FF" in labels
+
+    def test_device_row_shows_stored_platform(self, qapp, config):
+        from wol_app.views.manage_view import ManageView
+
+        dev_id = config.get_devices()[0]["id"]
+        assert config.set_device_os(dev_id, "ubuntu") is True
+        view = ManageView(config)
+        row = next(r for r in view._device_rows() if r.device_id == dev_id)
+        assert row.mono.text().endswith("· Linux")
+
+    def test_scan_results_filter_by_platform(self, qapp, config):
+        from wol_app.views.manage_view import ManageView
+
+        view = ManageView(config)
+        view._scan_results = [
+            {"hostname": "a", "ipv4": "10.0.0.1", "mac": "AA:AA:AA:AA:AA:AA",
+             "os": "windows"},
+            {"hostname": "b", "ipv4": "10.0.0.2", "mac": "BB:BB:BB:BB:BB:BB",
+             "os": "linux"},
+        ]
+        view.result_search.setText("linux")
+        assert [h["ipv4"] for h in view._filtered_results()] == ["10.0.0.2"]
+
+
+# ── Settings: grouped layout with the integrated remote-access section ───
+
+def test_settings_groups_are_grouped_cards(qapp, config):
+    from wol_app.views.settings_view import SettingsView
+
+    view = SettingsView(config)
+    for group in (view.group_network, view.group_appearance,
+                  view.group_remote, view.group_misc):
+        assert group.objectName() == "settingsGroup"
+    assert view.group_remote.title.text() == \
+        Translations.tr("settings.group.remote").upper()
+
+
+def test_settings_load_remote_defaults(qapp, config):
+    from wol_app.views.settings_view import SettingsView
+
+    view = SettingsView(config)
+    assert view.vnc_port_input.value() == 5900
+    assert view.vnc_viewer_input.text() == ""
+    assert view.protocol_combos["windows"].currentData() == "rdp"
+    assert view.protocol_combos["macos"].currentData() == "vnc"
+    assert view.protocol_combos["linux"].currentData() == "vnc"
+
+
+def test_settings_save_remote_section(qapp, config, monkeypatch):
+    from PyQt6.QtWidgets import QMessageBox
+
+    from wol_app.views.settings_view import SettingsView
+
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda *a, **k: None))
+    view = SettingsView(config)
+    view.protocol_combos["windows"].setCurrentIndex(
+        view.protocol_combos["windows"].findData("vnc"))
+    view.protocol_combos["linux"].setCurrentIndex(
+        view.protocol_combos["linux"].findData("rdp"))
+    view.vnc_port_input.setValue(5901)
+    view.vnc_viewer_input.setText(r"C:\Tools\vncviewerw.bat")
+    view._save()
+
+    assert config.get_remote_protocol("windows") == "vnc"
+    assert config.get_remote_protocol("linux") == "rdp"
+    assert config.get_vnc_port() == 5901
+    assert config.get_vnc_viewer_path() == r"C:\Tools\vncviewerw.bat"
+
+
+def test_settings_reset_restores_remote_defaults(qapp, config, monkeypatch):
+    from PyQt6.QtWidgets import QMessageBox
+
+    from wol_app.views.settings_view import SettingsView
+
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
+    monkeypatch.setattr(QMessageBox, "information",
+                        staticmethod(lambda *a, **k: None))
+    config.set_remote_protocol("windows", "vnc")
+    config.set_vnc_port(5901)
+    view = SettingsView(config)
+    view._reset_to_defaults()
+
+    assert config.get_remote_protocol("windows") == "rdp"
+    assert config.get_vnc_port() == 5900
+    assert view.protocol_combos["windows"].currentData() == "rdp"
+
+
+def test_settings_retranslate_updates_remote_labels(qapp, config):
+    from wol_app.views.settings_view import SettingsView
+
+    view = SettingsView(config)
+    Translations().load("de")
+    view.retranslate()
+    assert view.group_remote.title.text() == \
+        Translations.tr("settings.group.remote").upper()
+    assert view.protocol_combos["windows"].itemText(0) == \
+        Translations.tr("modern.devices.client_rdp")
+    Translations().load("en")

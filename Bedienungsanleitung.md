@@ -76,7 +76,7 @@ Starten Sie die Anwendung über:
 
 ## Die moderne Benutzeroberfläche
 
-Mit **Version 2.3.7** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
+Mit **Version 2.0.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
 
 > **Wichtig:** Die moderne und die klassische Oberfläche bieten **exakt dieselben Funktionen** – sie unterscheiden sich nur im Layout. Alle Einstellungen, Geräte, Zeitpläne, Protokolle und Sicherheitsfunktionen sind identisch. Sie können jederzeit zwischen beiden wechseln.
 
@@ -170,7 +170,7 @@ Die zuletzt gewählte Ansicht wird **gespeichert** und beim nächsten Start wied
 
 #### Kachelansicht
 Jedes Gerät wird als **Karte** dargestellt:
-- **Name** mit **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
+- **Name** und rechts oben die **Status-/Plattform-Anzeige** (Pill): Status-Punkt (🟢 online / 🔴 offline / 🟡 unbekannt) zusammen mit dem erkannten Betriebssystem (🪟 Windows / 🍏 macOS / 🐧 Linux). Geschätzte Plattformen sind mit `~` markiert, ohne Erkennung steht **❓ Unbekannt**. Der Tooltip der Anzeige erklärt, wie der Wert zustande kam. Läuft auf einem überwachten API-Server gerade ein Inferenz-Job, erscheint **links neben dem Status-Punkt ein Blitz** (⚡) – siehe [Inferenz-Anzeige](#inferenz-anzeige-blitz-in-der-statusanzeige).
 - **IP- und MAC-Adresse**
 - **Remote-Desktop-Kacheln** (🖥️ Vollbild / 🪟 Fenster) und **📊 Dashboard** (öffnet das [Geräte-Dashboard](#geräte-dashboard-performance--batches))
 - **Aktions-Button:**
@@ -181,10 +181,34 @@ Jedes Gerät wird als **Karte** dargestellt:
 Jedes Gerät wird als **Zeile** dargestellt:
 - **Status-Punkt** (🟢 online / 🔴 offline / 🟡 unbekannt)
 - **Name** sowie **IP- und MAC-Adresse** in einer Mono-Zeile darunter
+- **Status-/Plattform-Anzeige** (wie in der Kachel) rechts neben der Zeile – inklusive des Inferenz-Blitzes (⚡), siehe [Inferenz-Anzeige](#inferenz-anzeige-blitz-in-der-statusanzeige)
 - **Drei Aktions-Icons rechts:**
-  - 🖥️ **Remote Vollbild** – startet die Remote-Desktop-Sitzung im Vollbild
-  - 🪟 **Remote Fenster** – startet die Remote-Desktop-Sitzung im Fenster
+  - 🖥️ **Remote Vollbild** – startet die Remote-Sitzung im Vollbild
+  - 🪟 **Remote Fenster** – startet die Remote-Sitzung im Fenster
   - ✏️ **Bearbeiten** – öffnet den Geräte-Dialog (alternativ **Doppelklick** auf die Zeile)
+
+> **Welches Programm die Remote-Icons öffnen**, hängt von der Plattform des Geräts ab: Windows → Remotedesktop (`mstsc`), macOS/Linux → **Turbo VNC**. Die Tooltipps der Icons nennen das Programm, siehe [Welcher Client gestartet wird](#welcher-client-gestartet-wird-rdp-oder-turbo-vnc).
+
+#### Inferenz-Anzeige (Blitz in der Statusanzeige)
+Haben Sie für ein Gerät **überwachte Prozesse** mit API-Port hinterlegt (z. B. `llama-server.exe:8080`, siehe [Geräte-Dashboard](#geräte-dashboard-performance--batches)), zeigt die Statusanzeige zusätzlich einen **Blitz (⚡) links neben dem Status-Punkt** – in Kachel **und** Liste. Er beantwortet auf einen Blick die Frage *„Läuft da gerade ein Inferenz-Job?“*:
+
+- **Oranger Blitz** – der überwachte Server verarbeitet **gerade jetzt** eine oder mehrere Anfragen.
+- **Grauer (abgedunkelter) Blitz** – der Server ist erreichbar, aber **idle** (nichts läuft).
+- **Bernsteinfarbener, durchgestrichener Blitz (⊘-Optik)** – der API-Port ist erreichbar, die Aktivität ist aber **nicht messbar** (der Server antwortet nicht auf `/metrics`). Der Strich durch den Blitz unterscheidet den Zustand klar vom orangenen „läuft"-Blitz, die Farbe allein wäre dafür zu ähnlich. Der Tooltip nennt die Ursache: entweder läuft der Server **mit API-Key** (dann antwortet er auf jede Abfrage ohne Schlüssel mit **401**) – tragen Sie den Schlüssel im Geräte-Dialog unter **API-Key (Dashboard):** ein, siehe [API-Key (Dashboard)](#api-key-dashboard) – oder der API-Key ist zwar hinterlegt, aber der **Host Service auf dem Gerät ist zu alt** (vor Protokoll v10) und sendet ihn nicht. In diesem Fall hilft nur ein Update des Host Service.
+- **Kein Blitz** – das Gerät hat keine überwachten Prozesse mit Port, der überwachte Server ist **ausgeschaltet** (sein API-Port antwortet nicht – dann gibt es nichts zu melden), oder der Host Service ist **zu alt** (Protokoll unter v9). Dann wird nichts geraten, sondern die Anzeige ausgeblendet.
+
+Der Blitz braucht den aktualisierten **Host Service ab Protokoll v9** (Windows · Ubuntu · macOS); ältere Hosts lassen ihn weg. Abgefragt werden die echten aktuellen Zähler des Servers (bei llama.cpp `requests_processing` + `requests_deferred`), **nicht** der zuletzt gemessene Durchsatz – deshalb ist das Signal zuverlässig, auch wenn die t/s-Werte im Dashboard noch den letzten Wert zeigen.
+
+**Abfrageintervall:** In der Symbolleiste der Geräteansicht steht ein **Intervall-Dropdown** (5 / 10 / 15 / 30 Sekunden, Standard **10 s**). Es steuert nur den Blitz – die Status-Punkte (online/offline) bleiben wie gewohnt alle 30 Sekunden frisch. Geräte **ohne Zugangsdaten**, **ohne überwachte Prozesse** oder die gerade **offline** sind, werden übersprungen. Die Einstellung wird gespeichert (`config.json` → `"inference_interval_ms"`).
+
+#### Plattform-Erkennung
+Damit die Anzeige und die Remote-Icons funktionieren, muss die Plattform des Geräts bekannt sein:
+
+- Geräte, die Sie über den **Netzwerk-Scanner** hinzufügen, bringen die Plattform direkt mit.
+- Für alle anderen Geräte (manuell angelegt oder vor der Einführung der Plattform-Erkennung gespeichert) stellt die App **beim Start automatisch** die Plattform fest: Sie werden wie beim Scanner passiv untersucht (Ping-TTL, offener SMB-Port, Name, MAC-Herstellerbereich). Gefundene Werte werden **gespeichert** und sind ab sofort in Kachel, Liste und Tooltip zu sehen.
+- **Geschätzte** Plattformen tragen ein `~` (z. B. `~ 🍏 macOS`). Die Zuordnung macOS/Linux ist nur sicher, wenn das Gerät den Host Service nutzt, ein `.local`-Name vorliegt oder der Name ein Apple-Produkt enthält (z. B. `MACBOOKPRO`).
+- Ein Gerät, das gerade **offline** ist, bleibt beim automatischen Durchlauf **❓ Unbekannt** – jeder Rechner wird pro Start nur einmal untersucht. Klicken Sie auf **Aktualisieren**, wenn das Gerät später eingeschaltet war: dann werden alle Geräte erneut untersucht, die noch ohne Plattform sind.
+- Im Geräte-Dialog gibt es **kein Plattform-Feld** – die Plattform wird ausschließlich erkannt bzw. aus dem Scanner übernommen. Korrekturen sind direkt in `config.json` möglich (Schlüssel `"os"` mit `windows`, `macos` oder `linux`, optional `"os_confidence"`).
 
 #### Sortierung und Suche
 Links neben dem Suchfeld befindet sich ein **Sortier-Drop-down** mit folgenden Optionen:
@@ -428,7 +452,23 @@ Nach der Entfernung kann der Dienst mit `--install` und `--start` sauber neu reg
 
 ## Remote Desktop
 
-Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten. Dazu werden die im Geräteeintrag gespeicherten **IP-Adresse**, **Benutzername** und **Passwort** verwendet.
+Die Anwendung kann für ein Gerät eine **Remote-Sitzung** starten. Dazu werden die im Geräteeintrag gespeicherten **IP-Adresse**, **Benutzername** und **Passwort** verwendet. Welches Programm dabei geöffnet wird – die Windows-Remotedesktopverbindung (`mstsc`) oder **Turbo VNC** – entscheidet die **Plattform des Geräts**.
+
+### Welcher Client gestartet wird (RDP oder Turbo VNC)
+Die Plattform stammt aus der Geräteerkennung (Spalte **Plattform** im Netzwerk-Scan, siehe [Netzwerkeinstellungen](#netzwerkeinstellungen)) oder aus der automatischen Erkennung beim Start (siehe [Plattform-Erkennung](#plattform-erkennung)) und ist im Geräteeintrag unter `"os"` gespeichert. Nach Zuordnung öffnet die Anwendung:
+
+| Plattform | Standard-Client |
+|-----------|-----------------|
+| **Windows** | Remotedesktop (`mstsc`, RDP) |
+| **macOS** | **Turbo VNC** |
+| **Linux** | **Turbo VNC** |
+| **Unbekannt** (nie erkannt) | Remotedesktop (`mstsc`, RDP) |
+
+Die Zuordnung ist einstellbar: **Einstellungen → Bereich „Remote-Zugang“ → „Welchen Client öffnen die Remote-Buttons?“** – je Plattform ein Drop-Down (**RDP (mstsc)** / **Turbo VNC**). In der Geräteansicht zeigt die **Status-/Plattform-Anzeige** und der Tooltip der Remote-Icons, welches Programm ein Klick öffnet.
+
+**Voraussetzungen für VNC:** Auf dem Zielsystem muss ein VNC-Server laufen (z. B. `x11vnc`, der GNOME-Bildschirmdienst oder der macOS-Fernbildschirm). Die Anwendung startet den installierten **TurboVNC-Client** (`vncviewerw.bat`) und verbindet direkt auf Port **5900** (einstellbar unter **VNC-Port**). Ist kein Client gefunden worden, erscheint ein Hinweis; der Pfad lässt sich im Bereich **Remote-Zugang** manuell setzen.
+
+> **Passwort:** TurboVNC kennt keinen sicheren Übergabekanal wie die temporäre `.rdp`-Datei von `mstsc`. Das gespeicherte Passwort wird deshalb **in die Zwischenablage** gelegt und die Anwendung teilt das vorab mit – Sie fügen es im Verbindungsfenster des Viewers ein. Das Passwort erscheint weder auf der Befehlszeile noch auf der Festplatte. Jede gestartete Sitzung wird im Protokoll als `VNC` vermerkt.
 
 ### Remote Desktop starten
 1. Klicken Sie mit der **rechten Maustaste** auf das Gerät in der Gerätetabelle.
@@ -448,11 +488,25 @@ Die Anwendung kann für ein Gerät eine **Remote-Desktop-Sitzung** (RDP) starten
 > **Automatischer 2. Versuch ohne Passwort:** Wird ein gespeichertes Passwort verwendet und schließt sich `mstsc` innerhalb von 10 Sekunden wieder (schwarzes Bild, Fenster verschwindet – das typische Antwortverhalten von xrdp/Ubuntu auf ein falsches Passwort), fragt die Anwendung nach, ob **ohne das gespeicherte Passwort** neu verbunden werden soll. Bestätigen Sie die Rückfrage, entfernt die Anwendung den Eintrag `TERMSRV/<Host>` aus dem Windows-Anmeldeinformations-Manager und startet `mstsc` erneut – mit vor ausgefülltem Benutzernamen, sodass Sie das Passwort direkt im Remotedesktop-Fenster eingeben können. Das im Geräteeintrag gespeicherte Passwort bleibt dabei unverändert; im Protokoll wird der Vorfall als Warnung (`RDP`) festgehalten. Verbindungen, die länger als 10 Sekunden bestehen, sowie Verbindungen ganz ohne gespeichertes Passwort lösen keine Rückfrage aus.
 
 ### Auflösung für das Fenster einstellen
-1. Menü: **Tools → Einstellungen...**
-2. In der Gruppe **Remote Desktop** wählen Sie im Drop-Down **Auflösung** die gewünschte Fensterauflösung (z. B. `1920 × 1080`).
+1. Moderne Oberfläche: Seitenleiste **Einstellungen**, Bereich **Remote-Zugang** · klassische Oberfläche: **Tools → Einstellungen...**
+2. Wählen Sie im Drop-Down **Auflösung** die gewünschte Fensterauflösung (z. B. `1920 × 1080`) oder **Optimiert (Bildschirmgröße)**.
 3. Klicken Sie auf **Speichern**.
 
+> Die Auflösung gilt nur für die **RDP-Fenstersitzung**. VNC-Sitzungen starten immer Vollbild; das Fenster-Icon öffnet den Viewer ebenfalls ohne eigene Größenangabe.
+
 > **Hinweis:** Die Anmeldedaten werden in einer temporären `.rdp`-Datei abgelegt, die wenige Sekunden nach dem Start automatisch gelöscht wird, damit das Passwort nicht auf der Festplatte verbleibt.
+
+### Aufbau des Einstellungs-Bildschirms
+Der Bildschirm **Einstellungen** (Seitenleiste → ⚙ **Einstellungen**) gliedert sich in vier Bereiche:
+
+| Bereich | Inhalt |
+|---------|--------|
+| **Netzwerk** | Broadcast-IP, Broadcast-Port |
+| **Darstellung** | Sprache, Farbschema (hell/dunkel/auto), **Design** (Modern/Klassisch) |
+| **Remote-Zugang** | **Auflösung** (RDP-Fenster), **VNC-Client (Pfad)**, **VNC-Port**, **Client je Plattform** (Windows/macOS/Linux → RDP oder Turbo VNC) |
+| **Sonstiges** | Standard-Herunterfahrmethode, max. Protokolleinträge, **Automatisch nach Updates suchen** + Intervall, **Im Iconbereich bleiben beim Schließen**, mehrere Instanzen, Berechtigung in öffentlichen Netzwerken, Host Service (macOS) |
+
+> Die Einstellungen zum Remote-Zugang liegen damit gesammelt in einem Bereich: die RDP-Auflösung (früher eigene Gruppe „Remote-Desktop“ im Einstellungs-Dialog) zusammen mit VNC-Client, VNC-Port und der Client-Zuordnung. An der Menüführung der klassischen Oberfläche hat sich nichts geändert.
 
 ---
 
@@ -495,6 +549,23 @@ Im Dashboard erscheint daraufhin:
 - Ein **⚡ Inferenz aktiv**-Abzeichen, wenn ein bereiter Service mit dauerhaft hoher GPU-Auslastung (≥ 60 %) zusammenfällt.
 
 > **Hinweis:** Die Prozess-Beobachtung erfordert den **WOL Host Service ab Protokollversion 3** auf dem Zielsystem. Ältere Dienste ignorieren die Anfrage einfach – es erscheint kein Fehler, das Panel wird nur nicht angezeigt. Die **Token-Ermittlung** (Durchsatz und Gesamt-Tokens) ist zusätzlich ab **Protokollversion 5** verfügbar und setzt voraus, dass `llama-server` mit **`--metrics`** läuft.
+
+### API-Key (Dashboard)
+
+Ihr Inferenz-Server läuft **mit API-Key** (llama.cpp `--api-key`, Strata `API_KEY`)? Dann beantwortet die API **jede** Anfrage ohne Schlüssel mit **401** – auch `/metrics`. Der Host Service kann die Aktivität nicht messen, und der Blitz bleibt **bernsteinfarben durchgestrichen**, obwohl längst inference läuft.
+
+Tragen Sie den Schlüssel im **Geräte-Dialog** im Feld **API-Key (Dashboard):** ein (direkt unter *Überwachte Prozesse (Dashboard)*):
+
+- Gespeichert wird er **verschlüsselt** in `config.json` (wie das Kennwort); in exportierten Geräte-Dateien steht er mit dem Marker `enc:`.
+- Sobald Sie einen Schlüssel **neu eingetragen oder geändert** haben, fragt die App nach dem Speichern, ob der Schlüssel **an alle anderen Geräte** übertragen werden soll – ein zentral verteilter Key ist damit mit einem Klick gesetzt. Speichern Sie ein Gerät ohne Änderung am Feld, fragt sie nicht. Anders als beim Kennwort ist diese Frage **nicht** an denselben Benutzernamen gebunden, denn der Key gehört zum Inferenz-Server, nicht zum Login.
+- Erlaubt sind bis zu **128 Zeichen** aus dem druckbaren ASCII-Bereich. Der Host Service sendet den Wert als `Authorization: Bearer <key>` bei seinen Loopback-Abfragen (`/v1/models`, `/health`, `/props`, `/metrics`).
+- Das Feld hat **nichts** mit der Anmeldung zu tun: Der Host Service selbst meldet sich weiterhin mit Benutzername und Kennwort des Geräts an.
+
+> **Voraussetzung:** **WOL Host Service ab Protokollversion 10** auf dem Zielsystem (Windows · Ubuntu · macOS). Ältere Dienste ignorieren das Feld – der Blitz bleibt bernsteinfarben und der Tooltip weist auf das veraltete Protokoll hin. Prüfen Sie die Version auf dem Zielsystem mit:
+> ```
+> "C:\Program Files\WakeOnLAN\WOL Host Service\WOL Host Service.exe" --status
+> ```
+> Die Antwort endet auf `(protocol v10)`. Erscheint dieser Zusatz **nicht**, ist ein älterer Dienst installiert – neu bauen und mit `--install` aktualisieren (Ubuntu/macOS: `wol_host_service_linux.py --status`).
 
 ### Batches erstellen und ausführen
 Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
@@ -543,7 +614,7 @@ Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
 
 > Ändern Sie die Broadcast-IP nur, wenn Sie ein spezifisches Subnetz ansprechen müssen (z. B. `192.168.2.255`).
 
-> **Netzwerkscanner:** Der Scanner entdeckt Geräte im lokalen Netzwerk. Über dem Suchfeld der Ergebnis-Tabelle können Sie die Liste **live filtern** – nach Hostname, IPv4, IPv6 oder MAC-Adresse.
+> **Netzwerkscanner:** Der Scanner entdeckt Geräte im lokalen Netzwerk. Über dem Suchfeld der Ergebnis-Tabelle können Sie die Liste **live filtern** – nach Hostname, IPv4, IPv6, MAC-Adresse oder Plattform. Die Spalte **Plattform** zeigt das erkannte Betriebssystem (**Windows**, **macOS** oder **Linux**): Geräte mit installiertem Host Service melden es direkt (Protokoll v8, ohne Anmeldung); bei allen anderen Geräten schätzt der Scanner es anhand der Ping-TTL (128 → Windows, 64 → Linux/macOS), eines offenen SMB-Ports (445), von `.local`-Namen (Bonjour) und der MAC-Herstellerbereiche. Geschätzte Werte sind mit `~` markiert; die Checkbox **Plattform erkennen** schaltet die Zusatzuntersuchung ab. Beim Hinzufügen eines Geräts werden die Plattform als `"os"` und die Sicherheit der Schätzung als `"os_confidence"` im Gerät gespeichert.
 
 ---
 
@@ -669,4 +740,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.3.7 | Wake-on-LAN Manager*
+*Version 2.5.1 | Wake-on-LAN Manager*

@@ -53,6 +53,7 @@ from wol_app.update_dialog import (
 from wol_app.updater import UpdateChecker, check_for_updates_sync
 from wol_app.utils import (
     app_icon_for_mode,
+    force_window_foreground,
     get_ip_key,
     get_resource_path,
     set_app_user_model_id,
@@ -810,10 +811,17 @@ class MainWindow(QMainWindow):
         )
 
     def bring_to_front(self) -> None:
-        """Restore and focus the window (single-instance raise request)."""
+        """Restore and focus the window (single-instance raise request).
+
+        ``activateWindow()`` alone fails while the process is backgrounded
+        (Windows foreground lock — only the taskbar button flashes; macOS
+        keeps the window miniaturised in the Dock), so the platform
+        force-foreground helper is applied as well.
+        """
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        force_window_foreground(self)
 
     def closeEvent(self, event) -> None:
         """Wait for all background threads to finish before closing."""

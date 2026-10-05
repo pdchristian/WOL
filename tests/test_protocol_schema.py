@@ -12,10 +12,12 @@ A future Android (or any) client can rely on ``protocol/`` alone; breaking
 this contract must fail CI here.
 """
 
+import builtins
 import json
 import re
 from pathlib import Path
 from unittest import mock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -157,6 +159,23 @@ class TestNegativeExamples:
             "Qwen3.8-Flash-256k-62": {"prompt_tps": "261.15"}}
         assert_invalid("response-metrics", payload)
 
+    def test_metrics_watch_requests_active_ok(self):
+        """v9: the shipped example carries requests_active -> valid."""
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        assert payload["processes"]["llama-server.exe:8080"][
+            "requests_active"] == 2
+        assert_valid("response-metrics", payload)
+
+    def test_metrics_watch_requests_active_rejects_negative(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["processes"]["llama-server.exe:8080"]["requests_active"] = -1
+        assert_invalid("response-metrics", payload)
+
+    def test_metrics_watch_requests_active_rejects_string(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["processes"]["llama-server.exe:8080"]["requests_active"] = "2"
+        assert_invalid("response-metrics", payload)
+
     def test_metrics_watch_model_metrics_partial_entry_ok(self):
         # A model with only one readable gauge is allowed (keys optional).
         payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
@@ -249,12 +268,12 @@ def _fake_psutil_with_llama(monkeypatch, svc, port_open=True,
     monkeypatch.setattr(svc, "_check_port_loopback", lambda port: True)
     monkeypatch.setattr(
         svc, "_fetch_models_and_up",
-        lambda port: (models or ["Qwen3.8-Flash-256k-62"], True))
+        lambda port, api_key="": (models or ["Qwen3.8-Flash-256k-62"], True))
     monkeypatch.setattr(svc, "_probe_api_identity",
-                        lambda port, api_up=False: {})
+                        lambda port, api_up=False, api_key="": {})
     monkeypatch.setattr(
         svc, "_fetch_model_metrics",
-        lambda port, name: {"prompt_tps": 261.15, "predicted_tps": 26.65})
+        lambda port, name, api_key="": {"prompt_tps": 261.15, "predicted_tps": 26.65})
     svc._WATCH_PROCS.clear()
 
 
@@ -357,6 +376,72 @@ class TestLiveHandlerContract:
         assert_valid("response-shutdown-reboot", resp)
 
 
+# ── v8: platform reporting ("os") ──────────────────────────────────────────
+
+class TestOsField:
+    def test_status_response_carries_os(self, monkeypatch):
+        resp = _run_handler(wol_host_service, b'{"command": "status"}\n',
+                            monkeypatch=monkeypatch)
+        assert resp["os"] == "windows"
+        assert_valid("response-status", resp)
+
+    def test_metrics_response_carries_os(self, monkeypatch):
+        monkeypatch.setitem(__import__("sys").modules, "psutil", None)
+        monkeypatch.setattr(wol_host_service, "_gpu_metrics_cached",
+                            lambda: {"gpu": None, "vram_used": None,
+                                     "vram_total": None, "gpu_name": None})
+        resp = _run_handler(
+            wol_host_service,
+            json.dumps({"command": "metrics", "username": "u",
+                        "password": "p"}).encode() + b"\n",
+            monkeypatch=monkeypatch)
+        assert resp["os"] == "windows"
+        assert_valid("response-metrics", resp)
+
+    def test_linux_core_reports_distribution(self, monkeypatch):
+        import wol_host_service_linux as linux_svc
+
+        monkeypatch.setattr(linux_svc, "_OS_ID_CACHE", None)
+        monkeypatch.setattr(linux_svc.sys, "platform", "linux")
+        monkeypatch.setattr(builtins, "open", mock.mock_open(
+            read_data='NAME="Ubuntu"\nID=ubuntu\nID_LIKE=debian\n'))
+        assert linux_svc.os_id() == "ubuntu"
+
+    def test_linux_core_falls_back_to_linux(self, monkeypatch):
+        import wol_host_service_linux as linux_svc
+
+        monkeypatch.setattr(linux_svc, "_OS_ID_CACHE", None)
+        monkeypatch.setattr(linux_svc.sys, "platform", "linux")
+        monkeypatch.setattr(builtins, "open",
+                            MagicMock(side_effect=FileNotFoundError()))
+        assert linux_svc.os_id() == "linux"
+
+    def test_linux_core_reports_macos_for_darwin(self, monkeypatch):
+        # The macOS variant reuses the Linux core, so the darwin branch is
+        # what makes wol_host_service_macos.py report "macos".
+        import wol_host_service_linux as linux_svc
+
+        monkeypatch.setattr(linux_svc, "_OS_ID_CACHE", None)
+        monkeypatch.setattr(linux_svc.sys, "platform", "darwin")
+        assert linux_svc.os_id() == "macos"
+
+    def test_schema_allows_pre_v8_hosts_without_os(self):
+        # "os" must stay optional: a v2 host has no such field.
+        payload = _load(EXAMPLES_DIR / "response-metrics-no-gpu.json")
+        assert "os" not in payload
+        assert_valid("response-metrics", payload)
+
+    def test_schema_rejects_non_string_os(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["os"] = 7
+        assert_invalid("response-metrics", payload)
+
+    def test_schema_rejects_empty_os(self):
+        payload = _load(EXAMPLES_DIR / "response-metrics-full.json")
+        payload["os"] = ""
+        assert_invalid("response-metrics", payload)
+
+
 # ── Contract invariants: SPEC/schema constants vs. service code ────────────
 
 LINUX_SRC = ROOT / "wol_host_service_linux.py"
@@ -406,3 +491,38 @@ class TestContractInvariants:
         to = SCHEMAS["request"]["properties"]["timeout"]
         assert to["minimum"] == wol_host_service.BATCH_TIMEOUT_MIN
         assert to["maximum"] == wol_host_service.BATCH_TIMEOUT_MAX
+
+    def test_api_key_limit_matches_schema(self):
+        """v10: one ceiling for the dashboard API key across all layers."""
+        from wol_app.config import MAX_API_KEY_CHARS
+
+        key = SCHEMAS["request"]["properties"]["api_key"]
+        assert key["type"] == "string"
+        assert key["maxLength"] == wol_host_service.WATCH_API_KEY_MAX_CHARS
+        assert MAX_API_KEY_CHARS == key["maxLength"]
+        validator = _validator("request")
+        long_key = "k" * (key["maxLength"] + 1)
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate({"command": "metrics", "username": "u",
+                                "password": "p", "api_key": long_key})
+
+    def test_linux_core_matches_api_key_contract(self):
+        """The Ubuntu/macOS service must behave exactly like the Windows one."""
+        import wol_host_service_linux as linux_svc
+
+        assert (linux_svc.WATCH_API_KEY_MAX_CHARS
+                == wol_host_service.WATCH_API_KEY_MAX_CHARS)
+        for value in ("  dummy  ", "k" * 128, "a\r\nX: 1", "x" * 129,
+                      "schl\xfcssel", None, 7):
+            assert (linux_svc._sanitize_api_key(value)
+                    == wol_host_service._sanitize_api_key(value)), repr(value)
+
+        conn = mock.MagicMock()
+        conn.getresponse.return_value.status = 200
+        conn.getresponse.return_value.read.return_value = b"{}"
+        with mock.patch.object(linux_svc.http.client, "HTTPConnection",
+                               lambda *a, **k: conn):
+            assert linux_svc._http_get_loopback(
+                8080, "/metrics", "text/plain", api_key="dummy") == (200, "{}")
+        assert (conn.request.call_args.kwargs["headers"]["Authorization"]
+                == "Bearer dummy")

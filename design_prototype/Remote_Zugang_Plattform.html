@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WOL Manager – Remote-Zugang nach Plattform (Desktop-Prototyp)</title>
+<!--
+  ============================================================================
+  WOL Manager Desktop – PROTOTYP: Remote-Zugang nach Plattform (RDP / Turbo VNC)
+  ----------------------------------------------------------------------------
+  Konzept (Simulation, kein Build nötig):
+    1. Plattform pro Gerät ist bereits vorhanden:
+         - Host Service  -> os mit Confidence "high"  (wol_app/host_service_client.py)
+         - Fingerprint   -> os mit "medium"/"low"     (wol_app/os_detect.py: TTL, SMB, OUI, Name)
+    2. Routing-Tabelle (in den Einstellungen änderbar):
+         windows -> RDP  (mstsc)
+         macos   -> VNC  (Turbo VNC, macOS-Fernsteuerung = Port 5900)
+         linux   -> VNC  (Turbo VNC, x11vnc / xrdp mit VNC-Backend)
+         unbekannt -> Port-Probe 3389/5900, sonst Dialog mit beiden Optionen
+    3. Pro Gerät eine manuelle Überschreibung: Auto / RDP / VNC / Deaktiviert.
+    4. Startprotokoll zeigt jeden Entscheidungs-Schritt + den konkreten Befehl.
+  Öffnen: direkt im Browser.
+  ============================================================================
+-->
+<style>
+  :root {
+    --bg: #0f1115;
+    --surface: #1a1d24;
+    --surface-hover: #232733;
+    --border: #2c303a;
+    --text: #e6e8ee;
+    --text-dim: #9aa0ab;
+    --accent: #00b8a9;
+    --accent-dark: #006b63;
+    --online: #22c55e;
+    --offline: #ef4444;
+    --unknown: #f59e0b;
+    --danger: #e0485a;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --win: #4cc2ff;
+    --mono: "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", sans-serif; }
+  body { background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+
+  /* ===== Sidebar ===== */
+  .sidebar { width: 230px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 20px 12px; flex-shrink: 0; }
+  .logo { display: flex; align-items: center; gap: 12px; padding: 6px 10px; margin-bottom: 24px; }
+  .logo .mark { width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; color: #fff; }
+  .logo span { font-weight: 600; font-size: 15px; letter-spacing: .3px; }
+  .section-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding: 8px 12px; margin-top: 8px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
+    color: var(--text-dim); font-size: 14px; margin-bottom: 4px; cursor: pointer; border: none; background: none; text-align: left; width: 100%; }
+  .nav-item:hover { background: var(--surface-hover); color: var(--text); }
+  .nav-item.active { background: rgba(0,184,169,.14); color: var(--accent); font-weight: 600; }
+  .nav-item .emoji { font-size: 16px; width: 20px; }
+  .nav-spacer { flex: 1; }
+  .nav-footer { border-top: 1px solid var(--border); padding-top: 12px; color: var(--text-dim); font-size: 11px; padding-left: 12px; }
+
+  /* ===== Main ===== */
+  .main { flex: 1; overflow: auto; padding: 28px 36px; }
+  .screen { display: none; animation: fade .18s ease; }
+  .screen.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .page-header h1 { font-size: 22px; font-weight: 600; }
+  .page-header p { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+
+  .btn { border: none; border-radius: 10px; padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); transition: background .15s, transform .1s; }
+  .btn:hover { background: var(--surface-hover); transform: translateY(-1px); }
+  .btn.primary { background: var(--accent); color: #032019; border: none; }
+  .btn.rdp { background: rgba(59,130,246,.14); color: var(--blue); border-color: rgba(59,130,246,.45); }
+  .btn.vnc { background: rgba(168,85,247,.14); color: var(--purple); border-color: rgba(168,85,247,.45); }
+  .btn.danger { background: rgba(224,72,90,.12); color: var(--danger); border: 1px solid rgba(224,72,90,.4); }
+  .btn.small { padding: 6px 10px; font-size: 12px; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+
+  /* ===== Geräte-Karten ===== */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px;
+    transition: background .15s, border .15s; position: relative; }
+  .card:hover { background: var(--surface-hover); border-color: var(--accent); }
+  .card .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .card h3 { font-size: 15px; font-weight: 600; }
+  .card .meta { color: var(--text-dim); font-size: 12px; line-height: 1.8; font-family: var(--mono); margin-bottom: 10px; }
+  .card .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .status { font-size: 12px; font-weight: 600; }
+  .status.online { color: var(--online); } .status.offline { color: var(--offline); } .status.unknown { color: var(--unknown); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot.online { background: var(--online); box-shadow: 0 0 8px var(--online); }
+  .dot.offline { background: var(--offline); } .dot.unknown { background: var(--unknown); }
+
+  .osbadge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px;
+    font-size: 11.5px; font-weight: 600; border: 1px solid var(--border); background: rgba(255,255,255,.04); }
+  .osbadge.windows { color: var(--win); border-color: rgba(76,194,255,.4); }
+  .osbadge.macos { color: #d4d4d8; border-color: rgba(212,212,216,.4); }
+  .osbadge.linux { color: var(--unknown); border-color: rgba(245,158,11,.4); }
+  .osbadge.unknown { color: var(--text-dim); }
+  .conf { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; font-weight: 700; }
+  .conf.high { background: rgba(34,197,94,.15); color: var(--online); }
+  .conf.medium { background: rgba(245,158,11,.15); color: var(--unknown); }
+  .conf.low { background: rgba(239,68,68,.15); color: var(--offline); }
+  .conf.none { background: rgba(154,160,171,.12); color: var(--text-dim); }
+  .planhint { margin-top: 10px; font-size: 11.5px; color: var(--text-dim); border-top: 1px dashed var(--border); padding-top: 8px; }
+  .planhint b { color: var(--text); }
+
+  /* ===== Entscheidungs-Log ===== */
+  .logpanel { margin-top: 26px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .logpanel h2 { font-size: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .log { font-family: var(--mono); font-size: 12px; line-height: 1.7; max-height: 260px; overflow: auto; color: var(--text-dim); }
+  .log .t { color: var(--accent); }
+  .log .cmd { color: var(--blue); }
+  .log .warn { color: var(--unknown); }
+  .log .err { color: var(--danger); }
+  .log div { border-bottom: 1px solid rgba(44,48,58,.5); padding: 4px 0; }
+
+  /* ===== Einstellungen ===== */
+  .settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; margin-bottom: 16px; max-width: 860px; }
+  .settings-card h2 { font-size: 15px; margin-bottom: 4px; }
+  .settings-card .sub { color: var(--text-dim); font-size: 12.5px; margin-bottom: 16px; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid rgba(44,48,58,.6); }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-row label { font-size: 13.5px; }
+  .setting-row .hint { color: var(--text-dim); font-size: 11.5px; margin-top: 2px; }
+  select, input[type=text], input[type=number] { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 13px; outline: none; }
+  select:focus, input:focus { border-color: var(--accent); }
+  .routing-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .routing-table th, .routing-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .routing-table th { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* ===== Entscheidungsmodell ===== */
+  .flow { max-width: 860px; }
+  .fnode { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin: 0 auto; }
+  .fnode .ttl { font-weight: 600; font-size: 13.5px; margin-bottom: 4px; }
+  .fnode .dsc { color: var(--text-dim); font-size: 12.5px; line-height: 1.6; }
+  .fnode code { font-family: var(--mono); font-size: 11.5px; color: var(--blue); }
+  .farrow { text-align: center; color: var(--accent); font-size: 18px; padding: 6px 0; }
+  .fbranch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 auto; }
+  .fbranch .fnode { border-top: 3px solid var(--accent); }
+  .fbranch .fnode.b-rdp { border-top-color: var(--blue); }
+  .fbranch .fnode.b-vnc { border-top-color: var(--purple); }
+  .fbranch .fnode.b-ask { border-top-color: var(--unknown); }
+  .callout { background: rgba(0,184,169,.08); border: 1px solid rgba(0,184,169,.35); border-radius: 12px;
+    padding: 14px 16px; font-size: 12.5px; line-height: 1.7; margin: 18px auto; color: var(--text); }
+
+  /* ===== Fingerprint-Simulator ===== */
+  .sim { display: grid; grid-template-columns: 340px 1fr; gap: 18px; max-width: 980px; }
+  .sim .inputs, .sim .out { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .sim .inp-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; }
+  .sim .inp-row .lbl { color: var(--text-dim); }
+  .scorebar { height: 10px; border-radius: 6px; background: var(--bg); overflow: hidden; margin: 4px 0 12px; }
+  .scorebar > div { height: 100%; border-radius: 6px; transition: width .25s ease; }
+  .verdict { font-size: 14px; font-weight: 600; margin-top: 8px; }
+  .verdict .plan { color: var(--accent); }
+
+  /* ===== Modal ===== */
+  .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal-back.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; width: 420px; }
+  .modal h2 { font-size: 16px; margin-bottom: 14px; }
+  .modal .opt { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 10px; cursor: pointer; }
+  .modal .opt:hover { background: var(--surface-hover); border-color: var(--accent); }
+  .modal .opt .big { font-size: 22px; }
+  .modal .opt .ttl { font-weight: 600; font-size: 13.5px; }
+  .modal .opt .dsc { color: var(--text-dim); font-size: 11.5px; margin-top: 2px; }
+
+  /* ===== Toast ===== */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--accent);
+    border-radius: 12px; padding: 14px 18px; font-size: 13px; max-width: 420px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    opacity: 0; transform: translateY(10px); transition: all .25s ease; z-index: 60; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast .cmdline { font-family: var(--mono); font-size: 11.5px; color: var(--blue); margin-top: 6px; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<!-- ======================= Sidebar ======================= -->
+<nav class="sidebar">
+  <div class="logo"><div class="mark">W</div><span>WOL Manager</span></div>
+  <div class="section-label">Remote-Zugang</div>
+  <button class="nav-item active" data-screen="devices"><span class="emoji">🖥️</span>Geräte</button>
+  <button class="nav-item" data-screen="settings"><span class="emoji">⚙️</span>Remote-Einstellungen</button>
+  <button class="nav-item" data-screen="model"><span class="emoji">🧠</span>Entscheidungsmodell</button>
+  <button class="nav-item" data-screen="sim"><span class="emoji">🔬</span>Fingerprint-Simulator</button>
+  <div class="nav-spacer"></div>
+  <div class="nav-footer">Prototyp v1.0 · 2026-10-02<br>Konzept: Plattform → RDP / Turbo VNC</div>
+</nav>
+
+<main class="main">
+
+<!-- ======================= Screen: Geräte ======================= -->
+<section class="screen active" id="screen-devices">
+  <div class="page-header">
+    <div><h1>Geräte</h1><p>Remote-Buttons sind plattformgesteuert: Windows → RDP (mstsc) · macOS/Linux → Turbo VNC · unbekannt → Nachfrage</p></div>
+    <button class="btn" onclick="reprobeAll()">🔄 Plattformen neu erkennen</button>
+  </div>
+  <div class="grid" id="deviceGrid"></div>
+
+  <div class="logpanel">
+    <h2>📝 Entscheidungs- &amp; Startprotokoll
+      <button class="btn small" onclick="clearLog()">Leeren</button>
+    </h2>
+    <div class="log" id="log"></div>
+  </div>
+</section>
+
+<!-- ======================= Screen: Einstellungen ======================= -->
+<section class="screen" id="screen-settings">
+  <div class="page-header"><div><h1>Remote-Einstellungen</h1><p>Neue Gruppe „Remote-Zugang“ – ergänzt die bestehende Gruppe „Remote-Desktop“ (Auflösung, Zertifikatsprüfung)</p></div></div>
+
+  <div class="settings-card">
+    <h2>Routing-Tabelle (Standard je Plattform)</h2>
+    <div class="sub">Entspricht <code>remote.protocol_by_os</code> im Config-Manager. „Auto“ nutzt die erkannte Plattform des Geräts.</div>
+    <table class="routing-table">
+      <tr><th>Plattform</th><th>Protokoll</th><th>Client</th></tr>
+      <tr>
+        <td>🪟 Windows</td>
+        <td><select id="route-windows"><option>RDP</option><option>VNC</option><option>Auto</option></select></td>
+        <td>mstsc.exe (bestehender Pfad inkl. Fast-Exit-Retry)</td>
+      </tr>
+      <tr>
+        <td>🍏 macOS</td>
+        <td><select id="route-macos"><option>VNC</option><option>RDP</option><option>Auto</option></select></td>
+        <td>Turbo VNC (macOS-Fernsteuerung, Port 5900)</td>
+      </tr>
+      <tr>
+        <td>🐧 Linux (Ubuntu)</td>
+        <td><select id="route-linux"><option>VNC</option><option>RDP</option><option>Auto</option></select></td>
+        <td>Turbo VNC (x11vnc) oder mstsc (xrdp)</td>
+      </tr>
+      <tr>
+        <td>❓ Unbekannt</td>
+        <td><select id="route-unknown"><option>Nachfragen</option><option>Port-Probe</option><option>RDP</option><option>VNC</option></select></td>
+        <td>Port-Probe: 3389 offen → RDP, 5900 offen → VNC</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="settings-card">
+    <h2>Turbo VNC Client</h2>
+    <div class="sub">Startart muss an der installierten Turbo-VNC-Version verifiziert werden – beide Modi sind vorbereitet.</div>
+    <div class="setting-row">
+      <div><label>Startart</label><div class="hint">Programm mit Argumenten oder URI-Schema (Protokoll-Handler)</div></div>
+      <select id="vncMode">
+        <option value="exe">TurboVNC.exe + Argumente</option>
+        <option value="uri">URI-Schema (turbovnc://host:5900)</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <div><label>Pfad / Befehl</label><div class="hint">Auto-Erkennung unter %ProgramFiles%\Turbo VNC*, sonst manuell setzen</div></div>
+      <input type="text" id="vncPath" size="42" value="C:\Program Files\Turbo VNC\TurboVNC.exe">
+    </div>
+    <div class="setting-row">
+      <div><label>VNC-Port</label><div class="hint">Standard 5900; Display :1 → 5901</div></div>
+      <input type="number" id="vncPort" value="5900" style="width:100px">
+    </div>
+    <div class="setting-row">
+      <div><label>Passwortübergabe</label><div class="hint">Wie bei RDP: Gerät speichert AES-256-GCM-verschlüsselt; Übergabe nur, wenn der Client es unterstützt, sonst Zwischenablage + Toast</div></div>
+      <select id="vncPw"><option>Zwischenablage + Toast</option><option>Argument (nur lokal)</option><option>Nie</option></select>
+    </div>
+  </div>
+
+  <div class="settings-card">
+    <h2>Plattform-Erkennung</h2>
+    <div class="sub">Einstellungen greifen auf <code>wol_app/os_detect.py</code> zu – keine neue Erkennungslogik nötig.</div>
+    <div class="setting-row">
+      <div><label>Host Service bevorzugen</label><div class="hint">Abfrage auf Port 8765 liefert Verbindlichkeit „hoch“ und überspringt die Heuristik</div></div>
+      <input type="checkbox" id="preferService" checked>
+    </div>
+    <div class="setting-row">
+      <div><label>Port-Probes (3389 / 5900) bei unbekannter Plattform</label><div class="hint">0,4 s Timeout pro Port, fail-closed wie bestehende Probes</div></div>
+      <input type="checkbox" id="portProbe" checked>
+    </div>
+    <div class="setting-row">
+      <div><label>Erkennung bei jedem Ping-Zyklus auffrischen</label><div class="hint">Nur wenn Confidence nicht „hoch“ ist – sonst einmal pro Scan</div></div>
+      <input type="checkbox" id="refreshDetect">
+    </div>
+  </div>
+</section>
+
+<!-- ======================= Screen: Entscheidungsmodell ======================= -->
+<section class="screen" id="screen-model">
+  <div class="page-header"><div><h1>Entscheidungsmodell</h1><p>Ein Startkanal „Remote“ ersetzt die beiden festen Menüpunkte – die Plattform entscheidet über den Client</p></div></div>
+  <div class="flow">
+    <div class="fnode"><div class="ttl">1 · Manuelle Überschreibung am Gerät?</div>
+      <div class="dsc">Neues optionales Feld <code>device["remote_method"]</code> ∈ {auto, rdp, vnc, none}.
+      Steht es nicht auf <code>auto</code>, wird sofort damit gestartet.</div></div>
+    <div class="farrow">↓</div>
+    <div class="fnode"><div class="ttl">2 · Plattform des Geräts lesen</div>
+      <div class="dsc"><code>config.get_device_os(device)</code> → <code>windows</code> · <code>macos</code> · <code>linux</code> · <code>""</code>.
+      Quelle: Host Service (Confidence <b>high</b>) oder Fingerprint (<b>medium</b>/<b>low</b>).</div></div>
+    <div class="farrow">↓</div>
+    <div class="fnode"><div class="ttl">3 · Plattform bekannt?</div>
+      <div class="dsc">Ja → Routing-Tabelle (Einstellungen). Nein und Confidence nur „low“ → auch Routing-Tabelle,
+      aber mit Sicherheitsnetz: Port-Probe vor dem Start.</div></div>
+    <div class="farrow">↓</div>
+    <div class="fbranch">
+      <div class="fnode b-rdp"><div class="ttl">🪟 RDP</div><div class="dsc">Bestehender Pfad <code>launch_remote_desktop()</code>:
+      mstsc, /v, /g, Auflösung, auth_level, Fast-Exit-Retry bei falschem Passwort.</div></div>
+      <div class="fnode b-vnc"><div class="ttl">🍏🐧 VNC</div><div class="dsc">Neuer Pfad <code>launch_vnc()</code>:
+      Turbo VNC mit <code>host:5900</code>; macOS-Fernsteuerung und x11vnc sprechen beide RFB.</div></div>
+      <div class="fnode b-ask"><div class="ttl">❓ Nachfrage</div><div class="dsc">Port-Probe 3389/5900;
+      liefert kein Port eine Entscheidung, Dialog mit beiden Optionen + „Nicht mehr fragen“.</div></div>
+    </div>
+    <div class="callout">
+      <b>Warum dieses Modell?</b> Die Plattform-Information existiert bereits pro Gerät (<code>os</code>-Feld inkl. Confidence) und wird
+      im Scan-Dialog schon angezeigt. Es fehlt nur die Verknüpfung <i>Plattform → Client</i>. Bewusst <b>keine</b> automatische
+      Protokoll-Umschaltung bei Confidence „low“, ohne vorher zu prüfen: ein Linux-PC mit xrdp soll weiterhin RDP bekommen können,
+      wenn der Nutzer das so eingestellt hat. Darum ist die Routing-Tabelle editierbar und die Überschreibung pro Gerät möglich.
+    </div>
+    <div class="callout" style="border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.07)">
+      <b>Offener Punkt vor Implementierung:</b> Der konkrete Turbo-VNC-Start ist zu verifizieren. Vorgesehen ist
+      <code>subprocess.Popen([vnc_exe, f"{ip}:{port}"])</code>; alternativ ein URI-Handler. Beide Varianten sind im
+      Einstellungs-Screen umschaltbar, damit die Implementierung denselben Schalter nutzt.
+    </div>
+  </div>
+</section>
+
+<!-- ======================= Screen: Simulator ======================= -->
+<section class="screen" id="screen-sim">
+  <div class="page-header"><div><h1>Fingerprint-Simulator</h1><p>Spiegelt <code>score_platforms()</code> / <code>infer_os()</code> aus <code>wol_app/os_detect.py</code> – Signale ändern, Entscheidung live sehen</p></div></div>
+  <div class="sim">
+    <div class="inputs">
+      <div class="inp-row"><span class="lbl">Host Service antwortet</span>
+        <select id="s_service"><option value="">kein Dienst</option><option value="windows">windows</option><option value="macos">macos</option><option value="linux">linux</option></select></div>
+      <div class="inp-row"><span class="lbl">Ping-TTL</span>
+        <select id="s_ttl"><option value="">kein Ping</option><option>128</option><option>64</option><option>255</option><option>63</option></select></div>
+      <div class="inp-row"><span class="lbl">SMB 445 offen</span><input type="checkbox" id="s_smb"></div>
+      <div class="inp-row"><span class="lbl">RDP 3389 offen</span><input type="checkbox" id="s_rdp"></div>
+      <div class="inp-row"><span class="lbl">VNC 5900 offen</span><input type="checkbox" id="s_vnc"></div>
+      <div class="inp-row"><span class="lbl">Reverse-DNS</span><input type="text" id="s_name" value="" size="16" placeholder="z. B. mac-mini.local"></div>
+      <div class="inp-row"><span class="lbl">MAC-OUI-Hinweis</span>
+        <select id="s_oui"><option value="">kein Treffer</option><option value="macos">Apple</option><option value="windows">Microsoft</option></select></div>
+      <div style="margin-top:14px"><button class="btn primary" onclick="applySim()">Signale auf ein Gerät anwenden…</button></div>
+      <div class="inp-row" style="margin-top:8px"><span class="lbl">Zielgerät</span>
+        <select id="s_target"></select></div>
+    </div>
+    <div class="out">
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px">Gewichtete Stimmen (TTL 3/2/1 · SMB 2 · Bonjour-Name 2 · OUI 2)</div>
+      <div>🪟 Windows <span id="wWindows" style="float:right;font-family:var(--mono)"></span><div class="scorebar"><div id="bWindows" style="background:var(--win);width:0"></div></div></div>
+      <div>🍏 macOS <span id="wMacos" style="float:right;font-family:var(--mono)"></span><div class="scorebar"><div id="bMacos" style="background:#d4d4d8;width:0"></div></div></div>
+      <div>🐧 Linux <span id="wLinux" style="float:right;font-family:var(--mono)"></span><div class="scorebar"><div id="bLinux" style="background:var(--unknown);width:0"></div></div></div>
+      <div class="verdict">Ergebnis: <span id="vOs">—</span> · <span id="vConf" class="conf none">—</span></div>
+      <div class="verdict">Remote-Plan: <span class="plan" id="vPlan">—</span></div>
+      <div style="margin-top:12px;font-size:11.5px;color:var(--text-dim)" id="vWhy"></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ======================= Modal: Protokoll-Wahl ======================= -->
+<div class="modal-back" id="askModal">
+  <div class="modal">
+    <h2 id="askTitle">Remote-Verbindung: Protokoll wählen</h2>
+    <div class="opt" onclick="chooseAsk('rdp')"><div class="big">🔵</div>
+      <div><div class="ttl">RDP (mstsc)</div><div class="dsc">Windows Remote Desktop, Port 3389</div></div></div>
+    <div class="opt" onclick="chooseAsk('vnc')"><div class="big">🟣</div>
+      <div><div class="ttl">VNC (Turbo VNC)</div><div class="dsc">macOS-Fernsteuerung / x11vnc, Port 5900</div></div></div>
+    <div class="opt" onclick="chooseAsk('cancel')"><div class="big">✖️</div>
+      <div><div class="ttl">Abbrechen</div><div class="dsc">Nichts starten</div></div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ─────────────── Datenmodell (entspricht devices.json + optionalem "os") ─────────────── */
+const devices = [
+  { id: 1, name: "A4-H20",   ip: "192.168.2.50",  mac: "60:CF:84:84:31:29",
+    status: "online",  os: "windows", conf: "high",   source: "service",     remote_method: "auto",
+    signals: { ttl: 128, smb: true, rdp: true, vnc: false, name: "", oui: "" } },
+  { id: 2, name: "Fractal",  ip: "192.168.2.62",  mac: "50:EB:F6:B7:8B:0C",
+    status: "online",  os: "linux",   conf: "high",   source: "service",     remote_method: "auto",
+    signals: { ttl: 64, smb: false, rdp: true, vnc: false, name: "", oui: "" } },
+  { id: 3, name: "Mac-Studio", ip: "192.168.2.80", mac: "3C:22:FB:1A:2B:3C",
+    status: "online",  os: "macos",   conf: "medium", source: "fingerprint", remote_method: "auto",
+    signals: { ttl: 64, smb: false, rdp: false, vnc: true, name: "mac-studio.local", oui: "macos" } },
+  { id: 4, name: "A4-TV",    ip: "192.168.2.111", mac: "A0:AD:9F:1C:09:FF",
+    status: "online",  os: "",        conf: "",       source: "",            remote_method: "auto",
+    signals: { ttl: 64, smb: false, rdp: false, vnc: false, name: "", oui: "" } },
+  { id: 5, name: "NAS",      ip: "192.168.2.9",   mac: "00:11:32:AA:BB:CC",
+    status: "offline", os: "linux",   conf: "low",    source: "fingerprint", remote_method: "none",
+    signals: { ttl: 64, smb: true, rdp: false, vnc: false, name: "", oui: "" } },
+];
+
+const settings = {
+  route: { windows: "RDP", macos: "VNC", linux: "VNC", unknown: "Nachfragen" },
+  vncMode: "exe", vncPath: "C:\\Program Files\\Turbo VNC\\TurboVNC.exe", vncPort: 5900,
+  rdpPort: 3389,
+};
+
+const OS_ICON = { windows: "🪟", macos: "🍏", linux: "🐧", "": "❓" };
+const OS_NAME = { windows: "Windows", macos: "macOS", linux: "Linux", "": "Unbekannt" };
+
+/* ─────────────── Erkennung (Port von os_detect.py) ─────────────── */
+function scorePlatforms(sig) {
+  const s = { windows: 0, macos: 0, linux: 0 };
+  if (sig.ttl === 128) s.windows += 3;
+  else if (sig.ttl === 64) { s.macos += 2; s.linux += 2; }
+  else if (sig.ttl !== 255 && sig.ttl) s.linux += 1;
+  if (sig.smb) s.windows += 2;
+  if ((sig.name || "").toLowerCase().endsWith(".local")) s.macos += 2;
+  if (sig.oui) s[sig.oui] += 2;
+  return s;
+}
+function inferOs(sig) {
+  if (sig.serviceOs) return { os: sig.serviceOs, conf: "high", source: "service" };
+  const s = scorePlatforms(sig);
+  const ranked = Object.entries(s).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const [best, bestScore] = ranked[0];
+  const runnerUp = ranked[1][1];
+  if (bestScore === 0) return { os: "", conf: "", source: "" };
+  const conf = (bestScore >= 4 && runnerUp === 0) ? "medium" : "low";
+  return { os: best, conf, source: "fingerprint", scores: s };
+}
+
+/* ─────────────── Routing (der eigentliche Vorschlag) ─────────────── */
+function planFor(d) {
+  if (d.remote_method === "none") return { proto: null, why: "Gerät: Remote deaktiviert" };
+  if (d.remote_method === "rdp")  return { proto: "rdp",  why: "Manuelle Überschreibung am Gerät" };
+  if (d.remote_method === "vnc")  return { proto: "vnc",  why: "Manuelle Überschreibung am Gerät" };
+  if (d.os) {
+    const r = settings.route[d.os];
+    return { proto: r === "RDP" ? "rdp" : "vnc", why: `Plattform ${OS_NAME[d.os]} → Routing-Tabelle (${r})` };
+  }
+  if (settings.route.unknown === "Port-Probe") {
+    if (d.signals.rdp) return { proto: "rdp", why: "Plattform unbekannt, Port 3389 offen" };
+    if (d.signals.vnc) return { proto: "vnc", why: "Plattform unbekannt, Port 5900 offen" };
+  }
+  return { proto: "ask", why: "Plattform unbekannt → Nutzer fragt" };
+}
+
+/* ─────────────── Start (Simulation des konkreten Befehls) ─────────────── */
+function cmdline(proto, d) {
+  if (proto === "rdp") {
+    return `mstsc.exe /v:${d.ip}:${settings.rdpPort} /w:1920 /h:1080 /f`;
+  }
+  if (proto === "vnc") {
+    return settings.vncMode === "exe"
+      ? `"${settings.vncPath}" ${d.ip}:${settings.vncPort}`
+      : `start turbovnc://${d.ip}:${settings.vncPort}`;
+  }
+  return "";
+}
+
+function startRemote(id, forced) {
+  const d = devices.find(x => x.id === id);
+  if (d.status !== "online") {
+    log(`<span class="err">✖ ${d.name}</span> offline – WoL zuerst, Remote erst bei online möglich.`);
+    return;
+  }
+  const plan = forced ? { proto: forced, why: "Nutzer-Auswahl im Dialog" } : planFor(d);
+  log(`<span class="t">▶ ${d.name}</span> (${d.ip}) · Plattform ${OS_ICON[d.os]} ${OS_NAME[d.os]}` +
+      `${d.conf ? " [" + d.conf + "]" : ""} · Plan <b>${plan.proto === "rdp" ? "RDP" : plan.proto === "vnc" ? "VNC" : "Nachfrage"}</b> — ${plan.why}`);
+  if (plan.proto === "ask") { openAsk(d); return; }
+  if (!plan.proto) return;
+  const cmd = cmdline(plan.proto, d);
+  log(`&nbsp;&nbsp;&nbsp;→ <span class="cmd">${cmd}</span>`);
+  toast(`${plan.proto === "rdp" ? "🔵 RDP" : "🟣 Turbo VNC"} → ${d.name}`, cmd);
+  if (plan.proto === "vnc" && !d.signals.vnc) {
+    log(`&nbsp;&nbsp;&nbsp;<span class="warn">⚠ Port 5900 war beim letzten Scan geschlossen – Verbindung schlägt vermutlich fehl (Fernsteuerung am Ziel aktivieren).</span>`);
+  }
+}
+
+/* ─────────────── UI: Geräte-Karten ─────────────── */
+function renderDevices() {
+  const grid = document.getElementById("deviceGrid");
+  grid.innerHTML = devices.map(d => {
+    const plan = planFor(d);
+    const conf = d.conf || "none";
+    const confTxt = { high: "Service", medium: "~ sicher", low: "~ vage", none: "unbekannt" }[conf];
+    let remoteBtns;
+    if (d.remote_method === "none") {
+      remoteBtns = `<button class="btn small" disabled>Remote deaktiviert</button>`;
+    } else if (plan.proto === "rdp") {
+      remoteBtns = `<button class="btn small rdp" onclick="startRemote(${d.id})">🔵 RDP</button>
+                    <button class="btn small rdp" onclick="startRemote(${d.id},'rdp')" title="Vollbild">⛶</button>`;
+    } else if (plan.proto === "vnc") {
+      remoteBtns = `<button class="btn small vnc" onclick="startRemote(${d.id})">🟣 Turbo VNC</button>`;
+    } else {
+      remoteBtns = `<button class="btn small" onclick="startRemote(${d.id})">❓ Remote</button>`;
+    }
+    const power = d.status === "online"
+      ? `<button class="btn small danger" onclick="log('⏻ Shutdown ${d.name} (SMB/Host Service – bestehender Pfad)')">⏻ Ausschalten</button>`
+      : `<button class="btn small primary" onclick="log('📤 WoL an ${d.mac} (bestehender Pfad)')">📤 Aufwecken</button>`;
+    return `<div class="card">
+      <div class="top"><h3>${d.name}</h3>
+        <span><span class="dot ${d.status}"></span><span class="status ${d.status}">${d.status}</span></span></div>
+      <div class="meta">${d.ip} · ${d.mac}<br>
+        <span class="osbadge ${d.os || "unknown"}">${OS_ICON[d.os]} ${OS_NAME[d.os]}</span>
+        <span class="conf ${conf}">${confTxt}</span>
+        ${d.remote_method !== "auto" ? `<span class="conf none">override: ${d.remote_method}</span>` : ""}
+      </div>
+      <div class="row">${power}${remoteBtns}
+        <button class="btn small" onclick="cycleOverride(${d.id})" title="Auto → RDP → VNC → Deaktiviert → Auto">↦ ${d.remote_method}</button></div>
+      <div class="planhint">Plan: <b>${plan.proto === "ask" ? "Nachfrage (beide Protokolle)" : plan.proto ? (plan.proto === "rdp" ? "RDP · mstsc" : "VNC · Turbo VNC : " + settings.vncPort) : "kein Remote"}</b> · ${plan.why}</div>
+    </div>`;
+  }).join("");
+  const sel = document.getElementById("s_target");
+  sel.innerHTML = devices.map(d => `<option value="${d.id}">${d.name}</option>`).join("");
+}
+
+function cycleOverride(id) {
+  const d = devices.find(x => x.id === id);
+  const order = ["auto", "rdp", "vnc", "none"];
+  d.remote_method = order[(order.indexOf(d.remote_method) + 1) % order.length];
+  log(`⚙ ${d.name}: remote_method = <b>${d.remote_method}</b> (neues optionales Geräte-Feld)`);
+  renderDevices();
+}
+
+function reprobeAll() {
+  devices.forEach(d => {
+    const r = inferOs({ ...d.signals, serviceOs: d.source === "service" ? d.os : "" });
+    d.os = r.os; d.conf = r.conf; d.source = r.source;
+    log(`🔎 ${d.name}: ${OS_ICON[d.os]} ${OS_NAME[d.os]}${d.conf ? " [" + d.conf + " · " + d.source + "]" : " [keine Signale]"}`);
+  });
+  renderDevices();
+}
+
+/* ─────────────── Modal: Nachfrage ─────────────── */
+let askDevice = null;
+function openAsk(d) {
+  askDevice = d;
+  document.getElementById("askTitle").textContent = `${d.name} (${d.ip}) — Protokoll wählen`;
+  document.getElementById("askModal").classList.add("open");
+}
+function chooseAsk(p) {
+  document.getElementById("askModal").classList.remove("open");
+  if (p === "cancel" || !askDevice) return;
+  startRemote(askDevice.id, p);
+}
+
+/* ─────────────── Simulator ─────────────── */
+function readSim() {
+  return {
+    serviceOs: document.getElementById("s_service").value,
+    ttl: parseInt(document.getElementById("s_ttl").value) || 0,
+    smb: document.getElementById("s_smb").checked,
+    rdp: document.getElementById("s_rdp").checked,
+    vnc: document.getElementById("s_vnc").checked,
+    name: document.getElementById("s_name").value,
+    oui: document.getElementById("s_oui").value,
+  };
+}
+function updateSim() {
+  const sig = readSim();
+  const r = inferOs(sig);
+  const s = r.scores || (sig.serviceOs ? { windows: 0, macos: 0, linux: 0 } : scorePlatforms(sig));
+  const max = Math.max(1, s.windows, s.macos, s.linux);
+  for (const [k, id] of [["windows", "Windows"], ["macos", "Macos"], ["linux", "Linux"]]) {
+    const val = sig.serviceOs === k ? 6 : s[k];
+    document.getElementById("w" + id).textContent = val;
+    document.getElementById("b" + id).style.width = (val / max * 100) + "%";
+  }
+  document.getElementById("vOs").textContent = OS_ICON[r.os] + " " + OS_NAME[r.os];
+  const c = document.getElementById("vConf");
+  c.className = "conf " + (r.conf || "none");
+  c.textContent = r.conf ? r.conf + " · " + r.source : "keine Entscheidung";
+  const plan = planFor({ os: r.os, conf: r.conf, remote_method: "auto", signals: sig });
+  document.getElementById("vPlan").textContent =
+    plan.proto === "rdp" ? "🔵 RDP (mstsc)" : plan.proto === "vnc" ? "🟣 Turbo VNC" : "❓ Nachfrage";
+  document.getElementById("vWhy").textContent = plan.why;
+}
+function applySim() {
+  const sig = readSim();
+  const d = devices.find(x => x.id === parseInt(document.getElementById("s_target").value));
+  if (!d) return;
+  d.signals = sig;
+  const r = inferOs(sig);
+  d.os = r.os; d.conf = r.conf; d.source = r.source;
+  log(`🔎 ${d.name}: Signale übernommen → ${OS_ICON[d.os]} ${OS_NAME[d.os]}${d.conf ? " [" + d.conf + "]" : ""}`);
+  renderDevices();
+  switchScreen("devices");
+}
+
+/* ─────────────── Einstellungen ─────────────── */
+function bindSettings() {
+  for (const os of ["windows", "macos", "linux", "unknown"]) {
+    document.getElementById("route-" + os).addEventListener("change", e => {
+      settings.route[os] = e.target.value;
+      log(`⚙ Routing-Tabelle: ${OS_NAME[os] || "Unbekannt"} → <b>${e.target.value}</b>`);
+      renderDevices();
+    });
+  }
+  document.getElementById("vncMode").addEventListener("change", e => { settings.vncMode = e.target.value; renderDevices(); });
+  document.getElementById("vncPath").addEventListener("change", e => { settings.vncPath = e.target.value; });
+  document.getElementById("vncPort").addEventListener("change", e => { settings.vncPort = parseInt(e.target.value) || 5900; renderDevices(); });
+}
+
+/* ─────────────── Navigation, Log, Toast ─────────────── */
+function switchScreen(name) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === "screen-" + name));
+  document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.screen === name));
+}
+document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => switchScreen(b.dataset.screen)));
+
+function log(html) {
+  const el = document.getElementById("log");
+  const t = new Date().toLocaleTimeString("de-DE");
+  el.insertAdjacentHTML("afterbegin", `<div><span class="t">[${t}]</span> ${html}</div>`);
+}
+function clearLog() { document.getElementById("log").innerHTML = ""; }
+
+let toastTimer = null;
+function toast(msg, cmd) {
+  const el = document.getElementById("toast");
+  el.innerHTML = msg + (cmd ? `<div class="cmdline">${cmd}</div>` : "");
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 4200);
+}
+
+/* ─────────────── Init ─────────────── */
+["s_service","s_ttl","s_smb","s_rdp","s_vnc","s_name","s_oui"].forEach(id =>
+  document.getElementById(id).addEventListener("input", updateSim));
+bindSettings();
+renderDevices();
+updateSim();
+log("Bereit. Klick auf <b>RDP</b>/<b>Turbo VNC</b>/<b>Remote</b> auf einer Karte zeigt die Entscheidung + den Startbefehl.");
+</script>
+</body>
+</html>

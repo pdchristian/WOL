@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "wol-host-protocol/response-metrics.json",
-  "title": "Response to {command: metrics} (authenticated, protocol v7)",
-  "description": "Sizes are bytes, percentages 0-100. null = not measurable (psutil/nvidia-smi unavailable). See protocol/SPEC.md §4.2.",
+  "title": "Response to {command: metrics} (authenticated, protocol v10)",
+  "description": "Sizes are bytes, percentages 0-100. null = not measurable (psutil/nvidia-smi unavailable). 'os' is optional because pre-v8 hosts omit it. See protocol/SPEC.md §4.2.",
   "allOf": [{ "$ref": "response-core.json" }],
   "type": "object",
   "required": ["status", "protocol", "hostname", "cpu", "cpu_count",
@@ -10,8 +10,9 @@
                "vram_total", "gpu_name"],
   "properties": {
     "status": { "const": "ok" },
-    "protocol": { "type": "integer", "minimum": 1, "maximum": 7 },
+    "protocol": { "type": "integer", "minimum": 1, "maximum": 10 },
     "hostname": { "type": "string" },
+    "os": { "type": "string", "minLength": 1, "maxLength": 32 },
     "cpu": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
     "cpu_count": { "type": ["integer", "null"], "minimum": 1 },
     "ram_used": { "type": ["integer", "null"], "minimum": 0 },
@@ -43,6 +44,7 @@
         "api_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "api_port_open": { "type": "boolean" },
         "api_up": { "type": "boolean" },
+        "requests_active": { "type": "integer", "minimum": 0 },
         "api_kind": { "type": "string", "enum": ["llama.cpp", "openai", "unknown"] },
         "api_features": {
           "type": "array",

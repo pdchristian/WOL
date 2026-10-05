@@ -28,7 +28,7 @@ from wol_app.network_scanner import (
 )
 from wol_app.scan_worker import ScanWorker
 from wol_app.translations import Translations
-from wol_app.utils import get_ip_key, sort_rows
+from wol_app.utils import OS_LABEL_KEYS, get_ip_key, sort_rows
 
 
 class NetworkScanDialog(QDialog):
@@ -90,6 +90,12 @@ class NetworkScanDialog(QDialog):
 
         # --- Scan button ---
         scan_btn_layout = QHBoxLayout()
+        self.os_detect_check = QCheckBox(Translations.tr("scan_dialog.opt.detect_os"))
+        self.os_detect_check.setChecked(True)
+        self.os_detect_check.setToolTip(
+            Translations.tr("scan_dialog.opt.detect_os_tooltip")
+        )
+        scan_btn_layout.addWidget(self.os_detect_check)
         scan_btn_layout.addStretch()
         self.scan_btn = QPushButton(Translations.tr("scan_dialog.button.scan"))
         self.scan_btn.clicked.connect(self._start_scan)
@@ -114,11 +120,12 @@ class NetworkScanDialog(QDialog):
 
         # Results table
         self.table = QTableWidget()
-        self.table.setColumnCount(4)
+        self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels([
             Translations.tr("scan_dialog.col.name"),
             Translations.tr("scan_dialog.col.ipv4"),
             Translations.tr("scan_dialog.col.ipv6"),
+            Translations.tr("scan_dialog.col.os"),
             Translations.tr("scan_dialog.col.mac"),
         ])
         header: QHeaderView | None = self.table.horizontalHeader()
@@ -126,7 +133,9 @@ class NetworkScanDialog(QDialog):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(3, 160)
+        header.resizeSection(3, 120)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(4, 160)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -201,7 +210,7 @@ class NetworkScanDialog(QDialog):
             except RuntimeError:
                 self._scan_thread = None
 
-        self._scan_worker = ScanWorker(selected)
+        self._scan_worker = ScanWorker(selected, detect_os=self.os_detect_check.isChecked())
         self._scan_thread = QThread()
         self._scan_worker.moveToThread(self._scan_thread)
         self._scan_thread.started.connect(self._scan_worker.run)
@@ -238,47 +247,65 @@ class NetworkScanDialog(QDialog):
         """Get scan results matching the current search query.
 
         The query is matched as a case-insensitive substring against the
-        host's name, IPv4 address, IPv6 address and MAC address. An empty
-        query returns all results.
+        host's name, IPv4 address, IPv6 address, platform and MAC address.
+        An empty query returns all results.
         """
         query = self.search_input.text().strip().lower()
         if not query:
             return self._results
 
-        fields = ("hostname", "ipv4", "ipv6", "mac")
+        fields = ("hostname", "ipv4", "ipv6", "os", "mac")
         return [
             host
             for host in self._results
             if any(query in str(host.get(field, "")).lower() for field in fields)
         ]
 
+    def _os_display(self, os_id: str, confidence: str) -> tuple[str, str]:
+        """Return ``(text, tooltip)`` for the platform column.
+
+        An empty *os_id* renders as the locale's "unknown" label; a value
+        detected passively is marked with ``~`` and an explanatory tooltip so
+        it is never mistaken for the host service's authoritative answer.
+        """
+        label_key = OS_LABEL_KEYS.get(os_id)
+        if label_key is None:
+            return Translations.tr("scan_dialog.os.unknown"), ""
+        text = Translations.tr(label_key)
+        if confidence == "high":
+            return text, Translations.tr("scan_dialog.os.tip_service")
+        return f"~ {text}", Translations.tr("scan_dialog.os.tip_estimate")
+
     def _refresh_table(self) -> None:
         """(Re)fill the table from the stored scan results, applying sorting."""
         self.table.setRowCount(0)
         results = self._get_filtered_results()
 
-        # Build sortable rows: (key, hostname, ipv4, ipv6, mac)
+        # Build sortable rows: (key, hostname, ipv4, ipv6, os, mac)
         rows: list[tuple] = []
         for host in results:
             hostname = host.get("hostname", "Unknown")
             ipv4 = host.get("ipv4", "")
             ipv6 = host.get("ipv6", "N/A")
+            os_text, os_tip = self._os_display(
+                host.get("os", ""), host.get("os_confidence", "")
+            )
             mac = host.get("mac", "Unknown")
-            values = [hostname, ipv4, ipv6, mac]
+            values = [hostname, ipv4, ipv6, os_text, mac]
             if self._sort_column is None:
                 key = hostname
             elif self._sort_column in (1, 2):  # IPv4 / IPv6 -> numeric sort
                 key = get_ip_key(values[self._sort_column])
             else:
                 key = values[self._sort_column]
-            rows.append((key, hostname, ipv4, ipv6, mac))
+            rows.append((key, hostname, ipv4, ipv6, os_text, os_tip, mac))
 
         if self._sort_column is None:
             rows.sort(key=lambda r: r[0])
         else:
             rows = sort_rows(rows, 0, reverse=self._sort_descending)
 
-        for _key, hostname, ipv4, ipv6, mac in rows:
+        for _key, hostname, ipv4, ipv6, os_text, os_tip, mac in rows:
             row: int = self.table.rowCount()
             self.table.insertRow(row)
 
@@ -292,8 +319,15 @@ class NetworkScanDialog(QDialog):
             ipv6_item.setForeground(Qt.GlobalColor.gray)
             self.table.setItem(row, 2, ipv6_item)
 
+            os_item = QTableWidgetItem(os_text)
+            if os_tip:
+                os_item.setToolTip(os_tip)
+            if not os_text or os_text.startswith("~"):
+                os_item.setForeground(Qt.GlobalColor.gray)
+            self.table.setItem(row, 3, os_item)
+
             mac_item = QTableWidgetItem(mac)
-            self.table.setItem(row, 3, mac_item)
+            self.table.setItem(row, 4, mac_item)
 
         # Show the active sort indicator on the header
         header: QHeaderView | None = self.table.horizontalHeader()
@@ -332,6 +366,24 @@ class NetworkScanDialog(QDialog):
         )
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
+    def _os_for_ipv4(self, ipv4: str) -> str:
+        """Platform id stored for the scan result with address *ipv4* ("" if none)."""
+        for host in self._results:
+            if host.get("ipv4") == ipv4:
+                return str(host.get("os", ""))
+        return ""
+
+    def _os_confidence_for_ipv4(self, ipv4: str) -> str:
+        """Confidence of that platform ("" when the scan recorded none).
+
+        Stored with the platform so the device views keep marking estimated
+        readings with "~" instead of presenting them as authoritative.
+        """
+        for host in self._results:
+            if host.get("ipv4") == ipv4:
+                return str(host.get("os_confidence", ""))
+        return ""
+
     def _add_selected_device(self) -> None:
         """Add the selected device to configured devices."""
         current_row: int = self.table.currentRow()
@@ -344,7 +396,10 @@ class NetworkScanDialog(QDialog):
 
         hostname: str = self.table.item(current_row, 0).text()
         ipv4: str = self.table.item(current_row, 1).text()
-        mac: str = self.table.item(current_row, 3).text()
+        mac: str = self.table.item(current_row, 4).text()
+        # The platform is not a table identity column, so read it from the
+        # stored result (matched by IPv4) instead of the display text.
+        detected_os = self._os_for_ipv4(ipv4)
 
         # Check if MAC is valid (not "Unknown")
         if mac == "Unknown":
@@ -375,6 +430,12 @@ class NetworkScanDialog(QDialog):
         if device:
             # Set IP address
             self.config.update_device(device["id"], ip=ipv4)
+            # Persist the detected platform when the scan found one. Guarded:
+            # alternative config backends may not implement it.
+            if detected_os and hasattr(self.config, "set_device_os"):
+                self.config.set_device_os(
+                    device["id"], detected_os,
+                    self._os_confidence_for_ipv4(ipv4))
             QMessageBox.information(
                 self, Translations.tr("scan_dialog.success"),
                 Translations.tr("scan_dialog.success_msg", hostname=hostname)

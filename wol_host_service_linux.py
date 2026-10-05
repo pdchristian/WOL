@@ -22,10 +22,11 @@ to the user part before authentication.
 
 Commands (identical to the Windows service):
     status    - no authentication required, answers ``{"status": "ok", ...}``
+                plus the protocol v8 ``os`` field (see :func:`os_id`)
     metrics   - authenticated; answers with CPU/RAM/GPU/VRAM metrics
                 (``cpu``, ``ram_used``/``ram_total``, ``gpu``,
                 ``vram_used``/``vram_total``, ``gpu_name``, ``hostname``,
-                ``uptime``, ``protocol``). GPU fields are ``null`` when no
+                ``os``, ``uptime``, ``protocol``). GPU fields are ``null`` when no
                 NVIDIA GPU/``nvidia-smi`` is available.
     run_batch - authenticated AND gated: executes a bash script
                 (``script`` field, ``timeout`` optional) and answers with
@@ -105,7 +106,22 @@ MAX_REQUEST_BYTES = 65536
 #    and "api_info" (server build, context size, slots, queue, state).
 #    Non-llama servers whose /metrics answers JSON (e.g. Strata) get their
 #    throughput mapped onto the same "model_metrics" keys.
-PROTOCOL_VERSION = 7
+# v8 reports the host platform in "os" - on the unauthenticated "status"
+#    response and on "metrics". Values: "windows", "macos", or the Linux
+#    distribution id ("ubuntu", "debian", ...; "linux" when not readable).
+# v9 adds "requests_active" per watch entry with an open API port: how many
+#    inference requests the server is processing RIGHT NOW (llama.cpp
+#    Prometheus gauges llamacpp:requests_processing + requests_deferred;
+#    JSON servers such as Strata map live.state/live.queued/live.tok_s onto
+#    1/0). Unlike the latched throughput gauges this is a fresh reading -
+#    the device-list inference badge relies on it.
+# v10 adds the optional "api_key" field on "metrics": the key the inference
+#    API on a watched port expects. The service presents it as
+#    "Authorization: Bearer <key>" on every loopback probe (/v1/models,
+#    /health, /props, /metrics). Servers started with an API key
+#    (llama-server --api-key, Strata API_KEY) answer 401 without it, which
+#    left the dashboard unable to measure activity.
+PROTOCOL_VERSION = 10
 
 # Platform shutdown/reboot commands used by the TCP handler. The macOS
 # variant (wol_host_service_macos.py) reuses this module as its core and
@@ -116,6 +132,10 @@ REBOOT_CMD = ["systemctl", "reboot"]
 # Max number of entries in a "watch" list (client configures e.g.
 # ["llama-server", "ollama:11434"] - keep the loop bounded).
 WATCH_MAX_ENTRIES = 8
+# Max characters of the optional "api_key" (v10) accepted from the client.
+# Anything longer or containing control characters is ignored, so a hostile
+# or malformed request can never inject into the Authorization header.
+WATCH_API_KEY_MAX_CHARS = 128
 # Seconds for the loopback connect() of the API-port check.
 WATCH_PORT_TIMEOUT_S = 0.25
 # Seconds for the HTTP GET of the llama-server model list.
@@ -686,18 +706,43 @@ def _check_port_loopback(port: int) -> bool:
         return False
 
 
+def _sanitize_api_key(raw: object) -> str:
+    """Normalise the optional ``api_key`` request field (protocol v10).
+
+    The value ends up in an ``Authorization`` header of the loopback probes,
+    so it must be printable ASCII and bounded: control characters (CR/LF
+    included) would allow header injection, so such values are dropped
+    entirely rather than truncated.
+    """
+    if not isinstance(raw, str):
+        return ""
+    key = raw.strip()
+    if not key or len(key) > WATCH_API_KEY_MAX_CHARS:
+        return ""
+    if any(ord(c) < 32 or ord(c) > 126 for c in key):
+        return ""
+    return key
+
+
 def _http_get_loopback(port: int, path: str, accept: str,
-                       max_bytes: int = 262_144) -> tuple[int | None, str]:
+                       max_bytes: int = 262_144,
+                       api_key: str = "") -> tuple[int | None, str]:
     """Plain ``http.client`` GET on loopback -> ``(status, body_text)``.
 
     Any failure (refused, timeout, read error) degrades to ``(None, "")``
-    so every watch probe can treat "not there" uniformly.
+    so every watch probe can treat "not there" uniformly. *api_key*
+    (protocol v10) is sent as ``Authorization: Bearer <key>`` — required by
+    inference servers started with an API key, which otherwise answer 401
+    to every probe.
     """
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port,
                                           timeout=WATCH_MODELS_TIMEOUT_S)
         try:
-            conn.request("GET", path, headers={"Accept": accept})
+            headers = {"Accept": accept}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            conn.request("GET", path, headers=headers)
             resp = conn.getresponse()
             status = resp.status
             body = resp.read(max_bytes)
@@ -761,7 +806,8 @@ def _models_from_api_json(payload: dict) -> list:
     return names
 
 
-def _fetch_models_and_up(port: int) -> tuple[list, bool]:
+def _fetch_models_and_up(port: int,
+                         api_key: str = "") -> tuple[list, bool]:
     """``GET http://127.0.0.1:port/v1/models`` -> ``(model names, api_up)``.
 
     ``api_up`` is True when the endpoint answered 200 with a JSON object -
@@ -772,7 +818,7 @@ def _fetch_models_and_up(port: int) -> tuple[list, bool]:
     command-line model name.
     """
     status, text = _http_get_loopback(port, "/v1/models",
-                                      "application/json")
+                                      "application/json", api_key=api_key)
     if status != 200:
         return [], False
     try:
@@ -784,9 +830,9 @@ def _fetch_models_and_up(port: int) -> tuple[list, bool]:
     return _models_from_api_json(payload), True
 
 
-def _fetch_loaded_models(port: int) -> list:
+def _fetch_loaded_models(port: int, api_key: str = "") -> list:
     """Loaded model names only (kept for back-compat with the v4 tests)."""
-    return _fetch_models_and_up(port)[0]
+    return _fetch_models_and_up(port, api_key)[0]
 
 
 # Prometheus gauge lines of the llama.cpp /metrics endpoint. Body is plain
@@ -809,6 +855,19 @@ _PROMPT_TOKENS_TOTAL_RE = re.compile(
 _N_DECODE_TOTAL_RE = re.compile(
     r"^llamacpp:n_decode_total(?:\s*\{[^}]*\})?\s+"
     r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+# Protocol v9 "requests_active": llama.cpp keeps these two gauges at the
+# TRUE current slot/queue count (they do not latch like the throughput
+# gauges), so their sum is a reliable "inference running right now" signal.
+_REQUESTS_PROCESSING_RE = re.compile(
+    r"^llamacpp:requests_processing(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+_REQUESTS_DEFERRED_RE = re.compile(
+    r"^llamacpp:requests_deferred(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+# JSON /metrics "live.state"/"live.phase" values that mean "nothing
+# running" (Strata reports null throughput while idle). Any other present
+# value counts as busy.
+_API_IDLE_STATES = ("idle", "waiting", "ready")
 
 # llama.cpp zeroes the two throughput gauges while the server idles, so a
 # 0 reading means "nothing measured since the last request", not "no
@@ -894,7 +953,8 @@ def _parse_json_metrics(text: str) -> dict:
     return fresh
 
 
-def _fetch_model_metrics(port: int, model_name: str) -> "dict | None":
+def _fetch_model_metrics(port: int, model_name: str,
+                         api_key: str = "") -> "dict | None":
     """Per-model throughput from the server's ``GET /metrics`` endpoint.
 
     Two body formats are understood (protocol v7):
@@ -919,7 +979,8 @@ def _fetch_model_metrics(port: int, model_name: str) -> "dict | None":
         return None
     path = "/metrics?model=" + urllib.parse.quote(model_name)
     status, text = _http_get_loopback(port, path,
-                                      "text/plain, application/json")
+                                      "text/plain, application/json",
+                                      api_key=api_key)
     if status != 200 or not text:
         return None
     fresh: dict = {}
@@ -966,23 +1027,27 @@ def _fetch_model_metrics(port: int, model_name: str) -> "dict | None":
 # instead of failing silently; "api_info" carries the display extras
 # (server build, context size, slot count, queue, state).
 
-_API_PROBE_CACHE: dict[int, tuple[float, dict]] = {}
+_API_PROBE_CACHE: dict[tuple[int, str], tuple[float, dict]] = {}
 _API_PROBE_CACHE_LOCK = threading.Lock()
 
 
-def _probe_api_identity(port: int, api_up: bool = False) -> dict:
+def _probe_api_identity(port: int, api_up: bool = False,
+                        api_key: str = "") -> dict:
     """TTL-cached ``/health`` + ``/props`` + ``/metrics`` probe.
 
     Returns a dict with (all optional): ``api_kind`` ("llama.cpp" |
     "openai" | "unknown"), ``api_features_extra`` (health/props/metrics
     hits) and ``api_info`` (the merged display extras). *api_up* is the
     caller's ``/v1/models`` verdict, used to classify plain
-    OpenAI-contract servers. Never raises; a server that answers nothing
-    still yields ``{"api_kind": "unknown"}`` (no features/info).
+    OpenAI-contract servers. *api_key* (v10) authenticates the probes and is
+    part of the cache key, so a changed key takes effect immediately. Never
+    raises; a server that answers nothing still yields ``{"api_kind":
+    "unknown"}`` (no features/info).
     """
     now = time.time()
+    cache_key = (port, api_key)
     with _API_PROBE_CACHE_LOCK:
-        cached = _API_PROBE_CACHE.get(port)
+        cached = _API_PROBE_CACHE.get(cache_key)
         if cached and now - cached[0] < WATCH_PROBE_TTL_S:
             return dict(cached[1])
 
@@ -990,7 +1055,8 @@ def _probe_api_identity(port: int, api_up: bool = False) -> dict:
     info: dict = {}
     kind = "unknown"
 
-    status, text = _http_get_loopback(port, "/health", "application/json")
+    status, text = _http_get_loopback(port, "/health", "application/json",
+                                      api_key=api_key)
     health: dict = {}
     if status == 200:
         features.append("health")
@@ -1001,7 +1067,8 @@ def _probe_api_identity(port: int, api_up: bool = False) -> dict:
         except ValueError:
             pass
 
-    status, text = _http_get_loopback(port, "/props", "application/json")
+    status, text = _http_get_loopback(port, "/props", "application/json",
+                                      api_key=api_key)
     props: dict = {}
     if status == 200:
         features.append("props")
@@ -1026,7 +1093,7 @@ def _probe_api_identity(port: int, api_up: bool = False) -> dict:
     # JSON body) - probe it once per TTL window, cheaply.
     status, text = _http_get_loopback(port, "/metrics",
                                       "text/plain, application/json",
-                                      max_bytes=4096)
+                                      max_bytes=4096, api_key=api_key)
     if status == 200:
         features.append("metrics")
 
@@ -1054,8 +1121,60 @@ def _probe_api_identity(port: int, api_up: bool = False) -> dict:
     with _API_PROBE_CACHE_LOCK:
         if len(_API_PROBE_CACHE) > 64:
             _API_PROBE_CACHE.clear()
-        _API_PROBE_CACHE[port] = (now, dict(result))
+        _API_PROBE_CACHE[cache_key] = (now, dict(result))
     return result
+
+
+def _fetch_api_activity(port: int, api_key: str = "") -> "int | None":
+    """How many inference requests the API is processing right now (v9).
+
+    One plain ``GET /metrics`` (no model filter) per poll, understood in
+    both body formats:
+
+    * **Prometheus text** (llama.cpp): ``llamacpp:requests_processing`` +
+      ``llamacpp:requests_deferred`` summed - unlike the throughput gauges
+      these report the true current count, no latching needed.
+    * **JSON** (other OpenAI servers, e.g. Strata): busy (1) when
+      ``live.queued`` > 0, ``live.state``/``live.phase`` names a non-idle
+      phase, or ``live.tok_s``/``live.prefill_tok_s_mean`` > 0; idle (0)
+      otherwise.
+
+    ``None`` when nothing is readable (no /metrics endpoint, timeout,
+    non-200, unparseable) so the field is simply absent and the client
+    hides its badge instead of guessing.
+    """
+    status, text = _http_get_loopback(port, "/metrics",
+                                      "text/plain, application/json",
+                                      max_bytes=32_768, api_key=api_key)
+    if status != 200 or not text:
+        return None
+    if text.lstrip()[:1] == "{":
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        live = payload.get("live")
+        if not isinstance(live, dict):
+            return None
+        queued = _json_number(live, ("queued",))
+        if queued is not None and queued > 0:
+            return 1
+        for key in ("state", "phase"):
+            value = str(live.get(key) or "").strip().lower()
+            if value and value not in _API_IDLE_STATES:
+                return 1
+        for key in ("tok_s", "prefill_tok_s_mean"):
+            value = _json_number(live, (key,))
+            if value is not None and value > 0:
+                return 1
+        return 0
+    processing = _parse_prometheus_gauge(text, _REQUESTS_PROCESSING_RE)
+    deferred = _parse_prometheus_gauge(text, _REQUESTS_DEFERRED_RE)
+    if processing is None and deferred is None:
+        return None
+    return int(max(0.0, processing or 0.0) + max(0.0, deferred or 0.0))
 
 
 def _model_from_argv(argv: list) -> str:
@@ -1076,7 +1195,7 @@ def _model_from_argv(argv: list) -> str:
     return ""
 
 
-def _watched_processes(watch: list) -> dict:
+def _watched_processes(watch: list, api_key: str = "") -> dict:
     """Status of the watched process names, keyed by the original entry.
 
     Each value: ``{"running": bool}`` plus - when running - ``count``,
@@ -1194,8 +1313,13 @@ def _watched_processes(watch: list) -> dict:
         ready = [(e, p) for e, p in port_tasks if e.get("api_port_open")]
         if ready:
             with ThreadPoolExecutor(max_workers=len(ready)) as pool:
-                model_futures = {pool.submit(_fetch_models_and_up, p): e
+                model_futures = {pool.submit(_fetch_models_and_up, p, api_key): e
                                  for e, p in ready}
+                # v9: the "inference running right now" probe runs in the
+                # SAME pool as the model list - one extra loopback GET per
+                # open port, never a serial round-trip on top.
+                activity_futures = {pool.submit(_fetch_api_activity, p, api_key): e
+                                    for e, p in ready}
                 for fut in model_futures:
                     try:
                         names, api_up = fut.result()
@@ -1206,6 +1330,13 @@ def _watched_processes(watch: list) -> dict:
                         entry["models"] = names
                     if api_up:
                         entry["api_up"] = True
+                for fut in activity_futures:
+                    try:
+                        active = fut.result()
+                    except Exception:
+                        active = None
+                    if active is not None:
+                        activity_futures[fut]["requests_active"] = int(active)
             # Capability probe (protocol v7): which endpoints answer, what
             # the server is, and the display extras. TTL-cached per port
             # (WATCH_PROBE_TTL_S) so the identity probes run at most every
@@ -1213,7 +1344,7 @@ def _watched_processes(watch: list) -> dict:
             for entry_result, port in ready:
                 try:
                     probe = _probe_api_identity(
-                        port, bool(entry_result.get("api_up")))
+                        port, bool(entry_result.get("api_up")), api_key)
                 except Exception:
                     probe = {}
                 kind = probe.get("api_kind")
@@ -1240,7 +1371,8 @@ def _watched_processes(watch: list) -> dict:
                 with ThreadPoolExecutor(
                         max_workers=min(len(tps_tasks), 8)) as pool:
                     tps_futures = {
-                        pool.submit(_fetch_model_metrics, port, model):
+                        pool.submit(_fetch_model_metrics, port, model,
+                                    api_key):
                             (entry_result, model)
                         for entry_result, port, model in tps_tasks}
                     for fut in tps_futures:
@@ -1255,24 +1387,63 @@ def _watched_processes(watch: list) -> dict:
     return result
 
 
-def collect_metrics(watch: "list | None" = None) -> dict:
+_OS_ID_CACHE: "str | None" = None
+
+
+def os_id() -> str:
+    """Normalized platform id of this host ("ubuntu", "debian", "macos", ...).
+
+    Used for the protocol v8 ``os`` field. The macOS variant imports this
+    module as its core, so the ``darwin`` branch is what makes the macOS
+    service report ``macos``. On Linux the distribution id comes from
+    ``/etc/os-release`` (``ID=``); anything unreadable degrades to
+    ``"linux"`` rather than failing the request. Cached after the first call.
+    """
+    global _OS_ID_CACHE
+    if _OS_ID_CACHE is not None:
+        return _OS_ID_CACHE
+    value = "linux"
+    try:
+        if sys.platform == "darwin":
+            value = "macos"
+        elif sys.platform.startswith("linux"):
+            with open("/etc/os-release", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if line.startswith("ID="):
+                        ident = line.split("=", 1)[1].strip().strip('"').lower()
+                        if ident:
+                            value = ident
+                        break
+    except Exception:
+        value = "linux"
+    _OS_ID_CACHE = value
+    return value
+
+
+def collect_metrics(watch: "list | None" = None,
+                    api_key: str = "") -> dict:
     """Collect CPU/RAM/GPU/VRAM metrics for the dashboard.
 
     Watch entries with an open API port additionally report ``models``
     (v4), ``model_metrics`` (v5: per-model prompt/generation throughput in
-    tokens/s from ``GET /metrics?model=<name>``) and the v7 capability
-    fields ``api_up``/``api_kind``/``api_features``/``api_info``.
+    tokens/s from ``GET /metrics?model=<name>``), the v7 capability fields
+    ``api_up``/``api_kind``/``api_features``/``api_info`` and the v9
+    ``requests_active`` count (see :func:`_fetch_api_activity`).
 
     All sizes are bytes, percentages 0-100. psutil is imported lazily so a
     broken/missing psutil in an old build only degrades this command.
+    The protocol v8 ``os`` field always carries the platform id
+    (:func:`os_id`).
     *watch* (optional list of process names, see :func:`_watched_processes`)
-    adds a ``processes`` field to the response.
+    adds a ``processes`` field to the response. *api_key* (optional, v10)
+    authenticates the inference-API probes of the watched ports.
     """
     global _cpu_primed
     metrics: dict = {
         "status": "ok",
         "protocol": PROTOCOL_VERSION,
         "hostname": "",
+        "os": os_id(),
         "cpu": None,
         "cpu_count": None,
         "ram_used": None,
@@ -1309,7 +1480,7 @@ def collect_metrics(watch: "list | None" = None) -> dict:
 
     if watch:
         try:
-            metrics["processes"] = _watched_processes(watch)
+            metrics["processes"] = _watched_processes(watch, api_key)
         except Exception as e:
             _log(f"collect_metrics: watch failed: {e}")
     return metrics
@@ -1439,8 +1610,12 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                 client_ip = ""
 
             if command == "status":
-                # Reachability probe - no authentication required.
-                self._respond({"status": "ok", "message": "online"})
+                # Reachability probe - no authentication required. The
+                # protocol v8 "os" field lets clients label the platform
+                # without credentials (TTL is visible to anyone pinging).
+                self._respond(
+                    {"status": "ok", "message": "online", "os": os_id()}
+                )
                 return
 
             if command not in ("metrics", "shutdown", "reboot", "run_batch"):
@@ -1498,8 +1673,10 @@ class _CommandHandler(socketserver.BaseRequestHandler):
                 # Dashboard metrics - authenticated. Not audit-logged (a live
                 # dashboard polls every few seconds and would flood the log).
                 watch = request.get("watch")
+                api_key = _sanitize_api_key(request.get("api_key"))
                 if isinstance(watch, list) and watch:
-                    self._respond(collect_metrics(watch=watch))
+                    self._respond(collect_metrics(watch=watch,
+                                                  api_key=api_key))
                 else:
                     self._respond(collect_metrics())
                 return
@@ -1796,7 +1973,8 @@ def show_status() -> bool:
     if enabled == "not-found" or active == "unknown":
         print(f"Service '{SERVICE_DISPLAY_NAME}' is not installed.")
         return True
-    print(f"Service '{SERVICE_DISPLAY_NAME}': {active.upper()} ({enabled})")
+    print(f"Service '{SERVICE_DISPLAY_NAME}': {active.upper()} ({enabled}) "
+          f"- protocol v{PROTOCOL_VERSION}")
     return True
 
 

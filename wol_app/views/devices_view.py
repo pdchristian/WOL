@@ -6,10 +6,10 @@ Layout mirrors the prototype's devices screen
 1. Page header (title + live summary "N Geräte · M online") and a search field.
 2. Toolbar: refresh icon button and the primary "Alle aufwecken" button.
 3. A responsive grid of device cards. Each card shows the device name with
-   a colored status dot (top right), a mono IP/MAC block and, in the bottom
-   row, two Remote-Desktop icon tiles (fullscreen / window) plus the primary
-   action button: "Aufwecken" while offline/unknown, "Herunterfahren" while
-   online.
+   a status/platform pill (top right: online dot + detected OS), a mono
+   IP/MAC block and, in the bottom row, two Remote-Desktop icon tiles
+   (fullscreen / window) plus the primary action button: "Aufwecken" while
+   offline/unknown, "Herunterfahren" while online.
 
 All persistence goes through the shared ``ConfigManager``; the wake/ping
 engine and the status worker are reused from the classic UI, the remote
@@ -35,15 +35,24 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wol_app.config import DEVICES_VIEW_GRID, DEVICES_VIEW_LIST
-from wol_app.app_core import HEADLESS_MODE, StatusWorker
+from wol_app.config import (
+    DEFAULT_INFERENCE_INTERVAL_MS,
+    DEVICES_VIEW_GRID,
+    DEVICES_VIEW_LIST,
+    REMOTE_PROTOCOL_RDP,
+    REMOTE_PROTOCOL_VNC,
+    ConfigManager,
+)
+from wol_app.app_core import HEADLESS_MODE, OsDetectWorker, StatusWorker
+from wol_app.metrics_worker import InferenceSweepWorker
 from wol_app.network_scanner import get_local_ips
-from wol_app.remote_desktop import start_remote_desktop
+from wol_app.remote_desktop import resolve_remote_protocol, start_remote_desktop
 from wol_app.shutdown_flow import execute_shutdown
 from wol_app.translations import Translations
 from wol_app.utils import ip_sort_key
 from wol_app.views.device_edit_dialog import ModernDeviceDialog
 from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
+from wol_app.widgets.status_pill import StatusPill
 from wol_app.wol_engine import WOLEngine
 
 # Grid geometry mirrors the prototype (.grid in dark_control_center_full.html):
@@ -62,11 +71,92 @@ PAGE_MARGIN_H = 36
 # Auto-refresh interval for the status dots (prototype footer: 30 s)
 AUTO_REFRESH_MS = 30_000
 
+# Poll interval choices for the inference badge (host protocol v9,
+# "requests_active") — persisted via config as ui.inference_interval_ms.
+INFERENCE_INTERVAL_CHOICES_MS = (5_000, 10_000, 15_000, 30_000)
+
 # Fixed height of one device row in the list view (px)
 LIST_ROW_HEIGHT = 64
 
 # Sort order of the "Status" sort key: Online, offline, unbekannt
 STATUS_SORT_RANK = {"online": 0, "offline": 1, "unknown": 2}
+
+
+def derive_inference_state(response: "dict | None",
+                           api_key: str = "") -> "str | None":
+    """Badge state for one metrics response (host protocol v9).
+
+    Returns "active" / "idle" / "warn" / "warn_key" / "hidden", or None when
+    the response carries no verdict at all (unreachable host, pre-v9, or no
+    port-watched entry) — callers then keep the previous state instead of
+    flickering. "hidden" is a *verdict*: the badge is cleared on purpose.
+    Precedence: active > warn > idle > hidden.
+
+    * any watched entry with ``requests_active > 0``  -> "active"
+    * any port-watched entry reporting ``requests_active == 0`` -> "idle"
+    * port open but unmeasurable (a v9 host that could not read /metrics)
+      -> "warn" (surfaces even when other entries idle)
+    * every port-watched entry has its API port closed -> "hidden" — the
+      inference server is simply off, so there is nothing to report
+    * name-only watch entries are not measurable and ignored; if no entry
+      watches a port there is no verdict.
+
+    *api_key* is the dashboard API key configured for the device. When it is
+    set but the host service predates v10 it never reaches the inference
+    server, so every probe is answered 401 — the far more specific
+    "warn_key" verdict is reported instead of the generic "warn".
+    """
+    if not isinstance(response, dict):
+        return None
+    protocol = response.get("protocol")
+    if not isinstance(protocol, int):
+        return None
+    if api_key and protocol < 10:
+        return "warn_key"
+    if protocol < 9:
+        return None
+    processes = response.get("processes")
+    if not isinstance(processes, dict):
+        return None
+
+    active = idle = warn = off = False
+    for entry in processes.values():
+        if not isinstance(entry, dict) or "api_port" not in entry:
+            continue  # name-only watch entry — activity not measurable
+        requests_active = entry.get("requests_active")
+        if isinstance(requests_active, int) and requests_active > 0:
+            active = True
+        elif isinstance(requests_active, int):
+            idle = True
+        elif entry.get("api_port_open") or entry.get("api_up"):
+            warn = True  # v9 host, API up — but /metrics unreadable
+        else:
+            off = True  # watched API port closed — server off, nothing to show
+    if active:
+        return "active"
+    if warn:
+        # an open-but-unmeasurable port outranks idle/off entries — the
+        # measurement problem must stay visible
+        return "warn"
+    if idle:
+        return "idle"
+    if off:
+        return "hidden"
+    return None
+
+
+def remote_tooltip(action_key: str, protocol: str) -> str:
+    """Tooltip for a Remote tile: the action plus the client it will start.
+
+    The platform of the device decides whether the tile opens the RDP client
+    or TurboVNC, so the tooltip names the client before the user clicks.
+    """
+    client_key = (
+        "modern.devices.client_vnc"
+        if protocol == REMOTE_PROTOCOL_VNC
+        else "modern.devices.client_rdp"
+    )
+    return f"{Translations.tr(action_key)} · {Translations.tr(client_key)}"
 
 
 def compute_columns(avail: int) -> int:
@@ -130,33 +220,43 @@ class FlexToolbar(QWidget):
     SEARCH_MAX = 260
     COMBO_MIN = 100
     COMBO_W = 150
+    INTERVAL_MIN = 72
+    INTERVAL_W = 90
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._left: list[QWidget] = []
-        self._right: list[QWidget] = []
+        # (widget, preferred width, minimum width) — right group, left to right
+        self._right: list[tuple[QWidget, int, int]] = []
         self._gap = 10
 
     def add_left(self, widget: QWidget) -> None:
         widget.setParent(self)
         self._left.append(widget)
 
-    def add_right(self, widget: QWidget) -> None:
+    def add_right(self, widget: QWidget,
+                  width: int = COMBO_W, min_width: int = COMBO_MIN) -> None:
         widget.setParent(self)
-        self._right.append(widget)
+        self._right.append((widget, width, min_width))
 
     def _widths_right(self, avail: int) -> list[int]:
-        """Widths of the right group (list end == search field)."""
-        widths = [self.COMBO_W, self.SEARCH_MAX][: len(self._right)]
+        """Widths of the right group (list end == search field).
+
+        Shrinks from the right edge inwards (search first, then the combos),
+        each widget down to its own minimum — mirrors the CSS flex order.
+        """
+        widths = [pref for (_w, pref, _m) in self._right]
+        mins = [min_w for (_w, _pref, min_w) in self._right]
         need = sum(widths) + self._gap * max(0, len(widths) - 1)
         deficit = need - avail
         if deficit <= 0:
             return widths
-        take = min(deficit, self.SEARCH_MAX - self.SEARCH_MIN)
-        widths[-1] -= take
-        deficit -= take
-        if deficit > 0:
-            widths[-2] = max(self.COMBO_MIN, widths[-2] - deficit)
+        for i in range(len(widths) - 1, -1, -1):
+            take = min(deficit, widths[i] - mins[i])
+            widths[i] -= take
+            deficit -= take
+            if deficit <= 0:
+                break
         return widths
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
@@ -174,7 +274,8 @@ class FlexToolbar(QWidget):
         # Right group: build from the right edge leftwards.
         widths = self._widths_right(w)
         x = w
-        for widget, width in zip(reversed(self._right), reversed(widths)):
+        for (widget, _pref, _min_w), width in zip(
+                reversed(self._right), reversed(widths)):
             x -= width
             place(widget, x, width)
             x -= self._gap
@@ -192,7 +293,8 @@ class FlexToolbar(QWidget):
             x += width + self._gap
 
     def sizeHint(self) -> QSize:  # noqa: N802 (Qt naming)
-        lh = max((w.sizeHint().height() for w in self._left + self._right),
+        right_widgets = [w for (w, _p, _m) in self._right]
+        lh = max((w.sizeHint().height() for w in self._left + right_widgets),
                  default=36)
         return QSize(400, max(lh, 36))
 
@@ -201,12 +303,12 @@ class FlexToolbar(QWidget):
 
 
 class DeviceListRow(QWidget):
-    """One device in the list view: dot · name / mono IP · MAC · action tiles.
+    """One device in the list view: dot · name / mono IP · MAC · pill · tiles.
 
     Mirrors the layout proposal: status dot and the two-line info block on
-    the left, action tiles on the right (remote fullscreen, remote window,
-    dashboard, edit) followed by the power icon button (wake ↔ shutdown,
-    same color logic as the card action button).
+    the left, then the platform pill, the action tiles on the right (remote
+    fullscreen, remote window, dashboard, edit) followed by the power icon
+    button (wake ↔ shutdown, same color logic as the card action button).
     """
 
     remote_requested = pyqtSignal(str, bool)  # device id, fullscreen
@@ -215,13 +317,21 @@ class DeviceListRow(QWidget):
     wake_requested = pyqtSignal(str)
     shutdown_requested = pyqtSignal(str)
 
-    def __init__(self, device: dict, status: str, local_ips: set[str], parent=None) -> None:
+    def __init__(
+        self,
+        device: dict,
+        status: str,
+        local_ips: set[str],
+        remote_protocol: str = REMOTE_PROTOCOL_RDP,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.device_id: str = device["id"]
         self.device_name: str = device.get("name", "")
         self._device_ip: str = device.get("ip", "")
         self.enabled: bool = device.get("enabled", True)
         self._status = status
+        self._remote_protocol = remote_protocol
 
         self.setObjectName("deviceRow")
         self.setFixedHeight(LIST_ROW_HEIGHT)
@@ -250,10 +360,17 @@ class DeviceListRow(QWidget):
 
         layout.addStretch()
 
+        # Platform chip: the detected OS doubles as the hint of which client
+        # the remote tiles open (Windows → RDP, macOS/Linux → TurboVNC).
+        self.pill = StatusPill(
+            device.get("os", ""), device.get("os_confidence", ""))
+        layout.addWidget(self.pill, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self.remote_fs_btn = QPushButton("🖥️")
         self.remote_fs_btn.setObjectName("tileButton")
         self.remote_fs_btn.setFixedSize(36, 36)
-        self.remote_fs_btn.setToolTip(Translations.tr("button.remote_fullscreen"))
+        self.remote_fs_btn.setToolTip(
+            remote_tooltip("button.remote_fullscreen", remote_protocol))
         self.remote_fs_btn.clicked.connect(
             lambda: self.remote_requested.emit(self.device_id, True))
         layout.addWidget(self.remote_fs_btn, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -261,7 +378,8 @@ class DeviceListRow(QWidget):
         self.remote_win_btn = QPushButton("🪟")
         self.remote_win_btn.setObjectName("tileButton")
         self.remote_win_btn.setFixedSize(36, 36)
-        self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
+        self.remote_win_btn.setToolTip(
+            remote_tooltip("button.remote_window", remote_protocol))
         self.remote_win_btn.clicked.connect(
             lambda: self.remote_requested.emit(self.device_id, False))
         layout.addWidget(self.remote_win_btn, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -320,6 +438,7 @@ class DeviceListRow(QWidget):
         if self.dot.objectName() != dot_name:
             self.dot.setObjectName(dot_name)
             self._repolish(self.dot)
+        self.pill.set_status(status)
 
         online = status == "online"
         action_name = "shutdownIconButton" if online else "wakeIconButton"
@@ -328,6 +447,10 @@ class DeviceListRow(QWidget):
             self.action_btn.setObjectName(action_name)
             self._repolish(self.action_btn)
         self.action_btn.setToolTip(Translations.tr(tip_key))
+
+    def set_inference(self, state: str) -> None:
+        """Show/hide the inference bolt inside the pill (v9 requests_active)."""
+        self.pill.set_inference(state)
 
     @staticmethod
     def _repolish(widget: QWidget) -> None:
@@ -349,15 +472,18 @@ class DeviceListRow(QWidget):
 
     def retranslate(self, local_ips: set[str]) -> None:
         self.title.setText(self._display_name(local_ips))
-        self.remote_fs_btn.setToolTip(Translations.tr("button.remote_fullscreen"))
-        self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
+        self.remote_fs_btn.setToolTip(
+            remote_tooltip("button.remote_fullscreen", self._remote_protocol))
+        self.remote_win_btn.setToolTip(
+            remote_tooltip("button.remote_window", self._remote_protocol))
         self.dashboard_btn.setToolTip(Translations.tr("button.dashboard"))
         self.edit_btn.setToolTip(Translations.tr("device_manager.button.edit"))
+        self.pill.retranslate()
         self.set_status(self._status)  # refresh power button tooltip
 
 
 class DeviceCard(QWidget):
-    """One device card: name + status dot / mono IP · MAC / remote tiles + action."""
+    """One device card: name + status/platform pill / IP · MAC / tiles + action."""
 
     wake_requested = pyqtSignal(str)
     shutdown_requested = pyqtSignal(str)
@@ -366,13 +492,21 @@ class DeviceCard(QWidget):
     ping_requested = pyqtSignal(str)
     dashboard_requested = pyqtSignal(str)
 
-    def __init__(self, device: dict, status: str, local_ips: set[str], parent=None) -> None:
+    def __init__(
+        self,
+        device: dict,
+        status: str,
+        local_ips: set[str],
+        remote_protocol: str = REMOTE_PROTOCOL_RDP,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.device_id: str = device["id"]
         self.device_name: str = device.get("name", "")
         self._device_ip: str = device.get("ip", "")
         self.enabled: bool = device.get("enabled", True)
         self._status = status
+        self._remote_protocol = remote_protocol
 
         self.setObjectName("deviceCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -395,17 +529,17 @@ class DeviceCard(QWidget):
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(10)
 
-        # ── Row 1: name … status dot ──
+        # ── Row 1: name … status/platform pill ──
         top = QHBoxLayout()
         top.setSpacing(10)
         self.title = QLabel(self._display_name(local_ips))
         self.title.setObjectName(
             "rowTitle" if self.enabled else "rowTitleDisabled")
         self.title.setWordWrap(True)
-        self.dot = QLabel()
-        self.dot.setFixedSize(10, 10)
+        self.pill = StatusPill(
+            device.get("os", ""), device.get("os_confidence", ""))
         top.addWidget(self.title, 1)
-        top.addWidget(self.dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        top.addWidget(self.pill, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(top)
 
         # ── Row 2: mono IP / MAC ──
@@ -422,7 +556,8 @@ class DeviceCard(QWidget):
         self.remote_fs_btn = QPushButton("🖥️")
         self.remote_fs_btn.setObjectName("tileButton")
         self.remote_fs_btn.setFixedSize(36, 36)
-        self.remote_fs_btn.setToolTip(Translations.tr("button.remote_fullscreen"))
+        self.remote_fs_btn.setToolTip(
+            remote_tooltip("button.remote_fullscreen", remote_protocol))
         self.remote_fs_btn.clicked.connect(
             lambda: self.remote_requested.emit(self.device_id, True))
         bottom.addWidget(self.remote_fs_btn, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -430,7 +565,8 @@ class DeviceCard(QWidget):
         self.remote_win_btn = QPushButton("🪟")
         self.remote_win_btn.setObjectName("tileButton")
         self.remote_win_btn.setFixedSize(36, 36)
-        self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
+        self.remote_win_btn.setToolTip(
+            remote_tooltip("button.remote_window", remote_protocol))
         self.remote_win_btn.clicked.connect(
             lambda: self.remote_requested.emit(self.device_id, False))
         bottom.addWidget(self.remote_win_btn, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -473,15 +609,9 @@ class DeviceCard(QWidget):
         return name
 
     def set_status(self, status: str) -> None:
-        """Update the status dot and swap the action button (wake ↔ shutdown)."""
+        """Update the pill and swap the action button (wake ↔ shutdown)."""
         self._status = status
-        dot_name = {
-            "online": "dotOnline",
-            "offline": "dotOffline",
-        }.get(status, "dotUnknown")
-        if self.dot.objectName() != dot_name:
-            self.dot.setObjectName(dot_name)
-            self._repolish(self.dot)
+        self.pill.set_status(status)
 
         online = status == "online"
         action_name = "shutdownButton" if online else "wakeButton"
@@ -490,6 +620,10 @@ class DeviceCard(QWidget):
             self.action_btn.setObjectName(action_name)
             self._repolish(self.action_btn)
         self.action_btn.setText(Translations.tr(action_key))
+
+    def set_inference(self, state: str) -> None:
+        """Show/hide the inference bolt inside the pill (v9 requests_active)."""
+        self.pill.set_inference(state)
 
     @staticmethod
     def _repolish(widget: QWidget) -> None:
@@ -511,8 +645,10 @@ class DeviceCard(QWidget):
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         menu = QMenu(self)
-        act_fs = menu.addAction(Translations.tr("button.remote_fullscreen"))
-        act_win = menu.addAction(Translations.tr("button.remote_window"))
+        act_fs = menu.addAction(
+            remote_tooltip("button.remote_fullscreen", self._remote_protocol))
+        act_win = menu.addAction(
+            remote_tooltip("button.remote_window", self._remote_protocol))
         act_dashboard = menu.addAction(Translations.tr("button.dashboard"))
         menu.addSeparator()
         if self._status == "online":
@@ -539,9 +675,12 @@ class DeviceCard(QWidget):
 
     def retranslate(self, local_ips: set[str]) -> None:
         self.title.setText(self._display_name(local_ips))
-        self.remote_fs_btn.setToolTip(Translations.tr("button.remote_fullscreen"))
-        self.remote_win_btn.setToolTip(Translations.tr("button.remote_window"))
+        self.remote_fs_btn.setToolTip(
+            remote_tooltip("button.remote_fullscreen", self._remote_protocol))
+        self.remote_win_btn.setToolTip(
+            remote_tooltip("button.remote_window", self._remote_protocol))
         self.dashboard_btn.setToolTip(Translations.tr("button.dashboard"))
+        self.pill.retranslate()
         self.set_status(self._status)  # refresh wake/shutdown button text
 
 
@@ -564,8 +703,21 @@ class DevicesView(QWidget):
         self._status_thread: QThread | None = None
         self._status_worker: StatusWorker | None = None
         self._statuses: dict[str, str] = {}  # device id -> last known status
+        # Platform detection (only for devices without a stored platform):
+        # _os_probed remembers what was already fingerprinted this session so
+        # silent hosts are not probed again on every screen change.
+        self._os_thread: QThread | None = None
+        self._os_worker: OsDetectWorker | None = None
+        self._os_probed: set[str] = set()
         self._cards: dict[str, DeviceCard] = {}
         self._rows: dict[str, DeviceListRow] = {}
+        # Inference badge (host protocol v9): device id ->
+        # "active" | "idle" | "warn" | "hidden" (absent = hidden too).
+        # Cached so a card rebuild (sort/filter/edit) re-applies the last
+        # known state.
+        self._inference_states: dict[str, str] = {}
+        self._inference_thread: QThread | None = None
+        self._inference_worker: InferenceSweepWorker | None = None
         self._grid_cols = 0
         # Highest column count ever used: QGridLayout keeps per-column
         # properties (stretch, min width) PERMANENTLY, so a column left over
@@ -578,12 +730,24 @@ class DevicesView(QWidget):
 
         self._setup_ui()
         self.refresh_devices()
+        # Devices added by hand — or before the scanner stored a platform —
+        # have no "os" value, so their pill would stay at "unknown" and the
+        # Remote buttons could not route. Fingerprint them once per session.
+        self.detect_missing_platforms()
 
         # Autorefresh like the prototype footer ("Autorefresh alle 30 s")
         self._timer = QTimer(self)
         self._timer.setInterval(AUTO_REFRESH_MS)
         self._timer.timeout.connect(self._auto_refresh)
         self._timer.start()
+
+        # Inference badge poll (design_prototype/Inferenz_Kachel.html): its
+        # own interval — the status ping stays at 30 s while "is a job
+        # running" wants 5-30 s. Config: ui.inference_interval_ms.
+        self._inference_timer = QTimer(self)
+        self._inference_timer.setInterval(self._inference_interval_ms())
+        self._inference_timer.timeout.connect(self._auto_inference_poll)
+        self._inference_timer.start()
 
     # ── UI construction ──────────────────────────────────────────────────
 
@@ -642,13 +806,33 @@ class DevicesView(QWidget):
         self.refresh_btn.setObjectName("refreshButton")
         self.refresh_btn.setFixedSize(36, 36)
         self.refresh_btn.setToolTip(Translations.tr("button.refresh"))
-        self.refresh_btn.clicked.connect(self.refresh_statuses)
+        self.refresh_btn.clicked.connect(self._on_refresh_clicked)
         toolbar.add_left(self.refresh_btn)
 
         self.wake_all_btn = QPushButton(Translations.tr("button.wake_all"))
         self.wake_all_btn.setObjectName("primaryButton")
         self.wake_all_btn.clicked.connect(self._wake_all)
         toolbar.add_left(self.wake_all_btn)
+
+        # Inference poll interval (left of the sort combo) — persisted
+        # setting; only meaningful for devices with watched processes.
+        self.inference_combo = QComboBox()
+        self.inference_combo.setObjectName("devicesIntervalCombo")
+        for ms in INFERENCE_INTERVAL_CHOICES_MS:
+            self.inference_combo.addItem(Translations.tr("modern.devices.interval.seconds", seconds=ms // 1000), ms)
+        current = self._inference_interval_ms()
+        idx = self.inference_combo.findData(current)
+        if idx < 0:
+            self.inference_combo.addItem(Translations.tr("modern.devices.interval.seconds", seconds=current // 1000), current)
+            idx = self.inference_combo.count() - 1
+        self.inference_combo.setCurrentIndex(idx)
+        self.inference_combo.setToolTip(
+            Translations.tr("modern.devices.infer.interval_tip"))
+        self.inference_combo.currentIndexChanged.connect(
+            self._on_inference_interval_changed)
+        toolbar.add_right(
+            self.inference_combo,
+            width=FlexToolbar.INTERVAL_W, min_width=FlexToolbar.INTERVAL_MIN)
 
         # Sort drop-down (left of the search field) — persisted setting.
         self.sort_combo = QComboBox()
@@ -793,7 +977,8 @@ class DevicesView(QWidget):
         devices = self._filtered_devices()
         for idx, device in enumerate(devices):
             status = self._statuses.get(device["id"], "unknown")
-            card = DeviceCard(device, status, local_ips)
+            protocol = resolve_remote_protocol(self.config, device)
+            card = DeviceCard(device, status, local_ips, protocol)
             card.wake_requested.connect(self._wake_device)
             card.shutdown_requested.connect(self._shutdown_device)
             card.remote_requested.connect(self._remote_device)
@@ -802,7 +987,7 @@ class DevicesView(QWidget):
             card.dashboard_requested.connect(self._open_dashboard)
             self._cards[device["id"]] = card
 
-            row = DeviceListRow(device, status, local_ips)
+            row = DeviceListRow(device, status, local_ips, protocol)
             row.remote_requested.connect(self._remote_device)
             row.edit_requested.connect(self._edit_device)
             row.dashboard_requested.connect(self._open_dashboard)
@@ -815,6 +1000,12 @@ class DevicesView(QWidget):
                 sep.setObjectName("rowSeparator")
                 sep.setFixedHeight(1)
                 self.list_layout.addWidget(sep)
+            # Re-apply the cached inference badge (cards/rows are rebuilt on
+            # every sort/filter/edit — the poll result must survive that).
+            state = self._inference_states.get(device["id"])
+            if state:
+                card.set_inference(state)
+                row.set_inference(state)
 
         self._relayout_grid()
         self._update_summary()
@@ -998,6 +1189,8 @@ class DevicesView(QWidget):
     def _on_devices_changed(self) -> None:
         self.refresh_devices()
         self.refresh_statuses()
+        # A hand-added device has no platform yet — fingerprint it too.
+        self.detect_missing_platforms()
         self.devices_changed.emit()
 
     # ── Status checks ────────────────────────────────────────────────────
@@ -1005,6 +1198,21 @@ class DevicesView(QWidget):
     def device_statuses(self) -> dict[str, str]:
         """Last known ping status per device id (dashboard prev/next nav)."""
         return dict(self._statuses)
+
+    def _on_refresh_clicked(self) -> None:
+        """Manual refresh: statuses now, and a second try for missing platforms.
+
+        The automatic pass fingerprints every device only once per session, so
+        a device that was asleep during the first sweep would stay without a
+        platform until the next start. The refresh button deliberately forgets
+        that memory for the devices which still have no platform.
+        """
+        getter = getattr(self.config, "get_device_os", None)
+        for device in self.config.get_devices():
+            if not (callable(getter) and getter(device)):
+                self._os_probed.discard(device.get("id"))
+        self.refresh_statuses()
+        self.detect_missing_platforms()
 
     def refresh_statuses(self) -> None:
         """Ping all devices in the background and update the cards in-place."""
@@ -1045,13 +1253,177 @@ class DevicesView(QWidget):
         # Dashboard prev/next navigation skips offline devices.
         self.statuses_refreshed.emit(dict(self._statuses))
 
+    # ── Platform detection ───────────────────────────────────────────────
+
+    def detect_missing_platforms(self) -> None:
+        """Fingerprint every device that has no stored platform yet.
+
+        Devices added by hand (or before the scanner stored a platform) lack
+        the ``os`` key, which leaves the platform pill at "unknown" and forces
+        the Remote buttons onto the RDP fallback. The already-implemented
+        fingerprint of :mod:`wol_app.os_detect` runs in a background thread
+        (:class:`wol_app.app_core.OsDetectWorker`) and the result is persisted
+        via ``config.set_device_os()``, so it survives restarts. Each device
+        is probed at most once per session — a silent host is not re-probed on
+        every refresh.
+        """
+        if HEADLESS_MODE:
+            return
+        if self._os_thread is not None and self._os_thread.isRunning():
+            return
+
+        getter = getattr(self.config, "get_device_os", None)
+
+        def has_platform(device: dict) -> bool:
+            return bool(callable(getter) and getter(device))
+
+        pending = [
+            d for d in self.config.get_devices()
+            if d.get("enabled", True)
+            and (d.get("ip") or "").strip()
+            and not has_platform(d)
+            and d.get("id") not in self._os_probed
+        ]
+        if not pending:
+            return
+
+        self._os_worker = OsDetectWorker(self.config)
+        self._os_thread = QThread()
+        self._os_worker.moveToThread(self._os_thread)
+        self._os_thread.started.connect(self._os_worker.run)
+        self._os_worker.finished.connect(self._on_platforms_finished)
+        self._os_worker.finished.connect(self._os_thread.quit)
+        self._os_worker.finished.connect(self._os_worker.deleteLater)
+
+        def on_thread_finished() -> None:
+            self._os_thread.deleteLater()
+            self._os_thread = None
+
+        self._os_thread.finished.connect(on_thread_finished)
+        self._os_thread.start()
+
+    def _on_platforms_finished(self, results: list) -> None:
+        """Persist the detected platforms and rebuild cards/rows."""
+        changed = False
+        for entry in results:
+            device_id, os_id, confidence = entry[0], entry[1], entry[2]
+            self._os_probed.add(device_id)
+            if not os_id:
+                continue
+            setter = getattr(self.config, "set_device_os", None)
+            if callable(setter) and setter(device_id, os_id, confidence):
+                changed = True
+        if changed:
+            # Rebuild so pill text, remote tooltips and the RDP/VNC routing
+            # pick up the newly stored platform.
+            self.refresh_devices()
+
     def _auto_refresh(self) -> None:
         if self.isVisible():
             self.refresh_statuses()
 
+    # ── Inference badge (host protocol v9 "requests_active") ───────────
+
+    def _inference_interval_ms(self) -> int:
+        getter = getattr(self.config, "get_inference_interval_ms", None)
+        if not callable(getter):
+            return DEFAULT_INFERENCE_INTERVAL_MS
+        try:
+            value = int(getter())
+        except (TypeError, ValueError):
+            return DEFAULT_INFERENCE_INTERVAL_MS
+        return value if value > 0 else DEFAULT_INFERENCE_INTERVAL_MS
+
+    def _on_inference_interval_changed(self) -> None:
+        ms = self.inference_combo.currentData()
+        if not isinstance(ms, int):
+            return
+        setter = getattr(self.config, "set_inference_interval_ms", None)
+        if callable(setter):
+            setter(ms)
+        self._inference_timer.setInterval(self._inference_interval_ms())
+        # Immediate feedback for the new cadence (mirrors the dashboard).
+        self.refresh_inference()
+
+    def _inference_targets(self) -> list:
+        """Devices worth polling: watched processes + host credentials.
+
+        Without username/password every metrics request is rejected, and
+        without a watch list the host never reports ``processes`` — both
+        cases skip the network round-trip. Offline devices are skipped too
+        (the TCP connect would burn the full timeout); they re-enter the
+        sweep as soon as the status ping calls them online again.
+        """
+        targets = []
+        for device in self.config.get_devices():
+            if not device.get("enabled", True):
+                continue
+            if not (device.get("username", "") and device.get("password", "")):
+                continue
+            watch = ConfigManager.get_device_watch_processes(device)
+            if not watch:
+                continue
+            if self._statuses.get(device["id"]) == "offline":
+                continue
+            targets.append({
+                "id": device["id"],
+                "ip": device.get("ip", ""),
+                "username": device.get("username", ""),
+                "password": device.get("password", ""),
+                "watch": watch,
+                "api_key": ConfigManager.get_device_api_key(device),
+            })
+        return [t for t in targets if t["ip"]]
+
+    def refresh_inference(self) -> None:
+        """Poll the inference badge state for every watch-configured device."""
+        if HEADLESS_MODE:
+            return
+        if self._inference_thread is not None and self._inference_thread.isRunning():
+            return  # single-flight: never stack sweeps
+        targets = self._inference_targets()
+        if not targets:
+            return
+
+        self._inference_worker = InferenceSweepWorker(targets)
+        self._inference_thread = QThread()
+        self._inference_worker.moveToThread(self._inference_thread)
+        self._inference_thread.started.connect(self._inference_worker.run)
+        self._inference_worker.finished.connect(self._on_inference_finished)
+        self._inference_worker.finished.connect(self._inference_thread.quit)
+        self._inference_worker.finished.connect(self._inference_worker.deleteLater)
+
+        def on_thread_finished() -> None:
+            self._inference_thread.deleteLater()
+            self._inference_thread = None
+
+        self._inference_thread.finished.connect(on_thread_finished)
+        self._inference_thread.start()
+
+    def _on_inference_finished(self, results: list) -> None:
+        """Apply the badge state derived from each device's metrics reply."""
+        for device_id, response in results:
+            device = self.config.get_device_by_id(device_id) or {}
+            state = derive_inference_state(
+                response, ConfigManager.get_device_api_key(device))
+            if state is None:
+                continue  # no verdict (pre-v9 host / unreachable) — keep last
+            self._inference_states[device_id] = state
+            card = self._cards.get(device_id)
+            if card is not None:
+                card.set_inference(state)
+            row = self._rows.get(device_id)
+            if row is not None:
+                row.set_inference(state)
+
+    def _auto_inference_poll(self) -> None:
+        if self.isVisible():
+            self.refresh_inference()
+
     def showEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         super().showEvent(event)
         self.refresh_statuses()
+        self.refresh_inference()
         # Safety net: if the grid was built before the first real layout
         # (sentinel _grid_cols == 0), reflow once the viewport has a width —
         # even when showing never triggers a resizeEvent.
@@ -1070,6 +1442,13 @@ class DevicesView(QWidget):
         # Re-label the sort drop-down, keeping the selected key
         for i, key in enumerate(self._sort_keys):
             self.sort_combo.setItemText(i, Translations.tr(f"modern.devices.sort.{key}"))
+        # Re-label the inference interval drop-down, keeping the selected ms
+        for i in range(self.inference_combo.count()):
+            ms = self.inference_combo.itemData(i)
+            if isinstance(ms, int):
+                self.inference_combo.setItemText(i, Translations.tr("modern.devices.interval.seconds", seconds=ms // 1000))
+        self.inference_combo.setToolTip(
+            Translations.tr("modern.devices.infer.interval_tip"))
         self._apply_view_mode()  # refresh the toggle tooltip
         local_ips = get_local_ips()
         for card in self._cards.values():
@@ -1081,8 +1460,14 @@ class DevicesView(QWidget):
     def cancel_workers(self) -> None:
         """Cancel background work on window close (mirrors ManageView)."""
         self._timer.stop()
+        self._inference_timer.stop()
         if self._status_worker is not None:
             self._status_worker.cancel()
         if self._status_thread is not None and self._status_thread.isRunning():
             self._status_thread.quit()
             self._status_thread.wait(2000)
+        if self._inference_worker is not None:
+            self._inference_worker.cancel()
+        if self._inference_thread is not None and self._inference_thread.isRunning():
+            self._inference_thread.quit()
+            self._inference_thread.wait(2000)

@@ -16,10 +16,12 @@ class ScanWorker(QObject):
     progress = pyqtSignal(str, int, int)  # message, current, total
     finished = pyqtSignal(list)
 
-    def __init__(self, interfaces: list, timeout: int = 1) -> None:
+    def __init__(self, interfaces: list, timeout: int = 1,
+                 detect_os: bool = True) -> None:
         super().__init__()
         self.interfaces = interfaces
         self.timeout: int = timeout
+        self.detect_os: bool = detect_os
 
     def run(self) -> None:
         all_results = []
@@ -35,7 +37,8 @@ class ScanWorker(QObject):
 
                 hosts = scan_subnet(
                     iface["ip"], iface["netmask"],
-                    self.timeout, progress_callback=on_progress
+                    self.timeout, progress_callback=on_progress,
+                    detect_os=self.detect_os,
                 )
                 for host in hosts:
                     if host["ipv4"] not in seen_ips:

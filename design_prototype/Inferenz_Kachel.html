@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototyp – Gerätekachel mit Inferenz-Anzeige</title>
+<style>
+  /* ══ Tokens = modern_theme.py DARK/LIGHT (svc = Orange) ═══════════════ */
+  html[data-theme="dark"]{
+    --bg:#0f1115; --surface:#1a1d24; --surface-hover:#232733; --border:#2c303a;
+    --text:#e6e8ee; --text-dim:#9aa0ab; --accent:#00b8a9; --accent-dark:#006b63;
+    --accent-text:#032019;
+    --online:#22c55e; --offline:#ef4444; --unknown:#f59e0b; --danger:#e0485a;
+    --svc:#f97316;
+  }
+  html[data-theme="light"]{
+    --bg:#f3f4f7; --surface:#ffffff; --surface-hover:#eef0f4; --border:#d8dbe2;
+    --text:#1b1e24; --text-dim:#5b6270; --accent:#009688; --accent-dark:#00695f;
+    --accent-text:#ffffff;
+    --online:#16a34a; --offline:#dc2626; --unknown:#d97706; --danger:#dc2637;
+    --svc:#ea580c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"Segoe UI",system-ui,sans-serif}
+  body{background:var(--bg);color:var(--text);min-height:100vh;padding:28px 36px 70px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:21px;font-weight:600;margin-bottom:4px}
+  .sub{color:var(--text-dim);font-size:12.5px;margin-bottom:16px}
+  .themeToggle{position:fixed;top:16px;right:16px;display:flex;gap:6px;background:var(--surface);
+    border:1px solid var(--border);border-radius:10px;padding:4px;z-index:50}
+  .themeToggle button{border:none;background:none;color:var(--text-dim);font-size:12px;
+    padding:6px 12px;border-radius:7px;cursor:pointer;font-weight:600}
+  .themeToggle button.on{background:var(--accent);color:var(--accent-text)}
+  h2{font-size:15px;font-weight:600;margin:32px 0 4px}
+  .hint{color:var(--text-dim);font-size:12px;margin-bottom:14px;line-height:1.7}
+  .hint code{background:var(--surface-hover);border-radius:5px;padding:1px 6px;
+    font-family:Consolas,monospace;font-size:11.5px}
+  .pill{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 8px;
+    vertical-align:2px;margin-left:8px}
+  .pill.neu{background:rgba(249,115,22,.16);color:var(--svc)}
+
+  /* ══ Toolbar (Nachbau FlexToolbar der DevicesView) ═══════════════════ */
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:18px}
+  .iconBtn{width:36px;height:36px;border:1px solid var(--border);border-radius:9px;
+    background:var(--surface);color:var(--text);font-size:15px;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center}
+  .iconBtn:hover{border-color:var(--accent)}
+  .spacer{flex:1}
+  .lbl{font-size:12px;color:var(--text-dim)}
+  .sel{background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);
+    padding:8px 10px;font-size:12px;outline:none}
+  .pollstate{font-family:Consolas,monospace;font-size:11.5px;color:var(--text-dim);min-width:150px;
+    text-align:right}
+  .pollstate b{color:var(--svc)}
+
+  /* ══ Karten-Grid: Parität zu devices_view.py ═════════════════════════
+     CARD_MIN_WIDTH=300, GRID_SPACING=16, pageContent-Rand 36px ═══════ */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:14px 18px;transition:background .15s,border .15s}
+  .card:hover{background:var(--surface-hover);border-color:var(--accent)}
+  .card.dis{opacity:.62}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .card h3{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card h3.dis{color:var(--text-dim)}
+  .headright{display:flex;align-items:center;gap:8px;flex-shrink:0}
+  .meta{font-family:Consolas,monospace;font-size:12px;color:var(--text-dim);line-height:1.6;
+    margin-bottom:12px}
+  .row{display:flex;align-items:center;gap:8px}
+  .tiles{display:flex;gap:8px}
+  .tileBtn{width:36px;height:36px;border:1px solid var(--border);border-radius:10px;
+    background:var(--surface);font-size:15px;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;color:var(--text)}
+  .tileBtn:hover:not(:disabled){border-color:var(--accent)}
+  .tileBtn:disabled{opacity:.4;cursor:default}
+  .actBtn{margin-left:auto;border-radius:9px;padding:7px 14px;font-size:12.5px;font-weight:600;
+    cursor:pointer;border:1px solid var(--accent);background:transparent;color:var(--accent)}
+  .actBtn.off{border-color:var(--danger);color:var(--danger)}
+  .actBtn:hover{background:var(--accent);color:var(--accent-text)}
+  .actBtn.off:hover{background:var(--danger);color:#fff}
+  .actBtn:disabled{opacity:.4;cursor:default;background:transparent}
+
+  /* StatusPill-Nachbau (#statusPill: Punkt + Plattform-Icon + Label) */
+  .statusPill{display:inline-flex;align-items:center;gap:7px;border-radius:999px;
+    padding:3px 11px 3px 9px;background:var(--surface-hover);border:1px solid var(--border)}
+  .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .dotOnline{background:var(--online);box-shadow:0 0 8px var(--online)}
+  .dotOffline{background:var(--offline)}
+  .dotUnknown{background:var(--unknown)}
+  .pillText{font-size:11.5px;font-weight:600;white-space:nowrap}
+  /* Blitz innerhalb des Pills: etwas kleiner als das Solo-Symbol */
+  .statusPill .infer{width:15px;height:15px}
+  .statusPill .infer svg{width:13px;height:13px}
+
+  /* ══ NEU: Inferenz-Blitz — links vom Status-Pill ════════════════════ */
+  .infer{width:18px;height:18px;flex-shrink:0;display:inline-flex;align-items:center;
+    justify-content:center;cursor:help}
+  .infer svg{width:15px;height:15px}
+  /* aktiv: Job läuft → Orange + Puls + Glow */
+  .infer.on{color:var(--svc);animation:zap 1.5s ease-in-out infinite;
+    filter:drop-shadow(0 0 5px rgba(249,115,22,.55))}
+  /* bereit: Modell geladen, aber idle → gedämpft, kein Puls */
+  .infer.idle{color:var(--text-dim);opacity:.5}
+  /* wartend: Watch konfiguriert, API antwortet nicht / Host zu alt.
+     Gelb allein ist von llama-orange (aktiv) auf 15 px nicht zu unterscheiden,
+     deshalb zusätzlich ein diagonaler Strich durch den Blitz. Der Freisteller
+     (stroke unten) nutzt --surface-hover = Pill-Hintergrund. */
+  .infer.warn{color:var(--unknown);opacity:.85}
+  @keyframes zap{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.9)}}
+
+  /* ══ Listenansicht (#panel / #deviceRow, Höhe 64) ═══════════════════ */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .drow{display:flex;align-items:center;gap:14px;min-height:64px;padding:0 18px}
+  .drow:hover{background:var(--surface-hover)}
+  .sep{height:1px;background:var(--border)}
+  .rowInfo{flex:1;min-width:0}
+  .rowTitle{font-size:14px;font-weight:600}
+  .rowTitle.dis{color:var(--text-dim)}
+  .rowMono{font-family:Consolas,monospace;font-size:12px;color:var(--text-dim);display:block;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .statlabel{font-size:11px;color:var(--text-dim);width:104px;flex-shrink:0;text-align:right}
+
+  /* ══ Zustands-Legende ═══════════════════════════════════════════════ */
+  .legend{display:flex;gap:22px;flex-wrap:wrap;align-items:center;font-size:12px;
+    color:var(--text-dim);background:var(--surface);border:1px solid var(--border);
+    border-radius:12px;padding:14px 16px}
+  .legend .infer{pointer-events:none}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+
+  .note{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px;font-size:12.5px;color:var(--text-dim);line-height:1.75;margin-top:24px}
+  .note b{color:var(--text)}
+  .note ul{margin:6px 0 0 18px}
+  .note li{margin-bottom:4px}
+</style>
+</head>
+<body>
+<div class="themeToggle">
+  <button id="btnDark" class="on" onclick="setTheme('dark')">Dunkel</button>
+  <button id="btnLight" onclick="setTheme('light')">Hell</button>
+</div>
+
+<div class="wrap">
+  <h1>Gerätekachel mit Inferenz-Anzeige <span class="pill neu">+ ⚡ Blitz</span></h1>
+  <div class="sub">Prototyp · 2026-10-03 · Datenquelle: Host Service <code>metrics</code> → <code>processes</code>-Map (Protokoll v7/v8)</div>
+
+  <div class="toolbar">
+    <button class="iconBtn" title="Listenansicht">≡</button>
+    <button class="iconBtn" id="refreshBtn" title="Aktualisieren">⟳</button>
+    <span class="spacer"></span>
+    <span class="lbl">Intervall</span>
+    <select class="sel" id="intervalSel">
+      <option value="5000">5 s</option>
+      <option value="10000" selected>10 s</option>
+      <option value="15000">15 s</option>
+      <option value="30000">30 s</option>
+    </select>
+    <span class="pollstate" id="pollState">—</span>
+  </div>
+
+  <!-- ═══════════ KACHELANSICHT ═══════════ -->
+  <h2>🖥️ Kachelansicht</h2>
+  <div class="hint">
+    Der Blitz sitzt <b>innerhalb des Status-Pills</b>, direkt links vom grünen Punkt:
+    <code>[⚡ · ● · 🪟 Windows]</code> auf derselben ovalen Fläche. Er erscheint nur, wenn das Gerät
+    <code>watch_processes</code> konfiguriert hat <b>und</b> der Host Service antwortet — sonst fehlt er
+    und der Pill ist exakt wie heute. Qt: ein neues <code>QLabel</code> in <code>StatusPill</code>
+    vor <code>self.dot</code>, dasselbe objectName-Muster wie der Punkt.
+  </div>
+  <div class="grid" id="grid"></div>
+
+  <!-- ═══════════ LISTENANSICHT ═══════════ -->
+  <h2>📋 Listenansicht</h2>
+  <div class="hint">Identisch wie in der Kachel: der Blitz steckt im Pill links vom Punkt — dieselbe Klasse,
+    damit Desktop-Grid, Desktop-Liste und Mobile-Kacheln visuell gleichziehen.</div>
+  <div class="panel" id="list"></div>
+
+  <!-- ═══════════ ZUSTÄNDE ═══════════ -->
+  <h2>Zustände des Blitzes</h2>
+  <div class="legend">
+    <span><span class="statusPill"><i class="infer on"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/></svg></i><span class="dot dotOnline"></span><span class="pillText">🪟 Windows</span></span>
+      <b>Inferenz läuft</b> — Modell verarbeitet gerade Tokens</span>
+    <span><span class="statusPill"><i class="infer idle"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/></svg></i><span class="dot dotOnline"></span><span class="pillText">🪟 Windows</span></span>
+      Modell geladen, Server idle</span>
+    <span><span class="statusPill"><i class="infer warn"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/><path d="M4.5 3.5 19.5 20.5" stroke="var(--surface-hover)" stroke-width="6" stroke-linecap="round" fill="none"/><path d="M4.5 3.5 19.5 20.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" fill="none"/></svg></i><span class="dot dotOnline"></span><span class="pillText">🐧 Ubuntu</span></span>
+      Watch eingerichtet, API antwortet nicht — Blitz durchgestrichen</span>
+    <span><span class="statusPill"><span class="dot dotOffline"></span><span class="pillText">🍏 macOS</span></span>
+      kein Blitz — Gerät ohne Watch oder Host offline</span>
+  </div>
+
+  <div class="note">
+    <b>Erkennung auf bestehenden Feldern (ohne Protokoll-Änderung):</b>
+    <ul>
+      <li><code>model_metrics.total_tokens</code> ist der einzige Wert, den der Host <b>frisch</b> liefert
+        (nicht gelatcht). Delta zwischen zwei Polls &gt; 0 ⇒ Job läuft. Gilt für llama.cpp
+        (<code>prompt_tokens_total</code> + <code>n_decode_total</code>) und Strata
+        (<code>totals.prompt_tokens</code> + <code>output_tokens</code>).</li>
+      <li><code>prompt_tps</code>/<code>predicted_tps</code> sind <b>unbrauchbar</b>: der Host hält den letzten
+        Nicht-Null-Wert fest (<code>_MODEL_TPS_CACHE</code>), ein idle Server meldet weiter seine alte Rate.</li>
+      <li>Die Dashboard-Heuristik <code>INFERENCE_GPU_PCT</code> (GPU ≥ 60 % an zwei Polls) funktioniert nur
+        für die ganze Maschine und versagt bei CPU-/RAM-Inferenz (<code>--cpu-moe</code>, PLE-Offload).</li>
+      <li>Sauberer Fix = Protokoll <b>v9</b>: <code>requests_active</code> aus
+        <code>llamacpp:requests_processing</code> bzw. Strata <code>live.state</code>/<code>live.queued</code>
+        — dann kein Delta-Cache und kein Fehlalarm beim Counter-Reset (Server-Neustart).</li>
+    </ul>
+    <b>Intervall:</b> bewusst ein eigener Wert (Default <b>10 s</b>, Wahl 5/10/15/30 s), <b>nicht</b> das
+    Dashboard-Dropdown (2/3/5/10 s). Auf N Kacheln pollt man N Geräte gleichzeitig, und jeder Watch-Eintrag
+    löst pro Poll HTTP-Calls aus — ein Server mit 43 gemeldeten Modellen bedeutet 43 <code>/metrics</code>-Requests
+    je Poll. Unter 2 s bringt nichts, weil der Host GPU mit 1,5 s und die API-Identität mit 10 s TTL cacht.
+    Delta-Erkennung braucht zwei Polls ⇒ Anzeige dauert maximal 2 × Intervall.
+  </div>
+</div>
+
+<script>
+/* Inferenz-Blitz (SVG, damit Farbe + Puls über CSS steuerbar sind) */
+const ZAP = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/></svg>';
+/* Warn-Blitz: derselbe Blitz + diagonaler Strich (Freisteller in Pill-Farbe) */
+const ZAP_SLASH = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 3 14h7l-1 8 11-13h-7l1-7z"/>'
+  + '<path d="M4.5 3.5 19.5 20.5" stroke="var(--surface-hover)" stroke-width="6" stroke-linecap="round" fill="none"/>'
+  + '<path d="M4.5 3.5 19.5 20.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" fill="none"/></svg>';
+
+/* Seed spiegelt devices.json / das reale Setup (192.168.2.62 = Strata) */
+const devices = [
+  {name:"SERVER-01", ip:"192.168.2.62", mac:"AA:BB:CC:DD:EE:02", os:"windows", osIcon:"🪟",
+   status:"online", watch:[":8080"], model:"Qwen3.8-Flash-Next-IQ3_S", state:"on", tps:41.2, total:113234, delta:1400},
+  {name:"ARBEITS-PC (ich)", ip:"192.168.1.10", mac:"AA:BB:CC:DD:EE:01", os:"windows", osIcon:"🪟",
+   status:"online", watch:["llama-server.exe:8080"], model:"Qwen3.8-27B-NVFP4", state:"idle", tps:0, total:8421, delta:0},
+  {name:"SERVER-02", ip:"192.168.1.20", mac:"AA:BB:CC:DD:EE:03", os:"ubuntu", osIcon:"🐧",
+   status:"online", watch:[":11434"], model:"", state:"warn", tps:0, total:0, delta:0},
+  {name:"LAPTOP-ANA", ip:"192.168.1.34", mac:"AA:BB:CC:DD:EE:04", os:"windows", osIcon:"🪟",
+   status:"online", watch:[], model:"", state:"none", tps:0, total:0, delta:0},
+  {name:"MEDIA-PC", ip:"192.168.1.51", mac:"AA:BB:CC:DD:EE:05", os:"macos", osIcon:"🍏",
+   status:"offline", watch:[":8080"], model:"", state:"none", tps:0, total:0, delta:0},
+  {name:"ARCHIV-PC", ip:"192.168.1.90", mac:"AA:BB:CC:DD:EE:06", os:"windows", osIcon:"🪟",
+   status:"offline", watch:[], model:"", state:"none", disabled:true, tps:0, total:0, delta:0},
+];
+
+const dotCls = d => ({online:"dotOnline", offline:"dotOffline"}[d.status] || "dotUnknown");
+const statusName = d => d.disabled ? "deaktiviert"
+  : ({online:"Online", offline:"Offline", unknown:"Unbekannt"}[d.status]);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = n => n.toLocaleString("de-DE");
+
+/* Tooltip = dieselben Infos, die das Dashboard in der Dienste-Zeile zeigt */
+function inferTip(d){
+  if (d.state === "on")
+    return `Inferenz aktiv – ${d.model}\n${d.tps.toFixed(2)} t/s · Gesamt-Tokens ${num(d.total)}\n`
+         + `Signal: total_tokens steigt seit dem letzten Poll (${num(d.delta)} neue Tokens)`;
+  if (d.state === "idle")
+    return `Modell geladen, aber idle – ${d.model}\nGesamt-Tokens ${num(d.total)} (unverändert)`;
+  if (d.state === "warn")
+    return "Watch-Eintrag konfiguriert, API antwortet nicht.\nHost Service zu alt oder Port geschlossen.";
+  return "";
+}
+
+function inferEl(d){
+  if (d.state === "none") return "";
+  const glyph = d.state === "warn" ? ZAP_SLASH : ZAP;
+  return `<i class="infer ${d.state}" title="${esc(inferTip(d))}">${glyph}</i>`;
+}
+
+/* Pill mit integriertem Blitz: [⚡ · ● · Icon Text] — ohne Inferenz exakt der heutige Pill */
+function pill(d){
+  return `<span class="statusPill">${inferEl(d)}<span class="dot ${dotCls(d)}"></span>`
+       + `<span class="pillText">${d.osIcon} ${esc(d.os === "windows" ? "Windows" : d.os === "ubuntu" ? "Ubuntu" : "macOS")}</span></span>`;
+}
+
+function tiles(d){
+  const off = d.status !== "online" || d.disabled;
+  return `<div class="tiles">
+    <button class="tileBtn" title="Remote Vollbild" ${off?"disabled":""}>🖥️</button>
+    <button class="tileBtn" title="Remote Fenster" ${off?"disabled":""}>🪟</button>
+    <button class="tileBtn" title="Dashboard" ${off?"disabled":""}>📊</button>
+  </div>`;
+}
+
+function actionBtn(d){
+  const online = d.status === "online";
+  const dis = d.disabled ? "disabled" : "";
+  return `<button class="actBtn ${online?"off":""}" ${dis}>${online?"Herunterfahren":"Aufwecken"}</button>`;
+}
+
+function renderGrid(){
+  document.getElementById("grid").innerHTML = devices.map(d => `
+    <div class="card ${d.disabled?"dis":""}">
+      <div class="top">
+        <h3 class="${d.disabled?"dis":""}">${esc(d.name)}</h3>
+        <div class="headright">${pill(d)}</div>
+      </div>
+      <div class="meta">${esc(d.ip)}<br>${esc(d.mac)}</div>
+      <div class="row">${tiles(d)}${actionBtn(d)}</div>
+    </div>`).join("");
+}
+
+function renderList(){
+  document.getElementById("list").innerHTML = devices.map((d,i) => `
+    ${i ? '<div class="sep"></div>' : ""}
+    <div class="drow">
+      <div class="rowInfo">
+        <div class="rowTitle ${d.disabled?"dis":""}">${esc(d.name)}</div>
+        <span class="rowMono">${esc([d.ip,d.mac].filter(Boolean).join(" · "))}</span>
+      </div>
+      <span class="statlabel">${esc(statusName(d))}</span>
+      ${pill(d)}
+      ${tiles(d)}
+    </div>`).join("");
+}
+
+/* ══ Poll-Simulation: Intervall steuert, wann die Deltas neu gelesen werden ══ */
+let timer = null, lastPoll = 0, tick = 0;
+
+function poll(){
+  tick++;
+  lastPoll = Date.now();
+  devices.forEach(d => {
+    if (d.state === "none") return;
+    if (d.state === "warn") return;
+    d.delta = 0;
+    if (d.state === "on") {
+      d.total += 900 + Math.round(Math.random() * 500);
+      d.delta = 900;
+      d.tps = 38 + Math.random() * 8;
+      if (tick % 3 === 0) { d.state = "idle"; d.tps = 0; }      // Job fertig
+    } else if (d.state === "idle") {
+      if (tick % 4 === 0) { d.state = "on"; d.delta = 1200; }   // neuer Job
+    }
+  });
+  renderGrid();
+  renderList();
+  tickState();
+}
+
+function tickState(){
+  const el = document.getElementById("pollState");
+  const upd = () => {
+    const s = Math.round((Date.now() - lastPoll) / 1000);
+    el.innerHTML = `zuletzt <b>vor ${s} s</b>`;
+  };
+  upd();
+  clearInterval(el._i);
+  el._i = setInterval(upd, 1000);
+}
+
+function startTimer(){
+  clearInterval(timer);
+  timer = setInterval(poll, Number(document.getElementById("intervalSel").value));
+  poll();
+}
+
+document.getElementById("intervalSel").addEventListener("change", startTimer);
+document.getElementById("refreshBtn").addEventListener("click", () => {
+  poll();
+  const b = document.getElementById("refreshBtn");
+  b.style.color = "var(--svc)";
+  setTimeout(() => b.style.color = "", 400);
+});
+
+function setTheme(t){
+  document.documentElement.dataset.theme = t;
+  document.getElementById("btnDark").classList.toggle("on", t === "dark");
+  document.getElementById("btnLight").classList.toggle("on", t === "light");
+}
+
+renderGrid();
+renderList();
+startTimer();
+</script>
+</body>
+</html>

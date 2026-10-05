@@ -32,8 +32,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wol_app.device_io import export_devices, import_devices
 from wol_app.app_core import HEADLESS_MODE, StatusWorker
+from wol_app.device_io import export_devices, import_devices
 from wol_app.network_scanner import (
     get_dns_servers_for_interface,
     get_local_interfaces,
@@ -41,6 +41,11 @@ from wol_app.network_scanner import (
 )
 from wol_app.scan_worker import ScanWorker
 from wol_app.translations import Translations
+from wol_app.utils import (
+    OS_LABEL_KEYS,
+    normalize_os,
+    os_display_text,
+)
 from wol_app.views.device_edit_dialog import ModernDeviceDialog
 from wol_app.widgets.toggle_switch import ToggleWithLabel
 from wol_app.wol_engine import WOLEngine
@@ -50,7 +55,7 @@ ROW_HEIGHT = 64
 
 
 class ScanResultRow(QWidget):
-    """One discovered host: dot · hostname / mono IPv4 · MAC · [Hinzufügen]."""
+    """One discovered host: dot · hostname / mono IPv4 · MAC · OS · [Hinzufügen]."""
 
     add_requested = pyqtSignal(dict)  # host dict from the scanner
 
@@ -75,7 +80,11 @@ class ScanResultRow(QWidget):
         hostname = host.get("hostname", "Unknown")
         title = QLabel(hostname)
         title.setObjectName("rowTitle")
-        mono = QLabel(f"{host.get('ipv4', '')} · {host.get('mac', 'Unknown')}")
+        mono_parts = [host.get("ipv4", ""), host.get("mac", "Unknown")]
+        os_text = os_display_text(host.get("os", ""), host.get("os_confidence", ""))
+        if os_text:
+            mono_parts.append(os_text)
+        mono = QLabel(" · ".join(mono_parts))
         mono.setObjectName("rowMono")
         info.addWidget(title)
         info.addWidget(mono)
@@ -93,7 +102,7 @@ class ScanResultRow(QWidget):
 
 
 class DeviceRow(QWidget):
-    """One configured device: dot · name / mono IP · MAC · action tiles."""
+    """One configured device: dot · name / mono IP · MAC · OS · action tiles."""
 
     edit_requested = pyqtSignal(str)
     delete_requested = pyqtSignal(str)
@@ -121,8 +130,12 @@ class DeviceRow(QWidget):
             "rowTitle" if device.get("enabled", True) else "rowTitleDisabled")
         ip = device.get("ip", "")
         mac = device.get("mac", "")
-        mono_text = f"{ip} · {mac}" if ip else mac
-        self.mono = QLabel(mono_text)
+        mono_parts = [p for p in (ip, mac) if p]
+        # Stored platform from the last scan ("" when never detected)
+        os_label_key = OS_LABEL_KEYS.get(normalize_os(device.get("os")))
+        if os_label_key:
+            mono_parts.append(Translations.tr(os_label_key))
+        self.mono = QLabel(" · ".join(mono_parts))
         self.mono.setObjectName("rowMono")
         info.addWidget(self.title)
         info.addWidget(self.mono)
@@ -287,10 +300,18 @@ class ManageView(QWidget):
         self.scan_btn.setObjectName("primaryButton")
         self.scan_btn.clicked.connect(self._start_scan)
         scan_actions.addWidget(self.scan_btn)
+
+        # Platform detection toggle (same semantics as the classic dialog)
+        self.os_detect_toggle = ToggleWithLabel(
+            Translations.tr("scan_dialog.opt.detect_os"), checked=True)
+        self.os_detect_toggle.setToolTip(
+            Translations.tr("scan_dialog.opt.detect_os_tooltip"))
+        scan_actions.addWidget(self.os_detect_toggle)
+
         scan_actions.addStretch()
 
         self.result_search = QLineEdit()
-        self.result_search.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
+        self.result_search.setPlaceholderText(Translations.tr("scan_dialog.search_placeholder"))
         self.result_search.setClearButtonEnabled(True)
         self.result_search.textChanged.connect(self._render_results)
         self.result_search.setFixedWidth(260)
@@ -331,7 +352,7 @@ class ManageView(QWidget):
         self.import_btn.setText(Translations.tr("device_manager.button.import"))
         self.export_btn.setText(Translations.tr("device_manager.button.export"))
         self.search_input.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
-        self.result_search.setPlaceholderText(Translations.tr("ui.search_devices_placeholder"))
+        self.result_search.setPlaceholderText(Translations.tr("scan_dialog.search_placeholder"))
         for i in range(self.results_layout.count()):
             w = self.results_layout.itemAt(i).widget()
             if isinstance(w, ScanResultRow):
@@ -373,7 +394,8 @@ class ManageView(QWidget):
         self.scan_btn.setEnabled(False)
         self.scan_info.setText(Translations.tr("scan_dialog.scanning"))
 
-        self._scan_worker = ScanWorker(selected)
+        self._scan_worker = ScanWorker(
+            selected, detect_os=self.os_detect_toggle.isChecked())
         self._scan_thread = QThread()
         self._scan_worker.moveToThread(self._scan_thread)
         self._scan_thread.started.connect(self._scan_worker.run)
@@ -409,7 +431,7 @@ class ManageView(QWidget):
         query = self.result_search.text().strip().lower()
         if not query:
             return self._scan_results
-        fields = ("hostname", "ipv4", "ipv6", "mac")
+        fields = ("hostname", "ipv4", "ipv6", "mac", "os")
         return [
             h for h in self._scan_results
             if any(query in str(h.get(f, "")).lower() for f in fields)
@@ -472,7 +494,20 @@ class ManageView(QWidget):
             preset={"name": "" if hostname == "Unknown" else hostname,
                     "mac": mac, "ip": ipv4},
         )
-        dialog.device_saved.connect(lambda _d: self._on_devices_changed())
+
+        detected_os: str = host.get("os", "")
+        detected_confidence: str = host.get("os_confidence", "")
+
+        def on_saved(saved: dict) -> None:
+            # The dialog has no platform field, so persist the scan result
+            # here — including the confidence, which is what marks an
+            # estimated platform with "~" in the device views.
+            if detected_os and saved.get("id"):
+                self.config.set_device_os(
+                    saved["id"], detected_os, detected_confidence)
+            self._on_devices_changed()
+
+        dialog.device_saved.connect(on_saved)
         dialog.exec()
 
     # ── Geräte-Verwaltung ────────────────────────────────────────────────

@@ -5,7 +5,8 @@
   "allOf": [{ "$ref": "response-core.json" }],
   "properties": {
     "status": { "const": "ok" },
-    "message": { "const": "online" }
+    "message": { "const": "online" },
+    "os": { "type": "string", "minLength": 1, "maxLength": 32 }
   },
   "additionalProperties": true
 }

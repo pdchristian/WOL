@@ -52,7 +52,8 @@ class TestScanNetwork:
 
         monkeypatch.setattr(network_scanner, "get_local_interfaces", lambda: interfaces)
 
-        def fake_scan_subnet(ip, netmask, timeout=1, progress_callback=None):
+        def fake_scan_subnet(ip, netmask, timeout=1, progress_callback=None,
+                             **_kwargs):
             return subnet_results.get(ip, [])
 
         monkeypatch.setattr(network_scanner, "scan_subnet", fake_scan_subnet)

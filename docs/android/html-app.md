@@ -25,7 +25,7 @@ Installation auf dem Gerät: APK kopieren und öffnen (Debug-Signatur), z. B.
 `adb install -r dist_onefile\wolmanager-android-html-<version>-debug.apk`
 (`<version>` = `versionName` unten).
 
-Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.3.7`,
+Wichtige Parameter: `applicationId de.wolmanager.html`, `versionName 2.5.1`,
 minSdk 26, compileSdk 34, AGP 8.5.2, Kotlin 2.0.21 – **kein Compose**.
 
 ## Architektur
@@ -90,6 +90,12 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
 
 - **Entfernt:** Einstellungsfelder „Auflösung“ und „Design (Klassisch/Moderne)“,
   Shutdown-Methode SMB (nur Host Service v4), Statusbar-Uhr/Phone-Rahmen.
+- **Einstellungen (ab 2.4.0) wie am Desktop gruppiert:** drei Karten *Netzwerk*
+  (Broadcast-IP/Port), *Darstellung* (Sprache/Anzeigemodus) und *Sonstiges*
+  (Protokolleintrag, Update-Schalter + Intervall). Keine neuen Felder – die
+  Desktop-Gruppe *Remote-Zugang* entfällt, da es auf dem Telefon weder `mstsc`
+  noch TurboVNC gibt. Markup: `renderSettings()` in `app.js` (Klasse `.group`,
+  i18n `set.group.*`), identisch in `ios/WebApp`; alle Felder linksbündig.
 - **Remote-Desktop:** öffnet die Windows App — bevorzugt per `.rdp`-Datei
   (Gerätename = Profilname, Rechner + Benutzer vorausgefüllt), sonst per
   `rdp://`-URI; das Passwort liegt zusätzlich in der Zwischenablage (URI-Schema

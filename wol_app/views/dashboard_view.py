@@ -1388,7 +1388,8 @@ class DeviceDashboardView(QWidget):
         self._metrics_busy = True
         worker = MetricsWorker(
             ip, self._device.get("username", ""), self._device.get("password", ""),
-            watch=self._watch_entries or None)
+            watch=self._watch_entries or None,
+            api_key=ConfigManager.get_device_api_key(self._device))
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)

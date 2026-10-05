@@ -5,3 +5,7 @@ psutil>=5.9.0
 pywin32>=306; sys_platform == "win32"
 # WOL Host Service (Linux/systemd + macOS/launchd variant, PAM credential auth)
 pamela>=1.2.0; sys_platform == "linux" or sys_platform == "darwin"
+# macOS: raise the window of the running instance on a second launch
+# (utils.force_window_foreground -> AppKit activation); a ctypes fallback
+# exists, but the .app bundle ships the real bindings.
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"

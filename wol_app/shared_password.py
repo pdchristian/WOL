@@ -1,9 +1,11 @@
-"""Shared logic for the "apply password to devices with the same username" feature.
+"""Shared logic for the "apply this secret to the other devices" prompts.
 
 When the user saves a device with a non-empty username and password, the UI
 asks whether the password should also be applied to every other device that
-uses the same username. The candidate detection lives here so the modern
-dialog, the classic dialog and the tests share one implementation.
+uses the same username. The dashboard API key works the same way, but there
+is no username to scope it by — that offer covers *all* other devices. The
+candidate detection lives here so the dialogs and the tests share one
+implementation.
 """
 
 from typing import Any
@@ -31,5 +33,34 @@ def apply_password(config: Any, targets: list, password: str) -> int:
     applied = 0
     for dev in targets:
         if config.update_device(dev["id"], password=password):
+            applied += 1
+    return applied
+
+
+def collect_api_key_share_targets(config: Any, api_key: str,
+                                  exclude_id: str | None = None) -> list:
+    """Every other device whose API key differs from ``api_key``.
+
+    An API key belongs to the inference server, not to a login, so the offer
+    is not scoped by username — it covers all other devices. Returns an empty
+    list when the key is empty (nothing to offer) or when every other device
+    already stores the same key (the confirmation popup would be noise).
+    """
+    if not (api_key or "").strip():
+        return []
+    targets = []
+    for dev in config.get_devices():
+        if dev.get("id") == exclude_id:
+            continue
+        if (dev.get("api_key") or "") != api_key:
+            targets.append(dev)
+    return targets
+
+
+def apply_api_key(config: Any, targets: list, api_key: str) -> int:
+    """Apply ``api_key`` to every device in ``targets``. Returns the count."""
+    applied = 0
+    for dev in targets:
+        if config.set_device_api_key(dev["id"], api_key):
             applied += 1
     return applied

@@ -1,5 +1,6 @@
 """Tests for wol_app.config ConfigManager."""
 
+import base64
 import json
 import tempfile
 import unittest
@@ -73,6 +74,34 @@ class TestConfigNetwork(ConfigManagerTestBase):
         cm.update_network_settings(broadcast_ip="192.168.1.255", broadcast_port=7)
         self.assertEqual(cm.get_network_settings()["broadcast_ip"], "192.168.1.255")
         self.assertEqual(cm.get_network_settings()["broadcast_port"], 7)
+
+
+class TestInferenceInterval(ConfigManagerTestBase):
+    """ui.inference_interval_ms — devices-view inference badge poll cadence."""
+
+    def test_default_is_10_seconds(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_inference_interval_ms(), 10_000)
+
+    def test_set_and_persist(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_inference_interval_ms(15_000)
+        self.assertEqual(cm.get_inference_interval_ms(), 15_000)
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        self.assertEqual(saved["ui"]["inference_interval_ms"], 15_000)
+
+    def test_clamped_to_range(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_inference_interval_ms(1_000)
+        self.assertEqual(cm.get_inference_interval_ms(), 5_000)
+        cm.set_inference_interval_ms(120_000)
+        self.assertEqual(cm.get_inference_interval_ms(), 30_000)
+
+    def test_garbage_falls_back_to_default(self):
+        self._write_raw({"ui": {"inference_interval_ms": "not-a-number"}})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_inference_interval_ms(), 10_000)
 
 
 class TestConfigShutdownMethod(ConfigManagerTestBase):
@@ -171,6 +200,149 @@ class TestConfigShutdownMethod(ConfigManagerTestBase):
         self.assertEqual(cm.get_device_rdp_auth_level(device), 1)
 
 
+class TestDeviceOs(ConfigManagerTestBase):
+    def test_normalize_os_collapses_distributions(self):
+        self.assertEqual(ConfigManager.normalize_os("ubuntu"), "linux")
+        self.assertEqual(ConfigManager.normalize_os("Debian"), "linux")
+        self.assertEqual(ConfigManager.normalize_os("Windows"), "windows")
+        self.assertEqual(ConfigManager.normalize_os("win32"), "windows")
+        self.assertEqual(ConfigManager.normalize_os("darwin"), "macos")
+        self.assertEqual(ConfigManager.normalize_os("macOS"), "macos")
+        self.assertEqual(ConfigManager.normalize_os(""), "")
+        self.assertEqual(ConfigManager.normalize_os("unknown"), "")
+        self.assertEqual(ConfigManager.normalize_os(None), "")
+
+    def test_get_device_os_empty_for_legacy_device(self):
+        # Devices created before the "os" key exist report "" and are never
+        # migrated — the value is re-detectable at any time.
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        self.assertNotIn("os", device)
+        self.assertEqual(cm.get_device_os(device), "")
+
+    def test_set_device_os_persists_normalized_value(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        self.assertTrue(cm.set_device_os(device["id"], "ubuntu"))
+        self.assertEqual(cm.get_device_os(device), "linux")
+        self.assertEqual(device["os"], "linux")
+        reloaded = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(
+            cm.get_device_os(reloaded.get_device_by_id(device["id"])), "linux")
+
+    def test_set_device_os_clears_with_empty_value(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.set_device_os(device["id"], "macos")
+        cm.set_device_os(device["id"], "")
+        self.assertEqual(cm.get_device_os(device), "")
+
+    def test_os_confidence_roundtrip(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.set_device_os(device["id"], "ubuntu", "medium")
+        reloaded = ConfigManager(config_path=str(self.config_path))
+        stored = reloaded.get_device_by_id(device["id"])
+        self.assertEqual(stored["os"], "linux")
+        self.assertEqual(stored["os_confidence"], "medium")
+        self.assertEqual(reloaded.get_device_os_confidence(stored), "medium")
+
+    def test_invalid_os_confidence_is_dropped(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.set_device_os(device["id"], "windows", "guessed")
+        self.assertEqual(
+            cm.get_device_os_confidence(cm.get_device_by_id(device["id"])), "")
+
+    def test_confidence_cleared_with_the_platform(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("PC", "AA:BB:CC:DD:EE:FF")
+        cm.set_device_os(device["id"], "windows", "high")
+        cm.set_device_os(device["id"], "")
+        stored = cm.get_device_by_id(device["id"])
+        self.assertEqual(stored.get("os"), "")
+        self.assertNotIn("os_confidence", stored)
+
+    def test_get_device_os_confidence_defaults_to_empty(self):
+        self.assertEqual(ConfigManager.get_device_os_confidence({}), "")
+        self.assertEqual(
+            ConfigManager.get_device_os_confidence({"os_confidence": "bogus"}), "")
+
+
+class TestRemoteSection(ConfigManagerTestBase):
+    """Platform -> protocol routing and the VNC client settings."""
+
+    def test_defaults_materialised_for_old_config(self):
+        self._write_raw({"devices": []})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_remote_protocol("windows"), "rdp")
+        self.assertEqual(cm.get_remote_protocol("macos"), "vnc")
+        self.assertEqual(cm.get_remote_protocol("linux"), "vnc")
+        self.assertEqual(cm.get_vnc_port(), 5900)
+        self.assertEqual(cm.get_vnc_viewer_path(), "")
+
+    def test_protocol_roundtrip_persists(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_remote_protocol("windows", "vnc")
+        cm.set_remote_protocol("linux", "rdp")
+        reloaded = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(reloaded.get_remote_protocol("windows"), "vnc")
+        self.assertEqual(reloaded.get_remote_protocol("linux"), "rdp")
+        # untouched platforms keep their default
+        self.assertEqual(reloaded.get_remote_protocol("macos"), "vnc")
+
+    def test_unknown_platform_and_distro_ids_fall_back(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        # "" / "unknown" = never detected -> historical RDP
+        self.assertEqual(cm.get_remote_protocol(""), "rdp")
+        self.assertEqual(cm.get_remote_protocol("unknown"), "rdp")
+        # concrete distributions collapse to linux (normalize_os)
+        self.assertEqual(cm.get_remote_protocol("ubuntu"), "vnc")
+        self.assertEqual(cm.get_remote_protocol("darwin"), "vnc")
+
+    def test_invalid_stored_value_falls_back_to_default(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.config["remote"]["protocol_by_os"]["windows"] = "telnet"
+        self.assertEqual(cm.get_remote_protocol("windows"), "rdp")
+
+    def test_missing_mapping_uses_defaults(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.config["remote"] = {}
+        self.assertEqual(cm.get_remote_protocol("linux"), "vnc")
+
+    def test_set_rejects_unknown_platform_and_protocol(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        with self.assertRaises(ValueError):
+            cm.set_remote_protocol("unknown", "vnc")
+        with self.assertRaises(ValueError):
+            cm.set_remote_protocol("windows", "telnet")
+
+    def test_vnc_port_roundtrip_and_validation(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_vnc_port(5901)
+        self.assertEqual(
+            ConfigManager(config_path=str(self.config_path)).get_vnc_port(), 5901)
+        for bad in (0, -1, 70000):
+            with self.assertRaises(ValueError):
+                cm.set_vnc_port(bad)
+
+    def test_vnc_port_repairs_hand_edited_value(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.config["remote"]["vnc_port"] = 99999
+        self.assertEqual(cm.get_vnc_port(), 65535)
+        cm.config["remote"]["vnc_port"] = "unsinn"
+        self.assertEqual(cm.get_vnc_port(), 5900)
+
+    def test_vnc_viewer_path_roundtrip(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_vnc_viewer_path(r"C:\Tools\vncviewer.bat")
+        self.assertEqual(
+            ConfigManager(config_path=str(self.config_path)).get_vnc_viewer_path(),
+            r"C:\Tools\vncviewer.bat")
+        cm.set_vnc_viewer_path("   ")
+        self.assertEqual(cm.get_vnc_viewer_path(), "")
+
+
 class TestRemoteDesktopResolution(ConfigManagerTestBase):
     def test_default_resolution(self):
         cm = ConfigManager(config_path=str(self.config_path))
@@ -238,6 +410,75 @@ class TestWindowGeometry(ConfigManagerTestBase):
             self._write_raw({"ui": {"window_geometry": bad}})
             cm = ConfigManager(config_path=str(self.config_path))
             self.assertIsNone(cm.get_window_geometry(), msg=f"bad value: {bad!r}")
+
+
+class TestDeviceApiKey(ConfigManagerTestBase):
+    """Dashboard API key (host protocol v10) storage rules."""
+
+    def test_set_and_get_roundtrip(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.add_device("Blade-18", "AA:BB:CC:DD:EE:01")
+        dev_id = cm.config["devices"][0]["id"]
+        self.assertTrue(cm.set_device_api_key(dev_id, "dummy"))
+        self.assertEqual(
+            ConfigManager.get_device_api_key(cm.get_device_by_id(dev_id)),
+            "dummy")
+
+    def test_stored_encrypted_on_disk(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.add_device("Blade-18", "AA:BB:CC:DD:EE:01")
+        dev_id = cm.config["devices"][0]["id"]
+        cm.set_device_api_key(dev_id, "sk-abcdef0123456789" * 4)
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        raw = saved["devices"][0]["api_key"]
+        # Explicit "enc:" marker — the base64 heuristic alone would misread a
+        # long alphanumeric key as ciphertext and lose it on the next load.
+        self.assertTrue(raw.startswith("enc:"))
+        self.assertNotIn("sk-abcdef", raw)
+        # Reload must hand back the plaintext key
+        cm2 = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(
+            ConfigManager.get_device_api_key(cm2.get_device_by_id(dev_id)),
+            "sk-abcdef0123456789" * 4)
+
+    def test_empty_key_removes_field(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.add_device("PC", "AA:BB:CC:DD:EE:01")
+        dev_id = cm.config["devices"][0]["id"]
+        cm.set_device_api_key(dev_id, "dummy")
+        cm.set_device_api_key(dev_id, "")
+        self.assertNotIn("api_key", cm.get_device_by_id(dev_id))
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        self.assertNotIn("api_key", saved["devices"][0])
+
+    def test_invalid_values_degrade_to_empty(self):
+        for bad in ("", "   ", "x" * 129, "line1\nline2", "tab\there",
+                    "emoji\U0001f600", 42, None):
+            self.assertEqual(ConfigManager.get_device_api_key(
+                {"api_key": bad}), "", msg=f"bad value: {bad!r}")
+
+    def test_legacy_plaintext_key_reencrypted(self):
+        self._write_raw({"devices": [{
+            "id": "1", "name": "PC", "mac": "AA:BB:CC:DD:EE:FF",
+            "api_key": "plaintext-key"}]})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.config["devices"][0]["api_key"], "plaintext-key")
+        with open(self.config_path) as f:
+            saved = json.load(f)
+        self.assertTrue(saved["devices"][0]["api_key"].startswith("enc:"))
+
+    def test_undecryptable_key_does_not_break_load(self):
+        # Valid base64, long enough to attempt decryption, but not our
+        # ciphertext -> decrypt_password() raises and the field is dropped.
+        bogus = base64.b64encode(b"\x00" * 24).decode()
+        self._write_raw({"devices": [{
+            "id": "1", "name": "PC", "mac": "AA:BB:CC:DD:EE:FF",
+            "api_key": f"enc:{bogus}"}]})
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(ConfigManager.get_device_api_key(
+            cm.config["devices"][0]), "")
 
 
 if __name__ == "__main__":
