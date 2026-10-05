@@ -27,6 +27,17 @@ if ROOT not in sys.path:
 # Block real OS power actions (shutdown/reboot) for the entire test session.
 os.environ["WOL_TEST_NO_POWER"] = "1"
 
+# Headless mode for the whole session. ``app_core.HEADLESS_MODE`` is read ONCE
+# at import time, so the per-module ``os.environ.setdefault("WOL_HEADLESS", "1")``
+# only helps the module that runs first: alphabetically ``test_dashboard_view``
+# precedes ``test_devices_view``, so it imported ``app_core`` with the flag
+# unset and every later view then started real ping/fingerprint QThreads.
+# A view that is only garbage-collected (most tests never call
+# ``cancel_workers()``) left such a thread running into a deleted receiver,
+# which aborts the interpreter (0xC0000409) instead of emitting a warning.
+# conftest is imported before any test module, so this settles it for all.
+os.environ.setdefault("WOL_HEADLESS", "1")
+
 # Deterministic client-side network gate: the detector always reports a
 # PRIVATE network unless a test overrides WOL_FORCE_NETWORK itself. Without
 # this, tests touching the privileged-command gate would depend on how the

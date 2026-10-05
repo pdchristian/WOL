@@ -92,6 +92,10 @@ class StatusWorker(QObject):
             if did in results:
                 _, status, msg = results[did]
                 ordered.append((did, device["name"], status, msg))
+        if self._cancelled:
+            # The view that started us is already gone — emitting into a
+            # deleted receiver crashes the process instead of warning.
+            return
         self.finished.emit(ordered)
 
 
@@ -198,4 +202,8 @@ class OsDetectWorker(QObject):
                     results[device_id] = (device_id, "", "", "")
 
         ordered = [results[d["id"]] for d in devices if d["id"] in results]
+        if self._cancelled:
+            # cancel_workers() already tore the view down — emitting into a
+            # deleted receiver crashes the process instead of warning.
+            return
         self.finished.emit(ordered)

@@ -1430,6 +1430,13 @@ class DevicesView(QWidget):
         if self._grid_cols == 0:
             QTimer.singleShot(0, self._relayout_grid)
 
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        # The platform sweep is started by the constructor, so a view that is
+        # torn down without an explicit cancel_workers() would keep a QThread
+        # alive whose ``finished`` signal points at a deleted receiver.
+        self.cancel_workers()
+        super().closeEvent(event)
+
     # ── Language / lifecycle ─────────────────────────────────────────────
 
     def retranslate(self) -> None:
@@ -1466,6 +1473,16 @@ class DevicesView(QWidget):
         if self._status_thread is not None and self._status_thread.isRunning():
             self._status_thread.quit()
             self._status_thread.wait(2000)
+        # The platform sweep is started by the CONSTRUCTOR (detect_missing_platforms),
+        # so it is already running before the view is ever shown. Leaving it
+        # alive means its ``finished`` signal still points at a deleted view —
+        # the wrapper is then collected while the C++ side is gone, which
+        # crashes the process (0xC0000409) instead of warning.
+        if self._os_worker is not None:
+            self._os_worker.cancel()
+        if self._os_thread is not None and self._os_thread.isRunning():
+            self._os_thread.quit()
+            self._os_thread.wait(2000)
         if self._inference_worker is not None:
             self._inference_worker.cancel()
         if self._inference_thread is not None and self._inference_thread.isRunning():

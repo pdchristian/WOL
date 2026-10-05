@@ -623,6 +623,28 @@ class TestPlatformDetection:
         view = DevicesView(config_with_devices)
         assert view._os_thread is None
 
+    def test_cancel_workers_stops_the_constructor_sweep(
+            self, qapp, config_with_devices, monkeypatch):
+        """Regression: the sweep starts in the constructor, not on show().
+
+        Every device without a stored platform is fingerprinted while the view
+        is built, so a view that is torn down without ``cancel_workers()`` kept
+        a live QThread whose ``finished`` signal pointed at a deleted receiver
+        — that aborted the interpreter instead of warning.
+        """
+        monkeypatch.setattr("wol_app.views.devices_view.HEADLESS_MODE", False)
+        monkeypatch.setattr("wol_app.app_core.OsDetectWorker.probe_targets",
+                            staticmethod(lambda _d: (["192.168.1.10"], "")))
+        monkeypatch.setattr("wol_app.os_detect.fingerprint_host",
+                            lambda *_a, **_kw: ("", "", ""))
+        view = DevicesView(config_with_devices)
+        assert view._os_thread is not None and view._os_thread.isRunning()
+
+        view.cancel_workers()
+
+        assert not view._os_thread.isRunning()
+        assert view._os_worker is None or view._os_worker._cancelled
+
     def test_results_persist_and_update_the_cards(self, qapp, config_with_devices):
         view = DevicesView(config_with_devices)
         view._on_platforms_finished([("d1", "linux", "low", "fingerprint")])
