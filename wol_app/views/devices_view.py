@@ -43,7 +43,12 @@ from wol_app.config import (
     REMOTE_PROTOCOL_VNC,
     ConfigManager,
 )
-from wol_app.app_core import HEADLESS_MODE, OsDetectWorker, StatusWorker
+from wol_app.app_core import (
+    HEADLESS_MODE,
+    OsDetectWorker,
+    StatusWorker,
+    release_finished_thread,
+)
 from wol_app.metrics_worker import InferenceSweepWorker
 from wol_app.network_scanner import get_local_ips
 from wol_app.remote_desktop import resolve_remote_protocol, start_remote_desktop
@@ -1222,19 +1227,19 @@ class DevicesView(QWidget):
             return
 
         self._status_worker = StatusWorker(self.engine)
-        self._status_thread = QThread()
-        self._status_worker.moveToThread(self._status_thread)
-        self._status_thread.started.connect(self._status_worker.run)
+        thread = QThread()
+        self._status_thread = thread
+        self._status_worker.moveToThread(thread)
+        thread.started.connect(self._status_worker.run)
         self._status_worker.finished.connect(self._on_statuses_finished)
-        self._status_worker.finished.connect(self._status_thread.quit)
+        self._status_worker.finished.connect(thread.quit)
         self._status_worker.finished.connect(self._status_worker.deleteLater)
 
-        def on_thread_finished() -> None:
-            self._status_thread.deleteLater()
-            self._status_thread = None
-
-        self._status_thread.finished.connect(on_thread_finished)
-        self._status_thread.start()
+        # Capture the thread: a queued finished handler must never touch a
+        # newer sweep (see app_core.release_finished_thread).
+        thread.finished.connect(
+            lambda t=thread: release_finished_thread(self, "_status_thread", t))
+        thread.start()
 
     def _on_statuses_finished(self, results: list) -> None:
         """Update the status dots / action buttons of the visible cards."""
@@ -1288,19 +1293,17 @@ class DevicesView(QWidget):
             return
 
         self._os_worker = OsDetectWorker(self.config)
-        self._os_thread = QThread()
-        self._os_worker.moveToThread(self._os_thread)
-        self._os_thread.started.connect(self._os_worker.run)
+        thread = QThread()
+        self._os_thread = thread
+        self._os_worker.moveToThread(thread)
+        thread.started.connect(self._os_worker.run)
         self._os_worker.finished.connect(self._on_platforms_finished)
-        self._os_worker.finished.connect(self._os_thread.quit)
+        self._os_worker.finished.connect(thread.quit)
         self._os_worker.finished.connect(self._os_worker.deleteLater)
 
-        def on_thread_finished() -> None:
-            self._os_thread.deleteLater()
-            self._os_thread = None
-
-        self._os_thread.finished.connect(on_thread_finished)
-        self._os_thread.start()
+        thread.finished.connect(
+            lambda t=thread: release_finished_thread(self, "_os_thread", t))
+        thread.start()
 
     def _on_platforms_finished(self, results: list) -> None:
         """Persist the detected platforms and rebuild cards/rows."""
@@ -1386,19 +1389,18 @@ class DevicesView(QWidget):
             return
 
         self._inference_worker = InferenceSweepWorker(targets)
-        self._inference_thread = QThread()
-        self._inference_worker.moveToThread(self._inference_thread)
-        self._inference_thread.started.connect(self._inference_worker.run)
+        thread = QThread()
+        self._inference_thread = thread
+        self._inference_worker.moveToThread(thread)
+        thread.started.connect(self._inference_worker.run)
         self._inference_worker.finished.connect(self._on_inference_finished)
-        self._inference_worker.finished.connect(self._inference_thread.quit)
+        self._inference_worker.finished.connect(thread.quit)
         self._inference_worker.finished.connect(self._inference_worker.deleteLater)
 
-        def on_thread_finished() -> None:
-            self._inference_thread.deleteLater()
-            self._inference_thread = None
-
-        self._inference_thread.finished.connect(on_thread_finished)
-        self._inference_thread.start()
+        thread.finished.connect(
+            lambda t=thread: release_finished_thread(
+                self, "_inference_thread", t))
+        thread.start()
 
     def _on_inference_finished(self, results: list) -> None:
         """Apply the badge state derived from each device's metrics reply."""

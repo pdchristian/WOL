@@ -35,6 +35,29 @@ def _track_thread(thread: QObject) -> None:
     thread.finished.connect(_on_finished)
 
 
+def release_finished_thread(owner: object, attr: str, thread: QObject) -> bool:
+    """Build the body of a ``QThread.finished`` handler that is safe when stale.
+
+    ``QThread.finished`` is emitted from the worker thread and delivered to
+    the GUI thread as a *queued* event, so the handler can run after the view
+    has already started a newer thread. A handler that reads ``owner.attr``
+    at call time therefore calls ``deleteLater()`` on the **new** thread —
+    which is still running — and Qt answers a destroyed-while-running QThread
+    with ``qFatal("QThread: Destroyed while thread ... is still running")``
+    followed by ``abort()`` (Windows exception code 0xC0000409, i.e. a hard
+    crash with no Python traceback). *thread* is captured instead, and
+    ``owner.attr`` is only cleared while it still refers to that thread.
+
+    Returns True when *thread* was the current one, so the caller can restore
+    UI state (re-enable a button) for the newest run only.
+    """
+    current = getattr(owner, attr, None) is thread
+    if current:
+        setattr(owner, attr, None)
+    thread.deleteLater()
+    return current
+
+
 # Headless/test mode: disables all background threads to avoid QThread shutdown warnings.
 # Set WOL_HEADLESS=1 in test/headless environments (CI, automated tests, no display).
 HEADLESS_MODE: bool = os.environ.get("WOL_HEADLESS", "").lower() in ("1", "true", "yes")

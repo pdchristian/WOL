@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wol_app import __version__
-from wol_app.app_core import HEADLESS_MODE
+from wol_app.app_core import HEADLESS_MODE, release_finished_thread
 from wol_app.modern_theme import app_icon_pixmap
 from wol_app.translations import Translations
 from wol_app.update_dialog import UpdateAvailableDialog
@@ -177,21 +177,22 @@ class UpdateView(QWidget):
         self.status_label.setText(Translations.tr("modern.update.checking"))
 
         self._check_worker = _CheckWorker()
-        self._check_thread = QThread()
-        self._check_worker.moveToThread(self._check_thread)
-        self._check_thread.started.connect(self._check_worker.run)
+        thread = QThread()
+        self._check_thread = thread
+        self._check_worker.moveToThread(thread)
+        thread.started.connect(self._check_worker.run)
         self._check_worker.finished.connect(self._on_check_finished)
-        self._check_worker.finished.connect(self._check_thread.quit)
+        self._check_worker.finished.connect(thread.quit)
         self._check_worker.finished.connect(self._check_worker.deleteLater)
 
-        def on_thread_finished() -> None:
-            self._check_thread.deleteLater()
-            self._check_thread = None
+        thread.finished.connect(lambda t=thread: self._check_thread_done(t))
+        thread.start()
+
+    def _check_thread_done(self, thread: QThread) -> None:
+        """Release *thread*; a stale handler must not touch the current one."""
+        if release_finished_thread(self, "_check_thread", thread):
             self._check_worker = None
             self.check_btn.setEnabled(True)
-
-        self._check_thread.finished.connect(on_thread_finished)
-        self._check_thread.start()
 
     def _on_check_finished(self, result: Any) -> None:
         """Handle the check result on the GUI thread (mirrors the classic flow)."""

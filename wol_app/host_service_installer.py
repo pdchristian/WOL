@@ -318,6 +318,13 @@ def run_privileged_action(action: str, texts: dict, on_result,
     is a caller-owned dict keeping strong references to thread and worker
     alive while running (Qt would otherwise garbage-collect them mid-run);
     entries are removed again once the thread has finished.
+
+    The references must survive until ``QThread.finished``: ``quit()`` only
+    posts an exit request, so the thread is still running when the worker's
+    ``finished`` signal arrives. Releasing the holder there let the last
+    reference go away mid-run (the result callback opens a modal message
+    box, whose nested event loop is where the wrapper got collected), and Qt
+    turns a QThread destroyed while running into ``qFatal`` + ``abort()``.
     """
     from PyQt6.QtCore import QThread
 
@@ -328,11 +335,16 @@ def run_privileged_action(action: str, texts: dict, on_result,
 
     def _finish(outcome: str, message: str) -> None:
         thread.quit()
-        holder.pop("thread", None)
-        holder.pop("worker", None)
         on_result(outcome, message)
 
+    def _release() -> None:
+        holder.pop("thread", None)
+        holder.pop("worker", None)
+
     worker.finished.connect(_finish)
+    thread.finished.connect(thread.deleteLater)
+    thread.finished.connect(worker.deleteLater)
+    thread.finished.connect(_release)
     holder["thread"] = thread
     holder["worker"] = worker
     thread.start()

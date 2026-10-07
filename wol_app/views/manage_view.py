@@ -32,7 +32,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wol_app.app_core import HEADLESS_MODE, StatusWorker
+from wol_app.app_core import (
+    HEADLESS_MODE,
+    StatusWorker,
+    _track_thread,
+    release_finished_thread,
+)
 from wol_app.device_io import export_devices, import_devices
 from wol_app.network_scanner import (
     get_dns_servers_for_interface,
@@ -384,6 +389,11 @@ class ManageView(QWidget):
         if self._scan_thread is not None and self._scan_thread.isRunning():
             self._scan_thread.quit()
             self._scan_thread.wait(1000)
+            if self._scan_thread.isRunning():
+                # wait() timed out: replacing the attribute would drop the last
+                # reference to a still-running QThread, and Qt answers that with
+                # qFatal + abort (0xC0000409). Keep it alive until it ends.
+                _track_thread(self._scan_thread)
 
         self._clear_results()
         self.results_panel.setVisible(True)
@@ -396,21 +406,22 @@ class ManageView(QWidget):
 
         self._scan_worker = ScanWorker(
             selected, detect_os=self.os_detect_toggle.isChecked())
-        self._scan_thread = QThread()
-        self._scan_worker.moveToThread(self._scan_thread)
-        self._scan_thread.started.connect(self._scan_worker.run)
+        thread = QThread()
+        self._scan_thread = thread
+        self._scan_worker.moveToThread(thread)
+        thread.started.connect(self._scan_worker.run)
         self._scan_worker.progress.connect(self._on_scan_progress)
         self._scan_worker.finished.connect(self._on_scan_finished)
-        self._scan_worker.finished.connect(self._scan_thread.quit)
+        self._scan_worker.finished.connect(thread.quit)
         self._scan_worker.finished.connect(self._scan_worker.deleteLater)
 
-        def on_thread_finished() -> None:
-            self._scan_thread.deleteLater()
-            self._scan_thread = None
-            self.scan_btn.setEnabled(True)
+        thread.finished.connect(lambda t=thread: self._scan_thread_done(t))
+        thread.start()
 
-        self._scan_thread.finished.connect(on_thread_finished)
-        self._scan_thread.start()
+    def _scan_thread_done(self, thread: QThread) -> None:
+        """Release *thread*; only the newest scan may re-enable the button."""
+        if release_finished_thread(self, "_scan_thread", thread):
+            self.scan_btn.setEnabled(True)
 
     def _on_scan_progress(self, message: str, current: int, total: int) -> None:
         self.scan_info.setText(message)
@@ -600,19 +611,17 @@ class ManageView(QWidget):
             return
 
         self._status_worker = StatusWorker(self.engine)
-        self._status_thread = QThread()
-        self._status_worker.moveToThread(self._status_thread)
-        self._status_thread.started.connect(self._status_worker.run)
+        thread = QThread()
+        self._status_thread = thread
+        self._status_worker.moveToThread(thread)
+        thread.started.connect(self._status_worker.run)
         self._status_worker.finished.connect(self._on_statuses_finished)
-        self._status_worker.finished.connect(self._status_thread.quit)
+        self._status_worker.finished.connect(thread.quit)
         self._status_worker.finished.connect(self._status_worker.deleteLater)
 
-        def on_thread_finished() -> None:
-            self._status_thread.deleteLater()
-            self._status_thread = None
-
-        self._status_thread.finished.connect(on_thread_finished)
-        self._status_thread.start()
+        thread.finished.connect(
+            lambda t=thread: release_finished_thread(self, "_status_thread", t))
+        thread.start()
 
     def _on_statuses_finished(self, results: list) -> None:
         """Update the status tiles of the visible device rows in-place."""

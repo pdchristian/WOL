@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from wol_app.app_core import _track_thread, release_finished_thread
 from wol_app.network_scanner import (
     get_dns_servers_for_interface,
     get_local_interfaces,
@@ -207,25 +208,31 @@ class NetworkScanDialog(QDialog):
                 if self._scan_thread.isRunning():
                     self._scan_thread.quit()
                     self._scan_thread.wait(1000)
+                    if self._scan_thread.isRunning():
+                        # wait() timed out: replacing the attribute would drop
+                        # the last reference to a still-running QThread, which
+                        # Qt answers with qFatal + abort (0xC0000409).
+                        _track_thread(self._scan_thread)
             except RuntimeError:
                 self._scan_thread = None
 
         self._scan_worker = ScanWorker(selected, detect_os=self.os_detect_check.isChecked())
-        self._scan_thread = QThread()
-        self._scan_worker.moveToThread(self._scan_thread)
-        self._scan_thread.started.connect(self._scan_worker.run)
+        thread = QThread()
+        self._scan_thread = thread
+        self._scan_worker.moveToThread(thread)
+        thread.started.connect(self._scan_worker.run)
         self._scan_worker.progress.connect(self._on_scan_progress)
         self._scan_worker.finished.connect(self._on_scan_finished)
-        self._scan_worker.finished.connect(self._scan_thread.quit)
+        self._scan_worker.finished.connect(thread.quit)
         self._scan_worker.finished.connect(self._scan_worker.deleteLater)
 
-        def on_thread_finished() -> None:
-            self._scan_thread.deleteLater()
-            self._scan_thread = None
-            self.scan_btn.setEnabled(True)  # Re-enable scan button
+        thread.finished.connect(lambda t=thread: self._scan_thread_done(t))
+        thread.start()
 
-        self._scan_thread.finished.connect(on_thread_finished)
-        self._scan_thread.start()
+    def _scan_thread_done(self, thread: QThread) -> None:
+        """Release *thread*; only the newest scan may re-enable the button."""
+        if release_finished_thread(self, "_scan_thread", thread):
+            self.scan_btn.setEnabled(True)  # Re-enable scan button
 
     def _on_scan_progress(self, message: str, current: int, total: int) -> None:
         """Update progress display."""
