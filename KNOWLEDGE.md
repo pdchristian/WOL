@@ -170,6 +170,7 @@ Key enforcement points:
 - Timeouts range from 1s (ping) to 15s (permission fixes)
 - `CREATE_NO_WINDOW` flag suppresses console flash on Windows
 - `utils.launch_vnc()` builds `[viewer, "-FullScreen", "1", "ip::port"]` as an argument list (no shell); the viewer is either auto-detected in the TurboVNC install directories / on `PATH` or a user-configured path, and the device password is never part of the command line or a file — it is placed on the clipboard (TurboVNC has no secure hand-over channel like the ACL-protected temp `.rdp` file `mstsc` uses)
+- `utils.launch_rustdesk()` builds `[client, "--connect", target]` the same way (`shell=False`, `CREATE_NO_WINDOW` on Windows). `target` is either the device's own RustDesk id or `ip:21118` (Direct IP Access), validated by `utils.validate_rustdesk_id()` against `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}(?::[0-9]{1,5})?$` plus an explicit 1–65535 port check. RustDesk does have a `--password` switch, but it would put the secret into the process list, so the app deliberately omits it and hands the password over via the clipboard instead
 
 ### 3.2 Path Traversal Protection (CWE-73, CWE-22)
 
@@ -301,16 +302,23 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
   "remote": {
     "protocol_by_os": {
       "windows": "rdp",
-      "macos": "vnc",
+      "macos": "rustdesk",
       "linux": "vnc"
     },
+    "protocol_user_set": false,
     "vnc_viewer_path": "",
-    "vnc_port": 5900
+    "vnc_port": 5900,
+    "rustdesk_path": "",
+    "rustdesk_direct_port": 21118
   }
 }
 ```
 
-> **Remote access routing (current development branch):** the `remote` section decides which client the Remote buttons open. `remote.protocol_by_os` maps the platform stored on a device (`os` key, normalised via `utils.normalize_os`) to `rdp` (`mstsc`) or `vnc` (TurboVNC); an unknown platform — `os` missing or `"unknown"` — always falls back to `rdp`, the historical behaviour. `remote.vnc_viewer_path` overrides auto-detection (`""` = `utils.find_vnc_viewer()`), `remote.vnc_port` is the TCP port (default 5900, clamped 1–65535). Accessors: `ConfigManager.get_remote_protocol(os_id)` / `set_remote_protocol()` / `get_vnc_viewer_path()` / `set_vnc_viewer_path()` / `get_vnc_port()` / `set_vnc_port()`; invalid stored values fall back to the per-platform default. The section is materialised by the deep-merge in `_load()`, so old config files need no migration.
+> **Remote access routing:** the `remote` section decides which client the Remote buttons open. `remote.protocol_by_os` maps the platform stored on a device (`os` key, normalised via `utils.normalize_os`) to `rdp` (`mstsc`), `vnc` (TurboVNC) or `rustdesk` (RustDesk); an unknown platform — `os` missing or `"unknown"` — always falls back to `rdp`, the historical behaviour. `remote.vnc_viewer_path` overrides auto-detection (`""` = `utils.find_vnc_viewer()`), `remote.vnc_port` is the TCP port (default 5900, clamped 1–65535); the same pattern applies to `remote.rustdesk_path` (`""` = `utils.find_rustdesk_client()`, which looks in the RustDesk install directories, `/Applications/RustDesk.app/Contents/MacOS/RustDesk` and on `PATH`) and `remote.rustdesk_direct_port` (default `DEFAULT_RUSTDESK_DIRECT_PORT = 21118`, clamped 1–65535, the port RustDesk's *Direct IP Access* answers on). Accessors: `ConfigManager.get_remote_protocol(os_id)` / `set_remote_protocol()` / `get_vnc_viewer_path()` / `set_vnc_viewer_path()` / `get_vnc_port()` / `set_vnc_port()` / `get_rustdesk_path()` / `set_rustdesk_path()` / `get_rustdesk_direct_port()` / `set_rustdesk_direct_port()`; invalid stored values fall back to the per-platform default. The section is materialised by the deep-merge in `_load()`, so old config files need no migration.
+>
+> **macOS default switched to RustDesk (one-time migration):** TurboVNC proved far too slow against Mac targets, so `DEFAULT_REMOTE_PROTOCOL_BY_OS` now maps `macos → rustdesk`. A config that already persisted `macos: "vnc"` would otherwise keep it forever, so `ConfigManager._apply_rustdesk_default()` (called from `__init__`) flips a stored `vnc` to `rustdesk` **once** — but only while `remote.protocol_user_set` is falsy. Any explicit choice (`set_remote_protocol()`, which sets that flag, mirroring `ui.layout_mode_user_set`) survives the upgrade, and the flag plus the new value are saved in the same pass.
+>
+> **RustDesk addressing:** `utils.build_rustdesk_target(peer_id, ip, direct_port)` prefers the device's own RustDesk id and otherwise builds `ip:port`. RustDesk is launched as `rustdesk --connect <target>`; a running instance receives the request through its own IPC (URI scheme on macOS, `WM_USER+2` on Windows, D-Bus on Linux) instead of starting a second process. There is no CLI flag for the display mode — RustDesk remembers it per peer — so `_start_rustdesk()` deliberately ignores the tile's fullscreen flag.
 
 > **UI layout & display mode (new in 2.0.0):**
 > - `ui.layout_mode` — `"classic"` (single-view `MainWindow`) or `"modern"` (sidebar `ModernMainWindow`). On first start the installer-written registry value `HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode` wins (see `ConfigManager._apply_installer_ui_mode`); `layout_mode_user_set` is set to `true` once the user picks a layout in Settings, after which the registry hint is ignored.
@@ -335,6 +343,7 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
   "allow_batch": false,
   "os": "windows|macos|linux (optional, detected platform)",
   "os_confidence": "high|medium|low (optional, how certain the platform read is; estimates are shown with "~")",
+  "rustdesk_id": "string (optional, the device's RustDesk peer id)",
   "batches": [
     { "id": "uuid4-string", "name": "string", "script": "cmd/batch text",
       "timeout": 120 }
@@ -366,6 +375,16 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
 > `get_device_os()` / `get_device_os_confidence()`. It has no effect on
 > wake/shutdown behaviour, but it does decide which Remote-Desktop client the
 > Remote buttons launch (see the `remote` section).
+> **RustDesk peer id:** `rustdesk_id` is the optional per-device RustDesk id
+> (the number shown in the RustDesk window of the target, or a custom alias).
+> When it is set, `remote_desktop._start_rustdesk()` connects to that id; when
+> it is empty the app addresses the machine through *Direct IP Access* as
+> `ip:remote.rustdesk_direct_port` (LAN only, no rendezvous/relay server).
+> Values are validated by `utils.validate_rustdesk_id()` — alphanumerics plus
+> `_.-`, optional `:port`, ≤ 64 characters before the port, port 1–65535 — and
+> an invalid value is dropped rather than truncated
+> (`ConfigManager.get_device_rustdesk_id()` / `set_device_rustdesk_id()`,
+> edited in both device dialogs).
 
 ### 4.4 Schedule Schema
 
@@ -768,13 +787,13 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
   Both views share `_statuses` and rebuild via `refresh_devices()`. Auto-refresh every 30 s (`QTimer`), paused when hidden.
 - **Status/platform pill (`widgets/status_pill.py`, `StatusPill`):** one chip combining the online dot (`pillDotOnline`/`pillDotOffline`/`pillDotUnknown`) with the detected platform (`🪟 Windows` / `🍏 macOS` / `🐧 Linux`, `❓` when never detected). `os_display_text()` (in `utils.py`, shared with the scan tables) prefixes estimated readings with `~`; the confidence of a stored device comes from its `os_confidence` key (`config.get_device_os_confidence()`), which both the scan-import paths and the automatic backfill write, so the tooltip names the source instead of staying neutral. Cards replace the old standalone dot; list rows keep their left dot *and* gain the pill.
 - **Automatic platform backfill:** `DevicesView.detect_missing_platforms()` starts `app_core.OsDetectWorker` once per session for every enabled device that has an address but no stored `os` (devices added manually or before detection existed). Results are persisted with `config.set_device_os(id, os, confidence)` and the cards/rows are rebuilt, which also switches the Remote tiles to the right client. Skipped in headless mode; the refresh button re-arms the devices that are still without a platform (they were probably offline).
-- **Platform routing (RDP vs TurboVNC):** `DevicesView` passes `remote_desktop.resolve_remote_protocol(config, device)` into every `DeviceCard`/`DeviceListRow`, which use it for the remote tile tooltips (`remote_tooltip()` — action + client name) and the card context menu. `start_remote_desktop()` branches on the same call: `vnc` → `_start_vnc()` → `utils.launch_vnc()` (auto-detects `vncviewerw.bat` under `Program Files\TurboVNC`, connects `ip::port`, `-FullScreen 1`; the stored password is put on the **clipboard** with an info dialog — never argv, never disk; a missing viewer raises `RuntimeError` → `dialog.vnc_missing.*` warning; the session is logged as `VNC`). `rdp` keeps the untouched mstsc path (temp `.rdp`, `cmdkey`, fast-exit retry). Desktop layouts only — Android/iOS are unaffected.
+- **Platform routing (RDP · TurboVNC · RustDesk):** `DevicesView` passes `remote_desktop.resolve_remote_protocol(config, device)` into every `DeviceCard`/`DeviceListRow`, which use it for the remote tile tooltips (`remote_tooltip()` — action + client name) and the card context menu. `start_remote_desktop()` branches on the same call: `vnc` → `_start_vnc()` → `utils.launch_vnc()` (auto-detects `vncviewerw.bat` under `Program Files\TurboVNC`, connects `ip::port`, `-FullScreen 1`; the stored password is put on the **clipboard** with an info dialog — never argv, never disk; a missing viewer raises `RuntimeError` → `dialog.vnc_missing.*` warning; the session is logged as `VNC`). `rustdesk` → `_start_rustdesk()` → `utils.launch_rustdesk()` (`rustdesk --connect <id | ip:21118>`, id preferred over the address, invalid ids ignored; password via the shared `_copy_password_to_clipboard()` helper, logged as `RUSTDESK`, missing client → `dialog.rustdesk_missing.*`). `rdp` keeps the untouched mstsc path (temp `.rdp`, `cmdkey`, fast-exit retry). Desktop layouts only — Android/iOS are unaffected.
 - **Sorting** (`DevicesView`): drop-down left of the search field — *Namen* (alphabetical), *IP-Adresse* (numeric via `_ip_sort_key`), *MAC-Adresse* (ascending), *Status* (rank Online → Offline → Unknown, then name). Persisted to `ui.devices_sort_key`; applies to both views; re-sorts after status updates when sorting by status.
 - **Cross-sync:** `ModernMainWindow._on_devices_changed` keeps the device lists of `DevicesView` and `ManageView` in sync when a device is added/edited/removed in either area.
 - **Shared flows:** both layouts reuse `wol_app/remote_desktop.py` (`start_remote_desktop`) and `wol_app/shutdown_flow.py` (`confirm_shutdown`/`execute_shutdown`), the same `ConfigManager` API, the same `WOLEngine`, and the classic `UpdateAvailableDialog` for downloads.
 - **Theming:** `modern_theme.py` provides `DARK`/`LIGHT` token sets and `apply_modern_theme()`; objectName-based QSS so it never leaks into the classic UI. Respects `ui.display_mode` (auto/light/dark).
 - **Native dialogs:** `ModernDeviceDialog` (`views/device_edit_dialog.py`) and `ModernScheduleEditDialog` (`views/schedule_edit_dialog.py`); `widgets/toggle_switch.py` provides `ToggleSwitch`/`ToggleWithLabel`.
-- **Settings screen (`settings_view.py`):** grouped cards (`Group`, QSS `#settingsGroup` / `#settingsGroupTitle`, heading uppercased in Python since QSS has no `text-transform`) instead of one flat grid — **Network** (broadcast IP/port), **Appearance** (language, display mode, layout mode), **Remote access** (RDP resolution, `vnc_viewer_path`, `vnc_port`, and one protocol combo per platform), **Misc** (default shutdown method, log limit, auto-update switch + interval, close-to-tray, multiple instances, public-network privilege gate, macOS host service). `Field(label_key, widget, hint_key=…)` renders label + control + optional `#fieldHint` line. Navigation is unchanged — no new sidebar entries.
+- **Settings screen (`settings_view.py`):** grouped cards (`Group`, QSS `#settingsGroup` / `#settingsGroupTitle`, heading uppercased in Python since QSS has no `text-transform`) instead of one flat grid — **Network** (broadcast IP/port), **Appearance** (language, display mode, layout mode), **Remote access** (RDP resolution, `vnc_viewer_path`, `vnc_port`, `rustdesk_path`, `rustdesk_direct_port`, and one protocol combo per platform — RDP · TurboVNC · RustDesk), **Misc** (default shutdown method, log limit, auto-update switch + interval, close-to-tray, multiple instances, public-network privilege gate, macOS host service). `Field(label_key, widget, hint_key=…)` renders label + control + optional `#fieldHint` line. Navigation is unchanged — no new sidebar entries.
 - **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution, close-to-tray, `remote` section) — devices/schedules/logs and the layout mode are preserved.
 - **Device Dashboard (`dashboard_view.py`, stack index 6, no sidebar entry):** opened via the 📊 tile on each device card/row (between the remote-desktop tiles and edit) or the context menu — `DevicesView.dashboard_requested(device_id)` → `ModernMainWindow.open_device_dashboard()` (also refreshes the header on `_on_devices_changed`; `closeEvent` and `back_requested` → nav index 0 call `cancel_workers()`). Widgets: `RingGauge` (painted arc, "–" when `None`), `Sparkline` (60-sample deque, gaps break the line), `MetricCard` (CPU/RAM/GPU/VRAM, gauge colours from theme tokens `gauge_cpu`/`gauge_ram`/`gauge_gpu`/`gauge_vram`). Polls `get_metrics()` every `ui.dashboard_interval_ms` (single-flight `_metrics_busy`, paused in `hideEvent`, guarded by `HEADLESS_MODE`); offline keeps the last values but flips the badge and shows the error in `status_line`. Batch library (QListWidget + editor + console) persists via `ConfigManager.set_device_batches()`; running a batch requires the device's `allow_batch` checkbox and the host-side gate (see §5.5).
 
@@ -849,8 +868,8 @@ cards that mirror the desktop sections:
 | `set.group.misc` | `st-maxlogs` (log entries), `tog-autoUpdate`, `st-int` (interval — directly below the switch it belongs to, but left-aligned like every other field) |
 
 - The desktop *Remote access* group is deliberately **absent** on phones —
-  there is no `mstsc`/TurboVNC there, and no other desktop-only setting was
-  introduced when the layout was copied.
+  there is no `mstsc`/TurboVNC/RustDesk there, and no other desktop-only
+  setting was introduced when the layout was copied.
 - Only wrapper markup changed: element ids and `data-act` handlers are
   unchanged, so the `set-save` payload and every handler still work. New
   i18n keys: `set.group.network|appearance|misc` (de/en/fr/es in both files).

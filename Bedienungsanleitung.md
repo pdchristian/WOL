@@ -187,7 +187,7 @@ Jedes Gerät wird als **Zeile** dargestellt:
   - 🪟 **Remote Fenster** – startet die Remote-Sitzung im Fenster
   - ✏️ **Bearbeiten** – öffnet den Geräte-Dialog (alternativ **Doppelklick** auf die Zeile)
 
-> **Welches Programm die Remote-Icons öffnen**, hängt von der Plattform des Geräts ab: Windows → Remotedesktop (`mstsc`), macOS/Linux → **Turbo VNC**. Die Tooltipps der Icons nennen das Programm, siehe [Welcher Client gestartet wird](#welcher-client-gestartet-wird-rdp-oder-turbo-vnc).
+> **Welches Programm die Remote-Icons öffnen**, hängt von der Plattform des Geräts ab: Windows → Remotedesktop (`mstsc`), macOS → **RustDesk**, Linux → **Turbo VNC**. Die Tooltipps der Icons nennen das Programm, siehe [Welcher Client gestartet wird](#welcher-client-gestartet-wird-rdp-rustdesk-oder-turbo-vnc).
 
 #### Inferenz-Anzeige (Blitz in der Statusanzeige)
 Haben Sie für ein Gerät **überwachte Prozesse** mit API-Port hinterlegt (z. B. `llama-server.exe:8080`, siehe [Geräte-Dashboard](#geräte-dashboard-performance--batches)), zeigt die Statusanzeige zusätzlich einen **Blitz (⚡) links neben dem Status-Punkt** – in Kachel **und** Liste. Er beantwortet auf einen Blick die Frage *„Läuft da gerade ein Inferenz-Job?“*:
@@ -452,23 +452,27 @@ Nach der Entfernung kann der Dienst mit `--install` und `--start` sauber neu reg
 
 ## Remote Desktop
 
-Die Anwendung kann für ein Gerät eine **Remote-Sitzung** starten. Dazu werden die im Geräteeintrag gespeicherten **IP-Adresse**, **Benutzername** und **Passwort** verwendet. Welches Programm dabei geöffnet wird – die Windows-Remotedesktopverbindung (`mstsc`) oder **Turbo VNC** – entscheidet die **Plattform des Geräts**.
+Die Anwendung kann für ein Gerät eine **Remote-Sitzung** starten. Dazu werden die im Geräteeintrag gespeicherten **IP-Adresse**, **Benutzername** und **Passwort** verwendet. Welches Programm dabei geöffnet wird – die Windows-Remotedesktopverbindung (`mstsc`), **RustDesk** oder **Turbo VNC** – entscheidet die **Plattform des Geräts**.
 
-### Welcher Client gestartet wird (RDP oder Turbo VNC)
+### Welcher Client gestartet wird (RDP, RustDesk oder Turbo VNC)
 Die Plattform stammt aus der Geräteerkennung (Spalte **Plattform** im Netzwerk-Scan, siehe [Netzwerkeinstellungen](#netzwerkeinstellungen)) oder aus der automatischen Erkennung beim Start (siehe [Plattform-Erkennung](#plattform-erkennung)) und ist im Geräteeintrag unter `"os"` gespeichert. Nach Zuordnung öffnet die Anwendung:
 
 | Plattform | Standard-Client |
 |-----------|-----------------|
 | **Windows** | Remotedesktop (`mstsc`, RDP) |
-| **macOS** | **Turbo VNC** |
+| **macOS** | **RustDesk** |
 | **Linux** | **Turbo VNC** |
 | **Unbekannt** (nie erkannt) | Remotedesktop (`mstsc`, RDP) |
 
-Die Zuordnung ist einstellbar: **Einstellungen → Bereich „Remote-Zugang“ → „Welchen Client öffnen die Remote-Buttons?“** – je Plattform ein Drop-Down (**RDP (mstsc)** / **Turbo VNC**). In der Geräteansicht zeigt die **Status-/Plattform-Anzeige** und der Tooltip der Remote-Icons, welches Programm ein Klick öffnet.
+> **Umstellung bei bestehenden Installationen:** macOS lief früher standardmäßig auf **Turbo VNC**. Eine bestehende Installation wird beim ersten Start automatisch auf **RustDesk** umgestellt – **außer** Sie hatten die Zuordnung selbst geändert (dann bleibt Ihre Wahl erhalten). Einmal umgestellt, bleibt es dabei; eine Umkehr ist jederzeit über das Drop-Down möglich.
+
+Die Zuordnung ist einstellbar: **Einstellungen → Bereich „Remote-Zugang“ → „Welchen Client öffnen die Remote-Buttons?“** – je Plattform ein Drop-Down (**RDP (mstsc)** / **Turbo VNC** / **RustDesk**). In der Geräteansicht zeigt die **Status-/Plattform-Anzeige** und der Tooltip der Remote-Icons, welches Programm ein Klick öffnet.
 
 **Voraussetzungen für VNC:** Auf dem Zielsystem muss ein VNC-Server laufen (z. B. `x11vnc`, der GNOME-Bildschirmdienst oder der macOS-Fernbildschirm). Die Anwendung startet den installierten **TurboVNC-Client** (`vncviewerw.bat`) und verbindet direkt auf Port **5900** (einstellbar unter **VNC-Port**). Ist kein Client gefunden worden, erscheint ein Hinweis; der Pfad lässt sich im Bereich **Remote-Zugang** manuell setzen.
 
-> **Passwort:** TurboVNC kennt keinen sicheren Übergabekanal wie die temporäre `.rdp`-Datei von `mstsc`. Das gespeicherte Passwort wird deshalb **in die Zwischenablage** gelegt und die Anwendung teilt das vorab mit – Sie fügen es im Verbindungsfenster des Viewers ein. Das Passwort erscheint weder auf der Befehlszeile noch auf der Festplatte. Jede gestartete Sitzung wird im Protokoll als `VNC` vermerkt.
+**Voraussetzungen für RustDesk:** Auf dem Zielsystem muss RustDesk installiert und gestartet sein (macOS: **RustDesk** aus dem Programme-Ordner, Windows: `C:\Program Files\RustDesk\RustDesk.exe`). Die Anwendung ruft den Client mit `rustdesk --connect <Ziel>` auf und verbindet damit im **Direct IP Access** direkt über das LAN – ohne Rendezvous-/Relay-Server. Standardmäßig wird die Geräteadresse mit dem Port **21118** verwendet (einstellbar unter **RustDesk-Port**); wer die Nummer des Zielrechners kennt, kann sie im Geräte-Dialog im Feld **RustDesk-ID** eintragen – dann verbindet die Anwendung über diese ID statt über die IP-Adresse. Der Client-Pfad wird automatisch gefunden und lässt sich über **RustDesk-Client (Pfad)** überschreiben; ist kein RustDesk gefunden worden, erscheint ein Hinweis.
+
+> **Passwort:** Weder TurboVNC noch RustDesk bekommen das Passwort als Befehlszeilenargument – bei RustDesk würde es sonst offen im Prozessverzeichnis stehen. Die Anwendung legt das gespeicherte Passwort deshalb **in die Zwischenablage** und teilt das vorab mit; Sie fügen es im Verbindungsfenster ein. RustDesk merkt sich das Passwort anschließend pro Gegenstelle. Jede gestartete Sitzung wird im Protokoll als `VNC` bzw. `RUSTDESK` vermerkt.
 
 ### Remote Desktop starten
 1. Klicken Sie mit der **rechten Maustaste** auf das Gerät in der Gerätetabelle.
@@ -492,7 +496,7 @@ Die Zuordnung ist einstellbar: **Einstellungen → Bereich „Remote-Zugang“ �
 2. Wählen Sie im Drop-Down **Auflösung** die gewünschte Fensterauflösung (z. B. `1920 × 1080`) oder **Optimiert (Bildschirmgröße)**.
 3. Klicken Sie auf **Speichern**.
 
-> Die Auflösung gilt nur für die **RDP-Fenstersitzung**. VNC-Sitzungen starten immer Vollbild; das Fenster-Icon öffnet den Viewer ebenfalls ohne eigene Größenangabe.
+> Die Auflösung gilt nur für die **RDP-Fenstersitzung**. VNC-Sitzungen starten immer Vollbild; das Fenster-Icon öffnet den Viewer ebenfalls ohne eigene Größenangabe. RustDesk kennt keine Auflösung auf der Befehlszeile – der Client merkt sich die Anzeige pro Gegenstelle.
 
 > **Hinweis:** Die Anmeldedaten werden in einer temporären `.rdp`-Datei abgelegt, die wenige Sekunden nach dem Start automatisch gelöscht wird, damit das Passwort nicht auf der Festplatte verbleibt.
 
@@ -503,10 +507,10 @@ Der Bildschirm **Einstellungen** (Seitenleiste → ⚙ **Einstellungen**) gliede
 |---------|--------|
 | **Netzwerk** | Broadcast-IP, Broadcast-Port |
 | **Darstellung** | Sprache, Farbschema (hell/dunkel/auto), **Design** (Modern/Klassisch) |
-| **Remote-Zugang** | **Auflösung** (RDP-Fenster), **VNC-Client (Pfad)**, **VNC-Port**, **Client je Plattform** (Windows/macOS/Linux → RDP oder Turbo VNC) |
+| **Remote-Zugang** | **Auflösung** (RDP-Fenster), **VNC-Client (Pfad)**, **VNC-Port**, **RustDesk-Client (Pfad)**, **RustDesk-Port**, **Client je Plattform** (Windows/macOS/Linux → RDP, Turbo VNC oder RustDesk) |
 | **Sonstiges** | Standard-Herunterfahrmethode, max. Protokolleinträge, **Automatisch nach Updates suchen** + Intervall, **Im Iconbereich bleiben beim Schließen**, mehrere Instanzen, Berechtigung in öffentlichen Netzwerken, Host Service (macOS) |
 
-> Die Einstellungen zum Remote-Zugang liegen damit gesammelt in einem Bereich: die RDP-Auflösung (früher eigene Gruppe „Remote-Desktop“ im Einstellungs-Dialog) zusammen mit VNC-Client, VNC-Port und der Client-Zuordnung. An der Menüführung der klassischen Oberfläche hat sich nichts geändert.
+> Die Einstellungen zum Remote-Zugang liegen damit gesammelt in einem Bereich: die RDP-Auflösung (früher eigene Gruppe „Remote-Desktop“ im Einstellungs-Dialog) zusammen mit VNC-Client, VNC-Port, RustDesk-Client, RustDesk-Port und der Client-Zuordnung. An der Menüführung der klassischen Oberfläche hat sich nichts geändert.
 
 ---
 

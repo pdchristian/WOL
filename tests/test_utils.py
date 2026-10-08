@@ -17,11 +17,15 @@ from wol_app.utils import (
     _monitor_mstsc_fast_exit,
     _register_rdp_credentials,
     auto_rdp_resolution,
+    build_rustdesk_args,
+    build_rustdesk_target,
     build_vnc_args,
     ensure_user_data_dir,
+    find_rustdesk_client,
     find_vnc_viewer,
     get_ip_key,
     launch_remote_desktop,
+    launch_rustdesk,
     launch_vnc,
     retry_remote_desktop_without_password,
     validate_device_name,
@@ -30,6 +34,7 @@ from wol_app.utils import (
     validate_ip_or_hostname,
     validate_mac,
     validate_password,
+    validate_rustdesk_id,
     validate_username,
 )
 
@@ -806,6 +811,103 @@ class TestVncLaunch(unittest.TestCase):
         with patch("wol_app.utils._vnc_candidate_dirs", return_value=[]), \
                 patch("wol_app.utils.shutil.which", return_value=None):
             self.assertEqual(find_vnc_viewer(), "")
+
+
+class TestRustDeskLaunch(unittest.TestCase):
+    """RustDesk addressing, discovery and command line (``utils.launch_rustdesk``)."""
+
+    def test_target_prefers_the_stored_peer_id(self):
+        # An explicit RustDesk id wins over the IP: it also works when the
+        # peer is reached through a relay instead of the LAN.
+        self.assertEqual(
+            build_rustdesk_target("123456789", "192.168.1.20"), "123456789")
+
+    def test_target_falls_back_to_direct_ip_access(self):
+        self.assertEqual(
+            build_rustdesk_target("", "192.168.1.20"), "192.168.1.20:21118")
+        self.assertEqual(
+            build_rustdesk_target("  ", "mac-mini.local", 21119),
+            "mac-mini.local:21119")
+
+    def test_target_without_any_address_raises(self):
+        with self.assertRaises(ValueError):
+            build_rustdesk_target("", "")
+
+    def test_build_rustdesk_args_carries_no_credentials(self):
+        # The password never travels on the command line (process list).
+        self.assertEqual(
+            build_rustdesk_args("rustdesk", "192.168.1.20:21118"),
+            ["rustdesk", "--connect", "192.168.1.20:21118"],
+        )
+
+    def test_launch_rustdesk_without_client_raises_runtime_error(self):
+        with patch("wol_app.utils.find_rustdesk_client", return_value=""):
+            with self.assertRaises(RuntimeError):
+                launch_rustdesk("10.0.0.1")
+
+    def test_launch_rustdesk_without_address_raises_value_error(self):
+        with patch("wol_app.utils.find_rustdesk_client", return_value="rustdesk"):
+            with self.assertRaises(ValueError):
+                launch_rustdesk("")
+
+    def test_launch_rustdesk_prefers_configured_path(self):
+        with patch("wol_app.utils.find_rustdesk_client") as detect, \
+                patch("wol_app.utils.subprocess.Popen") as popen:
+            cmd = launch_rustdesk(
+                "10.0.0.1",
+                client_path=r"C:\Program Files\RustDesk\RustDesk.exe",
+            )
+        detect.assert_not_called()
+        self.assertEqual(
+            cmd,
+            [r"C:\Program Files\RustDesk\RustDesk.exe", "--connect",
+             "10.0.0.1:21118"],
+        )
+        self.assertEqual(popen.call_args.args[0], cmd)
+
+    def test_launch_rustdesk_uses_peer_id_over_ip(self):
+        with patch("wol_app.utils.find_rustdesk_client", return_value="/usr/bin/rustdesk"), \
+                patch("wol_app.utils.subprocess.Popen") as popen:
+            cmd = launch_rustdesk("10.0.0.1", peer_id="123456789")
+        self.assertEqual(
+            cmd, ["/usr/bin/rustdesk", "--connect", "123456789"])
+        popen.assert_called_once()
+
+    def test_find_rustdesk_client_finds_the_installed_exe(self):
+        directory = os.path.join("C:", os.sep, "Program Files", "RustDesk")
+        with patch("wol_app.utils._rustdesk_candidate_dirs", return_value=[directory]), \
+                patch("wol_app.utils.os.path.isfile", return_value=True):
+            self.assertEqual(
+                find_rustdesk_client(), os.path.join(directory, "RustDesk.exe"))
+
+    def test_find_rustdesk_client_falls_back_to_path(self):
+        with patch("wol_app.utils._rustdesk_candidate_dirs", return_value=[]), \
+                patch("wol_app.utils.os.path.isfile", return_value=False), \
+                patch("wol_app.utils.shutil.which", return_value="/usr/bin/rustdesk"):
+            self.assertEqual(find_rustdesk_client(), "/usr/bin/rustdesk")
+
+    def test_find_rustdesk_client_returns_empty_when_absent(self):
+        with patch("wol_app.utils._rustdesk_candidate_dirs", return_value=[]), \
+                patch("wol_app.utils.os.path.isfile", return_value=False), \
+                patch("wol_app.utils.shutil.which", return_value=None):
+            self.assertEqual(find_rustdesk_client(), "")
+
+
+class TestValidateRustDeskId(unittest.TestCase):
+    def test_empty_is_valid(self):
+        # Empty means "no id stored" — the peer is addressed by IP instead.
+        self.assertTrue(validate_rustdesk_id(""))
+
+    def test_accepted_forms(self):
+        for value in ("123456789", "550e8400-e29b-41d4-a716-446655440000",
+                      "mac-mini", "mac-mini.local", "192.168.1.20:21118"):
+            self.assertTrue(validate_rustdesk_id(value), value)
+
+    def test_rejected_forms(self):
+        # Spaces, slashes and shell metacharacters must never reach argv.
+        for value in ("12345 6789", "a/b", "rm -rf /", "id;ls", "a b",
+                      ":21118", "192.168.1.20:99999", "x" * 65):
+            self.assertFalse(validate_rustdesk_id(value), value)
 
 
 if __name__ == "__main__":

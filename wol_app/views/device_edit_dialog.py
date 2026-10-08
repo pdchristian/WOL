@@ -36,6 +36,7 @@ from wol_app.utils import (
     validate_ip_or_hostname,
     validate_mac,
     validate_password,
+    validate_rustdesk_id,
     validate_username,
 )
 from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
@@ -156,6 +157,17 @@ class ModernDeviceDialog(QDialog):
         self._add_field(grid, 4, 0, "device_dialog.label.rdp_auth",
                         self.rdp_auth_combo, col_span=2)
 
+        # RustDesk peer id (optional). A device routed to RustDesk is reached by
+        # Direct IP Access (ip:21118) when this is empty; the id cannot be
+        # discovered by a network scan, so it has to be entered once by hand.
+        self.rustdesk_id_input = QLineEdit()
+        self.rustdesk_id_input.setPlaceholderText(
+            Translations.tr("device_dialog.placeholder.rustdesk_id"))
+        self.rustdesk_id_input.setToolTip(
+            Translations.tr("device_dialog.tooltip.rustdesk_id"))
+        self._add_field(grid, 5, 0, "device_dialog.label.rustdesk_id",
+                        self.rustdesk_id_input, col_span=2)
+
         # Watched processes (dashboard service chips, host service v3) -
         # comma separated, entries may carry ":port" for the API check.
         self.watch_input = QLineEdit()
@@ -163,7 +175,7 @@ class ModernDeviceDialog(QDialog):
             Translations.tr("device_dialog.placeholder.watch"))
         self.watch_input.setToolTip(
             Translations.tr("device_dialog.tooltip.watch"))
-        self._add_field(grid, 5, 0, "device_dialog.label.watch",
+        self._add_field(grid, 6, 0, "device_dialog.label.watch",
                         self.watch_input, col_span=2)
 
         # Dashboard API key (host service protocol v10): sent along with the
@@ -175,7 +187,7 @@ class ModernDeviceDialog(QDialog):
             Translations.tr("device_dialog.placeholder.api_key"))
         self.api_key_input.setToolTip(
             Translations.tr("device_dialog.tooltip.api_key"))
-        self._add_field(grid, 6, 0, "device_dialog.label.api_key",
+        self._add_field(grid, 7, 0, "device_dialog.label.api_key",
                         self.api_key_input, col_span=2)
 
         grid.setColumnStretch(0, 1)
@@ -244,6 +256,9 @@ class ModernDeviceDialog(QDialog):
             if self.rdp_auth_combo.itemData(idx) == rdp_level:
                 self.rdp_auth_combo.setCurrentIndex(idx)
                 break
+        # RustDesk peer id ("" = the device is reached by Direct IP Access)
+        self.rustdesk_id_input.setText(
+            self.config.get_device_rustdesk_id(device))
 
     def _save(self) -> None:
         name: str = self.name_input.text().strip()
@@ -286,6 +301,12 @@ class ModernDeviceDialog(QDialog):
             QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_api_key"))
             return
 
+        # RustDesk peer id (optional) — empty means "reach it by IP".
+        rustdesk_id: str = self.rustdesk_id_input.text().strip()
+        if rustdesk_id and not validate_rustdesk_id(rustdesk_id):
+            QMessageBox.warning(self, Translations.tr("dialog.error.title"), Translations.tr("device_dialog.error.invalid_rustdesk_id"))
+            return
+
         shutdown_method = self.method_combo.currentData()
         rdp_auth_level = self.rdp_auth_combo.currentData()
         watch_entries = self.config.get_device_watch_processes(
@@ -298,6 +319,9 @@ class ModernDeviceDialog(QDialog):
                 "enabled": self.enabled_toggle.isChecked(),
                 "shutdown_method": shutdown_method,
                 "rdp_auth_level": rdp_auth_level,
+                # Always written: an empty id removes the key again, which is
+                # how the user switches a device back to Direct IP Access.
+                "rustdesk_id": rustdesk_id,
             }
             if ip:
                 updates["ip"] = ip
@@ -340,6 +364,10 @@ class ModernDeviceDialog(QDialog):
                 # Persist a non-default RDP certificate-validation level.
                 if rdp_auth_level != 1:
                     self.config.update_device(device["id"], rdp_auth_level=rdp_auth_level)
+                # RustDesk peer id (only when entered).
+                if rustdesk_id:
+                    self.config.update_device(
+                        device["id"], rustdesk_id=rustdesk_id)
                 if watch_entries:
                     self.config.set_device_watch_processes(
                         device["id"], watch_entries)
