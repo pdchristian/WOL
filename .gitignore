@@ -6,6 +6,9 @@
 *graphify*
 
 # Build artifacts (Windows + Ubuntu packaging)
+# NOTE: __pycache__/*.pyc and android_html/.gradle were committed historically
+# (ignore rules never apply to tracked files). They are untracked as of 2.5.2 -
+# they are regenerated locally and produced merge conflicts for no benefit.
 dist/
 dist_onefile/
 build/
