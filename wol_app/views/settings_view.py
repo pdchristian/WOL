@@ -54,11 +54,15 @@ from PyQt6.QtWidgets import (
 
 from wol_app.config import (
     DEFAULT_CONFIG,
+    DEFAULT_RUSTDESK_DIRECT_PORT,
     DEFAULT_VNC_PORT,
     REMOTE_DESKTOP_RESOLUTION_AUTO,
     REMOTE_DESKTOP_RESOLUTIONS,
     REMOTE_PROTOCOL_RDP,
+    REMOTE_PROTOCOL_RUSTDESK,
     REMOTE_PROTOCOL_VNC,
+    RUSTDESK_DIRECT_PORT_MAX,
+    RUSTDESK_DIRECT_PORT_MIN,
     VNC_PORT_MAX,
     VNC_PORT_MIN,
 )
@@ -75,6 +79,16 @@ def _label(key: str) -> str:
     prototype's field labels have none — strip it.
     """
     return Translations.tr(key).rstrip(":").strip()
+
+
+# Client choices of the per-platform routing drop-downs, in list order (RDP
+# first keeps the historical index 0). Shared by the drop-downs and retranslate
+# so a new client only has to be added here.
+_PROTOCOL_CHOICES: tuple[tuple[str, str], ...] = (
+    ("modern.devices.client_rdp", REMOTE_PROTOCOL_RDP),
+    ("modern.devices.client_vnc", REMOTE_PROTOCOL_VNC),
+    ("modern.devices.client_rustdesk", REMOTE_PROTOCOL_RUSTDESK),
+)
 
 
 class Field(QWidget):
@@ -286,10 +300,28 @@ class SettingsView(QWidget):
             hint_key="settings.hint.vnc_port")
         self.group_remote.add(self.field_vnc_port, 1, 0)
 
+        # Empty path = auto-detect (wol_app.utils.find_rustdesk_client).
+        self.rustdesk_path_input = QLineEdit()
+        self.field_rustdesk_path = Field(
+            "settings.label.rustdesk_path", self.rustdesk_path_input,
+            hint_key="settings.hint.rustdesk_path")
+        self.group_remote.add(self.field_rustdesk_path, 1, 1)
+
+        # Direct IP Access port: devices without their own RustDesk id are
+        # addressed as ip:port (see wol_app.utils.build_rustdesk_target).
+        self.rustdesk_port_input = QSpinBox()
+        self.rustdesk_port_input.setRange(
+            RUSTDESK_DIRECT_PORT_MIN, RUSTDESK_DIRECT_PORT_MAX)
+        self.rustdesk_port_input.setValue(DEFAULT_RUSTDESK_DIRECT_PORT)
+        self.field_rustdesk_port = Field(
+            "settings.label.rustdesk_port", self.rustdesk_port_input,
+            hint_key="settings.hint.rustdesk_port")
+        self.group_remote.add(self.field_rustdesk_port, 2, 0)
+
         # Which client the Remote buttons open, per detected platform.
         self.protocol_heading = QLabel(_label("settings.label.protocol_by_os"))
         self.protocol_heading.setObjectName("fieldLabel")
-        self.group_remote.add(self.protocol_heading, 2, 0, 2)
+        self.group_remote.add(self.protocol_heading, 3, 0, 2)
 
         protocol_row = QHBoxLayout()
         protocol_row.setSpacing(12)
@@ -299,20 +331,18 @@ class SettingsView(QWidget):
         self.field_protocol: dict[str, Field] = {}
         for os_id in (OS_WINDOWS, OS_MACOS, OS_LINUX):
             combo = QComboBox()
-            combo.addItem(
-                Translations.tr("modern.devices.client_rdp"), REMOTE_PROTOCOL_RDP)
-            combo.addItem(
-                Translations.tr("modern.devices.client_vnc"), REMOTE_PROTOCOL_VNC)
+            for client_key, protocol in _PROTOCOL_CHOICES:
+                combo.addItem(Translations.tr(client_key), protocol)
             field = Field(f"scan_dialog.os.{os_id}", combo)
             self.protocol_combos[os_id] = combo
             self.field_protocol[os_id] = field
             protocol_row.addWidget(field, 1)
-        self.group_remote.add(protocol_holder, 3, 0, 2)
+        self.group_remote.add(protocol_holder, 4, 0, 2)
 
         protocol_hint = QLabel(Translations.tr("settings.hint.protocol_by_os"))
         protocol_hint.setObjectName("fieldHint")
         protocol_hint.setWordWrap(True)
-        self.group_remote.add(protocol_hint, 4, 0, 2)
+        self.group_remote.add(protocol_hint, 5, 0, 2)
         self.protocol_hint = protocol_hint
 
         # ── Sonstiges ──
@@ -466,9 +496,11 @@ class SettingsView(QWidget):
             self.remote_desktop_resolution_combo,
             self.config.get_remote_desktop_resolution())
 
-        # Remote routing (platform -> RDP / TurboVNC) and the VNC client
+        # Remote routing (platform -> RDP / TurboVNC / RustDesk) and the clients
         self.vnc_viewer_input.setText(self.config.get_vnc_viewer_path())
         self.vnc_port_input.setValue(self.config.get_vnc_port())
+        self.rustdesk_path_input.setText(self.config.get_rustdesk_path())
+        self.rustdesk_port_input.setValue(self.config.get_rustdesk_direct_port())
         for os_id, combo in self.protocol_combos.items():
             self._select_combo_data(combo, self.config.get_remote_protocol(os_id))
 
@@ -534,9 +566,11 @@ class SettingsView(QWidget):
         if selected_resolution:
             self.config.set_remote_desktop_resolution(selected_resolution)
 
-        # Remote routing: "" for the viewer path means "auto-detect again".
+        # Remote routing: "" for a client path means "auto-detect again".
         self.config.set_vnc_viewer_path(self.vnc_viewer_input.text().strip())
         self.config.set_vnc_port(self.vnc_port_input.value())
+        self.config.set_rustdesk_path(self.rustdesk_path_input.text().strip())
+        self.config.set_rustdesk_direct_port(self.rustdesk_port_input.value())
         for os_id, combo in self.protocol_combos.items():
             protocol = combo.currentData()
             if protocol:
@@ -622,14 +656,16 @@ class SettingsView(QWidget):
         self.field_rdp.retranslate("settings.label.remote_desktop_resolution")
         self.field_vnc_viewer.retranslate("settings.label.vnc_viewer_path")
         self.field_vnc_port.retranslate("settings.label.vnc_port")
+        self.field_rustdesk_path.retranslate("settings.label.rustdesk_path")
+        self.field_rustdesk_port.retranslate("settings.label.rustdesk_port")
         self.protocol_heading.setText(_label("settings.label.protocol_by_os"))
         self.protocol_hint.setText(
             Translations.tr("settings.hint.protocol_by_os"))
         for field in self.field_protocol.values():
             field.retranslate()
         for combo in self.protocol_combos.values():
-            combo.setItemText(0, Translations.tr("modern.devices.client_rdp"))
-            combo.setItemText(1, Translations.tr("modern.devices.client_vnc"))
+            for idx, (client_key, _protocol) in enumerate(_PROTOCOL_CHOICES):
+                combo.setItemText(idx, Translations.tr(client_key))
         self.field_shutdown_method.retranslate(
             "settings.label.default_shutdown_method")
         self.layout_hint.setText(Translations.tr("settings.layout.restart_hint"))

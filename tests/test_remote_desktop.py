@@ -273,3 +273,100 @@ def test_vnc_launch_failure_shows_generic_error(parent, config):
         start_remote_desktop(parent, config, LINUX_DEVICE, True)
     assert critical.call_args.args[1] == \
         Translations.tr("dialog.remote_desktop_error.title")
+
+
+# ── Platform routing: RustDesk (default for macOS) ───────────────────────
+
+MAC_DEVICE = dict(DEVICE, os="macos")
+
+
+def test_resolve_protocol_prefers_rustdesk_for_macos(config):
+    assert remote_desktop.resolve_remote_protocol(config, MAC_DEVICE) == "rustdesk"
+
+
+def test_macos_device_opens_rustdesk_not_mstsc_or_vnc(parent, config):
+    with patch.object(remote_desktop, "launch_rustdesk",
+                      return_value=["rd", "x"]) as rd, \
+            patch.object(remote_desktop, "launch_vnc") as vnc, \
+            patch.object(remote_desktop, "launch_remote_desktop") as rdp, \
+            patch.object(QMessageBox, "information"), \
+            patch.object(QApplication, "clipboard", return_value=MagicMock()):
+        start_remote_desktop(parent, config, MAC_DEVICE, True)
+    rdp.assert_not_called()
+    vnc.assert_not_called()
+    rd.assert_called_once_with(
+        "10.0.0.42", peer_id="", direct_port=21118, client_path="")
+
+
+def test_rustdesk_uses_configured_path_and_direct_port(parent, config):
+    config.set_rustdesk_path(r"C:\Program Files\RustDesk\RustDesk.exe")
+    config.set_rustdesk_direct_port(21119)
+    with patch.object(remote_desktop, "launch_rustdesk", return_value=["rd"]) as rd, \
+            patch.object(QMessageBox, "information"), \
+            patch.object(QApplication, "clipboard", return_value=MagicMock()):
+        start_remote_desktop(parent, config, MAC_DEVICE, False)
+    rd.assert_called_once_with(
+        "10.0.0.42", peer_id="", direct_port=21119,
+        client_path=r"C:\Program Files\RustDesk\RustDesk.exe")
+
+
+def test_rustdesk_prefers_the_stored_peer_id(parent, config):
+    device = dict(MAC_DEVICE, rustdesk_id="123456789")
+    with patch.object(remote_desktop, "launch_rustdesk", return_value=["rd"]) as rd, \
+            patch.object(QMessageBox, "information"), \
+            patch.object(QApplication, "clipboard", return_value=MagicMock()):
+        start_remote_desktop(parent, config, device, True)
+    assert rd.call_args.kwargs["peer_id"] == "123456789"
+
+
+def test_rustdesk_drops_an_invalid_stored_id(parent, config):
+    # A hand-edited id with spaces must not end up in argv; the device is
+    # reached by IP instead.
+    device = dict(MAC_DEVICE, rustdesk_id="123 456 789")
+    with patch.object(remote_desktop, "launch_rustdesk", return_value=["rd"]) as rd, \
+            patch.object(QMessageBox, "information"), \
+            patch.object(QApplication, "clipboard", return_value=MagicMock()):
+        start_remote_desktop(parent, config, device, True)
+    assert rd.call_args.kwargs["peer_id"] == ""
+    assert rd.call_args.args[0] == "10.0.0.42"
+
+
+def test_rustdesk_password_goes_to_clipboard_not_command_line(parent, config):
+    clipboard = MagicMock()
+    with patch.object(remote_desktop, "launch_rustdesk",
+                      return_value=["rd"]) as rd, \
+            patch.object(QMessageBox, "information") as info, \
+            patch.object(QApplication, "clipboard", return_value=clipboard):
+        start_remote_desktop(parent, config, MAC_DEVICE, True)
+    clipboard.setText.assert_called_once_with("secret")
+    info.assert_called_once()
+    assert "secret" not in str(rd.call_args)
+
+
+def test_rustdesk_logs_started_session(parent, config):
+    with patch.object(remote_desktop, "launch_rustdesk",
+                      return_value=["rd", "--connect", "10.0.0.42:21118"]), \
+            patch.object(QMessageBox, "information"), \
+            patch.object(QApplication, "clipboard", return_value=MagicMock()):
+        start_remote_desktop(parent, config, MAC_DEVICE, True)
+    messages = [entry.get("message", "") for entry in config.get_logs()]
+    assert any("Started RustDesk session to 10.0.0.42:21118" in m for m in messages)
+
+
+def test_rustdesk_without_client_warns_where_to_configure(parent, config):
+    with patch.object(remote_desktop, "launch_rustdesk",
+                      side_effect=RuntimeError("no client")), \
+            patch.object(QMessageBox, "warning") as warn:
+        start_remote_desktop(parent, config, MAC_DEVICE, True)
+    assert warn.call_args.args[1] == \
+        Translations.tr("dialog.rustdesk_missing.title")
+    assert not config.get_logs()
+
+
+def test_rustdesk_launch_failure_shows_generic_error(parent, config):
+    with patch.object(remote_desktop, "launch_rustdesk",
+                      side_effect=OSError("boom")), \
+            patch.object(QMessageBox, "critical") as critical:
+        start_remote_desktop(parent, config, MAC_DEVICE, True)
+    assert critical.call_args.args[1] == \
+        Translations.tr("dialog.remote_desktop_error.title")

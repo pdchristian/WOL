@@ -7,11 +7,13 @@ physical pixels).
 
 Platform routing: the detected platform of the device (``os`` key, see
 ``wol_app.os_detect``) decides which client opens —
-``config.get_remote_protocol()`` maps Windows to RDP and macOS/Linux to VNC
-(TurboVNC). Devices whose platform was never detected keep the historical
-RDP path. The VNC path copies the stored password to the clipboard instead of
-passing it on the command line: TurboVNC has no secure hand-over channel like
-the temporary ``.rdp`` file mstsc uses.
+``config.get_remote_protocol()`` maps Windows to RDP, macOS to RustDesk and
+Linux to VNC (TurboVNC). Devices whose platform was never detected keep the
+historical RDP path. The VNC path copies the stored password to the clipboard
+instead of passing it on the command line: TurboVNC has no secure hand-over
+channel like the temporary ``.rdp`` file mstsc uses. RustDesk behaves the same
+way — its ``--connect`` argument carries the peer address only, and the client
+remembers the password per peer after the first entry.
 
 Fast-exit retry: a wrong password against an xrdp/Linux host (typical for
 Ubuntu) shows as a black screen and mstsc closes again immediately. The
@@ -27,19 +29,24 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from wol_app.config import (
+    DEFAULT_RUSTDESK_DIRECT_PORT,
     DEFAULT_VNC_PORT,
     REMOTE_DESKTOP_AUTO_FRACTION,
     REMOTE_DESKTOP_RESOLUTION_AUTO,
     REMOTE_PROTOCOL_RDP,
+    REMOTE_PROTOCOL_RUSTDESK,
     REMOTE_PROTOCOL_VNC,
+    VALID_REMOTE_PROTOCOLS,
 )
 from wol_app.translations import Translations
 from wol_app.utils import (
     auto_rdp_resolution,
     launch_remote_desktop,
+    launch_rustdesk,
     launch_vnc,
     normalize_os,
     retry_remote_desktop_without_password,
+    validate_rustdesk_id,
 )
 
 # Hosts whose fast-exit prompt has been requested but not answered yet.
@@ -162,7 +169,7 @@ def _make_fast_exit_callback(
 
 
 def resolve_remote_protocol(config: Any, device: dict) -> str:
-    """Protocol that reaches *device*: :data:`REMOTE_PROTOCOL_RDP` or VNC.
+    """Protocol that reaches *device*: RDP, VNC or :data:`REMOTE_PROTOCOL_RUSTDESK`.
 
     Driven by the platform stored on the device (``os`` key) and the routing
     table in the settings. Read defensively like the other config accesses:
@@ -176,8 +183,35 @@ def resolve_remote_protocol(config: Any, device: dict) -> str:
         protocol = getter(normalize_os(device.get("os", "")))
     except Exception:  # noqa: BLE001 - never block the connection on config
         return REMOTE_PROTOCOL_RDP
-    return protocol if protocol in (REMOTE_PROTOCOL_RDP, REMOTE_PROTOCOL_VNC) \
-        else REMOTE_PROTOCOL_RDP
+    return protocol if protocol in VALID_REMOTE_PROTOCOLS else REMOTE_PROTOCOL_RDP
+
+
+def _copy_password_to_clipboard(
+    parent: QWidget,
+    device_name: str,
+    password: str,
+    info_key: str,
+) -> None:
+    """Offer the stored password on the clipboard and say so.
+
+    Neither TurboVNC nor RustDesk gets the password on the command line (it
+    would be readable in any process list), so the clipboard is the only
+    hand-over channel that leaves nothing on disk. The info box appears before
+    the client's own prompt so the user knows to paste. *info_key* selects the
+    client-specific wording (``dialog.vnc_password_copied`` /
+    ``dialog.rustdesk_password_copied``).
+    """
+    if not password:
+        return
+    try:
+        QApplication.clipboard().setText(password)
+    except Exception:  # noqa: BLE001 - clipboard may be unavailable
+        return
+    QMessageBox.information(
+        parent,
+        Translations.tr(f"{info_key}.title"),
+        Translations.tr(f"{info_key}.message", name=device_name),
+    )
 
 
 def _start_vnc(
@@ -220,21 +254,8 @@ def _start_vnc(
         )
         return
 
-    if password:
-        copied = False
-        try:
-            QApplication.clipboard().setText(password)
-            copied = True
-        except Exception:  # noqa: BLE001 - clipboard may be unavailable
-            pass
-        if copied:
-            QMessageBox.information(
-                parent,
-                Translations.tr("dialog.vnc_password_copied.title"),
-                Translations.tr(
-                    "dialog.vnc_password_copied.message", name=device_name
-                ),
-            )
+    _copy_password_to_clipboard(
+        parent, device_name, password, "dialog.vnc_password_copied")
 
     # English log text by convention (all add_log callers log English).
     if config is not None:
@@ -242,6 +263,74 @@ def _start_vnc(
             config.add_log(
                 device_name, "VNC", "INFO",
                 f"Started VNC session to {cmd[-1]}",
+            )
+        except Exception:  # noqa: BLE001 - logging must never block the session
+            pass
+
+
+def _start_rustdesk(
+    parent: QWidget,
+    config: Any,
+    device_name: str,
+    device: dict,
+) -> None:
+    """Open a RustDesk session for a device whose platform is routed to it.
+
+    The peer is addressed by its stored ``rustdesk_id`` when the user entered
+    one, otherwise by Direct IP Access (``ip:21118``) — no rendezvous server,
+    no relay, LAN only. RustDesk has no command-line switch for full screen; it
+    restores the display mode remembered for that peer, so *fullscreen* from the
+    Remote tile is not forwarded here.
+    """
+    path_getter = getattr(config, "get_rustdesk_path", None)
+    port_getter = getattr(config, "get_rustdesk_direct_port", None)
+    client = path_getter() if callable(path_getter) else ""
+    port = port_getter() if callable(port_getter) else DEFAULT_RUSTDESK_DIRECT_PORT
+
+    # Read the id defensively (a hand-edited config must not break the launch):
+    # anything the validator rejects is treated as "not set", which falls back
+    # to Direct IP Access.
+    peer_id = device.get("rustdesk_id", "")
+    peer_id = peer_id.strip() if isinstance(peer_id, str) else ""
+    if peer_id and not validate_rustdesk_id(peer_id):
+        peer_id = ""
+
+    try:
+        cmd = launch_rustdesk(
+            device.get("ip", "") or "",
+            peer_id=peer_id,
+            direct_port=port,
+            client_path=client,
+        )
+    except (ValueError, RuntimeError):
+        # No address at all, or no client installed / configured — actionable,
+        # so a warning that names the settings field rather than the generic
+        # error dialog.
+        QMessageBox.warning(
+            parent,
+            Translations.tr("dialog.rustdesk_missing.title"),
+            Translations.tr("dialog.rustdesk_missing.message"),
+        )
+        return
+    except Exception:
+        QMessageBox.critical(
+            parent,
+            Translations.tr("dialog.remote_desktop_error.title"),
+            Translations.tr("dialog.remote_desktop_error.message"),
+        )
+        return
+
+    _copy_password_to_clipboard(
+        parent, device_name, device.get("password", "") or "",
+        "dialog.rustdesk_password_copied",
+    )
+
+    # English log text by convention (all add_log callers log English).
+    if config is not None:
+        try:
+            config.add_log(
+                device_name, "RUSTDESK", "INFO",
+                f"Started RustDesk session to {cmd[-1]}",
             )
         except Exception:  # noqa: BLE001 - logging must never block the session
             pass
@@ -275,8 +364,13 @@ def start_remote_desktop(
     password: str = device.get("password", "") or ""
 
     # Platform routing decides the client: a device whose platform is mapped to
-    # VNC (default macOS/Linux) opens TurboVNC instead of the RDP client.
-    if resolve_remote_protocol(config, device) == REMOTE_PROTOCOL_VNC:
+    # RustDesk (default macOS) or VNC (default Linux) opens that client instead
+    # of the RDP client.
+    protocol = resolve_remote_protocol(config, device)
+    if protocol == REMOTE_PROTOCOL_RUSTDESK:
+        _start_rustdesk(parent, config, device_name, device)
+        return
+    if protocol == REMOTE_PROTOCOL_VNC:
         _start_vnc(parent, config, device_name, device_ip, password, fullscreen)
         return
 

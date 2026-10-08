@@ -642,8 +642,10 @@ def test_settings_load_remote_defaults(qapp, config):
     assert view.vnc_port_input.value() == 5900
     assert view.vnc_viewer_input.text() == ""
     assert view.protocol_combos["windows"].currentData() == "rdp"
-    assert view.protocol_combos["macos"].currentData() == "vnc"
+    assert view.protocol_combos["macos"].currentData() == "rustdesk"
     assert view.protocol_combos["linux"].currentData() == "vnc"
+    assert view.rustdesk_path_input.text() == ""
+    assert view.rustdesk_port_input.value() == 21118
 
 
 def test_settings_save_remote_section(qapp, config, monkeypatch):
@@ -658,14 +660,21 @@ def test_settings_save_remote_section(qapp, config, monkeypatch):
         view.protocol_combos["windows"].findData("vnc"))
     view.protocol_combos["linux"].setCurrentIndex(
         view.protocol_combos["linux"].findData("rdp"))
+    view.protocol_combos["macos"].setCurrentIndex(
+        view.protocol_combos["macos"].findData("vnc"))
     view.vnc_port_input.setValue(5901)
     view.vnc_viewer_input.setText(r"C:\Tools\vncviewerw.bat")
+    view.rustdesk_path_input.setText(r"C:\Tools\RustDesk.exe")
+    view.rustdesk_port_input.setValue(21119)
     view._save()
 
     assert config.get_remote_protocol("windows") == "vnc"
     assert config.get_remote_protocol("linux") == "rdp"
+    assert config.get_remote_protocol("macos") == "vnc"
     assert config.get_vnc_port() == 5901
     assert config.get_vnc_viewer_path() == r"C:\Tools\vncviewerw.bat"
+    assert config.get_rustdesk_path() == r"C:\Tools\RustDesk.exe"
+    assert config.get_rustdesk_direct_port() == 21119
 
 
 def test_settings_reset_restores_remote_defaults(qapp, config, monkeypatch):
@@ -697,4 +706,8 @@ def test_settings_retranslate_updates_remote_labels(qapp, config):
         Translations.tr("settings.group.remote").upper()
     assert view.protocol_combos["windows"].itemText(0) == \
         Translations.tr("modern.devices.client_rdp")
+    assert view.protocol_combos["windows"].itemText(2) == \
+        Translations.tr("modern.devices.client_rustdesk")
+    assert view.field_rustdesk_path.hint.text() == \
+        Translations.tr("settings.hint.rustdesk_path")
     Translations().load("en")

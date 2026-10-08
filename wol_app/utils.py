@@ -150,6 +150,33 @@ def validate_api_key(api_key: str) -> bool:
     return True
 
 
+# RustDesk addresses a peer by its own id: the 9-digit id, the UUID used for
+# unattended access, a host name, or the "host:port" form of Direct IP Access.
+# 64 chars is far above every form and must match
+# ``ConfigManager.MAX_RUSTDESK_ID_CHARS``.
+_RUSTDESK_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}(?::[0-9]{1,5})?$')
+
+
+def validate_rustdesk_id(peer_id: str) -> bool:
+    """Validate a RustDesk peer id ("" = not set, the peer is reached by IP).
+
+    The id is handed to ``rustdesk --connect`` as a plain argument, never
+    through a shell, but it is still restricted to the characters a RustDesk id
+    can legitimately contain: no spaces, no slashes, no shell metacharacters.
+    A ``:port`` suffix (Direct IP Access) must be a usable TCP port.
+    """
+    if not peer_id:
+        return True  # the id is optional
+    if len(peer_id) > 64:
+        return False
+    if not _RUSTDESK_ID_RE.match(peer_id):
+        return False
+    _, sep, port = peer_id.rpartition(":")
+    if sep and not 1 <= int(port) <= 65535:
+        return False
+    return True
+
+
 # ── Subprocess ──────────────────────────────────────────────────────────────
 
 def run_subprocess_safe(command, timeout: int = 5, **kwargs):
@@ -1263,6 +1290,141 @@ def launch_vnc(
     cmd = build_vnc_args(viewer, ip, port=port, fullscreen=fullscreen)
     # CREATE_NO_WINDOW hides the console of TurboVNC's .bat launcher (the Java
     # viewer itself is a GUI process). shell=False: no command injection.
+    creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    subprocess.Popen(cmd, creationflags=creationflags)
+    return cmd
+
+
+# ── RustDesk ───────────────────────────────────────────────────────────────
+
+# RustDesk ships one executable that is client *and* server; the installed
+# client is what opens an outgoing session. Windows installs to
+# "Program Files\RustDesk\RustDesk.exe", macOS keeps the binary inside the app
+# bundle (the bundle name uses a capital R, the file inside historically a
+# lower-case one, so both are probed for case-sensitive volumes), and Linux
+# packages install to /usr/bin.
+_RUSTDESK_WINDOWS_DIR_NAMES = ("RustDesk",)
+_RUSTDESK_WINDOWS_EXES = ("RustDesk.exe", "rustdesk.exe")
+_RUSTDESK_MACOS_BINARIES = (
+    "/Applications/RustDesk.app/Contents/MacOS/RustDesk",
+    "/Applications/RustDesk.app/Contents/MacOS/rustdesk",
+)
+_RUSTDESK_LINUX_BINARIES = ("/usr/bin/rustdesk", "/opt/rustdesk/rustdesk")
+_RUSTDESK_PATH_NAMES = ("rustdesk", "rustdesk.exe")
+
+
+def _rustdesk_candidate_dirs() -> list[str]:
+    """Install directories that may hold the Windows RustDesk client."""
+    roots: list[str] = []
+    for var in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)",
+                "LOCALAPPDATA"):
+        root = os.environ.get(var, "")
+        if root and root not in roots:
+            roots.append(root)
+    dirs = [
+        os.path.join(root, name)
+        for root in roots
+        for name in _RUSTDESK_WINDOWS_DIR_NAMES
+    ]
+    # Per-user installs ("install for this user only") live under LOCALAPPDATA.
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local:
+        dirs.extend(os.path.join(local, "Programs", name)
+                    for name in _RUSTDESK_WINDOWS_DIR_NAMES)
+    return dirs
+
+
+def find_rustdesk_client() -> str:
+    """Locate the RustDesk client executable ("" when none was found).
+
+    Search order: the platform's default install location, then the ``PATH``
+    (portable installs and custom prefixes). Never raises — an empty result
+    simply means the caller should tell the user to install or configure
+    RustDesk.
+    """
+    if sys.platform == "win32":
+        for directory in _rustdesk_candidate_dirs():
+            for name in _RUSTDESK_WINDOWS_EXES:
+                candidate = os.path.join(directory, name)
+                if os.path.isfile(candidate):
+                    return candidate
+    else:
+        binaries = (
+            _RUSTDESK_MACOS_BINARIES if sys.platform == "darwin"
+            else _RUSTDESK_LINUX_BINARIES
+        )
+        for candidate in binaries:
+            if os.path.isfile(candidate):
+                return candidate
+    for name in _RUSTDESK_PATH_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    return ""
+
+
+def build_rustdesk_target(
+    peer_id: str,
+    ip: str,
+    direct_port: int = 21118,
+) -> str:
+    """How a device is addressed in RustDesk: its id, else Direct IP Access.
+
+    A RustDesk id cannot be discovered by scanning, so a device without a
+    stored id is reached through Direct IP Access: the peer answers on TCP 21118
+    and is addressed as ``ip:port``. That stays inside the LAN and skips the
+    rendezvous server and any relay — the fast path, and the one that works
+    without a RustDesk account.
+    """
+    peer_id = (peer_id or "").strip()
+    if peer_id:
+        return peer_id
+    if not ip:
+        raise ValueError("Neither a RustDesk id nor an IP address is set")
+    return f"{ip}:{int(direct_port)}"
+
+
+def build_rustdesk_args(client: str, target: str) -> list[str]:
+    """Command line that opens a RustDesk session to *target*.
+
+    ``--connect <id>`` is RustDesk's documented entry point: it opens the
+    session window and connects straight away, and an already running RustDesk
+    instance takes the request over instead of starting a second copy. The
+    password is never part of the command line (it would show up in the process
+    list) — RustDesk remembers it per peer after the first entry, and the
+    caller may pre-fill the clipboard for that first one.
+    """
+    return [client, "--connect", target]
+
+
+def launch_rustdesk(
+    ip: str,
+    peer_id: str = "",
+    direct_port: int = 21118,
+    client_path: str = "",
+) -> list[str]:
+    """Open a RustDesk session to a device with the installed client.
+
+    *peer_id* wins over *ip*; without it the peer is addressed by Direct IP
+    Access on *direct_port*. *client_path* overrides the auto-detection
+    (empty = :func:`find_rustdesk_client`). Returns the command line that was
+    started so the caller can log it.
+
+    Raises:
+        ValueError: if neither *peer_id* nor *ip* is set.
+        RuntimeError: if no RustDesk client is installed or configured.
+        OSError: if the client could not be started.
+    """
+    target = build_rustdesk_target(peer_id, ip, direct_port=direct_port)
+    client = (client_path or "").strip() or find_rustdesk_client()
+    if not client:
+        raise RuntimeError(
+            "No RustDesk client found. Install RustDesk or set its path in the "
+            "remote access settings."
+        )
+    cmd = build_rustdesk_args(client, target)
+    # RustDesk is a GUI process; CREATE_NO_WINDOW only matters when a portable
+    # build is started from a console. shell=False: no command injection.
     creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     subprocess.Popen(cmd, creationflags=creationflags)
     return cmd

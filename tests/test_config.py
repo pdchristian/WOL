@@ -270,16 +270,18 @@ class TestDeviceOs(ConfigManagerTestBase):
 
 
 class TestRemoteSection(ConfigManagerTestBase):
-    """Platform -> protocol routing and the VNC client settings."""
+    """Platform -> protocol routing and the VNC / RustDesk client settings."""
 
     def test_defaults_materialised_for_old_config(self):
         self._write_raw({"devices": []})
         cm = ConfigManager(config_path=str(self.config_path))
         self.assertEqual(cm.get_remote_protocol("windows"), "rdp")
-        self.assertEqual(cm.get_remote_protocol("macos"), "vnc")
+        self.assertEqual(cm.get_remote_protocol("macos"), "rustdesk")
         self.assertEqual(cm.get_remote_protocol("linux"), "vnc")
         self.assertEqual(cm.get_vnc_port(), 5900)
         self.assertEqual(cm.get_vnc_viewer_path(), "")
+        self.assertEqual(cm.get_rustdesk_direct_port(), 21118)
+        self.assertEqual(cm.get_rustdesk_path(), "")
 
     def test_protocol_roundtrip_persists(self):
         cm = ConfigManager(config_path=str(self.config_path))
@@ -289,7 +291,7 @@ class TestRemoteSection(ConfigManagerTestBase):
         self.assertEqual(reloaded.get_remote_protocol("windows"), "vnc")
         self.assertEqual(reloaded.get_remote_protocol("linux"), "rdp")
         # untouched platforms keep their default
-        self.assertEqual(reloaded.get_remote_protocol("macos"), "vnc")
+        self.assertEqual(reloaded.get_remote_protocol("macos"), "rustdesk")
 
     def test_unknown_platform_and_distro_ids_fall_back(self):
         cm = ConfigManager(config_path=str(self.config_path))
@@ -298,7 +300,45 @@ class TestRemoteSection(ConfigManagerTestBase):
         self.assertEqual(cm.get_remote_protocol("unknown"), "rdp")
         # concrete distributions collapse to linux (normalize_os)
         self.assertEqual(cm.get_remote_protocol("ubuntu"), "vnc")
-        self.assertEqual(cm.get_remote_protocol("darwin"), "vnc")
+        self.assertEqual(cm.get_remote_protocol("darwin"), "rustdesk")
+
+    def test_old_macos_vnc_default_switches_to_rustdesk_once(self):
+        # Configs written before RustDesk became the macOS default still carry
+        # "vnc". The first load switches the entry and persists it, so the
+        # switch never repeats on later starts.
+        self._write_raw({
+            "devices": [],
+            "remote": {"protocol_by_os": {
+                "windows": "rdp", "macos": "vnc", "linux": "vnc"}},
+        })
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_remote_protocol("macos"), "rustdesk")
+        self.assertEqual(cm.get_remote_protocol("linux"), "vnc")
+        reloaded = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(reloaded.get_remote_protocol("macos"), "rustdesk")
+
+    def test_explicit_macos_vnc_choice_survives_the_switch(self):
+        # protocol_user_set marks a routing edited in the settings: the default
+        # switch must not overwrite a deliberate decision for TurboVNC.
+        self._write_raw({
+            "devices": [],
+            "remote": {
+                "protocol_by_os": {"macos": "vnc"},
+                "protocol_user_set": True,
+            },
+        })
+        cm = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(cm.get_remote_protocol("macos"), "vnc")
+
+    def test_setting_a_protocol_marks_it_user_chosen(self):
+        self._write_raw({
+            "devices": [],
+            "remote": {"protocol_by_os": {"macos": "vnc"}},
+        })
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_remote_protocol("macos", "vnc")
+        reloaded = ConfigManager(config_path=str(self.config_path))
+        self.assertEqual(reloaded.get_remote_protocol("macos"), "vnc")
 
     def test_invalid_stored_value_falls_back_to_default(self):
         cm = ConfigManager(config_path=str(self.config_path))
@@ -341,6 +381,77 @@ class TestRemoteSection(ConfigManagerTestBase):
             r"C:\Tools\vncviewer.bat")
         cm.set_vnc_viewer_path("   ")
         self.assertEqual(cm.get_vnc_viewer_path(), "")
+
+    def test_rustdesk_port_roundtrip_and_validation(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_rustdesk_direct_port(21119)
+        self.assertEqual(
+            ConfigManager(
+                config_path=str(self.config_path)).get_rustdesk_direct_port(),
+            21119)
+        for bad in (0, -1, 70000):
+            with self.assertRaises(ValueError):
+                cm.set_rustdesk_direct_port(bad)
+
+    def test_rustdesk_port_repairs_hand_edited_value(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.config["remote"]["rustdesk_direct_port"] = 99999
+        self.assertEqual(cm.get_rustdesk_direct_port(), 65535)
+        cm.config["remote"]["rustdesk_direct_port"] = "unsinn"
+        self.assertEqual(cm.get_rustdesk_direct_port(), 21118)
+
+    def test_rustdesk_path_roundtrip(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        cm.set_rustdesk_path(r"C:\Program Files\RustDesk\RustDesk.exe")
+        self.assertEqual(
+            ConfigManager(config_path=str(self.config_path)).get_rustdesk_path(),
+            r"C:\Program Files\RustDesk\RustDesk.exe")
+        cm.set_rustdesk_path("   ")
+        self.assertEqual(cm.get_rustdesk_path(), "")
+
+
+class TestDeviceRustDeskId(ConfigManagerTestBase):
+    """The optional per-device RustDesk peer id."""
+
+    def test_getter_defaults_to_empty(self):
+        self.assertEqual(ConfigManager.get_device_rustdesk_id({}), "")
+
+    def test_getter_accepts_ids_uuids_and_host_port(self):
+        for value in ("123456789", "550e8400-e29b-41d4-a716-446655440000",
+                      "mac-mini.local", "192.168.1.20:21118"):
+            self.assertEqual(
+                ConfigManager.get_device_rustdesk_id({"rustdesk_id": value}),
+                value)
+
+    def test_getter_rejects_unusable_values(self):
+        for value in ("", "  ", "12345 6789", "a/b", "rm -rf /", "id;ls",
+                      "x" * 65, 42, None):
+            self.assertEqual(
+                ConfigManager.get_device_rustdesk_id({"rustdesk_id": value}),
+                "")
+
+    def test_update_device_stores_and_clears_the_id(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("Mac", "AA:BB:CC:DD:EE:FF")
+        cm.update_device(device["id"], rustdesk_id=" 123456789 ")
+        self.assertEqual(
+            cm.get_device_by_id(device["id"]).get("rustdesk_id"), "123456789")
+        cm.update_device(device["id"], rustdesk_id="")
+        self.assertNotIn("rustdesk_id", cm.get_device_by_id(device["id"]))
+
+    def test_set_device_rustdesk_id_roundtrip(self):
+        cm = ConfigManager(config_path=str(self.config_path))
+        device = cm.add_device("Mac", "AA:BB:CC:DD:EE:FF")
+        self.assertTrue(cm.set_device_rustdesk_id(device["id"], "987654321"))
+        self.assertEqual(
+            ConfigManager(config_path=str(self.config_path))
+            .get_device_rustdesk_id(cm.get_device_by_id(device["id"])),
+            "987654321")
+        self.assertTrue(cm.set_device_rustdesk_id(device["id"], ""))
+        self.assertNotIn(
+            "rustdesk_id",
+            ConfigManager(config_path=str(self.config_path))
+            .get_device_by_id(device["id"]))
 
 
 class TestRemoteDesktopResolution(ConfigManagerTestBase):

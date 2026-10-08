@@ -40,6 +40,7 @@ from wol_app.config import (
     DEVICES_VIEW_GRID,
     DEVICES_VIEW_LIST,
     REMOTE_PROTOCOL_RDP,
+    REMOTE_PROTOCOL_RUSTDESK,
     REMOTE_PROTOCOL_VNC,
     ConfigManager,
 )
@@ -153,14 +154,13 @@ def derive_inference_state(response: "dict | None",
 def remote_tooltip(action_key: str, protocol: str) -> str:
     """Tooltip for a Remote tile: the action plus the client it will start.
 
-    The platform of the device decides whether the tile opens the RDP client
-    or TurboVNC, so the tooltip names the client before the user clicks.
+    The platform of the device decides whether the tile opens the RDP client,
+    TurboVNC or RustDesk, so the tooltip names the client before the user clicks.
     """
-    client_key = (
-        "modern.devices.client_vnc"
-        if protocol == REMOTE_PROTOCOL_VNC
-        else "modern.devices.client_rdp"
-    )
+    client_key = {
+        REMOTE_PROTOCOL_VNC: "modern.devices.client_vnc",
+        REMOTE_PROTOCOL_RUSTDESK: "modern.devices.client_rustdesk",
+    }.get(protocol, "modern.devices.client_rdp")
     return f"{Translations.tr(action_key)} · {Translations.tr(client_key)}"
 
 

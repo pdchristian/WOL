@@ -24,6 +24,7 @@ from wol_app.utils import (
     validate_device_name,
     validate_mac,
     validate_password,
+    validate_rustdesk_id,
     validate_username,
 )
 
@@ -167,21 +168,39 @@ REMOTE_DESKTOP_AUTO_MIN = (1280, 720)
 
 # ── Remote access protocol per platform ────────────────────────────────────
 # Which client opens the "Remote" buttons for a device, keyed by the detected
-# platform (device "os" key). Windows desktops speak RDP (mstsc), macOS Screen
-# Sharing and Linux x11vnc speak VNC, so TurboVNC is the default there. A
-# device with no detected platform keeps the historical RDP behaviour.
+# platform (device "os" key). Windows desktops speak RDP (mstsc), Linux x11vnc
+# speaks VNC (TurboVNC), and macOS defaults to RustDesk — Screen Sharing over
+# VNC is far too slow on Apple hardware, RustDesk uses H264/VP9 with hardware
+# encoding. A device with no detected platform keeps the historical RDP
+# behaviour.
 REMOTE_PROTOCOL_RDP = "rdp"
 REMOTE_PROTOCOL_VNC = "vnc"
-VALID_REMOTE_PROTOCOLS = (REMOTE_PROTOCOL_RDP, REMOTE_PROTOCOL_VNC)
+REMOTE_PROTOCOL_RUSTDESK = "rustdesk"
+VALID_REMOTE_PROTOCOLS = (
+    REMOTE_PROTOCOL_RDP,
+    REMOTE_PROTOCOL_VNC,
+    REMOTE_PROTOCOL_RUSTDESK,
+)
 DEFAULT_REMOTE_PROTOCOL_BY_OS = {
     OS_WINDOWS: REMOTE_PROTOCOL_RDP,
-    OS_MACOS: REMOTE_PROTOCOL_VNC,
+    OS_MACOS: REMOTE_PROTOCOL_RUSTDESK,
     OS_LINUX: REMOTE_PROTOCOL_VNC,
 }
 # Standard RFB port (display :0); display :n is served on 5900 + n.
 DEFAULT_VNC_PORT = 5900
 VNC_PORT_MIN = 1
 VNC_PORT_MAX = 65535
+
+# ── RustDesk client ────────────────────────────────────────────────────────
+# RustDesk addresses a peer by its 9-digit id, but on a LAN it also answers
+# "Direct IP Access" on this TCP port, addressed as "<ip>:21118". Direct access
+# needs no rendezvous server and no relay, which is what a WOL manager wants.
+DEFAULT_RUSTDESK_DIRECT_PORT = 21118
+RUSTDESK_DIRECT_PORT_MIN = 1
+RUSTDESK_DIRECT_PORT_MAX = 65535
+#: Length cap of the optional per-device ``rustdesk_id``; must match the cap in
+#: ``utils.validate_rustdesk_id``.
+MAX_RUSTDESK_ID_CHARS = 64
 
 # Registry location where the Inno Setup installer records the UI layout
 # chosen at install time ("modern" or "classic"). Read on first start only;
@@ -352,14 +371,19 @@ DEFAULT_CONFIG = {
         "check_interval_hours": 24,
         "last_check_timestamp": None,
     },
-    # Remote access: which protocol reaches a device, and how the VNC client
-    # is started. "protocol_by_os" is keyed by the platform ids of the device
-    # "os" key; devices without a detected platform always use RDP.
-    # "vnc_viewer_path" empty = auto-detect the installed TurboVNC viewer.
+    # Remote access: which protocol reaches a device, and how the VNC /
+    # RustDesk clients are started. "protocol_by_os" is keyed by the platform
+    # ids of the device "os" key; devices without a detected platform always
+    # use RDP. "protocol_user_set" records whether the routing was ever changed
+    # in the settings (see _apply_rustdesk_default). Empty paths mean
+    # auto-detect the installed client.
     "remote": {
         "protocol_by_os": dict(DEFAULT_REMOTE_PROTOCOL_BY_OS),
+        "protocol_user_set": False,
         "vnc_viewer_path": "",
         "vnc_port": DEFAULT_VNC_PORT,
+        "rustdesk_path": "",
+        "rustdesk_direct_port": DEFAULT_RUSTDESK_DIRECT_PORT,
     },
 }
 
@@ -396,6 +420,7 @@ class ConfigManager:
         self.config = self._load()
         self._ensure_single_instance_key()
         self._apply_installer_ui_mode()
+        self._apply_rustdesk_default()
 
     def _ensure_single_instance_key(self) -> None:
         """Persist ``ui.allow_multiple_instances`` when it is still absent.
@@ -446,6 +471,32 @@ class ConfigManager:
                 self.save()
             except Exception as e:  # pragma: no cover - non-fatal
                 _logger.warning("Could not persist installer UI mode: %s", e)
+
+    def _apply_rustdesk_default(self) -> None:
+        """Switch the macOS routing from TurboVNC to RustDesk once.
+
+        macOS Screen Sharing over VNC is far too slow to be usable, so RustDesk
+        is the new macOS default. Configs written before that change still carry
+        ``vnc`` for macOS, so the entry is updated on the first start after the
+        upgrade — but only while the routing was never edited in the settings
+        (``remote.protocol_user_set``). A deliberate decision for TurboVNC (or
+        RDP) therefore survives; the flag also keeps the switch from repeating
+        after the user later picks another client.
+        """
+        section = self.config.setdefault("remote", {})
+        if not isinstance(section, dict) or section.get("protocol_user_set"):
+            return
+        mapping = section.get("protocol_by_os")
+        if not isinstance(mapping, dict):
+            return
+        if mapping.get(OS_MACOS) != REMOTE_PROTOCOL_VNC:
+            return
+        mapping[OS_MACOS] = REMOTE_PROTOCOL_RUSTDESK
+        section["protocol_user_set"] = True
+        try:
+            self.save()
+        except Exception as e:  # pragma: no cover - non-fatal
+            _logger.warning("Could not persist RustDesk macOS default: %s", e)
 
     def _load(self) -> dict:
         """Load configuration from file, auto-decrypt passwords and migrate old format."""
@@ -563,7 +614,7 @@ class ConfigManager:
         """Update device fields with validation.
 
         Updates name, mac, ip, enabled, username, password, shutdown_method,
-        rdp_auth_level, os, os_confidence.
+        rdp_auth_level, rustdesk_id, os, os_confidence.
         """
         for dev in self.config.get("devices", []):
             if dev["id"] == device_id:
@@ -593,6 +644,16 @@ class ConfigManager:
                     except (TypeError, ValueError):
                         level = 1
                     dev["rdp_auth_level"] = level if level in (0, 1, 2) else 1
+                if "rustdesk_id" in kwargs:
+                    # Optional RustDesk peer id. "" (or an invalid value) drops
+                    # the key entirely so the device stays addressed by Direct IP
+                    # Access instead of a half-written id.
+                    peer_id = self.get_device_rustdesk_id(
+                        {"rustdesk_id": kwargs["rustdesk_id"]})
+                    if peer_id:
+                        dev["rustdesk_id"] = peer_id
+                    else:
+                        dev.pop("rustdesk_id", None)
                 if "os" in kwargs:
                     # Detected platform ("windows"/"macos"/"linux", "" =
                     # unknown). Normalized so distribution ids collapse.
@@ -1068,6 +1129,37 @@ class ConfigManager:
                 return True
         return False
 
+    @staticmethod
+    def get_device_rustdesk_id(device: dict) -> str:
+        """Return the RustDesk peer id of *device* ("" = address it by IP).
+
+        RustDesk identifies peers by its own 9-digit id (or the UUID used for
+        unattended access), which the network scan cannot discover — so the id
+        is optional manual data. Without it the launch falls back to Direct IP
+        Access (``ip:21118``). Malformed or hand-edited values degrade to ""
+        rather than breaking a save.
+        """
+        value = device.get("rustdesk_id", "")
+        if not isinstance(value, str):
+            return ""
+        value = value.strip()
+        if not value or len(value) > MAX_RUSTDESK_ID_CHARS:
+            return ""
+        return value if validate_rustdesk_id(value) else ""
+
+    def set_device_rustdesk_id(self, device_id: str, peer_id: str) -> bool:
+        """Persist the RustDesk peer id of a device ("" removes the field)."""
+        cleaned = self.get_device_rustdesk_id({"rustdesk_id": peer_id})
+        for dev in self.config.get("devices", []):
+            if dev["id"] == device_id:
+                if cleaned:
+                    dev["rustdesk_id"] = cleaned
+                else:
+                    dev.pop("rustdesk_id", None)
+                self.save()
+                return True
+        return False
+
     def set_layout_mode(self, mode: str) -> None:
         """Persist the user's explicit layout choice (takes precedence over the installer hint)."""
         if mode not in VALID_LAYOUT_MODES:
@@ -1364,8 +1456,12 @@ class ConfigManager:
             raise ValueError(f"Invalid platform id: {os_id}")
         if protocol not in VALID_REMOTE_PROTOCOLS:
             raise ValueError(f"Invalid remote protocol: {protocol}")
-        mapping = self._remote_section().setdefault("protocol_by_os", {})
+        section = self._remote_section()
+        mapping = section.setdefault("protocol_by_os", {})
         mapping[platform_id] = protocol
+        # Marks the routing as user-chosen so _apply_rustdesk_default never
+        # overwrites an explicit decision.
+        section["protocol_user_set"] = True
         self.save()
 
     def get_vnc_viewer_path(self) -> str:
@@ -1394,6 +1490,39 @@ class ConfigManager:
         if not VNC_PORT_MIN <= port <= VNC_PORT_MAX:
             raise ValueError(f"Invalid VNC port: {port}")
         self._remote_section()["vnc_port"] = port
+        self.save()
+
+    def get_rustdesk_path(self) -> str:
+        """Configured RustDesk executable ("" = auto-detect)."""
+        value = self._remote_section().get("rustdesk_path", "")
+        return value if isinstance(value, str) else ""
+
+    def set_rustdesk_path(self, path: str) -> None:
+        """Set the RustDesk executable; "" restores auto-detection."""
+        if not isinstance(path, str):
+            raise ValueError("RustDesk path must be a string")
+        self._remote_section()["rustdesk_path"] = path.strip()
+        self.save()
+
+    def get_rustdesk_direct_port(self) -> int:
+        """Direct IP Access port of the RustDesk peer (clamped).
+
+        RustDesk listens on 21118 for direct (LAN) connections; a device
+        without its own ``rustdesk_id`` is addressed as ``ip:port``.
+        """
+        try:
+            port = int(self._remote_section().get(
+                "rustdesk_direct_port", DEFAULT_RUSTDESK_DIRECT_PORT))
+        except (TypeError, ValueError):
+            return DEFAULT_RUSTDESK_DIRECT_PORT
+        return max(RUSTDESK_DIRECT_PORT_MIN, min(port, RUSTDESK_DIRECT_PORT_MAX))
+
+    def set_rustdesk_direct_port(self, port: int) -> None:
+        """Set the RustDesk Direct IP Access port (1..65535)."""
+        port = int(port)
+        if not RUSTDESK_DIRECT_PORT_MIN <= port <= RUSTDESK_DIRECT_PORT_MAX:
+            raise ValueError(f"Invalid RustDesk port: {port}")
+        self._remote_section()["rustdesk_direct_port"] = port
         self.save()
 
 
