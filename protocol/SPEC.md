@@ -317,6 +317,7 @@ Schema: [`schema/response-run_batch.json`](schema/response-run_batch.json)
 | `WATCH_API_KEY_MAX_CHARS` | 128 | beide |
 | `WATCH_PORT_TIMEOUT_S` | 0.25 | beide |
 | `WATCH_MODELS_TIMEOUT_S` | 0.6 | beide |
+| `WATCH_METRICS_TIMEOUT_S` | 2.0 | beide |
 | `WATCH_MAX_MODELS` | 16 | beide |
 | `WATCH_PROBE_TTL_S` | 10 | beide |
 | `MODEL_FILE_EXTS` | .gguf .ggml .safetensors .bin .pt | beide |

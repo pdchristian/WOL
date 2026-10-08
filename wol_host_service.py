@@ -142,6 +142,14 @@ WATCH_API_KEY_MAX_CHARS = 128
 WATCH_PORT_TIMEOUT_S = 0.25
 # Seconds for the HTTP GET of the llama-server model list.
 WATCH_MODELS_TIMEOUT_S = 0.6
+# Seconds for the HTTP GET of ``/metrics``. Building that body is the one
+# expensive endpoint on the server side (llama.cpp reads its Prometheus
+# gauges, Strata samples every GPU plus psutil), so it needs clearly more
+# time than the cheap /v1/models, /health and /props probes. With the
+# 0.6 s model timeout a slow /metrics timed out while /v1/models answered
+# fine, which left the device list on the amber "activity not measurable"
+# bolt although the server was perfectly readable.
+WATCH_METRICS_TIMEOUT_S = 2.0
 # Max model names surfaced per watch entry (a llama-server --parallel N run
 # or a llama-swap setup can report many; the dashboard shows a handful).
 WATCH_MAX_MODELS = 16
@@ -699,18 +707,22 @@ def _sanitize_api_key(raw: object) -> str:
 
 def _http_get_loopback(port: int, path: str, accept: str,
                        max_bytes: int = 262_144,
-                       api_key: str = "") -> tuple[int | None, str]:
+                       api_key: str = "",
+                       timeout: "float | None" = None) -> tuple[int | None, str]:
     """Plain ``http.client`` GET on loopback -> ``(status, body_text)``.
 
     Any failure (refused, timeout, DNS-less name, read error) degrades to
     ``(None, "")`` so every watch probe can treat "not there" uniformly.
     *api_key* (protocol v10) is sent as ``Authorization: Bearer <key>`` —
     required by inference servers started with an API key, which otherwise
-    answer 401 to every probe.
+    answer 401 to every probe. *timeout* overrides the socket timeout; the
+    ``/metrics`` probes pass :data:`WATCH_METRICS_TIMEOUT_S` because that
+    body is built server-side, the cheap probes keep the default.
     """
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port,
-                                          timeout=WATCH_MODELS_TIMEOUT_S)
+                                          timeout=timeout
+                                          or WATCH_MODELS_TIMEOUT_S)
         try:
             headers = {"Accept": accept}
             if api_key:
@@ -953,7 +965,8 @@ def _fetch_model_metrics(port: int, model_name: str,
     path = "/metrics?model=" + urllib.parse.quote(model_name)
     status, text = _http_get_loopback(port, path,
                                       "text/plain, application/json",
-                                      api_key=api_key)
+                                      api_key=api_key,
+                                      timeout=WATCH_METRICS_TIMEOUT_S)
     if status != 200 or not text:
         return None
     fresh: dict = {}
@@ -1066,7 +1079,8 @@ def _probe_api_identity(port: int, api_up: bool = False,
     # JSON body) - probe it once per TTL window, cheaply.
     status, text = _http_get_loopback(port, "/metrics",
                                       "text/plain, application/json",
-                                      max_bytes=4096, api_key=api_key)
+                                      max_bytes=4096, api_key=api_key,
+                                      timeout=WATCH_METRICS_TIMEOUT_S)
     if status == 200:
         features.append("metrics")
 
@@ -1118,7 +1132,8 @@ def _fetch_api_activity(port: int, api_key: str = "") -> "int | None":
     """
     status, text = _http_get_loopback(port, "/metrics",
                                       "text/plain, application/json",
-                                      max_bytes=32_768, api_key=api_key)
+                                      max_bytes=32_768, api_key=api_key,
+                                      timeout=WATCH_METRICS_TIMEOUT_S)
     if status != 200 or not text:
         return None
     if text.lstrip()[:1] == "{":

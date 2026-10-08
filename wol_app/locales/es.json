@@ -445,7 +445,7 @@
   "modern.devices.infer.interval_tip": "Intervalo de consulta del indicador de inferencia (rayo): comprueba si el servidor API supervisado está ejecutando un trabajo ahora mismo.",
   "modern.devices.infer.active": "Inferencia: se está ejecutando un trabajo en el servidor supervisado.",
   "modern.devices.infer.idle": "Inferencia: el servidor supervisado es accesible pero está inactivo.",
-  "modern.devices.infer.warn": "Inferencia: puerto API accesible, actividad no medible (el servidor no responde a /metrics) – rayo tachado.",
+  "modern.devices.infer.warn": "Inferencia: puerto API accesible, actividad no medible (el servidor no responde a /metrics o tarda demasiado: actualice el servicio de host, ahora espera 2 s) – rayo tachado.",
   "modern.devices.infer.warn_key": "Inferencia: hay una clave de API configurada, pero el servicio de host de este equipo es demasiado antiguo y no la envía (se requiere el protocolo v10): actualice el servicio de host.",
   "modern.shutdown_confirm.title": "Confirmar apagado",
   "modern.shutdown_confirm.message": "¿Seguro que desea apagar este dispositivo?",

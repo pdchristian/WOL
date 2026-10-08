@@ -526,3 +526,12 @@ class TestContractInvariants:
                 8080, "/metrics", "text/plain", api_key="dummy") == (200, "{}")
         assert (conn.request.call_args.kwargs["headers"]["Authorization"]
                 == "Bearer dummy")
+
+    def test_linux_core_matches_watch_timeouts(self):
+        """Both services must give /metrics the same patient timeout."""
+        import wol_host_service_linux as linux_svc
+
+        for name in ("WATCH_PORT_TIMEOUT_S", "WATCH_MODELS_TIMEOUT_S",
+                     "WATCH_METRICS_TIMEOUT_S", "WATCH_PROBE_TTL_S"):
+            assert (getattr(linux_svc, name)
+                    == getattr(wol_host_service, name)), name

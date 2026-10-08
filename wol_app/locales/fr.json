@@ -445,7 +445,7 @@
   "modern.devices.infer.interval_tip": "Intervalle d'interrogation du badge d'inférence (éclair) : vérifie si le serveur API surveillé exécute une tâche en ce moment.",
   "modern.devices.infer.active": "Inférence : une tâche s'exécute en ce moment sur le serveur surveillé.",
   "modern.devices.infer.idle": "Inférence : le serveur surveillé est accessible mais inactif.",
-  "modern.devices.infer.warn": "Inférence : port API accessible, activité non mesurable (le serveur ne répond pas à /metrics) – éclair barré.",
+  "modern.devices.infer.warn": "Inférence : port API accessible, activité non mesurable (le serveur ne répond pas à /metrics, ou trop lentement – mettez à jour le service hôte, il attend désormais 2 s) – éclair barré.",
   "modern.devices.infer.warn_key": "Inférence : une clé d'API est définie, mais le service hôte de cet appareil est trop ancien pour l'envoyer (protocole v10 requis) – mettez à jour le service hôte.",
   "modern.shutdown_confirm.title": "Confirmer l'arrêt",
   "modern.shutdown_confirm.message": "Voulez-vous vraiment arrêter cet appareil ?",

@@ -32,8 +32,8 @@
         "base": {
           "PRODUCT_BUNDLE_IDENTIFIER": "de.wake-on-lan-manager",
           "PRODUCT_NAME": "WolManager",
-          "MARKETING_VERSION": "2.5.1",
-          "CURRENT_PROJECT_VERSION": "6",
+          "MARKETING_VERSION": "2.5.2",
+          "CURRENT_PROJECT_VERSION": "7",
           "INFOPLIST_FILE": "WolManager/Info.plist",
           "IPHONEOS_DEPLOYMENT_TARGET": "16.0",
           "SWIFT_VERSION": "5.9",
@@ -112,7 +112,7 @@
         "base": {
           "PRODUCT_BUNDLE_IDENTIFIER": "de.wake-on-lan-manager.watch",
           "PRODUCT_NAME": "WolManagerWatch",
-          "MARKETING_VERSION": "2.5.1",
+          "MARKETING_VERSION": "2.5.2",
           "CURRENT_PROJECT_VERSION": "6",
           "WATCHOS_DEPLOYMENT_TARGET": "10.0",
           "SWIFT_VERSION": "5.9",

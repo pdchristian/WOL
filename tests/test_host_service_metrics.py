@@ -578,7 +578,8 @@ class TestApiCapabilityProbe:
 
     def test_probe_api_identity_llama_cpp(self, monkeypatch):
         """/props with build_info -> kind llama.cpp + info extras."""
-        def fake_get(port, path, accept, max_bytes=262_144, api_key=""):
+        def fake_get(port, path, accept, max_bytes=262_144, api_key="",
+                     timeout=None):
             if path == "/health":
                 return 200, json.dumps({"status": "ok", "loaded": True,
                                         "max_context": 8192})
@@ -598,7 +599,8 @@ class TestApiCapabilityProbe:
 
     def test_probe_api_identity_openai(self, monkeypatch):
         """No /props, but /health + api_up -> plain OpenAI server."""
-        def fake_get(port, path, accept, max_bytes=262_144, api_key=""):
+        def fake_get(port, path, accept, max_bytes=262_144, api_key="",
+                     timeout=None):
             if path == "/health":
                 return 200, json.dumps({"status": "ok", "loaded": True,
                                         "max_context": 262144,
@@ -715,7 +717,8 @@ class TestRequestsActive:
             "# TYPE llamacpp:requests_deferred gauge\n"
             "llamacpp:requests_deferred 3\n")
         monkeypatch.setattr(wol_host_service, "_http_get_loopback",
-                            lambda port, path, accept, max_bytes=262_144, api_key="":
+                            lambda port, path, accept, max_bytes=262_144, api_key="",
+                            timeout=None:
                             (200, body) if path == "/metrics" else (404, ""))
         assert wol_host_service._fetch_api_activity(8080) == 5
 
@@ -872,6 +875,83 @@ class TestRequestsActive:
             wol_host_service._WATCH_PROCS.clear()
         assert called == []
         assert "requests_active" not in result["llama-server.exe:8080"]
+
+
+class TestMetricsTimeout:
+    """``/metrics`` gets its own, longer timeout.
+
+    Building the /metrics body is expensive server-side (Strata samples
+    every GPU plus psutil), so the 0.6 s model timeout timed a readable
+    server out while /v1/models answered fine — the device list then sat
+    on the amber "activity not measurable" bolt.
+    """
+
+    def test_metrics_timeout_exceeds_model_timeout(self):
+        assert (wol_host_service.WATCH_METRICS_TIMEOUT_S
+                > wol_host_service.WATCH_MODELS_TIMEOUT_S)
+
+    def test_default_connection_keeps_model_timeout(self, monkeypatch):
+        conn = mock.MagicMock()
+        conn.getresponse.return_value.status = 200
+        conn.getresponse.return_value.read.return_value = b"{}"
+        factory = mock.MagicMock(return_value=conn)
+        monkeypatch.setattr(wol_host_service.http.client, "HTTPConnection",
+                            factory)
+        wol_host_service._http_get_loopback(8080, "/health",
+                                            "application/json")
+        assert factory.call_args.kwargs["timeout"] == (
+            wol_host_service.WATCH_MODELS_TIMEOUT_S)
+
+    def test_explicit_timeout_reaches_connection(self, monkeypatch):
+        conn = mock.MagicMock()
+        conn.getresponse.return_value.status = 200
+        conn.getresponse.return_value.read.return_value = b"{}"
+        factory = mock.MagicMock(return_value=conn)
+        monkeypatch.setattr(wol_host_service.http.client, "HTTPConnection",
+                            factory)
+        wol_host_service._http_get_loopback(
+            8080, "/metrics", "application/json",
+            timeout=wol_host_service.WATCH_METRICS_TIMEOUT_S)
+        assert factory.call_args.kwargs["timeout"] == (
+            wol_host_service.WATCH_METRICS_TIMEOUT_S)
+
+    def test_activity_probe_uses_metrics_timeout(self, monkeypatch):
+        seen = []
+        body = json.dumps({"live": {"state": "idle", "queued": 0}})
+        monkeypatch.setattr(
+            wol_host_service, "_http_get_loopback",
+            lambda port, path, accept, max_bytes=262_144, api_key="",
+            timeout=None: seen.append((path, timeout)) or (200, body))
+        assert wol_host_service._fetch_api_activity(8080) == 0
+        assert seen == [("/metrics", wol_host_service.WATCH_METRICS_TIMEOUT_S)]
+
+    def test_model_metrics_probe_uses_metrics_timeout(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(
+            wol_host_service, "_http_get_loopback",
+            lambda port, path, accept, max_bytes=262_144, api_key="",
+            timeout=None: seen.append((path, timeout)) or (200, "{}"))
+        wol_host_service._fetch_model_metrics(8080, "m")
+        assert [call[1] for call in seen] == [
+            wol_host_service.WATCH_METRICS_TIMEOUT_S]
+
+    def test_identity_probe_splits_cheap_and_metrics_timeout(
+            self, monkeypatch):
+        """health/props stay fast; only the /metrics hit is patient."""
+        wol_host_service._API_PROBE_CACHE.clear()
+        seen = []
+
+        def fake_get(port, path, accept, max_bytes=262_144, api_key="",
+                     timeout=None):
+            seen.append((path, timeout))
+            return 200, json.dumps({"max_context": 8192})
+
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback", fake_get)
+        wol_host_service._probe_api_identity(8096)
+        by_path = dict(seen)
+        assert by_path["/health"] is None
+        assert by_path["/props"] is None
+        assert by_path["/metrics"] == wol_host_service.WATCH_METRICS_TIMEOUT_S
 
 
 class TestBatchGating:
@@ -1393,7 +1473,8 @@ class TestApiKeyProbing:
             calls: list = []
             monkeypatch.setattr(
                 wol_host_service, "_http_get_loopback",
-                lambda port, path, accept, max_bytes=262_144, api_key="":
+                lambda port, path, accept, max_bytes=262_144, api_key="",
+                timeout=None:
                 calls.append(api_key) or (None, ""))
             wol_host_service._probe_api_identity(8095, api_key="one")
             assert calls == []                      # same key -> cached

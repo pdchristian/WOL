@@ -445,7 +445,7 @@
   "modern.devices.infer.interval_tip": "Abfrageintervall der Inferenz-Anzeige (Blitz): prüft, ob auf dem überwachten API-Server gerade ein Job läuft.",
   "modern.devices.infer.active": "Inferenz: Es läuft gerade ein Job auf dem überwachten Server.",
   "modern.devices.infer.idle": "Inferenz: Der überwachte Server ist erreichbar, aber idle.",
-  "modern.devices.infer.warn": "Inferenz: API-Port erreichbar, Aktivität nicht messbar (Server antwortet nicht auf /metrics) – durchgestrichener Blitz.",
+  "modern.devices.infer.warn": "Inferenz: API-Port erreichbar, Aktivität nicht messbar (Server antwortet nicht oder zu langsam auf /metrics — den Host Service aktualisieren, der wartet jetzt 2 s) – durchgestrichener Blitz.",
   "modern.devices.infer.warn_key": "Inferenz: API-Key hinterlegt, aber der Host Service auf diesem Gerät ist zu alt und sendet ihn nicht (Protokoll v10 erforderlich) – Host Service aktualisieren.",
   "modern.shutdown_confirm.title": "Herunterfahren bestätigen",
   "modern.shutdown_confirm.message": "Wollen Sie das Gerät wirklich herunterfahren?",

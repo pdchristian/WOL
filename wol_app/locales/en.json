@@ -445,7 +445,7 @@
   "modern.devices.infer.interval_tip": "Poll interval of the inference badge (bolt): checks whether the watched API server is running a job right now.",
   "modern.devices.infer.active": "Inference: a job is running on the watched server right now.",
   "modern.devices.infer.idle": "Inference: the watched server is reachable but idle.",
-  "modern.devices.infer.warn": "Inference: API port reachable, activity not measurable (server does not answer /metrics) – bolt struck through.",
+  "modern.devices.infer.warn": "Inference: API port reachable, activity not measurable (the server does not answer /metrics, or answers too slowly — update the host service, it now waits 2 s) – bolt struck through.",
   "modern.devices.infer.warn_key": "Inference: an API key is configured, but the host service on this device is too old to send it (protocol v10 required) – update the host service.",
   "modern.shutdown_confirm.title": "Confirm Shutdown",
   "modern.shutdown_confirm.message": "Do you really want to shut down the device?",
