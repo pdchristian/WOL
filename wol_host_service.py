@@ -849,6 +849,33 @@ _REQUESTS_PROCESSING_RE = re.compile(
 _REQUESTS_DEFERRED_RE = re.compile(
     r"^llamacpp:requests_deferred(?:\s*\{[^}]*\})?\s+"
     r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+# vLLM metric names. vLLM itself - and servers that mirror its naming, such
+# as Strata 0.1.40+ as soon as the client's Accept header prefers text/plain
+# over the JSON body - answer /metrics with Prometheus text under these
+# names. Same semantics as the llama.cpp pair: the TRUE current running and
+# queued counts, no latching.
+_VLLM_RUNNING_RE = re.compile(
+    r"^vllm:num_requests_running(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+_VLLM_WAITING_RE = re.compile(
+    r"^vllm:num_requests_waiting(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+# Instantaneous throughput of such servers. Only Strata exports it (its JSON
+# "live" object mirrored under strata: names); plain vLLM has no tok/s gauge,
+# only histograms, so those two probes simply come back empty there.
+_STRATA_PREFILL_TPS_RE = re.compile(
+    r"^strata:live_prefill_tok_s_mean(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+_STRATA_TOK_S_RE = re.compile(
+    r"^strata:live_tok_s(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+# The same cumulative token counters under the vLLM names.
+_VLLM_PROMPT_TOKENS_RE = re.compile(
+    r"^vllm:prompt_tokens_total(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
+_VLLM_GENERATION_TOKENS_RE = re.compile(
+    r"^vllm:generation_tokens_total(?:\s*\{[^}]*\})?\s+"
+    r"([-+0-9.eE]+|NaN|[+-]Inf)\s*$", re.MULTILINE)
 # JSON /metrics "live.state"/"live.phase" values that mean "nothing
 # running" (Strata reports null throughput while idle). Any other present
 # value counts as busy.
@@ -947,6 +974,10 @@ def _fetch_model_metrics(port: int, model_name: str,
     * **Prometheus text** (llama.cpp): the ``llamacpp:prompt_tokens_seconds``
       / ``llamacpp:predicted_tokens_seconds`` gauges plus the cumulative
       counters ``llamacpp:prompt_tokens_total`` + ``llamacpp:n_decode_total``.
+      When those names are absent the equivalent vLLM-era names are used:
+      ``strata:live_prefill_tok_s_mean`` / ``strata:live_tok_s`` for the two
+      throughputs and ``vllm:prompt_tokens_total`` +
+      ``vllm:generation_tokens_total`` for the token sum.
     * **JSON** (other OpenAI-compatible servers, e.g. Strata): mapped by
       :func:`_parse_json_metrics` onto the same keys.
 
@@ -977,10 +1008,18 @@ def _fetch_model_metrics(port: int, model_name: str,
         fresh = parsed
     else:
         prompt = _parse_prometheus_gauge(text, _PROMPT_TPS_RE)
+        if prompt is None:
+            prompt = _parse_prometheus_gauge(text, _STRATA_PREFILL_TPS_RE)
         predicted = _parse_prometheus_gauge(text, _PREDICTED_TPS_RE)
+        if predicted is None:
+            predicted = _parse_prometheus_gauge(text, _STRATA_TOK_S_RE)
         counter_values = [
             _parse_prometheus_gauge(text, _PROMPT_TOKENS_TOTAL_RE),
             _parse_prometheus_gauge(text, _N_DECODE_TOTAL_RE)]
+        if all(v is None for v in counter_values):
+            counter_values = [
+                _parse_prometheus_gauge(text, _VLLM_PROMPT_TOKENS_RE),
+                _parse_prometheus_gauge(text, _VLLM_GENERATION_TOKENS_RE)]
         counters = [v for v in counter_values if v is not None]
         total = sum(counters) if counters else None
         if prompt is not None and prompt > 0:
@@ -1120,7 +1159,10 @@ def _fetch_api_activity(port: int, api_key: str = "") -> "int | None":
 
     * **Prometheus text** (llama.cpp): ``llamacpp:requests_processing`` +
       ``llamacpp:requests_deferred`` summed - unlike the throughput gauges
-      these report the true current count, no latching needed.
+      these report the true current count, no latching needed. When neither
+      is present the vLLM pair ``vllm:num_requests_running`` +
+      ``vllm:num_requests_waiting`` is tried instead (vLLM and servers
+      mirroring its naming, e.g. Strata answering ``Accept: text/plain``).
     * **JSON** (other OpenAI servers, e.g. Strata): busy (1) when
       ``live.queued`` > 0, ``live.state``/``live.phase`` names a non-idle
       phase, or ``live.tok_s``/``live.prefill_tok_s_mean`` > 0; idle (0)
@@ -1160,6 +1202,10 @@ def _fetch_api_activity(port: int, api_key: str = "") -> "int | None":
         return 0
     processing = _parse_prometheus_gauge(text, _REQUESTS_PROCESSING_RE)
     deferred = _parse_prometheus_gauge(text, _REQUESTS_DEFERRED_RE)
+    if processing is None and deferred is None:
+        # Not llama.cpp naming - try the vLLM pair before giving up.
+        processing = _parse_prometheus_gauge(text, _VLLM_RUNNING_RE)
+        deferred = _parse_prometheus_gauge(text, _VLLM_WAITING_RE)
     if processing is None and deferred is None:
         return None
     return int(max(0.0, processing or 0.0) + max(0.0, deferred or 0.0))

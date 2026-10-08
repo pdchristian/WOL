@@ -508,6 +508,65 @@ class TestModelThroughput:
             "prompt_tps": 100.0, "predicted_tps": 10.0,
             "total_tokens": 55}
 
+    def test_fetch_model_metrics_vllm_naming(self, monkeypatch):
+        """strata:live_* throughputs + vllm: token counters (live Strata body)."""
+        def fake_http(body):
+            fake_conn = mock.MagicMock()
+            fake_conn.getresponse.return_value.status = 200
+            fake_conn.getresponse.return_value.read.return_value = body
+            return fake_conn
+
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                'vllm:num_requests_running{model_name="m"} 0\n'.encode()
+                + b'vllm:prompt_tokens_total{model_name="m"} 516556\n'
+                + b'vllm:generation_tokens_total{model_name="m"} 8377\n'
+                + b'strata:live_prefill_tok_s_mean{model_name="m"} 210.5\n'
+                + b'strata:live_tok_s{model_name="m"} 65.9\n'))
+        assert wol_host_service._fetch_model_metrics(8080, "vllm") == {
+            "prompt_tps": 210.5, "predicted_tps": 65.9,
+            "total_tokens": 524933}
+
+    def test_fetch_model_metrics_llamacpp_names_win(self, monkeypatch):
+        """llama.cpp names are preferred when a server exports both."""
+        def fake_http(body):
+            fake_conn = mock.MagicMock()
+            fake_conn.getresponse.return_value.status = 200
+            fake_conn.getresponse.return_value.read.return_value = body
+            return fake_conn
+
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b"llamacpp:prompt_tokens_seconds 100\n"
+                b"llamacpp:predicted_tokens_seconds 10\n"
+                b"llamacpp:prompt_tokens_total 50\n"
+                b"llamacpp:n_decode_total 5\n"
+                b"strata:live_prefill_tok_s_mean 999\n"
+                b"strata:live_tok_s 999\n"
+                b"vllm:prompt_tokens_total 999\n"
+                b"vllm:generation_tokens_total 999\n"))
+        assert wol_host_service._fetch_model_metrics(8080, "vllm-win") == {
+            "prompt_tps": 100.0, "predicted_tps": 10.0,
+            "total_tokens": 55}
+
+    def test_fetch_model_metrics_vllm_counters_only(self, monkeypatch):
+        """Plain vLLM has no tok/s gauge - the counters alone are usable."""
+        def fake_http(body):
+            fake_conn = mock.MagicMock()
+            fake_conn.getresponse.return_value.status = 200
+            fake_conn.getresponse.return_value.read.return_value = body
+            return fake_conn
+
+        monkeypatch.setattr(
+            wol_host_service.http.client, "HTTPConnection",
+            lambda *a, **k: fake_http(
+                b'vllm:prompt_tokens_total{model_name="m"} 100\n'
+                b'vllm:generation_tokens_total{model_name="m"} 7\n'))
+        assert wol_host_service._fetch_model_metrics(8080, "vllm-counters") \
+            == {"total_tokens": 107}
+
     def test_fetch_model_metrics_degrades(self, monkeypatch):
         # non-200 -> None
         fake_conn = mock.MagicMock()
@@ -741,6 +800,42 @@ class TestRequestsActive:
         monkeypatch.setattr(
             wol_host_service, "_http_get_loopback",
             lambda *a, **k: (200, "llamacpp:prompt_tokens_total 5\n"))
+        assert wol_host_service._fetch_api_activity(8080) is None
+
+    def test_vllm_running_plus_waiting(self, monkeypatch):
+        """vLLM naming (and Strata answering Accept: text/plain)."""
+        body = (
+            "# TYPE vllm:num_requests_running gauge\n"
+            'vllm:num_requests_running{model_name="qwen3.8-flash"} 1\n'
+            "# TYPE vllm:num_requests_waiting gauge\n"
+            'vllm:num_requests_waiting{model_name="qwen3.8-flash"} 2\n')
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
+        assert wol_host_service._fetch_api_activity(8080) == 3
+
+    def test_vllm_both_zero_is_idle(self, monkeypatch):
+        body = ('vllm:num_requests_running{model_name="m"} 0\n'
+                'vllm:num_requests_waiting{model_name="m"} 0\n')
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
+        assert wol_host_service._fetch_api_activity(8080) == 0
+
+    def test_llamacpp_names_take_precedence(self, monkeypatch):
+        """A server exporting both name sets is read with llama.cpp first."""
+        body = ("llamacpp:requests_processing 2\n"
+                "llamacpp:requests_deferred 0\n"
+                "vllm:num_requests_running 5\n"
+                "vllm:num_requests_waiting 5\n")
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
+        assert wol_host_service._fetch_api_activity(8080) == 2
+
+    def test_vllm_body_without_request_gauges_returns_none(self, monkeypatch):
+        """Other vllm: gauges alone must not be mistaken for activity."""
+        body = ("vllm:kv_cache_usage_perc{model_name=\"m\"} 0.0\n"
+                "vllm:prompt_tokens_total{model_name=\"m\"} 516556\n")
+        monkeypatch.setattr(wol_host_service, "_http_get_loopback",
+                            lambda *a, **k: (200, body))
         assert wol_host_service._fetch_api_activity(8080) is None
 
     def test_json_queued_counts_as_active(self, monkeypatch):

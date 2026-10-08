@@ -569,19 +569,21 @@ Tragen Sie den Schlüssel im **Geräte-Dialog** im Feld **API-Key (Dashboard):**
 
 ### Der durchgestrichene Blitz
 
-Der Blitz in der Geräte-Kachel ist **bernsteinfarben durchgestrichen**, wenn der überwachte Inferenz-Server zwar läuft (API-Port offen, `/v1/models` antwortet), der Host Service seine **Aktivität aber nicht messen** kann. Drei Ursachen sind möglich:
+Der Blitz in der Geräte-Kachel ist **bernsteinfarben durchgestrichen**, wenn der überwachte Inferenz-Server zwar läuft (API-Port offen, `/v1/models` antwortet), der Host Service seine **Aktivität aber nicht messen** kann. Vier Ursachen sind möglich:
 
 1. Der Server hat **keinen `/metrics`-Endpunkt** – dann ist die Aktivität prinzipiell nicht messbar.
 2. Der Server verlangt einen **API-Key**, der nicht im Geräte-Dialog steht (siehe oben).
 3. `/metrics` **antwortet zu langsam**. Der Endpunkt wird serverseitig aufgebaut (GPU-Abfragen, Systemstatistik); ältere Host Services gaben nach **0,6 s** auf, obwohl der Server kurz danach korrekt geantwortet hätte. Ab dem aktuellen Dienst wartet die `/metrics`-Abfrage **2 s** (`WATCH_METRICS_TIMEOUT_S`), die günstigen Abfragen (`/v1/models`, `/health`, `/props`) bleiben bei 0,6 s.
+4. `/metrics` antwortet, aber unter **Metrik-Namen, die der Dienst nicht kannte**. Gelesen werden die llama.cpp-Namen (`llamacpp:requests_processing` / `llamacpp:requests_deferred`) und seit dem aktuellen Dienst zusätzlich die **vLLM-Namen** (`vllm:num_requests_running` / `vllm:num_requests_waiting`). Das ist wichtig, weil viele Server den Format **aushandeln**: Strata liefert auf `Accept: application/json` seinen JSON-Body, auf `Accept: text/plain` dagegen Prometheus-Text mit `vllm:`- und `strata:`-Zeilen.
 
 Prüfen Sie Latenz und Antwort auf dem Zielsystem:
 
 ```
 curl.exe -s -o NUL -w "%{http_code} in %{time_total}s`n" http://127.0.0.1:PORT/metrics
+curl.exe -s -H "Accept: text/plain" http://127.0.0.1:PORT/metrics | Select-String "requests_running|requests_processing"
 ```
 
-Liegt die Zeit über 0,6 s, hilft ein aktualisierter Host Service (`--install`). Ob die Abfrage grundsätzlich klappt, sehen Sie im Dashboard am Tooltip der API-Zeile: dort listet die App die Endpunkte auf, die geantwortet haben – fehlt **`metrics`**, während `models` genannt wird, scheitert genau diese Abfrage.
+Liegt die Zeit über 0,6 s, hilft ein aktualisierter Host Service (`--install`). Findet der zweite Befehl keine Zeile, exportiert der Server keine Aktivitäts-Metrik. Ob die Abfrage grundsätzlich klappt, sehen Sie im Dashboard am Tooltip der API-Zeile: dort listet die App die Endpunkte auf, die geantwortet haben – fehlt **`metrics`**, während `models` genannt wird, scheitert genau diese Abfrage.
 
 ### Batches erstellen und ausführen
 Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:

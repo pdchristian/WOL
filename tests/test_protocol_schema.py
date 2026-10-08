@@ -535,3 +535,16 @@ class TestContractInvariants:
                      "WATCH_METRICS_TIMEOUT_S", "WATCH_PROBE_TTL_S"):
             assert (getattr(linux_svc, name)
                     == getattr(wol_host_service, name)), name
+
+    def test_linux_core_matches_metrics_gauge_patterns(self):
+        """Both services must read the same /metrics gauge names."""
+        import wol_host_service_linux as linux_svc
+
+        for name in ("_PROMPT_TPS_RE", "_PREDICTED_TPS_RE",
+                     "_PROMPT_TOKENS_TOTAL_RE", "_N_DECODE_TOTAL_RE",
+                     "_REQUESTS_PROCESSING_RE", "_REQUESTS_DEFERRED_RE",
+                     "_VLLM_RUNNING_RE", "_VLLM_WAITING_RE",
+                     "_VLLM_PROMPT_TOKENS_RE", "_VLLM_GENERATION_TOKENS_RE",
+                     "_STRATA_PREFILL_TPS_RE", "_STRATA_TOK_S_RE"):
+            assert (getattr(linux_svc, name).pattern
+                    == getattr(wol_host_service, name).pattern), name

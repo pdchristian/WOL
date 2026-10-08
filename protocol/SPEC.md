@@ -253,7 +253,11 @@ felder (`status`, `protocol`, `hostname`, `os`) sind immer vorhanden.
   parallel zur Modell-Liste:
   * **Prometheus-Text** (llama.cpp): `llamacpp:requests_processing` +
     `llamacpp:requests_deferred` (Summe; beide Gauges melden die echte
-    aktuelle Slot-/Queue-Anzahl, kein Latching).
+    aktuelle Slot-/Queue-Anzahl, kein Latching). Fehlen diese beiden Namen,
+    wird das vLLM-Paar `vllm:num_requests_running` +
+    `vllm:num_requests_waiting` gelesen — vLLM selbst und Server, die sein
+    Naming spiegeln (Strata 0.1.40+ antwortet auf `Accept: text/plain` mit
+    Prometheus-Text statt seines JSON-Bodies). llama.cpp-Namen haben Vorrang.
   * **JSON** (andere OpenAI-Server, z. B. Strata): 1 wenn `live.queued` > 0
     oder `live.state`/`live.phase` eine nicht-Idle-Phase nennt
     (Idle = `idle`/`waiting`/`ready`) oder `live.tok_s` /
