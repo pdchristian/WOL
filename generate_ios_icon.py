@@ -7,14 +7,17 @@ darüber das weiße Symbol aus `ic_launcher_foreground.png`. Damit ist das
 iOS-Icon farblich identisch mit dem Android-Icon.
 
 iOS skaliert/maskiert die 1024px-Vorlage selbst (Squircle ohne Randzone), die
-Datei muss opak sein (kein Alpha-Kanal). Die Android-Adaptive-Ebene liegt auf
-einem 108-dp-Canvas mit 72-dp-Sichtzone; das Symbol wird daher auf die
-iOS-typische Füllgröße gebracht, damit es nicht an den Rand gedrängt wirkt.
+Datei muss opak sein (kein Alpha-Kanal). Größe und Position des Symbols folgen
+der Android-Launcher-Darstellung: Der Adaptive-Layer liegt auf einem
+108-dp-Canvas, von dem die Launcher nur die mittleren 72 dp zeigen. Dieses
+Sichtzonen-Fenster wird auf das iOS-Canvas gelegt, dadurch wirken beide Icons
+identisch. Die Kulisse nutzt weiterhin den kompletten Verlauf (iOS füllt die
+ganze Fläche aus).
 
 Aufruf:  python generate_ios_icon.py [--preview]
 Optionen:
-  --preview   schreibt zusätzlich Vorschauen (verschiedene Füllgrade) nach
-              build/icon_preview/ statt das Asset zu überschreiben
+  --preview   schreibt Vorschauen (Android-Referenz, iOS, Gegenüberstellung)
+              nach build/icon_preview/ statt das Asset zu überschreiben
 Benötigt: Pillow (requirements-dev.txt)
 """
 
@@ -24,7 +27,7 @@ import json
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageOps
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent
 BG_SRC = (
@@ -50,44 +53,65 @@ FG_SRC = (
 OUT_DIR = ROOT / "ios" / "WolManager" / "Assets.xcassets" / "AppIcon.appiconset"
 PREVIEW_DIR = ROOT / "build" / "icon_preview"
 SIZE = 1024
-# Symbolbreite als Anteil der Canvas-Kantenlänge (iOS-Standard: ~0.60).
-SYMBOL_FILL = 0.61
+
+# Android-Adaptive-Ebene: 108-dp-Canvas, von dem die Launcher nur die mittleren
+# 72 dp zeigen. iOS maskiert die komplette Vorlage, also überträgt genau dieser
+# Ausschnitt die Symbolgröße und -position auf das iOS-Icon.
+ANDROID_CANVAS_DP = 108
+ANDROID_VISIBLE_DP = 72
+# Helligkeitsschwelle für das weiße Symbol (Teal-Kulisse liegt bei L ≈ 112).
+SYMBOL_LUMINANCE = 200
 
 
-def symbol_bbox(fg: Image.Image) -> tuple[int, int, int, int]:
-    """Begrenzungsrahmen der deckenden Symbol-Pixel der Android-Vordergrundebene."""
-    alpha = fg.getchannel("A")
-    return alpha.getbbox() or (0, 0, fg.width, fg.height)
+def visible_zone(img: Image.Image) -> Image.Image:
+    """Mittleres 72/108-Fenster eines Android-Adaptive-Canvases."""
+    margin_x = img.width * (ANDROID_CANVAS_DP - ANDROID_VISIBLE_DP) / (2 * ANDROID_CANVAS_DP)
+    margin_y = img.height * (ANDROID_CANVAS_DP - ANDROID_VISIBLE_DP) / (2 * ANDROID_CANVAS_DP)
+    return img.crop(
+        (
+            round(margin_x),
+            round(margin_y),
+            round(img.width - margin_x),
+            round(img.height - margin_y),
+        )
+    )
 
 
-def render(fill: float = SYMBOL_FILL) -> Image.Image:
+def render() -> Image.Image:
     """Volles 1024x1024-Icon: Android-Verlauf als Kulisse + weißes Symbol."""
     bg = Image.open(BG_SRC).convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
 
     fg = Image.open(FG_SRC).convert("RGBA")
-    x0, _, x1, _ = symbol_bbox(fg)
-    scale = (SIZE * fill) / (x1 - x0 + 1)
-    layer = fg.resize(
-        (max(1, round(fg.width * scale)), max(1, round(fg.height * scale))), Image.LANCZOS
-    )
+    layer = visible_zone(fg).resize((SIZE, SIZE), Image.LANCZOS)
+    return Image.alpha_composite(bg.convert("RGBA"), layer).convert("RGB")
 
-    # Symbolmittelpunkt exzentrisch auf Canvasmitte setzen.
-    lx0, ly0, lx1, ly1 = symbol_bbox(layer)
-    cx = (lx0 + lx1) / 2
-    cy = (ly0 + ly1) / 2
-    dx = round(SIZE / 2 - cx)
-    dy = round(SIZE / 2 - cy)
 
-    canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    canvas.paste(layer, (dx, dy), layer)
-    return Image.alpha_composite(bg.convert("RGBA"), canvas).convert("RGB")
+def symbol_fill(icon: Image.Image) -> tuple[float, float]:
+    """Anteil des Symbols an der Canvas-Kantenlänge (Breite, Höhe)."""
+    bbox = icon.convert("L").point(lambda v: 255 if v > SYMBOL_LUMINANCE else 0).getbbox()
+    if not bbox:
+        return (0.0, 0.0)
+    return ((bbox[2] - bbox[0]) / SIZE, (bbox[3] - bbox[1]) / SIZE)
+
+
+def android_reference() -> Image.Image:
+    """So baut der Launcher das Android-Icon: beide Ebenen, mittlere 72 dp sichtbar."""
+    bg = Image.open(BG_SRC).convert("RGBA").resize((SIZE, SIZE), Image.LANCZOS)
+    fg = Image.open(FG_SRC).convert("RGBA").resize((SIZE, SIZE), Image.LANCZOS)
+    return visible_zone(Image.alpha_composite(bg, fg)).resize((SIZE, SIZE), Image.LANCZOS)
 
 
 def write_asset(icon: Image.Image) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / "AppIcon1024.png"
     icon.save(out, "PNG")
+    aw, ah = symbol_fill(android_reference())
+    w, h = symbol_fill(icon)
     print(f"Geschrieben: {out.relative_to(ROOT)} ({SIZE}x{SIZE}, opak)")
+    print(
+        f"Symbol-Füllgrad iOS: {w * 100:.1f} % Breite / {h * 100:.1f} % Höhe | "
+        f"Android-Referenz: {aw * 100:.1f} % / {ah * 100:.1f} %"
+    )
 
     ensure_contents(
         OUT_DIR / "Contents.json",
@@ -119,14 +143,22 @@ def ensure_contents(path: Path, data: dict) -> None:
 
 
 def write_previews() -> None:
+    """Android-Launcher-Referenz und iOS-Icon nebeneinander als Kontrolle."""
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
-    for fill in (0.55, 0.61, 0.72):
-        icon = render(fill)
-        out = PREVIEW_DIR / f"ios_icon_fill{int(fill * 100):02d}.png"
-        icon.save(out, "PNG")
-        thumb = ImageOps.fit(icon, (256, 256), Image.LANCZOS)
-        thumb.save(PREVIEW_DIR / f"ios_icon_fill{int(fill * 100):02d}_256.png")
-        print(f"Vorschau: {out.relative_to(ROOT)}")
+
+    android = android_reference()
+    ios = render()
+    android.save(PREVIEW_DIR / "android_reference.png")
+    ios.save(PREVIEW_DIR / "ios.png")
+
+    thumb = 256
+    sheet = Image.new("RGB", (thumb * 2, thumb), (255, 255, 255))
+    sheet.paste(android.resize((thumb, thumb), Image.LANCZOS), (0, 0))
+    sheet.paste(ios.resize((thumb, thumb), Image.LANCZOS), (thumb, 0))
+    sheet.save(PREVIEW_DIR / "compare.png")
+    print(
+        f"Vorschau: {(PREVIEW_DIR / 'compare.png').relative_to(ROOT)} (links Android, rechts iOS)"
+    )
 
 
 def main() -> None:
