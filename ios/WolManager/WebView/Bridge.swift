@@ -416,7 +416,8 @@ final class Bridge: NSObject, WKScriptMessageHandler {
 
     private func ifacesJson() -> [[String: Any]] {
         container.scanner.activeInterfaces().map {
-            ["name": $0.name, "ip": $0.ip, "prefix": $0.prefix, "dns": $0.dns, "checked": $0.checked]
+            ["name": $0.name, "ip": $0.ip, "prefix": $0.prefix, "network": $0.network,
+             "dns": $0.dns, "checked": $0.checked]
         }
     }
 

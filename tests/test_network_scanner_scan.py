@@ -38,6 +38,30 @@ def _host(ipv4):
     return {"hostname": "", "ipv4": ipv4, "ipv6": "", "mac": "Unknown"}
 
 
+class TestScanSubnetCoverage:
+    """A scan of one adapter must sweep the *whole* subnet of that adapter."""
+
+    def test_scan_subnet_starts_at_subnet_not_adapter_ip(self, monkeypatch):
+        monkeypatch.setattr(network_scanner, "ping_host", lambda ip, timeout=1: False)
+        seen = []
+        network_scanner.scan_subnet(
+            "192.168.2.130", "255.255.255.0", timeout=1,
+            progress_callback=lambda current, total, ip: seen.append(ip),
+        )
+        assert seen[0] == "192.168.2.1"
+        assert seen[-1] == "192.168.2.254"
+        assert len(seen) == 254
+
+    def test_scan_subnet_independent_of_adapter_address(self, monkeypatch):
+        monkeypatch.setattr(network_scanner, "ping_host", lambda ip, timeout=1: False)
+        first, second = [], []
+        network_scanner.scan_subnet("192.168.2.130", "255.255.255.0", timeout=1,
+                                    progress_callback=lambda c, t, ip: first.append(ip))
+        network_scanner.scan_subnet("192.168.2.74", "255.255.255.0", timeout=1,
+                                    progress_callback=lambda c, t, ip: second.append(ip))
+        assert first == second
+
+
 class TestScanNetwork:
     def test_dedup_across_interfaces(self, qapp, english, monkeypatch):
         interfaces = [
@@ -80,8 +104,10 @@ class TestScanNetwork:
         # One callback per interface, with the translated subnet message.
         assert len(calls) == 2
         expected = {
-            Translations.tr("scan.scanning_subnet", ip="192.168.1.0"),
-            Translations.tr("scan.scanning_subnet", ip="10.0.0.0"),
+            # The whole subnet is scanned, so the message names the subnet (CIDR),
+            # not the adapter address.
+            Translations.tr("scan.scanning_subnet", ip="192.168.1.0/24"),
+            Translations.tr("scan.scanning_subnet", ip="10.0.0.0/24"),
         }
         assert {msg for _, _, msg in calls} == expected
 

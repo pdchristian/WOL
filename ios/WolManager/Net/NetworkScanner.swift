@@ -14,6 +14,9 @@ final class NetworkScanner {
         var prefix: Int
         var dns: String
         var checked: Bool = true
+
+        /// Netzwerkadresse des Netzes: 192.168.2.130/24 -> 192.168.2.0.
+        var network: String { NetworkScanner.networkAddress(ip: ip, prefix: prefix) }
     }
 
     enum ScanEvent {
@@ -66,7 +69,19 @@ final class NetworkScanner {
         return !ip.hasPrefix("169.") && !ip.hasPrefix("172.")
     }
 
-    /// Host-Adressen eines Netzes, ohne Netzwerk-/Broadcast-Adresse.
+    /// Netzwerkadresse des Netzes, in dem [ip] liegt — der Scan beginnt bei der
+    /// Subnetzadresse und nicht bei der Adapteradresse (192.168.2.130/24 -> 192.168.2.0).
+    static func networkAddress(ip: String, prefix: Int) -> String {
+        let parts = ip.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return ip }
+        let addr = (UInt32(parts[0]) << 24) | (UInt32(parts[1]) << 16) |
+                   (UInt32(parts[2]) << 8) | UInt32(parts[3])
+        let pfx = (0...32).contains(prefix) ? prefix : 24
+        let mask: UInt32 = pfx >= 32 ? 0xFFFF_FFFF : ~(UInt32(0xFFFF_FFFF) >> pfx)
+        return MagicPacket.uIntToIPv4(addr & mask)
+    }
+
+    /// Host-Adressen des kompletten Netzes (bei /24 also .1 … .254), ohne Netzwerk-/Broadcast-Adresse.
     private func hostAddresses(base: String, prefix: Int) -> [String] {
         let parts = base.split(separator: ".").compactMap { Int($0) }
         guard parts.count == 4 else { return [] }
@@ -89,7 +104,7 @@ final class NetworkScanner {
         cancelLock.lock(); cancelFlag = false; cancelLock.unlock()
 
         let targets = ifaces.filter { $0.checked }
-            .flatMap { hostAddresses(base: $0.ip, prefix: $0.prefix) }
+            .flatMap { hostAddresses(base: $0.network, prefix: $0.prefix) }
         let unique = Array(Set(targets))
         let total = unique.count
         let doneCounter = AtomicCounter()

@@ -140,6 +140,27 @@ final class AppContainer {
         guard let m = snap else { return .failure(BridgeError("bad_response")) }
         return .success(m)
     }
+
+    /// Batch auf dem Host-Service ausführen (Batches sind am Gerät persistiert).
+    /// Nutzt das am Batch gespeicherte Skript — die Watch kennt nur id und Name
+    /// (Skript und Passwort verlassen das iPhone nicht).
+    func runBatch(device: Device, batch: BatchDef) async -> Result<BatchResult, Error> {
+        let host = device.ip
+        guard !host.isEmpty else { return .failure(BridgeError("no_ip")) }
+        let pass = repo.getPassword(id: device.id)
+        let (res, br) = await hostClient.runBatch(host: host, script: batch.script,
+                                                  username: device.username, password: pass,
+                                                  timeoutSec: batch.timeout)
+        if case let .error(msg) = res {
+            repo.log(device: device.name, level: "error",
+                     msg: "Watch: Batch \(batch.name) fehlgeschlagen: \(msg)")
+            return .failure(BridgeError(msg))
+        }
+        guard let r = br else { return .failure(BridgeError("bad_response")) }
+        repo.log(device: device.name, level: r.exitCode == 0 ? "info" : "error",
+                 msg: "Watch: Batch \(batch.name): Exit-Code \(r.exitCode)")
+        return .success(r)
+    }
 }
 
 /// Schmaler Action-Contract, den die Watch-Brücke (und Tests) statt des
@@ -149,6 +170,7 @@ protocol WatchActions: AnyObject {
     func shutdown(device: Device) async -> Result<Void, Error>
     func checkStatus(device: Device) async -> Bool
     func metrics(device: Device) async -> Result<MetricsSnapshot, Error>
+    func runBatch(device: Device, batch: BatchDef) async -> Result<BatchResult, Error>
 }
 
 extension AppContainer: WatchActions {}

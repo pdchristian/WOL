@@ -2,9 +2,64 @@ import Foundation
 
 /*
  * Datenmodelle der Watch-App — Spiegel des iPhone-Vertrags
- * (WatchCommandDispatcher): Geräte ohne Passwörter, Metriken im flachen
- * UI-Format (Prozent/GB) aus MetricsUI.uiJson.
+ * (WatchCommandDispatcher): Geräte ohne Passwörter und ohne Batch-Skripte
+ * (Batches nur als id/Name in iOS-Reihenfolge), Metriken im flachen UI-Format
+ * (Prozent/GB) aus MetricsUI.uiJson.
  */
+
+/// Batch-Kurzprofil (Snapshot-Befehl / applicationContext). Bewusst nur id und
+/// Name: Das Skript verlässt das iPhone nicht, ausgeführt wird auf dem iPhone
+/// (Host-Service). Die Array-Reihenfolge ist die in der iOS-App eingestellte.
+struct WatchBatch: Identifiable, Equatable, Hashable {
+    var id: String
+    var name: String
+}
+
+extension WatchBatch: Decodable {
+    enum CodingKeys: String, CodingKey { case id, name }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+    }
+}
+
+/// Übersetzungshilfe für Schlüssel aus `Resources/Localizable.xcstrings`
+/// (Landessprache; unbekannte Schlüssel liefern den Schlüssel selbst).
+/// Format-Schlüssel („batch.done" mit %1$@/%2$@) mit `String(format:)` füllen.
+enum L10n {
+    static func key(_ key: String) -> String {
+        let value = String(localized: String.LocalizationValue(key))
+        return value == key ? key : value
+    }
+}
+
+/// Ergebnis einer von der Watch gestarteten Batch-Ausführung (Push vom iPhone).
+struct WatchBatchResult {
+    var deviceId: String
+    var batchId: String
+    var name: String
+    var ok: Bool
+    var exitCode: Int
+    var durationMs: Int64
+    var error: String?
+
+    init(_ message: [String: Any]) {
+        deviceId = (message["id"] as? String) ?? ""
+        batchId = (message["batchId"] as? String) ?? ""
+        name = (message["name"] as? String) ?? ""
+        ok = (message["ok"] as? Bool) ?? false
+        exitCode = (message["exitCode"] as? Int) ?? -1
+        durationMs = (message["durationMs"] as? Int).map(Int64.init)
+            ?? (message["durationMs"] as? Int64) ?? 0
+        error = message["error"] as? String
+    }
+
+    /// "2.3 s" für die Toast-Zeile.
+    var durationText: String {
+        String(format: "%.1f s", Double(durationMs) / 1000.0)
+    }
+}
 
 /// Geräte-Kurzprofil (Snapshot-Befehl / applicationContext).
 struct WatchDevice: Identifiable, Equatable, Hashable {
@@ -16,6 +71,10 @@ struct WatchDevice: Identifiable, Equatable, Hashable {
     var enabled: Bool
     var hasPassword: Bool
     var watch: [String]
+    /// Batches in der Reihenfolge der iOS-App (Drag & Drop dort, nicht auf der Watch).
+    var batches: [WatchBatch]
+    /// Freigabe der Batch-Ausführung am Gerät (`allow_batch`).
+    var allowBatch: Bool
     /// Live-Status aus statusAll (nil = unbekannt).
     var online: Bool?
     /// true, solange die App nach dem Wake auf das Hochfahren wartet.
@@ -23,16 +82,18 @@ struct WatchDevice: Identifiable, Equatable, Hashable {
 
     init(id: String, name: String, mac: String = "", ip: String = "", username: String = "",
          enabled: Bool = true, hasPassword: Bool = false, watch: [String] = [],
+         batches: [WatchBatch] = [], allowBatch: Bool = false,
          online: Bool? = nil, waking: Bool = false) {
         self.id = id; self.name = name; self.mac = mac; self.ip = ip
         self.username = username; self.enabled = enabled; self.hasPassword = hasPassword
-        self.watch = watch; self.online = online; self.waking = waking
+        self.watch = watch; self.batches = batches; self.allowBatch = allowBatch
+        self.online = online; self.waking = waking
     }
 }
 
 extension WatchDevice: Decodable {
     enum CodingKeys: String, CodingKey {
-        case id, name, mac, ip, username, enabled, hasPassword, watch
+        case id, name, mac, ip, username, enabled, hasPassword, watch, batches, allowBatch
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -44,6 +105,8 @@ extension WatchDevice: Decodable {
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         hasPassword = try c.decodeIfPresent(Bool.self, forKey: .hasPassword) ?? false
         watch = try c.decodeIfPresent([String].self, forKey: .watch) ?? []
+        batches = try c.decodeIfPresent([WatchBatch].self, forKey: .batches) ?? []
+        allowBatch = try c.decodeIfPresent(Bool.self, forKey: .allowBatch) ?? false
         online = nil
         waking = false
     }

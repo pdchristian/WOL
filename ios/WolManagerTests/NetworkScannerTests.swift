@@ -28,4 +28,25 @@ final class NetworkScannerTests: XCTestCase {
         XCTAssertFalse(NetworkScanner.isScannable(""))
         XCTAssertFalse(NetworkScanner.isScannable(nil))
     }
+
+    func testAdapterAddressMapsToSubnetNetworkAddress() {
+        XCTAssertEqual(NetworkScanner.networkAddress(ip: "192.168.2.130", prefix: 24), "192.168.2.0")
+        XCTAssertEqual(NetworkScanner.networkAddress(ip: "192.168.2.74", prefix: 24), "192.168.2.0")
+    }
+
+    func testNonDefaultPrefixIsHonoured() {
+        XCTAssertEqual(NetworkScanner.networkAddress(ip: "10.20.30.77", prefix: 22), "10.20.28.0")
+        XCTAssertEqual(NetworkScanner.networkAddress(ip: "10.0.5.9", prefix: 16), "10.0.0.0")
+    }
+
+    func testIfaceExposesItsSubnetNetwork() {
+        let iface = NetworkScanner.Iface(name: "en0", ip: "192.168.2.130", prefix: 24, dns: "")
+        XCTAssertEqual(iface.network, "192.168.2.0")
+    }
+
+    func testInvalidAddressOrPrefixFallsBackSafely() {
+        XCTAssertEqual(NetworkScanner.networkAddress(ip: "not-an-ip", prefix: 24), "not-an-ip")
+        // unbrauchbarer Präfix -> /24 wird angenommen
+        XCTAssertEqual(NetworkScanner.networkAddress(ip: "192.168.2.130", prefix: 99), "192.168.2.0")
+    }
 }

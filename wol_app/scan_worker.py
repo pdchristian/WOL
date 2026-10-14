@@ -2,7 +2,7 @@
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from wol_app.network_scanner import scan_subnet
+from wol_app.network_scanner import scan_subnet, subnet_label
 from wol_app.translations import Translations
 
 
@@ -28,7 +28,8 @@ class ScanWorker(QObject):
         seen_ips = set()
 
         for iface in self.interfaces:
-            iface_msg: str = Translations.tr("scan.scanning_subnet", ip=iface["ip"])
+            subnet = subnet_label(iface["ip"], iface["netmask"])
+            iface_msg: str = Translations.tr("scan.scanning_subnet", ip=subnet)
             self.progress.emit(iface_msg, 0, 0)
 
             try:
@@ -46,7 +47,7 @@ class ScanWorker(QObject):
                         all_results.append(host)
             except Exception as e:
                 self.progress.emit(
-                    Translations.tr("scan.error_interface", ip=iface["ip"], error=str(e)), 0, 0
+                    Translations.tr("scan.error_interface", ip=subnet, error=str(e)), 0, 0
                 )
 
         self.progress.emit(

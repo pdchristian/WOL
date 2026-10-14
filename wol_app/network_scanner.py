@@ -137,8 +137,28 @@ def netmask_to_cidr(netmask: str) -> int:
         return 24
 
 
+def network_address(ip: str, netmask: str) -> str:
+    """Network (subnet) address of ``ip``/``netmask``, e.g. 192.168.2.130/24 -> 192.168.2.0."""
+    try:
+        cidr = netmask_to_cidr(netmask)
+        ip_int = struct.unpack("!I", socket.inet_aton(ip))[0]
+        mask = 0xFFFFFFFF & (0xFFFFFFFF << (32 - cidr))
+        return socket.inet_ntoa(struct.pack("!I", ip_int & mask))
+    except Exception:
+        return ip
+
+
+def subnet_label(ip: str, netmask: str) -> str:
+    """CIDR label of the whole subnet an adapter belongs to, e.g. "192.168.2.0/24"."""
+    return f"{network_address(ip, netmask)}/{netmask_to_cidr(netmask)}"
+
+
 def get_subnet_range(ip: str, netmask: str) -> list[str]:
-    """Get all IP addresses in the subnet."""
+    """Get all host addresses of the *subnet* containing ``ip``.
+
+    The range is anchored at the network address, never at the adapter address:
+    a /24 adapter on 192.168.2.130 yields 192.168.2.1 … 192.168.2.254.
+    """
     cidr = netmask_to_cidr(netmask)
     ip_int = struct.unpack("!I", socket.inet_aton(ip))[0]
     network = ip_int & (0xFFFFFFFF << (32 - cidr))
@@ -148,7 +168,10 @@ def get_subnet_range(ip: str, netmask: str) -> list[str]:
     else:
         hosts = 2 ** (32 - cidr) - 2
 
-    return [socket.inet_ntoa(struct.pack("!I", network + i)) for i in range(1, min(hosts + 1, 254))]
+    # Cap the list so very large subnets cannot exhaust memory. scan_subnet()
+    # applies the same MAX_SUBNET_SIZE limit afterwards.
+    return [socket.inet_ntoa(struct.pack("!I", network + i))
+            for i in range(1, min(hosts + 1, MAX_SUBNET_SIZE + 1))]
 
 
 def ping_host(ip: str, timeout: int = 1) -> bool:
@@ -578,7 +601,9 @@ def scan_network(timeout: int = 1, progress_callback=None,
     for iface in interfaces:
         if progress_callback:
             progress_callback(
-                None, None, Translations.tr("scan.scanning_subnet", ip=iface["ip"])
+                None, None,
+                Translations.tr("scan.scanning_subnet",
+                                ip=subnet_label(iface["ip"], iface["netmask"]))
             )
         hosts = scan_subnet(iface["ip"], iface["netmask"], timeout,
                            progress_callback, detect_os=detect_os)

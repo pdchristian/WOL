@@ -3,8 +3,10 @@ import WatchConnectivity
 
 /*
  * Apple-Watch-App (watchOS 10+). Geräte als Karten/Liste mit Power-Icon zum
- * Aufwecken/Herunterfahren, vereinfachtes Dashboard (Dienste + CPU/RAM/GPU/VRAM).
- * Alle Aktionen laufen über das iPhone (WatchService → WatchBridgeService).
+ * Aufwecken/Herunterfahren, vereinfachtes Dashboard (Dienste + CPU/RAM/GPU/VRAM)
+ * und Batches in der Reihenfolge der iOS-App (Play-Dreieck = ausführen,
+ * Bestätigungs-Popup wie beim Herunterfahren). Alle Aktionen laufen über das
+ * iPhone (WatchService → WatchBridgeService).
  */
 @main
 struct WolWatchApp: App {
@@ -24,6 +26,14 @@ final class AppState: ObservableObject {
 
     enum ViewMode: String { case cards, list }
 
+    /// Batch, dessen Ausführung gerade bestätigt werden soll (Popup).
+    struct PendingBatch: Identifiable, Equatable {
+        var deviceId: String
+        var deviceName: String
+        var batch: WatchBatch
+        var id: String { deviceId + "/" + batch.id }
+    }
+
     @Published var devices: [WatchDevice] = []
     @Published var viewMode: ViewMode = .cards
     @Published var loading = false
@@ -31,6 +41,8 @@ final class AppState: ObservableObject {
     @Published var sort: String = "name"
     /// Bestätigungs-Dialog vor dem Herunterfahren.
     @Published var confirmDevice: WatchDevice?
+    /// Bestätigungs-Dialog vor dem Starten eines Batches.
+    @Published var confirmBatch: PendingBatch?
     /// Kurze Rückmeldung (Wake gesendet, Fehler …).
     @Published var toast: String?
     /// true, wenn das iPhone zuletzt nicht erreichbar war (Warnbox).
@@ -54,13 +66,31 @@ final class AppState: ObservableObject {
             forName: WatchService.contextDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.applyIncomingContext() }
         }
+        // Batch-Ergebnis vom iPhone (Ausführung läuft dort, oft minutenlang).
+        NotificationCenter.default.addObserver(
+            forName: WatchService.batchResultDidChange, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let result = note.object as? WatchBatchResult else { return }
+                self.showBatchResult(result)
+            }
+        }
     }
 
-    /// applicationContext vom iPhone: Sortierung + letzter Status live übernehmen.
+    /// applicationContext vom iPhone: Sortierung, Batches und letzter Status
+    /// live übernehmen. Die Batch-Reihenfolge ist immer die der iOS-App — auch
+    /// nach dem Umsortieren dort (repo.onChange stößt den Snapshot an).
     private func applyIncomingContext() {
         let ctx = WatchService.shared.cachedContext()
         var changed = false
         if ctx.sort != sort { sort = ctx.sort; changed = true }
+        for i in devices.indices {
+            if let c = ctx.devices.first(where: { $0.id == devices[i].id }),
+               (c.batches != devices[i].batches || c.allowBatch != devices[i].allowBatch) {
+                devices[i].batches = c.batches
+                devices[i].allowBatch = c.allowBatch
+                changed = true
+            }
+        }
         if !ctx.statuses.isEmpty {
             for i in devices.indices {
                 if let s = ctx.statuses[devices[i].id], devices[i].online != s {
@@ -200,6 +230,50 @@ final class AppState: ObservableObject {
             } catch {
                 showToast(error.localizedDescription)
             }
+        }
+    }
+
+    // MARK: - Batches
+
+    /// Tap auf das Play-Dreieck einer Batch-Zeile: erst Bestätigungs-Popup
+    /// (analog zum Herunterfahren). Ohne Freigabe am Gerät bleibt es wie in der
+    /// iOS-App bei einem Hinweis.
+    func requestRunBatch(deviceId: String, batchId: String) {
+        guard let d = devices.first(where: { $0.id == deviceId }),
+              let b = d.batches.first(where: { $0.id == batchId }) else { return }
+        guard d.allowBatch else {
+            showToast(L10n.key("batch.disabled"))
+            return
+        }
+        confirmBatch = PendingBatch(deviceId: d.id, deviceName: d.name, batch: b)
+    }
+
+    /// Bestätigt: das iPhone führt den Batch am Host-Service aus. Die Antwort ist
+    /// nur der Start — das Ergebnis meldet der iPhone-Dispatcher per
+    /// `batchResult` zurück (Toast), weil die Ausführung Minuten dauern kann.
+    func confirmRunBatch() {
+        guard let p = confirmBatch else { return }
+        confirmBatch = nil
+        Task {
+            do {
+                try await WatchService.shared.runBatch(id: p.deviceId, batchId: p.batch.id)
+                iPhoneUnreachable = false
+                showToast(L10n.key("batch.started"))
+            } catch {
+                showToast(error.localizedDescription)
+            }
+        }
+    }
+
+    private func showBatchResult(_ r: WatchBatchResult) {
+        if !r.ok {
+            showToast(String(format: L10n.key("batch.failed"),
+                             r.name, r.error ?? L10n.key("error")))
+        } else if r.exitCode == 0 {
+            showToast(String(format: L10n.key("batch.done"), r.name, r.durationText))
+        } else {
+            showToast(String(format: L10n.key("batch.exit"),
+                             r.name, r.exitCode, r.durationText))
         }
     }
 

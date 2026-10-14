@@ -43,6 +43,7 @@ from wol_app.network_scanner import (
     get_dns_servers_for_interface,
     get_local_interfaces,
     is_real_interface,
+    subnet_label,
 )
 from wol_app.scan_worker import ScanWorker
 from wol_app.translations import Translations
@@ -287,7 +288,8 @@ class ManageView(QWidget):
         ]
         for idx, iface in enumerate(self._ifaces):
             dns_servers = get_dns_servers_for_interface(iface["ip"])
-            label_text = f"{iface['ip']} / {iface['netmask']}"
+            # Whole subnet (e.g. 192.168.2.0/24) instead of the adapter address
+            label_text = subnet_label(iface["ip"], iface["netmask"])
             if dns_servers:
                 label_text += f"  |  {Translations.tr('scan_dialog.dns_server', dns=dns_servers[0])}"
             cb = ToggleWithLabel(label_text, checked=idx == 0)

@@ -20,6 +20,9 @@ final class WatchService: NSObject, WCSessionDelegate, @unchecked Sendable {
     private let lock = NSLock()
 
     static let contextDidChange = Notification.Name("de.wolmanager.watch.context")
+    /// iPhone → Watch: Ergebnis einer gestarteten Batch-Ausführung (object ist
+    /// ein `WatchBatchResult`).
+    static let batchResultDidChange = Notification.Name("de.wolmanager.watch.batchResult")
 
     /// Zuletzt empfangener applicationContext. Bewusst das Delegate-Payload und
     /// nicht WCSession.default.applicationContext: die Property liefert (auch
@@ -109,6 +112,13 @@ final class WatchService: NSObject, WCSessionDelegate, @unchecked Sendable {
 
     func wake(id: String) async throws { _ = try await request(["command": "wake", "id": id]) }
     func shutdown(id: String) async throws { _ = try await request(["command": "shutdown", "id": id]) }
+
+    /// Batch auf dem iPhone starten lassen. Antwortet sofort mit "started" —
+    /// das Ergebnis kommt als `batchResult`-Nachricht zurück (die Ausführung
+    /// kann Minuten dauern und würde eine Synchron-Antwort überdauern).
+    func runBatch(id: String, batchId: String) async throws {
+        _ = try await request(["command": "runBatch", "id": id, "batchId": batchId])
+    }
 
     /// Alle Geräte + Online-Status (Snapshot + statusAll kombiniert).
     /// Wenn statusAll nicht durchkommt (iPhone inaktiv/Funkstille), greift der
@@ -243,5 +253,12 @@ final class WatchService: NSObject, WCSessionDelegate, @unchecked Sendable {
         NotificationCenter.default.post(name: Self.contextDidChange, object: nil)
     }
 
-    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {}
+    /// iPhone → Watch: fire-and-forget — Batch-Ergebnis (siehe Dispatcher.push).
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        guard (message["event"] as? String) == "batchResult" else { return }
+        let result = WatchBatchResult(message)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.batchResultDidChange, object: result)
+        }
+    }
 }

@@ -34,7 +34,10 @@ class NetworkScanner(private val context: Context) {
         val prefix: Int,
         val dns: String,
         var checked: Boolean = true,
-    )
+    ) {
+        /** Netzwerkadresse des Netzes: 192.168.2.130/24 -> 192.168.2.0. */
+        val network: String get() = NetworkScanner.networkAddress(ip, prefix)
+    }
 
     sealed interface ScanEvent {
         data class Progress(val done: Int, val total: Int, val current: String) : ScanEvent
@@ -91,14 +94,9 @@ class NetworkScanner(private val context: Context) {
         return result.values.toList()
     }
 
-    /** Host-Adressen eines /24 (bzw. prefix-korrekt) Netzes, ohne Netzwerk-/Broadcast-Adresse. */
+    /** Host-Adressen des kompletten Netzes (bei /24 also .1 … .254), ohne Netzwerk-/Broadcast-Adresse. */
     private fun hostAddresses(base: String, prefix: Int): List<String> {
-        val parts = base.split(".").map { it.toIntOrNull() ?: 0 }
-        if (parts.size != 4) return emptyList()
-        val network = (parts[0].toLong() shl 24) or (parts[1].toLong() shl 16) or
-            (parts[2].toLong() shl 8) or parts[3].toLong()
-        val mask = if (prefix >= 32) -1L else (-1L shl (32 - prefix)) and 0xFFFFFFFFL
-        val netStart = network and mask
+        val netStart = toLong(base) ?: return emptyList()
         val hostCount = (1L shl (32 - prefix)).toInt()
         if (hostCount > 1024) return emptyList() // sehr große Netze überspringen
         val list = ArrayList<String>()
@@ -113,7 +111,8 @@ class NetworkScanner(private val context: Context) {
 
     /** Führt den Sweep aus und emittiert Ereignisse. */
     fun scan(ifaces: List<Iface>): Flow<ScanEvent> = channelFlow {
-        val targets = ifaces.filter { it.checked }.flatMap { hostAddresses(it.ip, it.prefix) }.distinct()
+        val targets = ifaces.filter { it.checked }
+            .flatMap { hostAddresses(it.network, it.prefix) }.distinct()
         val total = targets.size
         val done = java.util.concurrent.atomic.AtomicInteger(0)
         val found = java.util.concurrent.atomic.AtomicInteger(0)
@@ -164,6 +163,26 @@ class NetworkScanner(private val context: Context) {
         private val SCAN_PORTS = listOf(HostServiceClient.DEFAULT_PORT, 445, 135, 80, 443, 22)
         private const val PORT_TIMEOUT_MS = 300
         private const val MAX_PARALLEL = 64
+
+        /** IPv4-Adresse als Long, null bei ungültiger Schreibweise. */
+        private fun toLong(ip: String): Long? {
+            val parts = ip.split(".").map { it.toIntOrNull() ?: return null }
+            if (parts.size != 4 || parts.any { it !in 0..255 }) return null
+            return (parts[0].toLong() shl 24) or (parts[1].toLong() shl 16) or
+                (parts[2].toLong() shl 8) or parts[3].toLong()
+        }
+
+        /**
+         * Netzwerkadresse des Netzes, in dem [ip] liegt — der Scan startet also bei
+         * der Subnetzadresse und nicht bei der Adapteradresse (192.168.2.130/24 -> 192.168.2.0).
+         */
+        fun networkAddress(ip: String, prefix: Int): String {
+            val addr = toLong(ip) ?: return ip
+            val pfx = if (prefix in 0..32) prefix else 24
+            val mask = if (pfx >= 32) 0xFFFFFFFFL else (-1L shl (32 - pfx)) and 0xFFFFFFFFL
+            val net = addr and mask
+            return "${(net shr 24) and 0xFF}.${(net shr 16) and 0xFF}.${(net shr 8) and 0xFF}.${net and 0xFF}"
+        }
 
         /**
          * Blendet Dummy-/Virtualisierungs-Bereiche aus (Parität zur Desktop-App,

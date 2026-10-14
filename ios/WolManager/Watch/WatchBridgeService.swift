@@ -27,8 +27,18 @@ final class WatchBridgeService: NSObject, WCSessionDelegate {
         session.activate()
 
         // Geräteänderungen (auch vom WebView-Bridge) → Snapshot zur Watch.
+        // Deckt auch das Umsortieren der Batches in der iOS-App ab: die Watch
+        // zeigt dieselbe Reihenfolge wie das iPhone.
         container().repo.onChange = { [weak self] _ in
             self?.syncApplicationContext()
+        }
+
+        // Ergebnis einer von der Watch gestarteten Batch-Ausführung zurückmelden.
+        dispatcher.push = { payload in
+            guard WCSession.default.activationState == .activated else { return }
+            WCSession.default.sendMessage(payload, replyHandler: nil) { error in
+                NSLog("WatchBridgeService: Batch-Ergebnis nicht zustellbar: \(error)")
+            }
         }
     }
 
@@ -43,20 +53,17 @@ final class WatchBridgeService: NSObject, WCSessionDelegate {
     // MARK: - applicationContext
 
     /// Geräte-Snapshot (ohne Passwörter) + letzter bekannter Online-Status +
-    /// Listensortierung als Hintergrunddaten für die Watch, damit sie auch ohne
-    /// erreichbares iPhone aktuelle Karten in der richtigen Reihenfolge zeigt.
+    /// Listensortierung + Batches (id/Name in iOS-Reihenfolge) als
+    /// Hintergrunddaten für die Watch, damit sie auch ohne erreichbares iPhone
+    /// aktuelle Karten und Batches in der richtigen Reihenfolge zeigt.
     /// Wird auch vom SceneDelegate beim Wechsel in den Vordergrund aufgerufen,
     /// damit die Watch nach Repo-reload() (fremde Schreibzugriffe) den
     /// aktuellen Bestand aller konfigurierten Geräte erhält.
     func syncApplicationContext() {
         guard activated, WCSession.default.activationState == .activated else { return }
         let devices = container().repo.snapshot.devices.map { d in
-            [
-                "id": d.id, "name": d.name, "mac": d.mac, "ip": d.ip,
-                "username": d.username, "enabled": d.enabled,
-                "hasPassword": !container().repo.getPassword(id: d.id).isEmpty,
-                "watch": d.watchProcesses,
-            ] as [String: Any]
+            WatchCommandDispatcher.devicePayload(
+                d, hasPassword: !container().repo.getPassword(id: d.id).isEmpty)
         }
         let payload: [String: Any] = [
             "devices": devices,

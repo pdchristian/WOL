@@ -105,7 +105,10 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
   aus; Bereichsfilter blendet `169.*` (APIPA) und komplett `172.*`
   (Virtualisierungs-/VPN-Adapter) aus — Parität zur Desktop-App
   (`is_real_interface`). Die Netzliste wird beim Öffnen des Verwalten-Tabs
-  geladen (sichtbar **vor** „Scan starten“); `scanStart` erhält die UI-Auswahl
+  geladen (sichtbar **vor** „Scan starten“) und zeigt die **Netzadresse** des
+  Netzes (`network`, z. B. `192.168.2.0/24`) statt der Adapteradresse; der Sweep
+  beginnt ebenfalls bei der Subnetzadresse (`NetworkScanner.networkAddress`).
+  `scanStart` erhält die UI-Auswahl
   (`{ifaces:[{name,ip,prefix,dns}]}`) und scannt exakt diese. Ohne WLAN: Hinweis
   „Kein WLAN-Netzwerk gefunden“ + deaktivierter Button. Android liefert keine
   MAC-Adressen → gefundene Geräte werden mit Platzhalter-MAC

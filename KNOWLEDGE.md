@@ -1101,14 +1101,16 @@ right-click → Open). Full working docs: `docs/macos/README.md`.
   `NetworkScannerTests.swift` covers `isScannable` (re-run `xcodegen` after adding).
 - **Apple Watch app (`ios/WolManagerWatch/`, SwiftUI, watchOS 10+):** deliberately
   minimal (devices as cards/list with a power icon, simplified dashboard with
-  service chips + CPU/RAM/GPU/VRAM rings, shutdown confirmation). No schedules,
-  logs, settings, management, or Remote Desktop. **All communication goes through
+  service chips + CPU/RAM/GPU/VRAM rings + the device's batches, shutdown and
+  batch-run confirmation). No schedules, logs, settings, management, or Remote
+  Desktop. **All communication goes through
   the iPhone via WatchConnectivity** — the Watch never touches the LAN directly.
   iPhone side: `WolManager/Watch/WatchBridgeService.swift` (WCSession delegate,
   activated from `AppDelegate` when `WCSession.isSupported()`; pushes a
   password-free `applicationContext` device snapshot on every repo change) and
   `WatchCommandDispatcher.swift` (commands `snapshot` / `statusAll` / `wake {id}`
-  / `shutdown {id}` / `metrics {id}` → `{ok:true,…}|{ok:false,error}`; delegates
+  / `shutdown {id}` / `metrics {id}` / `runBatch {id,batchId}` →
+  `{ok:true,…}|{ok:false,error}`; delegates
   to the `WatchActions` protocol implemented by `AppContainer` — passwords never
   leave the iPhone Keychain, the Watch only sees `hasPassword`). Watch side:
   `WatchService.swift` (sendMessage with timeout + `applicationContext` offline
@@ -1121,7 +1123,25 @@ right-click → Open). Full working docs: `docs/macos/README.md`.
   watchOS 10) + hand-maintained entries in the bundled `.xcodeproj` — run
   `xcodegen generate` on the Mac to regenerate. Dispatcher covered by
   `WatchCommandDispatcherTests.swift` (snapshot password-free, delegation,
-  status filter, metrics, error paths) with `FakeWatchActions`.
+  status filter, metrics, batches, error paths) with `FakeWatchActions`.
+- **Batches on the Apple Watch:** the device dashboard lists the device's
+  batches in exactly the order the iOS app shows them (the persisted
+  `device.batches` array — reordering stays an iPhone/desktop-only gesture, the
+  Watch has no grip/drag UI). Both transports use one field set
+  (`WatchCommandDispatcher.devicePayload`): the `snapshot` command *and* the
+  `applicationContext`, so the offline fallback shows the same order. Only
+  `id` + `name` travel — batch scripts and passwords never leave the iPhone.
+  `repo.onChange` → `syncApplicationContext()` pushes a new snapshot, and
+  `AppState.applyIncomingContext()` copies `batches`/`allowBatch` into the live
+  device list, so reordering on the iPhone is reflected on the Watch without a
+  manual refresh. Tapping the row's play triangle opens a confirmation card
+  (`BatchRunConfirmView`, styled like the shutdown prompt); `runBatch` then only
+  *starts* the run (a synchronous reply would die at the WatchConnectivity
+  timeout for long batches) and the result comes back as a fire-and-forget
+  `sendMessage` push `{event:"batchResult", id, batchId, name, ok, exitCode,
+  durationMs}` → `WatchService.batchResultDidChange` → `AppState.showBatchResult`
+  (toast). Without the per-device `allow_batch` flag the run is refused on both
+  sides (`batch_disabled`).
 
 ---
 

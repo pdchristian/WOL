@@ -124,6 +124,7 @@ de:{
  "batch.empty":"Noch keine Batches. „Neu\" erstellt einen neuen Batch.",
  "batch.disabled":"Ausführung deaktiviert: „Batches erlauben\" aktivieren und den Host freigeben (WOL Host Service.exe --enable-batch).",
  "batch.reorder":"Zum Sortieren halten und ziehen",
+ "batch.unsaved":"Ungespeicherte Änderungen — vor dem Ausführen speichern.",
  "dash.creds":"Für dieses Gerät sind keine Benutzerdaten hinterlegt. Dashboard-Metriken benötigen die Host-Service-Anmeldung.",
  "dash.unreach":"Host Service nicht erreichbar ({ip}:8765). Läuft der Dienst?",
  "dash.err":"Host-Service-Fehler: {msg}",
@@ -246,6 +247,7 @@ en:{
  "batch.empty":"No batches yet. \"New\" creates a new batch.",
  "batch.disabled":"Execution disabled: enable \"Allow batches\" and release the host (WOL Host Service.exe --enable-batch).",
  "batch.reorder":"Press and hold to reorder",
+ "batch.unsaved":"Unsaved changes — save before running.",
  "dash.creds":"No credentials stored for this device. Dashboard metrics require host service sign-in.",
  "dash.unreach":"Host Service unreachable ({ip}:8765). Is the service running?",
  "dash.err":"Host service error: {msg}",
@@ -368,6 +370,7 @@ fr:{
  "batch.empty":"Aucun lot. « Nouveau » crée un lot.",
  "batch.disabled":"Exécution désactivée : activez « Autoriser les lots » et libérez l'hôte.",
  "batch.reorder":"Maintenir pour réordonner",
+ "batch.unsaved":"Modifications non enregistrées — enregistrer avant d'exécuter.",
  "dash.creds":"Aucun identifiant enregistré. Les métriques exigent la connexion au service hôte.",
  "dash.unreach":"Service hôte injoignable ({ip}:8765). Le service tourne-t-il ?",
  "dash.err":"Erreur du service hôte : {msg}",
@@ -490,6 +493,7 @@ es:{
  "batch.empty":"No hay lotes. „Nuevo\" crea un lote.",
  "batch.disabled":"Ejecución desactivada: active „Permitir lotes\" y libere el host.",
  "batch.reorder":"Mantener pulsado para reordenar",
+ "batch.unsaved":"Cambios sin guardar — guardar antes de ejecutar.",
  "dash.creds":"No hay credenciales para este dispositivo. Las métricas requieren inicio de sesión del servicio host.",
  "dash.unreach":"Servicio host inaccesible ({ip}:8765). ¿Está en ejecución?",
  "dash.err":"Error del servicio host: {msg}",
@@ -513,7 +517,7 @@ const state = {
   ui: { screen: "devices", deviceView: "grid", sort: "name", search: "",
         manageSearch: "", schedSearch: "", logSearch: "", logLevel: "all",
         dashDeviceId: null, dashInterval: 3000, editing: null, confirmFn: null,
-        selBatch: null, pressTimer: null },
+        selBatch: null, pressTimer: null, batchDraft: null },
   devices: [],
   schedules: [],
   logs: [],
@@ -630,7 +634,7 @@ function wakeDevice(d) {
   Native.call("wake", { id: d.id }).then(res => {
     if (!res.ok) { setRt(d.id, { status: "unknown" }); toast(t("wol.failone", { name: d.name }), true); }
     else toast(t("wol.sent", { name: d.name }));
-    renderDevices(); if (state.ui.screen === "dash") renderDash();
+    renderDevices(); if (state.ui.screen === "dash") renderDashAuto();
   });
 }
 function shutdownDevice(d) {
@@ -638,7 +642,7 @@ function shutdownDevice(d) {
   Native.call("shutdown", { id: d.id }).then(res => {
     if (res.ok) { setRt(d.id, { status: "offline", metrics: null, upSeconds: 0 }); }
     else toast(String(res.error || "error"), true);
-    renderDevices(); if (state.ui.screen === "dash") renderDash();
+    renderDevices(); if (state.ui.screen === "dash") renderDashAuto();
   });
 }
 function refreshStatus() {
@@ -689,7 +693,7 @@ function loadIfaces() {
     if (!res.ok) return;
     const old = new Map(state.scan.ifaces.map(f => [f.ip + "/" + f.prefix, f.checked]));
     state.scan.ifaces = (res.data || []).map(f => ({
-      name: f.name, ip: f.ip, prefix: f.prefix, dns: f.dns || "",
+      name: f.name, ip: f.ip, prefix: f.prefix, network: f.network || f.ip, dns: f.dns || "",
       checked: old.has(f.ip + "/" + f.prefix) ? old.get(f.ip + "/" + f.prefix) : !!f.checked,
     }));
     if (state.ui.screen === "manage") renderManage();
@@ -890,7 +894,7 @@ function dashTick() {
       }
       if ((m.gpu || 0) >= 60) d.gpuHigh++; else d.gpuHigh = 0;
     }
-    if (state.ui.screen === "dash") renderDash();
+    if (state.ui.screen === "dash") renderDashAuto();
   });
 }
 function restartDashTimer() {
@@ -898,6 +902,44 @@ function restartDashTimer() {
   dashTimer = setInterval(dashTick, state.ui.dashInterval);
 }
 restartDashTimer();
+
+/* ── Batch-Editor schützen (mobil: „springt aus dem Textfeld") ────────────
+   Der Batch-Editor (Titel/Skript/Timeout) hängt im Dashboard. Jeder
+   Auto-Rebuild (Metrik-Tick alle 2–10 s, Status-Events) ersetzte bisher
+   ganz #s-dash per innerHTML → Fokus und Softkeyboard weg, Tastatur fiel zu,
+   Scrollposition sprang nach oben und der getippte Text war verloren.
+   Deshalb: a) Auto-Rebuilds pausieren, solange ein Feld fokussiert ist
+   (nur Live-Anzeigen patchen), b) Eingaben als Draft sichern,
+   c) bei bewusstem Rebuild Fokus/Caret + Scrollposition wiederherstellen. */
+/* Fokus + Puffer: mobil verliert man den Fokus schon, wenn man neben ein
+   Feld tippt. Ohne Puffer würde der nächste Tick den Editor mitten im Tippen
+   neu aufbauen → Tastatur fällt zu. 4 s Nachlauf nach dem letzten Fokus. */
+let dashEditUntil = 0;
+function dashEditorFocused() {
+  const ae = document.activeElement;
+  const now = !!(ae && ae.closest && ae.closest("#s-dash") && /^(INPUT|TEXTAREA)$/.test(ae.tagName || ""));
+  if (now) dashEditUntil = Date.now() + 4000;
+  return now || Date.now() < dashEditUntil;
+}
+function renderDashAuto(dir) {
+  if (batchDragActive || dashEditorFocused()) {
+    const d = byId(state.ui.dashDeviceId);
+    if (d && d.metrics) updateDashLive(d);
+    return;
+  }
+  renderDash(dir);
+}
+/* DOM ist flüchtig → aktuelle Eingaben des geöffneten Batches als Draft halten. */
+function captureBatchDraft() {
+  const n = $("#b-name"), s = $("#b-script"), o = $("#b-timeout");
+  if (!n || !s || !o) { state.ui.batchDraft = null; return; }
+  state.ui.batchDraft = { id: state.ui.selBatch, name: n.value, script: s.value, timeout: o.value };
+}
+function clearBatchDraft() { state.ui.batchDraft = null; }
+function batchDraftFor(id) {
+  const dr = state.ui.batchDraft;
+  return (dr && dr.id === id && id != null) ? dr : null;
+}
 
 /* ── Wisch-Geste im Dashboard: wechselt zum nächsten/vorherigen Gerät in
    genau der Reihenfolge, die gerade im Gerätemanager sortiert ist. ──────── */
@@ -915,7 +957,7 @@ function switchDashDevice(dir) {
   const j = i + dir;
   if (j < 0 || j >= list.length) return; /* kein Wrap: am Rand bleiben */
   const nd = list[j];
-  state.ui.dashDeviceId = nd.id; state.ui.selBatch = null;
+  state.ui.dashDeviceId = nd.id; state.ui.selBatch = null; clearBatchDraft();
   state.con = { lines: [], running: false, exit: null, dur: null, timer: null };
   renderDash(dir > 0 ? "left" : "right");
   Native.call("vibrate", { ms: 10 });
@@ -1266,7 +1308,7 @@ function renderManage() {
     <div class="sectionHeading">${esc(t("manage.sec.scan"))}</div>
     ${state.scan.ifaces.length ? `<div class="panel">${state.scan.ifaces.map((f, i) => `
       ${i ? '<div class="sep"></div>' : ""}
-      <div class="togRow"><div class="mono" style="font-size:12px">${esc(f.ip)}/${esc(f.prefix)}${f.dns ? esc(t("manage.dns", { dns: f.dns })) : ""}</div>
+      <div class="togRow"><div class="mono" style="font-size:12px">${esc(f.network || f.ip)}/${esc(f.prefix)}${f.dns ? esc(t("manage.dns", { dns: f.dns })) : ""}</div>
         <div class="toggle ${f.checked ? "on" : ""}" data-act="iface-toggle" data-i="${i}"></div></div>`).join("")}
     </div>` : `<div class="empty">${esc(t("manage.scan.nowifi"))}</div>`}
     <div class="toolbar" style="margin-top:10px">
@@ -1412,6 +1454,13 @@ function renderSettings() {
 /* ══════════════════════════ Render: Dashboard (📊, kein Nav-Eintrag) ══════ */
 function renderDash(dir) {
   if (batchDragActive) return; /* Drag läuft — Rebuild würde die gezogene Zeile reißen */
+  /* innerHTML-Rebuild reißt sonst Fokus/Caret und Scrolllage aus dem
+     Batch-Editor → beides vorab merken und nach dem Bauen zurücksetzen. */
+  const scr = $("#s-dash");
+  const keepScroll = scr.scrollTop;
+  const ae = document.activeElement;
+  const keep = (ae && ae.id && scr.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae.tagName || ""))
+    ? { id: ae.id, start: ae.selectionStart, end: ae.selectionEnd } : null;
   const d = byId(state.ui.dashDeviceId);
   if (!d) { $("#s-dash").innerHTML = `<div class="empty">${esc(t("devices.empty"))}</div>`; return; }
   const dlist = dashNavList();
@@ -1429,6 +1478,13 @@ function renderDash(dir) {
   const anyReady = (m && m.processes || []).some(p => p.apiPortOpen);
   const batches = currentBatches();
   const sb = selBatchObj();
+  /* Draft schlägt gespeicherten Stand: getippter Text überlebt jeden Rebuild. */
+  const dr = sb ? batchDraftFor(sb.id) : null;
+  const bName = dr ? dr.name : (sb ? sb.name : "");
+  const bScript = dr ? dr.script : (sb ? sb.script : "");
+  const bTimeout = dr ? dr.timeout : (sb ? sb.timeout : "");
+  const dirty = !!sb && !!dr && (dr.name !== sb.name || dr.script !== sb.script ||
+    String(dr.timeout) !== String(sb.timeout));
   const metricCard = (key, val, detail) => `
     <div class="metricCard">
       <div class="mt"><i style="background:var(--gauge-${key})"></i>${esc(t("m." + key))}</div>
@@ -1499,15 +1555,16 @@ function renderDash(dir) {
     : `<div class="pageSub">${esc(t("batch.empty"))}</div>`}
     ${sb ? `
     <div class="panel" style="padding:12px;margin-top:10px">
-      <div class="field"><input class="inp" id="b-name" value="${esc(sb.name)}" placeholder="${esc(t("batch.newname"))}"></div>
-      <textarea class="code" id="b-script" placeholder="@echo off">${esc(sb.script)}</textarea>
+      <div class="field"><input class="inp" id="b-name" value="${esc(bName)}" placeholder="${esc(t("batch.newname"))}"></div>
+      <textarea class="code" id="b-script" placeholder="@echo off">${esc(bScript)}</textarea>
       <div class="toolbar" style="margin:10px 0 0;align-items:center">
         <span class="mono" style="font-size:11px">${esc(t("batch.timeout"))}</span>
-        <input class="inp" id="b-timeout" type="number" min="5" max="3600" value="${sb.timeout}" style="width:76px;padding:6px 8px">
+        <input class="inp" id="b-timeout" type="number" min="5" max="3600" value="${esc(bTimeout)}" style="width:76px;padding:6px 8px">
         <span class="spacer"></span>
         <button class="btn small" data-act="batch-save">${esc(t("batch.save"))}</button>
         <button class="btn small primary" data-act="batch-run">${esc(t("batch.run"))}</button>
       </div>
+      ${dirty ? `<div class="hint" style="font-size:11px;color:var(--unknown);margin-top:6px">● ${esc(t("batch.unsaved"))}</div>` : ""}
       <div class="togRow" style="padding:10px 0 0"><div style="font-size:12px">${esc(t("batch.allow"))}</div>
         <div class="toggle ${d.allow_batch?"on":""}" data-act="batch-allow"></div></div>
       ${!d.allow_batch ? `<div class="hint" style="font-size:11px;color:var(--unknown);margin-top:6px">${esc(t("batch.disabled"))}</div>` : ""}
@@ -1520,6 +1577,14 @@ function renderDash(dir) {
       ${state.con.running ? `<div class="dim">${esc(t("batch.running"))}</div>` : ""}
       ${state.con.exit != null ? `<div class="dim">${esc(t("batch.exit", { c: state.con.exit }))} · ${esc(t("batch.dur", { s: state.con.dur }))}</div>` : ""}</div>` : ""}
   </div>`;
+  scr.scrollTop = keepScroll;
+  if (keep) {
+    const f = document.getElementById(keep.id);
+    if (f) {
+      try { f.focus({ preventScroll: true }); } catch (_) { f.focus(); }
+      if (keep.start != null) { try { f.setSelectionRange(keep.start, keep.end); } catch (_) {} }
+    }
+  }
 }
 
 /* ══════════════════════════ Theme / Sprache ═══════════════════════════════ */
@@ -1576,7 +1641,7 @@ document.addEventListener("click", ev => {
       });
       break; }
     case "rdp-full": doRemote(id, "full"); break;
-    case "open-dash": state.ui.dashDeviceId = id; state.ui.selBatch = null; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; go("dash"); break;
+    case "open-dash": state.ui.dashDeviceId = id; state.ui.selBatch = null; clearBatchDraft(); state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; go("dash"); break;
     case "nav-devices": go("devices"); break;
     case "dash-prev": switchDashDevice(-1); break;
     case "dash-next": switchDashDevice(1); break;
@@ -1675,25 +1740,33 @@ document.addEventListener("click", ev => {
     case "batch-new": {
       const d = byId(state.ui.dashDeviceId); if (!d) break;
       const b = { id: "b" + Date.now(), name: t("batch.newname"), script: "@echo off", timeout: 120 };
-      d.batches = [...(d.batches || []), b]; state.ui.selBatch = b.id; renderDash();
+      d.batches = [...(d.batches || []), b]; state.ui.selBatch = b.id; clearBatchDraft(); renderDash();
       persistBatches(d); break; }
     case "batch-sel": if (Date.now() - batchDragEndedAt < 300) break;
       /* Erneutes Tippen auf den geöffneten Batch schließt den Editor. */
-      if (state.ui.selBatch === id) { state.ui.selBatch = null; renderDash(); break; }
-      state.ui.selBatch = id; state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; renderDash(); break;
+      if (state.ui.selBatch === id) { state.ui.selBatch = null; clearBatchDraft(); renderDash(); break; }
+      state.ui.selBatch = id; clearBatchDraft();
+      state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; renderDash(); break;
     case "batch-dup": { const d = byId(state.ui.dashDeviceId); const b = selBatchObj();
-      if (d && b) { const c = { ...b, id: "b" + Date.now(), name: b.name + " (Kopie)" };
-        d.batches = [...d.batches, c]; state.ui.selBatch = c.id; renderDash(); persistBatches(d); }
+      if (d && b) {
+        captureBatchDraft();
+        const dr = batchDraftFor(b.id); /* Dupliziert, was im Editor steht */
+        const c = { ...b, id: "b" + Date.now(),
+          name: (dr ? dr.name : b.name) + " (Kopie)",
+          script: dr ? dr.script : b.script,
+          timeout: dr ? clamp(+dr.timeout || b.timeout, 5, 3600) : b.timeout };
+        d.batches = [...d.batches, c]; state.ui.selBatch = c.id; clearBatchDraft();
+        renderDash(); persistBatches(d); }
       break; }
     case "batch-del": { const d = byId(state.ui.dashDeviceId);
       if (d) { d.batches = (d.batches || []).filter(b => b.id !== state.ui.selBatch); state.ui.selBatch = null;
-        renderDash(); persistBatches(d, t("dev.saved")); }
+        clearBatchDraft(); renderDash(); persistBatches(d, t("dev.saved")); }
       break; }
     case "batch-save": {
       const d = byId(state.ui.dashDeviceId); const b = selBatchObj(); if (!d || !b) break;
       b.name = $("#b-name").value.trim() || b.name; b.script = $("#b-script").value;
       b.timeout = clamp(+$("#b-timeout").value || 120, 5, 3600);
-      renderDash(); persistBatches(d, t("dev.saved")); break; }
+      clearBatchDraft(); renderDash(); persistBatches(d, t("dev.saved")); break; }
     case "batch-run": runBatch(); break;
     case "batch-allow": { const d = byId(state.ui.dashDeviceId); if (!d) break;
       d.allow_batch = !d.allow_batch; renderDash(); persistBatches(d); break; }
@@ -1714,6 +1787,9 @@ document.addEventListener("change", ev => {
   }
 });
 document.addEventListener("input", ev => {
+  /* Batch-Editor: jede Eingabe sofort als Draft sichern — sonst wäre der
+     getippte Text beim nächsten Rebuild (Titel/Inhalt) weg. */
+  if (ev.target.closest && ev.target.closest("#b-name,#b-script,#b-timeout")) { captureBatchDraft(); return; }
   const el = ev.target.closest("[data-act]"); if (!el) return;
   const act = el.dataset.act;
   const keepFocus = (fn) => { const pos = el.selectionStart; fn(); };
@@ -1791,12 +1867,12 @@ Native.on("status", ev => {
   const d = byId(ev.id); if (!d) return;
   setRt(d.id, { checking: false, status: ev.online ? "online" : "offline" });
   if (state.ui.screen === "devices") renderDevices();
-  else if (state.ui.screen === "dash") renderDash(); /* nav skips offline */
+  else if (state.ui.screen === "dash") renderDashAuto(); /* nav skips offline */
 });
 Native.on("status-done", () => {
   state.devices.forEach(d => { if (d.checking) setRt(d.id, { checking: false, status: "offline" }); });
   if (state.ui.screen === "devices") renderDevices();
-  else if (state.ui.screen === "dash") renderDash(); /* nav skips offline */
+  else if (state.ui.screen === "dash") renderDashAuto(); /* nav skips offline */
 });
 Native.on("exported", ev => toast(t("exp.done", { name: ev.name, count: ev.count })));
 Native.on("imported", ev => {

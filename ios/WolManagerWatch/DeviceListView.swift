@@ -28,6 +28,9 @@ struct DeviceListView: View {
             .sheet(item: $state.confirmDevice) { device in
                 ShutdownConfirmView(device: device)
             }
+            .sheet(item: $state.confirmBatch) { pending in
+                BatchRunConfirmView(pending: pending)
+            }
             // Nach Suspend/Resume ist der Wake-Polling-Task evtl. weg; beim
             // Sichtbarwerden laufender "Wacht auf"-Vorgang Status neu prüfen,
             // damit die Anzeige nicht dauerhaft stehen bleibt. Zusätzlich
@@ -137,20 +140,31 @@ struct DeviceListView: View {
 
     // MARK: - Overlay (Toast)
 
-    @ViewBuilder private var overlay: some View {
-        if let toast = state.toast {
-            VStack {
-                Spacer()
-                Text(toast)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.bottom, 6)
+    private var overlay: some View { ToastOverlay() }
+}
+
+/// Kurze Rückmeldung unten (Wake, Batch-Start/-Ergebnis, Fehler). Nutzt
+/// `AppState.toast` — dieselbe Zeile in Geräteliste und Dashboard, damit ein
+/// Batch-Ergebnis auch dann sichtbar ist, während das Dashboard offen ist.
+struct ToastOverlay: View {
+    @EnvironmentObject var state: AppState
+
+    var body: some View {
+        Group {
+            if let toast = state.toast {
+                VStack {
+                    Spacer()
+                    Text(toast)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.bottom, 6)
+                }
+                .transition(.opacity)
+                .allowsHitTesting(false)
             }
-            .transition(.opacity)
-            .allowsHitTesting(false)
         }
     }
 }

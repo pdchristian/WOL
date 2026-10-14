@@ -405,7 +405,8 @@ class Bridge(
     private fun ifacesJson(): JsonArray = buildJsonArray {
         for (i in container.scanner.activeInterfaces()) {
             add(buildJsonObject {
-                put("name", i.name); put("ip", i.ip); put("prefix", i.prefix); put("dns", i.dns); put("checked", i.checked)
+                put("name", i.name); put("ip", i.ip); put("prefix", i.prefix)
+                put("network", i.network); put("dns", i.dns); put("checked", i.checked)
             })
         }
     }

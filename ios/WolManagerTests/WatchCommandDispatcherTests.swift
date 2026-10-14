@@ -11,6 +11,7 @@ final class FakeWatchActions: WatchActions {
     var shutdownResult: Result<Void, Error> = .success(())
     var statusOnlineIds: Set<String> = []
     var metricsResult: Result<MetricsSnapshot, Error> = .success(MetricsSnapshot(protocolVersion: 5, hostname: "PC"))
+    var runBatchResult: Result<BatchResult, Error> = .success(BatchResult(exitCode: 0, durationMs: 250))
     /// Geräte-IDs, deren Statuscheck (sekundenlang) blockiert — für Timeout-Tests.
     var statusBlockIds: Set<String> = []
 
@@ -18,6 +19,7 @@ final class FakeWatchActions: WatchActions {
     private(set) var shutdownCalls: [Device] = []
     private(set) var statusCalls: [Device] = []
     private(set) var metricsCalls: [Device] = []
+    private(set) var runBatchCalls: [(device: Device, batch: BatchDef)] = []
 
     func wake(device: Device) async -> Result<Void, Error> {
         wakeCalls.append(device); return wakeResult
@@ -35,6 +37,9 @@ final class FakeWatchActions: WatchActions {
     }
     func metrics(device: Device) async -> Result<MetricsSnapshot, Error> {
         metricsCalls.append(device); return metricsResult
+    }
+    func runBatch(device: Device, batch: BatchDef) async -> Result<BatchResult, Error> {
+        runBatchCalls.append((device, batch)); return runBatchResult
     }
 }
 
@@ -239,5 +244,123 @@ final class WatchCommandDispatcherTests: XCTestCase {
         let reply = send(["command": "metrics", "id": "nope"])
         XCTAssertEqual(reply["ok"] as? Bool, false)
         XCTAssertEqual(reply["error"] as? String, "device_not_found")
+    }
+
+    // ── Batches ─────────────────────────────────────────────────────────────
+
+    /// Gerät mit Batches in iOS-Reihenfolge: die Array-Reihenfolge der App ist
+    /// die persistierte Reihenfolge (Drag & Drop dort, nicht auf der Watch).
+    private func saveBatchDevice(allowBatch: Bool = true) {
+        repo.saveDevice(Device(id: "d1", name: "PC", mac: "AA:BB:CC:DD:EE:FF", ip: "10.0.0.1",
+                               username: "u", password: "sekret",
+                               batches: [
+                                   BatchDef(id: "b3", name: "Zuletzt", script: "echo dritter", timeout: 30),
+                                   BatchDef(id: "b1", name: "Start", script: "echo erster", timeout: 120),
+                                   BatchDef(id: "b2", name: "Mitte", script: "echo zweiter", timeout: 60),
+                               ],
+                               allowBatch: allowBatch))
+    }
+
+    /// Die Watch erhält genau die Reihenfolge der iOS-App — und nur id + Name:
+    /// Batch-Skripte (wie Passwörter) verlassen das iPhone nicht.
+    func testSnapshotKeepsBatchOrderWithoutScripts() throws {
+        saveBatchDevice()
+        let reply = send(["command": "snapshot"])
+        let devices = try XCTUnwrap(reply["devices"] as? [[String: Any]])
+        let d = try XCTUnwrap(devices.first)
+        XCTAssertEqual(d["allowBatch"] as? Bool, true)
+
+        let batches = try XCTUnwrap(d["batches"] as? [[String: Any]])
+        XCTAssertEqual(batches.compactMap { $0["id"] as? String }, ["b3", "b1", "b2"])
+        XCTAssertEqual(batches.compactMap { $0["name"] as? String }, ["Zuletzt", "Start", "Mitte"])
+        XCTAssertTrue(batches.allSatisfy { $0["script"] == nil })
+
+        // Der applicationContext (Offline-Fallback) nutzt dieselbe Feldmenge.
+        let payload = WatchCommandDispatcher.devicePayload(try XCTUnwrap(repo.device("d1")),
+                                                           hasPassword: true)
+        let ctxBatches = try XCTUnwrap(payload["batches"] as? [[String: Any]])
+        XCTAssertEqual(ctxBatches.compactMap { $0["id"] as? String }, ["b3", "b1", "b2"])
+
+        let text = String(data: try JSONSerialization.data(withJSONObject: reply),
+                          encoding: .utf8) ?? ""
+        XCTAssertFalse(text.contains("echo erster"))
+        XCTAssertFalse(text.contains("sekret"))
+    }
+
+    /// Start antwortet sofort, das Ergebnis folgt per Push — ein Batch kann
+    /// Minuten laufen und würde eine synchron beantwortete Nachricht überdauern.
+    func testRunBatchStartsAndPushesResult() throws {
+        saveBatchDevice()
+        fake.runBatchResult = .success(BatchResult(exitCode: 3, stdout: "out", durationMs: 1_500))
+
+        let pushed = expectation(description: "batchResult")
+        var payload: [String: Any] = [:]
+        dispatcher.push = { message in
+            payload = message
+            pushed.fulfill()
+        }
+
+        let reply = send(["command": "runBatch", "id": "d1", "batchId": "b2"])
+        XCTAssertEqual(reply["ok"] as? Bool, true)
+        XCTAssertEqual(reply["started"] as? Bool, true)
+        XCTAssertEqual(fake.runBatchCalls.count, 1)
+        // Ausgeführt wird der am Gerät persistierte Batch (inkl. Skript).
+        XCTAssertEqual(fake.runBatchCalls.first?.batch.id, "b2")
+        XCTAssertEqual(fake.runBatchCalls.first?.batch.script, "echo zweiter")
+
+        wait(for: [pushed], timeout: 5.0)
+        XCTAssertEqual(payload["event"] as? String, "batchResult")
+        XCTAssertEqual(payload["id"] as? String, "d1")
+        XCTAssertEqual(payload["batchId"] as? String, "b2")
+        XCTAssertEqual(payload["name"] as? String, "Mitte")
+        XCTAssertEqual(payload["ok"] as? Bool, true)
+        XCTAssertEqual(payload["exitCode"] as? Int, 3)
+        XCTAssertEqual(payload["durationMs"] as? Int64, 1_500)
+        // Push muss WCSession-verträglich (Property-List) sein.
+        XCTAssertNotNil(try? PropertyListSerialization.data(fromPropertyList: payload,
+                                                            format: .binary, options: 0))
+    }
+
+    /// Wie in der iOS-App: ohne Freigabe am Gerät (`allow_batch`) läuft nichts —
+    /// und es geht auch kein Push an die Watch.
+    func testRunBatchBlockedWithoutDeviceAllowance() {
+        saveBatchDevice(allowBatch: false)
+        let pushed = expectation(description: "kein Push")
+        pushed.isInverted = true
+        dispatcher.push = { _ in pushed.fulfill() }
+
+        let reply = send(["command": "runBatch", "id": "d1", "batchId": "b1"])
+        XCTAssertEqual(reply["ok"] as? Bool, false)
+        XCTAssertEqual(reply["error"] as? String, "batch_disabled")
+        XCTAssertTrue(fake.runBatchCalls.isEmpty)
+        wait(for: [pushed], timeout: 0.5)
+    }
+
+    func testRunBatchUnknownBatch() {
+        saveBatchDevice()
+        let reply = send(["command": "runBatch", "id": "d1", "batchId": "nope"])
+        XCTAssertEqual(reply["ok"] as? Bool, false)
+        XCTAssertEqual(reply["error"] as? String, "batch_not_found")
+        XCTAssertTrue(fake.runBatchCalls.isEmpty)
+    }
+
+    func testRunBatchUnknownDevice() {
+        let reply = send(["command": "runBatch", "id": "nope", "batchId": "b1"])
+        XCTAssertEqual(reply["ok"] as? Bool, false)
+        XCTAssertEqual(reply["error"] as? String, "device_not_found")
+    }
+
+    /// Fehler vom Host-Service erreichen die Watch als Push (Toast dort).
+    func testRunBatchPushesFailure() throws {
+        saveBatchDevice()
+        fake.runBatchResult = .failure(BridgeError("host_unreachable"))
+        let pushed = expectation(description: "batchResult")
+        var payload: [String: Any] = [:]
+        dispatcher.push = { payload = $0; pushed.fulfill() }
+
+        _ = send(["command": "runBatch", "id": "d1", "batchId": "b1"])
+        wait(for: [pushed], timeout: 5.0)
+        XCTAssertEqual(payload["ok"] as? Bool, false)
+        XCTAssertEqual(payload["error"] as? String, "host_unreachable")
     }
 }

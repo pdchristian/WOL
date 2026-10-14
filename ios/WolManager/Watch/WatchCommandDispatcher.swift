@@ -9,6 +9,8 @@ import Foundation
  * Vertrag (WCSession sendMessage, JSON-fähige Dictionaries):
  *   Anfrage:  { "command": "wake", "id": "<deviceId>", ... }
  *   Antwort:  { "ok": true,  ...daten }   |   { "ok": false, "error": "<code>" }
+ *   Push (nur Watch → iPhone-Antwort möglich, fire-and-forget):
+ *             { "event": "batchResult", "id", "batchId", "name", "ok", ... }
  * completion wird immer auf dem Main-Queue aufgerufen.
  */
 final class WatchCommandDispatcher {
@@ -16,6 +18,10 @@ final class WatchCommandDispatcher {
     /// Zeitfenster pro Geräte-Statuscheck in statusAll (DNS/mDNS + Connect + Read).
     /// Testbar herabsetzbar; 8 s deckt einen mDNS-Fehlschlag plus Connect ab.
     var statusCheckWindow: TimeInterval = 8
+
+    /// iPhone → Watch ohne vorherige Anfrage (Batch-Ergebnis). Wird vom
+    /// WatchBridgeService gesetzt (WCSession.sendMessage); nil = nirgends hin.
+    var push: (([String: Any]) -> Void)?
 
     private let actions: WatchActions
     private let repo: Repo
@@ -67,6 +73,8 @@ final class WatchCommandDispatcher {
             return await statusAllJson()
         case "metrics":
             return await metricsJson(pStr(p, "id"))
+        case "runBatch":
+            return startBatch(pStr(p, "id"), pStr(p, "batchId"))
         default:
             return err("unknown_command:\(command)")
         }
@@ -75,16 +83,59 @@ final class WatchCommandDispatcher {
     // ── Einzelne Befehle ────────────────────────────────────────────────────
 
     /// Geräte-Snapshot für die Watch — ohne Passwörter (nur hasPassword), ohne
-    /// Zeitpläne/Logs/Settings. Felder identisch zu Bridge.deviceToJson.
+    /// Zeitpläne/Logs/Settings und ohne Batch-Skripte (nur id + Name). Die
+    /// Batch-Reihenfolge ist die in der iOS-App sortierte (persistierte) Reihenfolge.
     func devicesJson() -> [[String: Any]] {
         repo.snapshot.devices.map { d in
-            [
-                "id": d.id, "name": d.name, "mac": d.mac, "ip": d.ip,
-                "username": d.username, "enabled": d.enabled,
-                "hasPassword": !repo.getPassword(id: d.id).isEmpty,
-                "watch": d.watchProcesses,
-            ]
+            Self.devicePayload(d, hasPassword: !repo.getPassword(id: d.id).isEmpty)
         }
+    }
+
+    /// Einziges Geräte-Portal für die Watch — `snapshot` und applicationContext
+    /// nutzen dieselbe Feldmenge, damit der Offline-Fallback dieselben Batches
+    /// in derselben Reihenfolge zeigt wie die Live-Abfrage.
+    static func devicePayload(_ d: Device, hasPassword: Bool) -> [String: Any] {
+        [
+            "id": d.id, "name": d.name, "mac": d.mac, "ip": d.ip,
+            "username": d.username, "enabled": d.enabled,
+            "hasPassword": hasPassword,
+            "watch": d.watchProcesses,
+            "allowBatch": d.allowBatch,
+            "batches": d.batches.map { ["id": $0.id, "name": $0.name] as [String: Any] },
+        ]
+    }
+
+    /// Batch starten. Die Antwort kommt sofort (`started`), das Ergebnis folgt
+    /// per Push: Ein Batch darf bis zu 3600 s laufen — eine synchron
+    /// beantwortete sendMessage würde am Watch-Timeout (und an der
+    /// Zustellgrenze von WatchConnectivity) scheitern, obwohl der PC den
+    /// Batch längst ausgeführt hat.
+    private func startBatch(_ id: String, _ batchId: String) -> [String: Any] {
+        guard let d = repo.device(id) else { return err("device_not_found") }
+        guard let batch = d.batches.first(where: { $0.id == batchId }) else {
+            return err("batch_not_found")
+        }
+        // Wie in der iOS-App: ohne Freigabe am Gerät läuft kein Batch (der
+        // Host-Service gateht zusätzlich).
+        guard d.allowBatch else { return err("batch_disabled") }
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await self.actions.runBatch(device: d, batch: batch)
+            var payload: [String: Any] = [
+                "event": "batchResult", "id": d.id, "batchId": batch.id, "name": batch.name,
+            ]
+            switch result {
+            case let .success(r):
+                payload["ok"] = true
+                payload["exitCode"] = r.exitCode
+                payload["durationMs"] = r.durationMs
+            case let .failure(e):
+                payload["ok"] = false
+                payload["error"] = self.errorDescription(e)
+            }
+            DispatchQueue.main.async { self.push?(payload) }
+        }
+        return ok(["started": true, "batchId": batch.id])
     }
 
     private func performAction(_ id: String,

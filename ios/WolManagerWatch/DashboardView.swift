@@ -1,9 +1,10 @@
 import SwiftUI
 
 /*
- * Vereinfachtes Dashboard (Watch): Status + Uptime + Power, Dienst-Chips und
- * 2×2-Mini-Ringe für CPU/RAM/GPU/VRAM. Aktualisierung alle 5 s, nur solange
- * die Ansicht sichtbar und das Gerät online ist.
+ * Vereinfachtes Dashboard (Watch): Status + Uptime + Power, Dienst-Chips,
+ * 2×2-Mini-Ringe für CPU/RAM/GPU/VRAM und die Batches des Geräts (Titel +
+ * Play-Dreieck, Reihenfolge wie in der iOS-App). Aktualisierung alle 5 s, nur
+ * solange die Ansicht sichtbar und das Gerät online ist.
  */
 struct DashboardView: View {
     @EnvironmentObject var state: AppState
@@ -51,10 +52,15 @@ struct DashboardView: View {
                     } else {
                         warnBox(Text("dash.offline"))
                     }
+                    // Batches wie in der iOS-App: eigene Sektion unter den
+                    // Metriken, in der dort eingestellten Reihenfolge — auch wenn
+                    // das Gerät offline ist (der Start schlägt dann fehl).
+                    batchSection
                 }
                 .padding(.horizontal, 10)
                 .padding(.bottom, 12)
             }
+            ToastOverlay()
         }
         .navigationTitle(device.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -119,6 +125,30 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Batches (Reihenfolge wie in der iOS-App)
+
+    /// Batches des Geräts wie in der iOS-App: Titel links, Play-Dreieck rechts.
+    /// Die sechs Grip-Punkte der iOS-App entfallen — sortiert wird weiterhin nur
+    /// am iPhone, die Watch zeigt die übermittelte Reihenfolge (Snapshot und
+    /// applicationContext, beide aus der persistierten Batch-Liste).
+    @ViewBuilder
+    private var batchSection: some View {
+        if !live.batches.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                section(Text("batch.title"))
+                VStack(spacing: 0) {
+                    ForEach(Array(live.batches.enumerated()), id: \.element.id) { index, batch in
+                        if index > 0 {
+                            Divider().overlay(Color.white.opacity(0.08))
+                        }
+                        BatchRow(deviceId: live.id, batch: batch)
+                    }
+                }
+                .background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+    }
+
     private func section(_ text: Text) -> some View {
         text
             .font(.system(size: 12, weight: .semibold))
@@ -173,6 +203,39 @@ struct DashboardView: View {
 }
 
 // MARK: - Bausteine
+
+/// Batch-Zeile: Titel links, Play-Dreieck rechts (symbolisiert die ausführbare
+/// Aktion). Wie in der iOS-App, nur ohne Grip-Punkte — die Reihenfolge kommt
+/// vom iPhone, Tippen öffnet das Bestätigungs-Popup.
+struct BatchRow: View {
+    @EnvironmentObject var state: AppState
+    let deviceId: String
+    let batch: WatchBatch
+
+    var body: some View {
+        Button {
+            state.requestRunBatch(deviceId: deviceId, batchId: batch.id)
+        } label: {
+            HStack(spacing: 8) {
+                Text(batch.name)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "play.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.teal)
+                    .frame(width: 30, height: 30)
+                    .background(Color.teal.opacity(0.15), in: Circle())
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 42)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("batch.run"))
+    }
+}
 
 /// Mini-Ring mit Prozentwert und Beschriftung.
 ///

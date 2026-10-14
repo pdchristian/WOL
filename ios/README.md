@@ -29,12 +29,13 @@ ios/
 │   ├── Watch/                  # WatchBridgeService (WCSession) + WatchCommandDispatcher
 │   └── WebView/                # Bridge (27 Methoden), WebViewController, DocumentPicker
 ├── WolManagerWatch/            # Apple-Watch-App (SwiftUI, watchOS 10+)
-│   ├── WatchApp.swift          # @main + AppState (Geräte, Wake/Shutdown, Polling)
-│   ├── Models.swift            # WatchDevice / WatchMetrics / WatchProcess (Codable)
+│   ├── WatchApp.swift          # @main + AppState (Geräte, Wake/Shutdown, Batches, Polling)
+│   ├── Models.swift            # WatchDevice / WatchBatch / WatchMetrics / WatchProcess (Codable)
 │   ├── WatchService.swift      # WCSession-Client (sendMessage → Dispatcher)
-│   ├── DeviceListView.swift    # Karten/Liste + Power-Button + Status-Pill
+│   ├── DeviceListView.swift    # Karten/Liste + Power-Button + Status-Pill + ToastOverlay
 │   ├── ShutdownConfirmView.swift  # Bestätigungs-Karte (rote Ja/Nein-Buttons)
-│   ├── DashboardView.swift     # Dienste-Chips + 2×2-Ringe (CPU/RAM/GPU/VRAM)
+│   ├── BatchRunConfirmView.swift  # Bestätigungs-Karte vor der Batch-Ausführung
+│   ├── DashboardView.swift     # Dienste-Chips, 2×2-Ringe, Batch-Zeilen (Play-Dreieck)
 │   └── Resources/Localizable.xcstrings  # de/en/fr/es
 └── WolManagerTests/            # XCTest-Suite (11 Klassen)
 ```
@@ -126,19 +127,34 @@ Identisch zu `android_html/`: `window.Android.call(callId, method, paramsJson)`
 
 Eigene SwiftUI-App (watchOS 10+) — bewusst minimiert gegenüber iPhone/Android:
 Geräte als Karten oder Liste, Power-Icon zum Aufwecken/Herunterfahren,
-vereinfachtes Dashboard. Keine Zeitpläne, Protokolle, Einstellungen, Verwaltung,
-kein Remote Desktop (auf der Watch sinnfrei). Frontend-Referenz:
-`../design_prototype/Watch.html`.
+vereinfachtes Dashboard inklusive der Batches des Geräts. Keine Zeitpläne,
+Protokolle, Einstellungen, Verwaltung, kein Remote Desktop (auf der Watch
+sinnfrei). Frontend-Referenz: `../design_prototype/Watch.html`.
 
 - **Kommunikation**: ausschließlich via `WatchConnectivity` über das iPhone —
   kein direktes LAN vom Watch. Die Watch sendet Befehle per `sendMessage` an
   `WatchBridgeService`/`WatchCommandDispatcher` (iPhone-Seite), die über
-  `AppContainer` (Wake/Shutdown/Metriken) ausführen. Passwörter verlassen
+  `AppContainer` (Wake/Shutdown/Metriken/Batches) ausführen. Passwörter verlassen
   niemals das iPhone (Keychain); die Watch sieht nur `hasPassword`.
 - **Befehle** (JSON, `{ok:true,…}|{ok:false,error}`):
-  `snapshot` (Geräte), `statusAll` (Online-Flags), `wake {id}`,
-  `shutdown {id}`, `metrics {id}` (Prozent/GB über `MetricsUI`).
-  Verträge: `WolManager/Watch/WatchCommandDispatcher.swift`.
+  `snapshot` (Geräte inkl. Batches), `statusAll` (Online-Flags), `wake {id}`,
+  `shutdown {id}`, `metrics {id}` (Prozent/GB über `MetricsUI`),
+  `runBatch {id,batchId}` (Start-Bestätigung). Ergebnis eines Batches kommt
+  zusätzlich als Push: `{event:"batchResult", id, batchId, name, ok, exitCode,
+  durationMs}`. Verträge: `WolManager/Watch/WatchCommandDispatcher.swift`.
+- **Batches**: eigenes Feld in `DashboardView` — Titel links, Play-Dreieck
+  rechts, **keine** Grip-Punkte und keine Sortierung auf der Watch. Die
+  Reihenfolge ist immer die der iOS-App (persistierte `device.batches`-Liste);
+  `snapshot` und `applicationContext` nutzen dieselbe Feldmenge
+  (`WatchCommandDispatcher.devicePayload`), und `repo.onChange` stößt den
+  Snapshot an — nach dem Umsortieren am iPhone folgt die Watch ohne manuelles
+  Neuladen. Es reisen nur `id` + `name` zur Watch (Skripte bleiben auf dem
+  iPhone). Tippen öffnet erst das Bestätigungs-Popup `BatchRunConfirmView`
+  (analog zum Herunterfahren); danach startet `runBatch`, und das Ergebnis
+  meldet der Dispatcher per Push als Toast (ein Batch kann Minuten laufen, eine
+  synchron beantwortete Nachricht würde am Watch-Timeout scheitern). Ohne
+  Freigabe am Gerät (`allow_batch`) bleibt es bei einem Hinweis
+  (`batch_disabled`).
 - **Offline-Fallback**: `applicationContext` hält den letzten Geräte-Snapshot;
   ist das iPhone nicht erreichbar, zeigt die Watch ihn mit Warnbox
   („iPhone nicht erreichbar"). Wake-Polling prüft nach dem Magic-Packet bis zu
@@ -152,6 +168,6 @@ kein Remote Desktop (auf der Watch sinnfrei). Frontend-Referenz:
   das mitgeführte `.xcodeproj` öffnen und das Watch-Schema auf einem
   Watch-Simulator (Ultra/9, watchOS 10) starten.
 - **Tests**: `WolManagerTests/WatchCommandDispatcherTests.swift` prüft den
-  Dispatcher (Passwort-Freiheit im Snapshot, Wake/Shutdown-Delegation,
-  Status-Filter, Metriken, Fehlerpfade) gegen `FakeWatchActions` — ohne
-  Netzwerk/Watch.
+  Dispatcher (Passwort-Freiheit im Snapshot, Batch-Reihenfolge ohne Skripte,
+  Wake/Shutdown-Delegation, Status-Filter, Metriken, Batch-Start + Ergebnis-Push,
+  Fehlerpfade) gegen `FakeWatchActions` — ohne Netzwerk/Watch.
