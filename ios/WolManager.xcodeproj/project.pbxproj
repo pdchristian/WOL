@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		05F4666694C9730299081E33 /* NetworkScannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027CA95AD9EEA8738C02765F /* NetworkScannerTests.swift */; };
 		0620A820D11997217FD2457B /* RepoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A69BF020554ACE84D414677 /* RepoTests.swift */; };
+		0F3276999800552D2630599D /* BatchRunConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6550E6DD20429E25E46703C /* BatchRunConfirmView.swift */; };
 		119A169149D84C0586897F7F /* WatchCommandDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3076C6F309ABE328232E07C1 /* WatchCommandDispatcherTests.swift */; };
 		12B12D030654527085E461AF /* MetricsUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E782446E7E1A9930552B29B7 /* MetricsUI.swift */; };
 		1335F9FBE4EE574ADF147183 /* WatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E1CF468FAC1439C6E93C77 /* WatchApp.swift */; };
@@ -18,7 +19,6 @@
 		1ACCF3BBFEBF51BD306B4552 /* WatchBridgeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79B232DDE025F95008B1E42C /* WatchBridgeService.swift */; };
 		1B4A9AFC678B9513946CEB20 /* Repo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21BD1CCC42EF78403965A662 /* Repo.swift */; };
 		1EA4D7DFA40EC80BB3076E3C /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A171CDF1A2AB0346B75779 /* DashboardView.swift */; };
-		AA10B2C3D4E5F60718293A01 /* BatchRunConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10B2C3D4E5F60718293A02 /* BatchRunConfirmView.swift */; };
 		20440BFD05890900643E0477 /* CsvTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E3B18B8C6CCB4C6F8E903F /* CsvTests.swift */; };
 		2673D98EA6832F4495D0D019 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A88BA43FEA9FACA00A8C9839 /* Models.swift */; };
 		2CD34A9BD2CEC4A681C0D3C1 /* UpdateCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE04592B5806F06186548C86 /* UpdateCheck.swift */; };
@@ -94,7 +94,6 @@
 		04C6A26EBD16915565E32B42 /* ScheduleEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleEngineTests.swift; sourceTree = "<group>"; };
 		09D44119A5E973979683B39C /* WolManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WolManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		12A171CDF1A2AB0346B75779 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
-		AA10B2C3D4E5F60718293A02 /* BatchRunConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRunConfirmView.swift; sourceTree = "<group>"; };
 		12CF51BE354B7FE34F8632F5 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		183ED19AB4BF38D286FBF9FD /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		1938409CE1BA92131CAB1738 /* NetworkScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkScanner.swift; sourceTree = "<group>"; };
@@ -132,6 +131,7 @@
 		BA435C0F1DE951DA9227CB73 /* DocumentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPicker.swift; sourceTree = "<group>"; };
 		C9EE2609F215B497A12C2466 /* SecureStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureStore.swift; sourceTree = "<group>"; };
 		D1D4B63E55932A05A6302029 /* WatchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchService.swift; sourceTree = "<group>"; };
+		D6550E6DD20429E25E46703C /* BatchRunConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRunConfirmView.swift; sourceTree = "<group>"; };
 		DBCA0F358D0F6D4E98E9045A /* WebApp */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WebApp; sourceTree = SOURCE_ROOT; };
 		DF93F71D2B0D8D262F8EC5BB /* RemoteDesktop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDesktop.swift; sourceTree = "<group>"; };
 		E782446E7E1A9930552B29B7 /* MetricsUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsUI.swift; sourceTree = "<group>"; };
@@ -192,7 +192,7 @@
 			isa = PBXGroup;
 			children = (
 				6C172C7B09A7F1245E1AA23C /* Assets.xcassets */,
-				AA10B2C3D4E5F60718293A02 /* BatchRunConfirmView.swift */,
+				D6550E6DD20429E25E46703C /* BatchRunConfirmView.swift */,
 				12A171CDF1A2AB0346B75779 /* DashboardView.swift */,
 				73DD64A0F4F8B325870F3A0B /* DeviceListView.swift */,
 				65CC7AA580AB31B2C35DC6E9 /* Models.swift */,
@@ -410,8 +410,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0F3276999800552D2630599D /* BatchRunConfirmView.swift in Sources */,
 				1EA4D7DFA40EC80BB3076E3C /* DashboardView.swift in Sources */,
-				AA10B2C3D4E5F60718293A01 /* BatchRunConfirmView.swift in Sources */,
 				8D2573FA24063C9047F96380 /* DeviceListView.swift in Sources */,
 				F60BFAFB062A0B9B705A63D4 /* Models.swift in Sources */,
 				B9876992FCF4D5203546DF00 /* ShutdownConfirmView.swift in Sources */,
@@ -548,7 +548,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = CH9M2M9R7N;
 				ENABLE_PREVIEWS = YES;
@@ -664,7 +664,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = CH9M2M9R7N;
 				ENABLE_PREVIEWS = YES;
