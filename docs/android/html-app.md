@@ -118,9 +118,10 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
   Wischen nach links/rechts wechselt zum nächsten/vorherigen Gerät – in
   genau der Reihenfolge, die gerade im Gerätemanager sortiert ist
   (`sortDevices()`; Anzeige `Position/Gesamt` neben dem Titel, zyklisch).
-- **Batch-Bibliothek (Parität Desktop, 2.3.7):** die Liste zeigt **nur den
-  Titel** pro Zeile (kein Skript/Timeout) mit 6-Punkte-Grip — wie
-  `BatchListWidget` am Desktop. **Drag & Drop** sortiert vertikal: Touch =
+- **Batch-Bibliothek (Parität Desktop, 2.3.7):** die Liste zeigt pro Zeile den
+  **Titel** (kein Skript/Timeout) mit 6-Punkte-Grip links und **Play-Badge**
+  (`.playBtn`) rechts — wie `BatchListWidget` am Desktop. **Drag & Drop**
+  sortiert vertikal: Touch =
   300 ms **halten** dann ziehen, Maus = Bewegung > 8 px; Drop-Indikator =
   Akzentlinie. Die visuelle Reihenfolge IST die persistierte Reihenfolge
   (`device.batches` → `saveDeviceNative`), ein Drop löst **kein** Öffnen aus
@@ -130,6 +131,17 @@ Syntax-Check: `node --check app.js && node --check bridge.js`.
   geöffneten Titel schließt ihn wieder. Der Metrik-Tick pausiert `renderDash()`
   während eines Drags (`batchDragActive`), damit die gezogene Zeile nicht aus
   dem DOM gerissen wird; `.batchList` ist vom Wisch-Gesten-Handler ausgenommen.
+- **Ausführen mit Rückfrage (Parität Watch/Desktop):** der **Play-Badge**
+  (`data-act="batch-play"`) wählt zuerst die Zeile aus (Editor und Konsole
+  zeigen danach denselben Batch) und öffnet dann die Bestätigungs-Karte
+  (`.playIcon` wie `.powerIcon`, aber Akzentfarbe; Texte `batch.run.title` /
+  `batch.run.message` mit `{name}`/`{device}`; Ja/Nein). Auch der
+  **Ausführen**-Knopf (`batch-run`) läuft über `requestRunBatch()` – ohne „Ja“
+  startet nichts. Ist `allow_batch` aus, ist der Badge abgedunkelt und ein Tap
+  zeigt nur den Hinweis `batch.disabled` als Toast; gleiches gilt für einen
+  noch ungespeicherten Batch (`batch.save.first`). Der Badge ist ein
+  `<button>`, deshalb startet von ihm aus **kein** Drag (`pointerdown`
+  ignoriert Buttons). Identisch in `ios/WebApp/`.
 
 ## Windows-Kompatibilität der Geräte-Dateien
 

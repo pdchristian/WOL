@@ -129,6 +129,7 @@ de:{
  "dash.unreach":"Host Service nicht erreichbar ({ip}:8765). Läuft der Dienst?",
  "dash.err":"Host-Service-Fehler: {msg}",
  "batch.exit.short":"Exit-Code {c}","batch.save.first":"Bitte zuerst den Batch speichern.",
+ "batch.run.title":"Batch ausführen?","batch.run.message":"Batch „{name}\" auf {device} ausführen?",
  "yes":"Ja","no":"Nein","ok":"OK"
 },
 en:{
@@ -252,6 +253,7 @@ en:{
  "dash.unreach":"Host Service unreachable ({ip}:8765). Is the service running?",
  "dash.err":"Host service error: {msg}",
  "batch.exit.short":"exit code {c}","batch.save.first":"Please save the batch first.",
+ "batch.run.title":"Run batch?","batch.run.message":"Run batch “{name}” on {device}?",
  "yes":"Yes","no":"No","ok":"OK"
 },
 fr:{
@@ -375,6 +377,7 @@ fr:{
  "dash.unreach":"Service hôte injoignable ({ip}:8765). Le service tourne-t-il ?",
  "dash.err":"Erreur du service hôte : {msg}",
  "batch.exit.short":"code retour {c}","batch.save.first":"Veuillez d'abord enregistrer le lot.",
+ "batch.run.title":"Exécuter le lot ?","batch.run.message":"Exécuter le lot « {name} » sur {device} ?",
  "yes":"Oui","no":"Non","ok":"OK"
 },
 es:{
@@ -498,6 +501,7 @@ es:{
  "dash.unreach":"Servicio host inaccesible ({ip}:8765). ¿Está en ejecución?",
  "dash.err":"Error del servicio host: {msg}",
  "batch.exit.short":"código de salida {c}","batch.save.first":"Guarde primero el lote.",
+ "batch.run.title":"¿Ejecutar el lote?","batch.run.message":"¿Ejecutar el lote „{name}\" en {device}?",
  "yes":"Sí","no":"No","ok":"OK"
 }};
 
@@ -1170,8 +1174,23 @@ let batchDragActive = false;
   document.addEventListener("pointerup", commit);
   document.addEventListener("pointercancel", clear);
 })();
-function runBatch() {
-  const b = selBatchObj(); const d = byId(state.ui.dashDeviceId);
+/* Play-Badge in der Zeile / "Ausführen": erst fragen, dann ausführen —
+   Parität Apple Watch (BatchRunConfirmView) und Desktop (Bestätigungsdialog). */
+function requestRunBatch(pb, pd) {
+  const b = pb || selBatchObj(); const d = pd || byId(state.ui.dashDeviceId);
+  if (!b || !d || state.con.running) return;
+  if (!d.allow_batch) { toast(t("batch.disabled"), true); return; }
+  if (!b.id) { toast(t("batch.save.first"), true); return; }
+  state.ui.confirmFn = () => runBatch(b, d);
+  openSheet(`<div class="grab"></div>
+    <div style="text-align:center"><div class="playIcon"></div>
+    <h2 style="text-align:center;margin-bottom:0">${esc(t("batch.run.title"))}</h2>
+    <p style="font-size:13.5px;color:var(--text-dim);margin-top:8px">${esc(t("batch.run.message", { name: b.name, device: d.name }))}</p></div>
+    <div class="sheetbtns" style="justify-content:flex-end"><button class="btn primary" data-act="confirm-yes">${esc(t("yes"))}</button>
+    <button class="btn" data-act="sheet-close">${esc(t("no"))}</button></div>`);
+}
+function runBatch(pb, pd) {
+  const b = pb || selBatchObj(); const d = pd || byId(state.ui.dashDeviceId);
   if (!b || !d || state.con.running) return;
   if (!d.allow_batch) { toast(t("batch.disabled"), true); return; }
   if (!b.id) { toast(t("batch.save.first"), true); return; }
@@ -1545,7 +1564,9 @@ function renderDash(dir) {
       <div class="sep"></div>
       <div class="batchList" id="blist">${batches.map(b => `
         <div class="batchRow ${state.ui.selBatch === b.id ? "sel" : ""}" data-act="batch-sel" data-id="${b.id}">
-          ${GRIP_SVG}<span>${esc(b.name)}</span></div>`).join("")}</div>
+          ${GRIP_SVG}<span class="bname">${esc(b.name)}</span>
+          <button class="playBtn ${d.allow_batch ? "" : "off"}" data-act="batch-play" data-id="${b.id}"
+            aria-label="${esc(t("batch.run"))}"><span class="tri"></span></button></div>`).join("")}</div>
       <div class="sep"></div>
       <div class="reorderHint">${GRIP_SVG}<span>${esc(t("batch.reorder"))}</span></div>
       <div class="sep"></div>
@@ -1767,7 +1788,18 @@ document.addEventListener("click", ev => {
       b.name = $("#b-name").value.trim() || b.name; b.script = $("#b-script").value;
       b.timeout = clamp(+$("#b-timeout").value || 120, 5, 3600);
       clearBatchDraft(); renderDash(); persistBatches(d, t("dev.saved")); break; }
-    case "batch-run": runBatch(); break;
+    case "batch-play": { const d2 = byId(state.ui.dashDeviceId);
+      const b2 = d2 ? (d2.batches || []).find(x => x.id === id) : null;
+      if (!b2) break;
+      /* Zeile zuerst auswählen — Editor und Konsole zeigen genau den Batch,
+         der gleich läuft (Parität Desktop _run_batch_row). */
+      if (state.ui.selBatch !== b2.id) {
+        state.ui.selBatch = b2.id; clearBatchDraft();
+        state.con = { lines:[],running:false,exit:null,dur:null,timer:null };
+        renderDash();
+      }
+      requestRunBatch(b2, d2); break; }
+    case "batch-run": requestRunBatch(); break;
     case "batch-allow": { const d = byId(state.ui.dashDeviceId); if (!d) break;
       d.allow_batch = !d.allow_batch; renderDash(); persistBatches(d); break; }
     case "con-clear": state.con = { lines:[],running:false,exit:null,dur:null,timer:null }; renderDash(); break;

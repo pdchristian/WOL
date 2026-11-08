@@ -6,8 +6,10 @@ Layout mirrors design_prototype/Dashboard_Prototyp_Flash.html:
    the metrics poll interval.
 2. Four metric cards (CPU / RAM / GPU / VRAM), each with a ring gauge, a
    detail line and a 60-sample sparkline.
-3. A batch section: the device's batch library on the left, an editor
-   (name / script / timeout) with "Run" on the right, and an output console.
+3. A batch section: the device's batch library on the left (each row carries
+   a ▶ play badge), an editor (name / script / timeout) with "Run" on the
+   right, and an output console. Every run — from the badge or from "Run" —
+   asks for confirmation first, like shutdown and like the Watch/mobile apps.
 
 All data comes from the WOL Host Service on the target machine via
 :mod:`wol_app.metrics_worker` (metrics polled on a timer, single-flight);
@@ -25,8 +27,17 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
-from PyQt6.QtCore import QEvent, QPointF, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen, QPixmap
+from PyQt6.QtCore import QEvent, QPointF, QRect, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import (
+    QColor,
+    QCursor,
+    QFont,
+    QIcon,
+    QPainter,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -60,6 +71,7 @@ from wol_app.modern_theme import current_tokens
 from wol_app.translations import Translations
 from wol_app.utils import ip_sort_key
 from wol_app.views.batch_copy_dialog import BatchCopyDialog
+from wol_app.views.shutdown_confirm_dialog import ModernShutdownConfirmDialog
 
 # Ring gauge geometry (prototype .gauge: 86 px, stroke 8)
 GAUGE_SIZE = 86
@@ -697,6 +709,54 @@ def _grip_pixmap(size: int = 16, color: str | None = None,
     return pixmap
 
 
+PLAY_BADGE_SIZE = 22     # play badge diameter inside a batch row
+PLAY_ROW_INSET = 12      # gap to the row's right edge (QSS padding 8 + margin 4)
+
+
+def _play_badge_rect(row_rect: QRect) -> QRect:
+    """Square play badge at the right edge of a batch row.
+
+    Shared by the painter and the hit test so the clickable area and the
+    glyph can never drift apart. *row_rect* is the item rect in viewport
+    coordinates (``QListWidget.visualItemRect``).
+    """
+    return QRect(row_rect.right() - PLAY_ROW_INSET - PLAY_BADGE_SIZE,
+                 row_rect.center().y() - PLAY_BADGE_SIZE // 2,
+                 PLAY_BADGE_SIZE, PLAY_BADGE_SIZE)
+
+
+def _draw_play_badge(painter: QPainter, rect: QRect, enabled: bool) -> None:
+    """Tinted circle + play triangle — same badge the Watch and mobile
+    apps show on a batch row.
+
+    Drawn directly onto the list viewport instead of via a delegate: the
+    rows keep their QSS styling (``QListWidget#batchList::item``) and the
+    drag & drop path stays untouched. *enabled* dims the badge while a run
+    is impossible (opt-in off, no credentials, host offline).
+    """
+    tokens = current_tokens()
+    color = QColor(tokens["accent"] if enabled else tokens["text_dim"])
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(Qt.PenStyle.NoPen)
+    tint = QColor(color)
+    tint.setAlpha(int(255 * 0.15))
+    painter.setBrush(tint)
+    painter.drawEllipse(rect)
+
+    # Triangle, optically centred (a geometrically centred triangle sits
+    # visibly left of the circle's centre).
+    w = PLAY_BADGE_SIZE * 0.34
+    h = PLAY_BADGE_SIZE * 0.38
+    cx = rect.center().x() + PLAY_BADGE_SIZE * 0.045 - w / 2
+    cy = rect.center().y()
+    painter.setBrush(color)
+    painter.drawPolygon(QPolygonF([
+        QPointF(cx, cy - h / 2),
+        QPointF(cx, cy + h / 2),
+        QPointF(cx + w, cy),
+    ]))
+
+
 class BatchListWidget(QListWidget):
     """Batch library list with internal drag & drop reordering.
 
@@ -721,6 +781,9 @@ class BatchListWidget(QListWidget):
     area below the rows or leaves the list without a final item hover.
     """
 
+    #: Row index whose play badge was pressed — the view confirms and runs it.
+    play_requested = pyqtSignal(int)
+
     def __init__(self, view: "DeviceDashboardView") -> None:
         super().__init__()
         self._view = view
@@ -739,8 +802,62 @@ class BatchListWidget(QListWidget):
         # Row the current drag started on (Qt's current item is the dragged
         # one); -1 while no drag is running. See dropEvent().
         self._drag_source_row = -1
+        # Whether a batch run is currently possible — dims the play badges
+        # (mirrors the Watch refusing to run without the per-device opt-in).
+        self._run_enabled = False
         self.setMouseTracking(True)
         self.viewport().installEventFilter(self)
+
+    # ── play badge (run a batch straight from its row) ───────────────
+
+    def set_run_enabled(self, enabled: bool) -> None:
+        """Enable/dim the row play badges (:meth:`_update_run_enabled`)."""
+        if enabled == self._run_enabled:
+            return
+        self._run_enabled = enabled
+        self.viewport().update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        super().paintEvent(event)
+        if self.count() == 0:
+            return
+        painter = QPainter(self.viewport())
+        try:
+            for row in range(self.count()):
+                item = self.item(row)
+                if item is None:
+                    continue
+                rect = self.visualItemRect(item)
+                if not rect.isValid() or rect.isEmpty():
+                    continue
+                _draw_play_badge(painter, _play_badge_rect(rect),
+                                 self._run_enabled)
+        finally:
+            painter.end()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        """A press inside a row's play badge runs that batch, not the row.
+
+        Swallowing the press keeps Qt from starting an ``InternalMove``
+        drag from the badge; the row is still selected so the editor below
+        shows exactly the batch that is about to run.
+        """
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position().toPoint()
+            row = self._row_at(pos)
+            if row >= 0 and self._play_hit(row, pos):
+                self.setCurrentRow(row)
+                self.play_requested.emit(row)
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def _play_hit(self, row: int, pos) -> bool:
+        item = self.item(row)
+        if item is None:
+            return False
+        rect = self.visualItemRect(item)
+        return rect.isValid() and _play_badge_rect(rect).contains(pos)
 
     # ── hover-only grip icon ─────────────────────────────────────────
 
@@ -748,7 +865,13 @@ class BatchListWidget(QListWidget):
         if watched is self.viewport():
             etype = event.type()
             if etype == QEvent.Type.MouseMove:
-                self._set_hover_row(self._row_at(event.position().toPoint()))
+                pos = event.position().toPoint()
+                row = self._row_at(pos)
+                self._set_hover_row(row)
+                hand = row >= 0 and self._play_hit(row, pos)
+                self.viewport().setCursor(
+                    Qt.CursorShape.PointingHandCursor if hand
+                    else Qt.CursorShape.ArrowCursor)
             elif etype == QEvent.Type.Leave:
                 self._set_hover_row(-1)
         return super().eventFilter(watched, event)
@@ -778,6 +901,9 @@ class BatchListWidget(QListWidget):
         """Re-render the grip glyph (dark/light switch re-colors it)."""
         self._grip = QIcon(_grip_pixmap(16, dpr=self.devicePixelRatioF()))
         self._apply_grip(self._hover_row, True)
+        # The play badges are painted, not icon-based — they pick up the new
+        # theme tokens on the next repaint.
+        self.viewport().update()
 
     def sync_hover_after_move(self) -> None:
         """Re-establish the hover grip after an InternalMove drop.
@@ -849,6 +975,9 @@ class DeviceDashboardView(QWidget):
         self._batch_worker: BatchWorker | None = None
         self._batch_active: int = -1
         self._batch_dirty = False
+        # Cached "a batch run is possible right now" (see _update_run_enabled)
+        # — drives the run button and the play badges in the library rows.
+        self._run_enabled = False
         # True while a drag & drop move is being written back to the config
         # (guards _on_batch_selected against the shifting currentRowChanged
         # signals Qt fires during an InternalMove).
@@ -1051,6 +1180,7 @@ class DeviceDashboardView(QWidget):
         # order, so BatchListWidget writes every move back to the config.
         self.batch_list = BatchListWidget(self)
         self.batch_list.setToolTip(Translations.tr("modern.dashboard.batch.reorder_tip"))
+        self.batch_list.play_requested.connect(self._run_batch_row)
         lib_layout.addWidget(self.batch_list, 1)
 
         lib_foot = QHBoxLayout()
@@ -1928,7 +2058,9 @@ class DeviceDashboardView(QWidget):
             and device.get("username")
             and not (self._batch_thread is not None)
         )
+        self._run_enabled = enabled
         self.run_btn.setEnabled(enabled)
+        self.batch_list.set_run_enabled(enabled)
         self.allow_batch_check.blockSignals(True)
         self.allow_batch_check.setChecked(bool(device.get("allow_batch", False)))
         self.allow_batch_check.blockSignals(False)
@@ -1937,10 +2069,35 @@ class DeviceDashboardView(QWidget):
         stamp = datetime.now().strftime("%H:%M:%S")
         self.console_edit.appendPlainText(f"[{stamp}] {text}")
 
-    def _run_batch(self) -> None:
-        device = self._device
-        if device is None or self._batch_thread is not None:
+    def _run_batch_row(self, row: int) -> None:
+        """Play badge in a library row: select it, then confirm + run.
+
+        Selecting first keeps the editor in sync with what actually runs
+        (the row's stored batch), exactly like tapping the row does.
+        """
+        batches = self._batches()
+        if not (0 <= row < len(batches)):
             return
+        if self._batch_thread is not None:
+            return  # a run is already in flight — the console reports it
+        self.batch_list.setCurrentRow(row)
+        if not self._run_enabled:
+            # Parität Watch/mobile: the badge is visible but the run is
+            # refused with the reason instead of silently doing nothing.
+            self.status_line.setText(
+                Translations.tr("modern.dashboard.batch.disabled"))
+            return
+        self._run_batch()
+
+    def _run_batch(self) -> None:
+        """Run button: the editor content runs after an explicit prompt."""
+        if self._batch_run_precheck():
+            self._confirm_and_run_batch()
+
+    def _batch_run_precheck(self) -> bool:
+        """Guards that run before the confirmation popup is worth showing."""
+        if self._device is None or self._batch_thread is not None:
+            return False
         # Public-network protection: run_batch is a privileged host-service
         # command and stays disabled on a PUBLIC network unless the user
         # opted in (settings). The host service gates independently.
@@ -1952,7 +2109,37 @@ class DeviceDashboardView(QWidget):
                 Translations.tr("network.public_blocked.title"),
                 Translations.tr("network.public_blocked.message"),
             )
+            return False
+        if not self.script_edit.toPlainText().strip():
+            return False
+        return True
+
+    def _confirm_and_run_batch(self) -> None:
+        """Ja/Nein prompt before the batch reaches the host service.
+
+        Same question the Apple Watch app and both mobile apps ask
+        (play badge + batch name + device), styled like the shutdown
+        prompt. Batches run with SYSTEM rights on the target, so an
+        accidental click must not be enough.
+        """
+        device = self._device or {}
+        name = (self.name_edit.text().strip()
+                or Translations.tr("modern.dashboard.batch.untitled"))
+        dialog = ModernShutdownConfirmDialog(
+            "",
+            self,
+            title_key="modern.dashboard.batch.run.title",
+            message_key="modern.dashboard.batch.run.message",
+            message_kwargs={"name": name,
+                            "device": device.get("name", "")},
+            yes_object_name="primaryButton",
+            icon="play")
+        if not dialog.exec():
             return
+        self._start_batch_run()
+
+    def _start_batch_run(self) -> None:
+        """Send the (unsaved) editor content to the host service."""
         # Run the editor content (even unsaved), after committing to the library
         self._commit_editor()
         script = self.script_edit.toPlainText()
@@ -1963,7 +2150,11 @@ class DeviceDashboardView(QWidget):
         self._log(Translations.tr("modern.dashboard.batch.started", name=name))
         self.status_line.setText(Translations.tr("modern.dashboard.batch.running"))
         self.run_btn.setEnabled(False)
+        # Badges dim while the run is in flight; _batch_thread_done() restores.
+        self._run_enabled = False
+        self.batch_list.set_run_enabled(False)
 
+        device = self._device or {}
         worker = BatchWorker(
             device.get("ip", ""), script,
             device.get("username", ""), device.get("password", ""),

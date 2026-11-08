@@ -104,6 +104,13 @@ Gerät anschließen, in Xcode Team + Bundle-ID `de.wolmanager` setzen,
   nächsten/vorherigen Gerät – in genau der Reihenfolge, die gerade im
   Gerätemanager sortiert ist (zyklisch, Anzeige `Position/Gesamt` neben dem
   Titel). Kurzer Haptik-Impuls bei Wechsel; vertikales Scrollen bleibt erhalten.
+- **Batch-Ausführen mit Rückfrage** (Parität Apple Watch und Desktop): jede
+  Batch-Zeile im Dashboard trägt rechts einen runden Play-Badge (`.playBtn`);
+  Tippen wählt zuerst die Zeile und öffnet dann die Bestätigungs-Karte
+  (`batch.run.title` / `batch.run.message` mit Batch-Name und Gerät, Ja/Nein).
+  Auch der **Ausführen**-Knopf fragt jetzt zuerst – ohne „Ja“ startet nichts.
+  Details: `../docs/android/html-app.md` (gleicher Code in `WebApp/` und
+  `android_html/`).
 - **Passwörter** liegen im Keychain
   (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`), `devices.json`
   bleibt frei von Klartext — wie auf Android.

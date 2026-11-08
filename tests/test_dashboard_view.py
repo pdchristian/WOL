@@ -7,20 +7,28 @@ from wol_app.translations import Translations
 
 pytest.importorskip("PyQt6")
 
-from PyQt6.QtCore import Qt  # noqa: E402
+from PyQt6.QtCore import QPoint, QPointF, QRect, Qt  # noqa: E402
+from PyQt6.QtGui import QMouseEvent  # noqa: E402
 from PyQt6.QtWidgets import (  # noqa: E402
     QAbstractItemView,
     QApplication,
+    QDialog,
     QMessageBox,
 )
 
 from wol_app.views.dashboard_view import (  # noqa: E402
+    PLAY_BADGE_SIZE,
+    PLAY_ROW_INSET,
     DeviceDashboardView,
     MetricCard,
     RingGauge,
     Sparkline,
     _fmt_bytes_gb,
     _fmt_uptime,
+    _play_badge_rect,
+)
+from wol_app.views.shutdown_confirm_dialog import (  # noqa: E402
+    ModernShutdownConfirmDialog,
 )
 
 
@@ -1233,4 +1241,169 @@ class TestBatchReorder:
         v.batch_list.sync_hover_after_move()
         for i in range(v.batch_list.count()):
             assert v.batch_list.item(i).icon().isNull()
+        v.cancel_workers()
+
+
+class TestBatchRunConfirm:
+    """▶ badge in the library rows + Ja/Nein prompt before a batch runs.
+
+    Parity with the Apple Watch app (and the mobile apps): every run —
+    from the play badge of a row or from the "Ausführen" button — asks
+    first, naming the batch and the target device.
+    """
+
+    def _view(self, qapp, tmp_path, monkeypatch, names=("One", "Two"),
+              allow_batch=True, online=True):
+        cfg = ConfigManager(config_path=str(tmp_path / "run.json"))
+        cfg.add_device("WS", "AA:BB:CC:00:55:01")
+        dev_id = cfg.get_devices()[0]["id"]
+        cfg.update_device(dev_id, ip="192.168.1.20", username="user",
+                          password="pw")
+        cfg.set_device_allow_batch(dev_id, allow_batch)
+        cfg.set_device_batches(dev_id, [
+            {"id": f"b{i}", "name": n, "script": f"echo {n}", "timeout": 10}
+            for i, n in enumerate(names)])
+        monkeypatch.setattr(DeviceDashboardView, "_poll_metrics",
+                            lambda self: None)
+        # The public-network gate would otherwise depend on the test machine.
+        monkeypatch.setattr("wol_app.network_profile.is_privileged_command_blocked",
+                            lambda _allow: False)
+        v = DeviceDashboardView(cfg)
+        v.set_device(dev_id)
+        if online:
+            v._on_metrics(dict(METRICS))
+        return v, cfg, dev_id
+
+    def _answer(self, monkeypatch, accepted: bool):
+        """Stub the confirm dialog: records it and answers Ja/Nein."""
+        asked = []
+
+        def _exec(dialog, *args, **kwargs):
+            asked.append(dialog)
+            code = (QDialog.DialogCode.Accepted if accepted
+                    else QDialog.DialogCode.Rejected)
+            return code
+
+        monkeypatch.setattr(ModernShutdownConfirmDialog, "exec", _exec)
+        return asked
+
+    def _runs(self, monkeypatch, v):
+        started = []
+        monkeypatch.setattr(v, "_start_batch_run",
+                            lambda: started.append(True))
+        return started
+
+    def test_run_enabled_only_with_opt_in_and_online_host(self, qapp,
+                                                          tmp_path,
+                                                          monkeypatch):
+        v, _, _ = self._view(qapp, tmp_path, monkeypatch)
+        assert v._run_enabled is True
+        assert v.batch_list._run_enabled is True
+        v2, _, _ = self._view(qapp, tmp_path, monkeypatch, online=False)
+        assert v2._run_enabled is False
+        v3, _, _ = self._view(qapp, tmp_path, monkeypatch, allow_batch=False)
+        assert v3._run_enabled is False
+
+    def test_run_button_asks_first_and_starts_after_ja(self, qapp, tmp_path,
+                                                       monkeypatch):
+        v, _, _ = self._view(qapp, tmp_path, monkeypatch)
+        asked = self._answer(monkeypatch, True)
+        started = self._runs(monkeypatch, v)
+        v.run_btn.click()
+        assert len(asked) == 1
+        assert started == [True]
+        v.cancel_workers()
+
+    def test_run_button_nein_starts_nothing(self, qapp, tmp_path,
+                                            monkeypatch):
+        v, _, _ = self._view(qapp, tmp_path, monkeypatch)
+        self._answer(monkeypatch, False)
+        started = self._runs(monkeypatch, v)
+        v.run_btn.click()
+        assert started == []
+        assert v._batch_thread is None
+        v.cancel_workers()
+
+    def test_confirm_names_batch_and_device(self, qapp, tmp_path,
+                                            monkeypatch):
+        v, _, dev_id = self._view(qapp, tmp_path, monkeypatch)
+        asked = self._answer(monkeypatch, True)
+        started = self._runs(monkeypatch, v)
+        v.batch_list.setCurrentRow(1)
+        v.run_btn.click()
+        assert len(asked) == 1
+        assert started == [True]
+        dialog = asked[0]
+        assert dialog._title_key == "modern.dashboard.batch.run.title"
+        assert dialog._message_key == "modern.dashboard.batch.run.message"
+        assert dialog._message_kwargs == {
+            "name": "Two", "device": "WS"}
+        assert dialog._icon == "play"
+        v.cancel_workers()
+
+    def test_play_badge_selects_row_and_runs_it(self, qapp, tmp_path,
+                                                monkeypatch):
+        v, _, _ = self._view(qapp, tmp_path, monkeypatch)
+        asked = self._answer(monkeypatch, True)
+        started = self._runs(monkeypatch, v)
+        v.batch_list.play_requested.emit(1)
+        assert v.batch_list.currentRow() == 1
+        assert len(asked) == 1
+        assert asked[0]._message_kwargs["name"] == "Two"
+        assert started == [True]
+        v.cancel_workers()
+
+    def test_play_badge_press_is_hit_tested(self, qapp, tmp_path,
+                                             monkeypatch):
+        """A press on the badge emits play_requested and never starts a drag."""
+        v, _, _ = self._view(qapp, tmp_path, monkeypatch)
+        self._answer(monkeypatch, False)
+        v.batch_list.show()
+        QApplication.processEvents()
+        got = []
+        v.batch_list.play_requested.connect(got.append)
+        rect = v.batch_list.visualItemRect(v.batch_list.item(1))
+        badge = _play_badge_rect(rect)
+        pos = QPoint(int(badge.center().x()), int(badge.center().y()))
+        ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(pos),
+                         Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                         Qt.KeyboardModifier.NoModifier)
+        v.batch_list.mousePressEvent(ev)
+        assert got == [1]
+        assert v.batch_list.currentRow() == 1
+        # The press was swallowed on purpose: no InternalMove drag may start.
+        assert v._batch_reordering is False
+        assert v._pending_batch_move is None
+        v.cancel_workers()
+
+    def test_play_badge_without_opt_in_refuses_run(self, qapp, tmp_path,
+                                                   monkeypatch):
+        v, _, _ = self._view(qapp, tmp_path, monkeypatch, allow_batch=False)
+        asked = self._answer(monkeypatch, True)
+        started = self._runs(monkeypatch, v)
+        v.batch_list.play_requested.emit(0)
+        assert started == []
+        assert not asked
+        assert v.status_line.text() == \
+            Translations.tr("modern.dashboard.batch.disabled")
+        v.cancel_workers()
+
+    def test_badge_rect_at_row_right_and_inside_row(self):
+        rect = QRect(0, 0, 260, 34)
+        badge = _play_badge_rect(rect)
+        assert badge.width() == PLAY_BADGE_SIZE == badge.height()
+        # QRect::right() == x + width - 1: the badge sits PLAY_ROW_INSET px
+        # left of the row's right edge and is vertically centred.
+        assert badge.x() == rect.right() - PLAY_ROW_INSET - PLAY_BADGE_SIZE
+        assert badge.y() == rect.center().y() - PLAY_BADGE_SIZE // 2
+        assert (rect.contains(badge.topLeft())
+                and rect.contains(badge.bottomRight()))
+
+    def test_badges_painted_in_viewport(self, qapp, tmp_path, monkeypatch):
+        """The overlay painting must not raise and must tint the badge area."""
+        v, _, _ = self._view(qapp, tmp_path, monkeypatch)
+        v.batch_list.show()
+        QApplication.processEvents()
+        img = v.batch_list.viewport().grab().toImage()
+        assert img.height() > 0
         v.cancel_workers()

@@ -216,6 +216,18 @@
     border-radius:2px;z-index:6;pointer-events:none}
   .reorderHint{font-size:11px;color:var(--text-dim);padding:8px 12px;display:flex;
     align-items:center;gap:6px}
+  /* Play-Badge pro Zeile (Parität Apple Watch BatchRow / Desktop ▶-Badge):
+     Batch direkt ausführen, ohne Umweg über den Editor. */
+  .batchRow .bname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .playBtn{margin-left:auto;flex-shrink:0;width:30px;height:30px;padding:0;border:none;
+    border-radius:50%;background:rgba(0,184,169,.15);display:flex;align-items:center;
+    justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;
+    touch-action:manipulation}
+  .playBtn .tri{width:0;height:0;margin-left:2px;border-left:9px solid var(--accent);
+    border-top:5.5px solid transparent;border-bottom:5.5px solid transparent}
+  .playBtn:active{transform:scale(.92)}
+  .playBtn.off{background:rgba(140,140,145,.18)}
+  .playBtn.off .tri{border-left-color:var(--text-dim)}
   .warnbox{border-radius:12px;padding:12px;font-size:12.5px;margin:12px 0;line-height:1.45}
   .warnbox.warn{background:rgba(255,159,10,.12);color:var(--unknown);border:1px solid rgba(255,159,10,.4)}
   .warnbox.err{background:rgba(255,69,58,.12);color:var(--danger);border:1px solid rgba(255,69,58,.4)}
@@ -237,6 +249,13 @@
     border-radius:50%;border-top-color:transparent;position:relative}
   .powerIcon::after{content:"";position:absolute;left:50%;top:-16px;width:2.5px;height:19px;
     background:var(--danger);transform:translateX(-50%)}
+  /* Play-Symbol im Bestätigungs-Sheet (Batch-Lauf): gleiche Form wie .powerIcon,
+     aber Akzentfarbe statt Warnfarbe — Batch-Läufe sind nicht destruktiv. */
+  .playIcon{width:38px;height:38px;margin:6px auto 12px;border:2.5px solid var(--accent);
+    border-radius:50%;position:relative}
+  .playIcon::after{content:"";position:absolute;left:50%;top:50%;width:0;height:0;
+    border-left:11px solid var(--accent);border-top:7px solid transparent;
+    border-bottom:7px solid transparent;transform:translate(-42%,-50%)}
   /* ── Toast / Spinner (iOS: HUD-Blur-Box, zentrierter Text) ───────────── */
   .toast{position:fixed;left:32px;right:32px;bottom:calc(100px + env(safe-area-inset-bottom));
     background:var(--toast-bg);color:var(--toast-fg);

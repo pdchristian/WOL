@@ -7,10 +7,15 @@ power symbol (a circle interrupted by a vertical line on top), the question
 The dialog is styled purely through the modern theme (objectName-based QSS),
 so it reads as a continuation of the control-center window rather than a
 native system message box.
+
+The centered glyph follows the question: ``icon="power"`` (default) shows the
+danger-red power symbol, ``icon="play"`` the accent-colored play badge used
+before running a batch (parity with the Apple Watch / mobile confirmation
+sheets), ``icon="none"`` omits it.
 """
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -64,6 +69,44 @@ def _power_icon_pixmap(size: int, color: str, dpr: float = 1.0) -> QPixmap:
     return pixmap
 
 
+def _play_icon_pixmap(size: int, color: str, dpr: float = 1.0) -> QPixmap:
+    """Render the play symbol (triangle in a tinted circle) as a QPixmap.
+
+    Same badge the Apple Watch app and the mobile apps show next to a batch
+    name — it marks the confirmation as *constructive* (run something) rather
+    than destructive, so the accent color replaces the danger red here.
+    """
+    dpr = dpr or 1.0
+    pixmap = QPixmap(int(size * dpr), int(size * dpr))
+    if dpr != 1.0:
+        pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        tint = QColor(color)
+        tint.setAlpha(int(255 * 0.15))
+        painter.setBrush(tint)
+        painter.drawEllipse(QRectF(0, 0, size, size))
+
+        # Triangle, optically centred (a geometrically centred triangle looks
+        # too far left inside a circle).
+        w, h = size * 0.34, size * 0.38
+        cx = size / 2 + size * 0.045 - w / 2
+        cy = size / 2
+        painter.setBrush(QColor(color))
+        painter.drawPolygon(QPolygonF([
+            QPointF(cx, cy - h / 2),
+            QPointF(cx, cy + h / 2),
+            QPointF(cx + w, cy),
+        ]))
+    finally:
+        painter.end()
+    return pixmap
+
+
 class ModernShutdownConfirmDialog(QDialog):
     """Confirmation dialog for destructive actions (modern look).
 
@@ -73,6 +116,9 @@ class ModernShutdownConfirmDialog(QDialog):
     Passing ``min_key`` adds a third button between Ja and Nein whose
     ``exec()`` result is :data:`MINIMIZE_RESULT_CODE` — used by the quit
     confirmation when "keep running in the notification area" is enabled.
+
+    ``icon`` picks the centered glyph: ``"power"`` (default, danger red),
+    ``"play"`` (accent-colored play badge for batch runs) or ``"none"``.
     """
 
     def __init__(self, device_name: str, parent: QWidget | None = None, *,
@@ -83,7 +129,8 @@ class ModernShutdownConfirmDialog(QDialog):
                  min_key: str | None = None,
                  message_kwargs: dict | None = None,
                  yes_object_name: str = "dangerButton",
-                 show_icon: bool = True) -> None:
+                 show_icon: bool = True,
+                 icon: str = "power") -> None:
         super().__init__(parent)
         self.device_name = device_name
         self._title_key = title_key
@@ -94,6 +141,7 @@ class ModernShutdownConfirmDialog(QDialog):
         self._min_key = min_key
         self._yes_object_name = yes_object_name
         self._show_icon = show_icon
+        self._icon = icon
         self.setWindowTitle(Translations.tr(title_key))
         self.setMinimumWidth(380)
         self._setup_ui()
@@ -104,11 +152,17 @@ class ModernShutdownConfirmDialog(QDialog):
         layout.setContentsMargins(28, 26, 28, 24)
         layout.setSpacing(14)
 
-        # Power icon, centered (optional — non-destructive confirmations
-        # such as "apply password to same-user devices" hide it)
-        if self._show_icon:
+        # Centered glyph (optional — non-destructive confirmations such as
+        # "apply password to same-user devices" hide it)
+        if self._show_icon and self._icon != "none":
+            if self._icon == "play":
+                pixmap = _play_icon_pixmap(64, t["accent"],
+                                           self.devicePixelRatioF())
+            else:
+                pixmap = _power_icon_pixmap(64, t["danger"],
+                                            self.devicePixelRatioF())
             icon = QLabel()
-            icon.setPixmap(_power_icon_pixmap(64, t["danger"], self.devicePixelRatioF()))
+            icon.setPixmap(pixmap)
             icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icon_row = QHBoxLayout()
             icon_row.addStretch()

@@ -595,7 +595,9 @@ Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
 1. **Neu** – legt einen leeren Batch an.
 2. **Name**, **Skript** (beliebiger `cmd`-Batchtext, bis 32.000 Zeichen) und **Timeout** (5–3600 s, Standard 120 s) im Editor ausfüllen – Änderungen werden mit **Speichern** dauerhaft im Geräteeintrag gesichert.
 3. **Duplizieren** / **Löschen** – Batch vervielfältigen oder entfernen (mit Rückfrage).
-4. **Ausführen** – sendet das Skript an das Zielsystem; **stdout/stderr**, **Exit-Code** und **Laufzeit** erscheinen in der **Konsole** darunter. Sehr lange Ausgaben werden gekürzt und mit *[… gekürzt …]* markiert. Mit **Stop** brechen Sie die laufende Ausführung ab.
+4. **▶ am rechten Rand der Batch-Zeile** – führt genau diesen Batch direkt aus, ohne Umweg über den Editor. Die Zeile wird dabei ausgewählt, sodass Editor und Konsole denselben Batch zeigen. Ist die Ausführung nicht möglich (Freischaltung aus, kein Anmeldedaten, Zielsystem offline), bleibt das Symbol abgedunkelt und die Statuszeile nennt den Grund.
+5. **Ausführen** – sendet das Skript des geöffneten Batches an das Zielsystem; **stdout/stderr**, **Exit-Code** und **Laufzeit** erscheinen in der **Konsole** darunter. Sehr lange Ausgaben werden gekürzt und mit *[… gekürzt …]* markiert. Mit **Stop** brechen Sie die laufende Ausführung ab.
+6. **Rückfrage vor jedem Lauf:** sowohl **▶** als auch **Ausführen** öffnen zuerst das Bestätigungsfenster *„Batch ausführen?"* mit dem Namen des Batches und dem Zielgerät. **Ja** startet den Lauf, **Nein** verwirft ihn. Diese Rückfrage gibt es genauso in der iOS-, der Android- und der Apple-Watch-App.
 
 **Sicherheit – doppelte Freischaltung:** Batch-Skripte laufen auf dem Zielsystem mit den Rechten des Host Service (**SYSTEM**!). Deshalb ist die Ausführung **zweifelt abgesichert**:
 - **Clientseitig:** das Kontrollkästchen **Batch-Ausführung auf diesem Gerät erlauben** im Dashboard (pro Gerät gespeichert).

@@ -807,7 +807,7 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 - **Native dialogs:** `ModernDeviceDialog` (`views/device_edit_dialog.py`) and `ModernScheduleEditDialog` (`views/schedule_edit_dialog.py`); `widgets/toggle_switch.py` provides `ToggleSwitch`/`ToggleWithLabel`.
 - **Settings screen (`settings_view.py`):** grouped cards (`Group`, QSS `#settingsGroup` / `#settingsGroupTitle`, heading uppercased in Python since QSS has no `text-transform`) instead of one flat grid — **Network** (broadcast IP/port), **Appearance** (language, display mode, layout mode), **Remote access** (RDP resolution, `vnc_viewer_path`, `vnc_port`, `rustdesk_path`, `rustdesk_direct_port`, and one protocol combo per platform — RDP · TurboVNC · RustDesk), **Misc** (default shutdown method, log limit, auto-update switch + interval, close-to-tray, multiple instances, public-network privilege gate, macOS host service). `Field(label_key, widget, hint_key=…)` renders label + control + optional `#fieldHint` line. Navigation is unchanged — no new sidebar entries.
 - **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution, close-to-tray, `remote` section) — devices/schedules/logs and the layout mode are preserved.
-- **Device Dashboard (`dashboard_view.py`, stack index 6, no sidebar entry):** opened via the 📊 tile on each device card/row (between the remote-desktop tiles and edit) or the context menu — `DevicesView.dashboard_requested(device_id)` → `ModernMainWindow.open_device_dashboard()` (also refreshes the header on `_on_devices_changed`; `closeEvent` and `back_requested` → nav index 0 call `cancel_workers()`). Widgets: `RingGauge` (painted arc, "–" when `None`), `Sparkline` (60-sample deque, gaps break the line), `MetricCard` (CPU/RAM/GPU/VRAM, gauge colours from theme tokens `gauge_cpu`/`gauge_ram`/`gauge_gpu`/`gauge_vram`). Polls `get_metrics()` every `ui.dashboard_interval_ms` (single-flight `_metrics_busy`, paused in `hideEvent`, guarded by `HEADLESS_MODE`); offline keeps the last values but flips the badge and shows the error in `status_line`. Batch library (QListWidget + editor + console) persists via `ConfigManager.set_device_batches()`; running a batch requires the device's `allow_batch` checkbox and the host-side gate (see §5.5).
+- **Device Dashboard (`dashboard_view.py`, stack index 6, no sidebar entry):** opened via the 📊 tile on each device card/row (between the remote-desktop tiles and edit) or the context menu — `DevicesView.dashboard_requested(device_id)` → `ModernMainWindow.open_device_dashboard()` (also refreshes the header on `_on_devices_changed`; `closeEvent` and `back_requested` → nav index 0 call `cancel_workers()`). Widgets: `RingGauge` (painted arc, "–" when `None`), `Sparkline` (60-sample deque, gaps break the line), `MetricCard` (CPU/RAM/GPU/VRAM, gauge colours from theme tokens `gauge_cpu`/`gauge_ram`/`gauge_gpu`/`gauge_vram`). Polls `get_metrics()` every `ui.dashboard_interval_ms` (single-flight `_metrics_busy`, paused in `hideEvent`, guarded by `HEADLESS_MODE`); offline keeps the last values but flips the badge and shows the error in `status_line`. Batch library (QListWidget + editor + console) persists via `ConfigManager.set_device_batches()`; running a batch requires the device's `allow_batch` checkbox and the host-side gate (see §5.5). Each library row also carries a ▶ badge (`BatchListWidget.play_requested` → `_run_batch_row()`): the rect comes from `_play_badge_rect()` (shared by painter and hit test), the glyph is painted in `paintEvent` — a delegate would fight the `QListWidget#batchList::item` QSS and the InternalMove drag path — and the press is swallowed so it can never start a drag. Every run (badge or "Ausführen") first asks `ModernShutdownConfirmDialog(..., icon="play")` naming batch + device (`modern.dashboard.batch.run.title` / `.run.message`); if a run is impossible (opt-in off, no credentials, host offline, run in flight) the badge dims and the badge press reports the reason in `status_line` instead of opening the prompt. Same UX as the Watch and both mobile apps.
 
 ### 7.3 Dialog Components
 
@@ -821,7 +821,7 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
 | UpdateAvailableDialog| `update_dialog.py`        | Show release notes + download   |
 | UpdateErrorDialog    | `update_dialog.py`        | Network error during update     |
 | UpdateInfoDialog     | `update_dialog.py`        | "Already up to date" message    |
-| ModernShutdownConfirmDialog | `views/shutdown_confirm_dialog.py` | Modern confirm dialog; device shutdown (Ja/Nein) or window quit (Ja/Minimieren/Nein via `min_key`, result `MINIMIZE_RESULT_CODE`); generic reuse via `title_key`/`message_key`/`yes_object_name`/`show_icon` (e.g. shared-password prompt) |
+| ModernShutdownConfirmDialog | `views/shutdown_confirm_dialog.py` | Modern confirm dialog; device shutdown (Ja/Nein) or window quit (Ja/Minimieren/Nein via `min_key`, result `MINIMIZE_RESULT_CODE`); generic reuse via `title_key`/`message_key`/`message_kwargs`/`yes_object_name`/`show_icon` (e.g. shared-password prompt) and `icon` (`"power"` danger glyph, `"play"` accent play badge for batch runs, `"none"`) |
 
 **Shared password (all platforms):** after saving a device with username + password, the app offers to apply the password to every other device with the same (case-insensitive) username. Core helper: `wol_app/shared_password.py` (`collect_share_targets` skips empty user/password and devices that already store the identical password → no popup; `apply_password` loops `update_device`). Desktop: `ModernDeviceDialog._offer_shared_password` (ModernShutdownConfirmDialog, primaryButton, no icon) and classic `DeviceDialog._offer_shared_password` (`QMessageBox.question`), both before `device_saved.emit`. Mobile: `offerSharedPassword()` in both `app.js` (after `saveDevice`, `openConfirm` sheet, then `saveDeviceNative(d,{password})` per target); empty password = keep stored → never asks.
 
@@ -966,6 +966,20 @@ native Compose app in `android/` was removed in 2.3.1.)
   (`.dashInLeft`/`.dashInRight`), haptic tick. Vertical scrolling and
   inputs/selects/console/batch widgets are excluded from the gesture.
   Same code in `ios/WebApp/app.js` (iOS uses `Native.call("vibrate")`).
+- **Batch run UX (parity with the Watch and the desktop dashboard):** every
+  `.batchRow` in the batch library has a round ▶ badge (`.playBtn` + `.tri`,
+  `margin-left:auto`, dimmed `.off` variant while `allow_batch` is off) next to
+  the batch name. `data-act="batch-play"` selects that row first (editor and
+  console then show exactly what runs) and calls `requestRunBatch(b, d)`, which
+  runs the same guards as before (run in flight, `allow_batch` → toast
+  `batch.disabled`, unsaved batch → toast `batch.save.first`) and then opens the
+  confirmation sheet (`openBatchRunConfirm` inlined in `requestRunBatch`,
+  `.playIcon` ring+triangle like `.powerIcon` but in the accent colour, texts
+  `batch.run.title` / `batch.run.message` with `{name}`/`{device}`, Ja/Nein via
+  `confirm-yes` → `runBatch(b, d)`). The "Ausführen" button (`batch-run`) goes
+  through `requestRunBatch()` too, so no run starts without the prompt. The
+  badge is a `<button>`, so the drag `pointerdown` handler ignores it (no drag
+  from the badge). Identical in both WebApp copies.
 - **Windows compatibility:** `devices.json` import/export matches the
   desktop format (array of device objects, plaintext passwords in export;
   import clears DPAPI-encrypted values). Export includes `watch_processes`
@@ -1141,7 +1155,11 @@ right-click → Open). Full working docs: `docs/macos/README.md`.
   `sendMessage` push `{event:"batchResult", id, batchId, name, ok, exitCode,
   durationMs}` → `WatchService.batchResultDidChange` → `AppState.showBatchResult`
   (toast). Without the per-device `allow_batch` flag the run is refused on both
-  sides (`batch_disabled`).
+  sides (`batch_disabled`). **The play-badge-plus-confirmation flow is no longer
+  Watch-only:** the desktop dashboard (▶ badge painted in each library row →
+  `ModernShutdownConfirmDialog(icon="play")`) and both WebApp clients
+  (`.playBtn` badge → confirm sheet) ask the same question with the same
+  wording, so a batch run always names batch + target device before it happens.
 
 ---
 
