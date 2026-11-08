@@ -1,9 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 2.5.2 - Metrics Timeout Edition**
+**Version 2.5.3 - Batch Play Edition**
 
 A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.5.3:** **Batches now ask before they run — on every client.** The Apple Watch already had a play button per batch and a confirmation prompt; the desktop dashboard (Windows · Ubuntu · macOS) and both WebView apps (Android · iOS) got the same flow: a ▶ badge in every batch row opens a Ja/Nein prompt naming the batch and the device, and nothing runs until it is confirmed. If the device forbids batches, the badge is dimmed and the prompt is skipped with a hint.
 > **New in 2.5.2:** **Inference activity is now measurable on vLLM-style servers too** — many OpenAI servers **negotiate the `/metrics` format**: `Accept: application/json` returns a JSON object, `Accept: text/plain` returns Prometheus text. The Host Service asks for text first, so it read a body whose gauge names (`vllm:num_requests_running` / `vllm:num_requests_waiting`, `strata:live_tok_s`, `vllm:prompt_tokens_total`) it did not know, and the device card stayed on the amber struck-through bolt although the server was perfectly readable. The `/metrics` probes additionally understand those names now (llama.cpp names keep precedence) and also got their own **2 s** timeout (`WATCH_METRICS_TIMEOUT_S`, was 0.6 s) because the body is built server-side; the cheap probes stay at 0.6 s. Requires an updated **WOL Host Service** (Windows · Ubuntu · macOS).
 > **New in 2.5.1:** **Second launch raises the minimized app (desktop)** — with *only one instance* allowed (default) and the window minimized, starting the app again now opens it out of the taskbar (Windows) / out of the Dock (macOS) instead of only flashing the button. Implemented platform-correctly in `utils.force_window_foreground()` (Windows `AttachThreadInput` + `SetForegroundWindow`; macOS `NSWindow.deminiaturize:` + app activation, PyObjC with a ctypes fallback). On macOS a second launch never starts a second process — LaunchServices re-activates the running app — so `utils.install_macos_reopen_handler()` hooks the Cocoa *reopen* event and runs the same raise code there.
 > **New in 2.5.1:** **API-key-protected inference servers** — if the inference API is started with a key (llama.cpp `--api-key`, Strata `API_KEY`), enter it under *API-Key (Dashboard):* in the device dialog; the Host Service then sends `Authorization: Bearer <key>` on its loopback probes and the bolt reports real activity instead of staying amber. Stored encrypted per device, with a "apply to all devices?" prompt on save. Requires Host Service **protocol v10**
@@ -143,6 +144,18 @@ limitations: [docs/macos/README.md](docs/macos/README.md).
 
 ## 📝 Changelog
 
+### Version 2.5.3 - Batch Play Edition (2026-11-08)
+
+> Desktop **and** both WebView clients move together (Android `versionCode` 11, iOS build 10) — the mobile apps carry real changes this time, not just the number.
+
+#### ▶ Running a batch needs a play button and a confirmation prompt
+- **The gap:** the Apple Watch app asks first — a `play.fill` badge per batch row, then a *Batch ausführen?* prompt naming the batch and the device, answered with Ja/Nein. The desktop dashboard and both WebView apps started the batch on the first tap, which is a quick way to shut down the wrong machine
+- **Desktop:** every row in the batch library now paints an accent ▶ badge on the right (`_play_badge_rect()` / `_draw_play_badge()` inside `BatchListWidget.paintEvent`, hit-tested in `mousePressEvent`, so it never collides with drag-to-reorder). Tapping it selects the row — the desktop runs the *editor* content, the Watch and the mobile apps run the *stored* batch, so selecting first keeps both identical — and opens the confirmation. The run flow is now `_run_batch_row` → `_batch_run_precheck` → `_confirm_and_run_batch` → `_start_batch_run`
+- **Shared dialog:** `ModernShutdownConfirmDialog` gained an `icon` parameter (`"power" | "play" | "none"`) with a new play glyph, so the Ja/Nein dialog looks like the Watch's `BatchRunConfirmView` instead of the power-off dialog
+- **Mobile (both WebApp copies):** a `.playBtn` in every batch row (`data-act="batch-play"`, `.off` when the device has *Batches erlauben* disabled), `requestRunBatch(pb, pd)` opens the confirmation sheet with a `.playIcon`, and `runBatch()` now takes the batch/device pair. A dimmed badge shows the *batches disabled* toast instead of the sheet
+- **Texts:** new keys `modern.dashboard.batch.run.title` / `.run.message` (de · en · fr · es) on the desktop and `batch.run.title` / `batch.run.message` in both WebApps — French „lot" and Spanish „lote" follow the Watch wording
+- **Tests:** `tests/test_dashboard_view.py::TestBatchRunConfirm` (9 tests: badge geometry, hit test, prompt wording, cancel, disabled device); both mobile flows verified end-to-end in a browser (demo mode)
+
 ### Version 2.5.2 - Metrics Timeout Edition (2026-10-08)
 
 > Desktop fix shipped in step with the WebView clients (Android `versionCode` 10, iOS build 7) so all variants keep one number; the mobile code itself is unchanged.
@@ -174,7 +187,8 @@ limitations: [docs/macos/README.md](docs/macos/README.md).
 - **Stored encrypted** like the password (`config.json` → `"api_key"`, with an explicit `enc:` marker so a long random alphanumeric key is never mistaken for ciphertext), travels through device export/import encrypted, and is cleared from the dialog after saving
 - **"Apply to all devices?" prompt** after saving — the same flow as the shared password, but deliberately *not* scoped by username: the key belongs to the inference server, not to a login
 - **Protocol v10:** optional `api_key` on the `metrics` request (≤ 128 printable ASCII characters, `WATCH_API_KEY_MAX_CHARS`). The host service sends `Authorization: Bearer <key>` on `/v1/models`, `/health`, `/props` and `/metrics`, and its capability-probe cache is keyed by `(port, api_key)` so a changed key takes effect at once. Unsafe values (control characters, oversized) are dropped rather than truncated — the value ends up in a header. Older hosts ignore the field
-- **The amber bolt now names the cause:** its tooltip distinguishes "server needs a key" from "key configured, but the host service on this device predates v10 and never sends it". `WOL Host Service --status` also prints the installed build's protocol (`… RUNNING (protocol v10)`), so an outdated service is easy to spot
+
+- **The amber bolt now names the cause:** its tooltip distinguishes "server needs a key" from "key configured, but the host service on this device predates v10 and never sends it". `WOL Host Service --status` also prints the installed build's protocol (`… RUNNING (protocol v10)`), so an outdated service is easy to spot
 
 ### Version 2.5.0 - Inference Badge Edition (2026-10-03)
 

@@ -548,7 +548,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = CH9M2M9R7N;
 				ENABLE_PREVIEWS = YES;
@@ -558,7 +558,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.5.2;
+				MARKETING_VERSION = 2.5.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager";
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
@@ -583,7 +583,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "de.wake-on-lan-manager";
 				INFOPLIST_KEY_WKWatchOnly = NO;
-				MARKETING_VERSION = 2.5.2;
+				MARKETING_VERSION = 2.5.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager.watch";
 				PRODUCT_NAME = WolManagerWatch;
 				SDKROOT = watchos;
@@ -606,7 +606,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Wake-on-LAN";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "de.wake-on-lan-manager";
 				INFOPLIST_KEY_WKWatchOnly = NO;
-				MARKETING_VERSION = 2.5.2;
+				MARKETING_VERSION = 2.5.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager.watch";
 				PRODUCT_NAME = WolManagerWatch;
 				SDKROOT = watchos;
@@ -664,7 +664,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = CH9M2M9R7N;
 				ENABLE_PREVIEWS = YES;
@@ -674,7 +674,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.5.2;
+				MARKETING_VERSION = 2.5.3;
 				PRODUCT_BUNDLE_IDENTIFIER = "de.wake-on-lan-manager";
 				PRODUCT_NAME = WolManager;
 				SDKROOT = iphoneos;
