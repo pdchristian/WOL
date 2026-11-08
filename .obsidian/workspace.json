@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "graphify-out/wiki/Translations.md",
+                "file": "graphify-out/wiki/DeviceManagerDialog.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Translations"
+              "title": "DeviceManagerDialog"
             }
           }
         ]
@@ -190,6 +190,7 @@
   },
   "active": "498346ea632e233e",
   "lastOpenFiles": [
+    "graphify-out/wiki/Translations.md",
     "graphify-out/wiki/index.md",
     "Community 7.md",
     "graphify-out/wiki/ConfigManager.md"
