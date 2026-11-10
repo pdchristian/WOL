@@ -5,15 +5,20 @@ Uses only stdlib (urllib) — no external dependencies required.
 """
 
 import json
+import logging
 import tempfile
-from typing import Any, Literal
-from urllib.error import URLError
+from typing import Any
 from urllib.request import Request, urlopen
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+_logger = logging.getLogger("wol_app.updater")
+
 GITHUB_RELEASES_URL = "https://api.github.com/repos/pdchristian/WOL/releases/latest"
 USER_AGENT = "Wake-on-LAN-Manager"
+# GitHub-Antworten brauchen unterwegs gern 3–6 s; 2 s liessen die Prüfung bei
+# normalen Verbindungen regelmaessig in den Fehlerpfad laufen.
+REQUEST_TIMEOUT_SECONDS = 12
 
 
 def normalize_tag(tag: str) -> str:
@@ -83,7 +88,7 @@ class UpdateChecker(QObject):
                 GITHUB_RELEASES_URL,
                 headers={"Accept": "application/vnd.github.v3+json", "User-Agent": USER_AGENT},
             )
-            with urlopen(req, timeout=2) as response:
+            with urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
                 if self._cancel:
                     self.finished.emit(None, False)
                     return
@@ -92,8 +97,10 @@ class UpdateChecker(QObject):
             latest_version = normalize_tag(release.get("tag_name", ""))
             has_update: bool = _parse_version(latest_version) > _parse_version(self.current_version)
             self.finished.emit(release, has_update)
-        except (URLError, OSError, json.JSONDecodeError, Exception):
-            # Network error or parse error — silently report no update
+        except Exception as exc:
+            # Network error or parse error — silently report no update, but keep
+            # a trace: the auto-check shows nothing, so the log is the only hint.
+            _logger.warning("Automatische Update-Prüfung fehlgeschlagen: %s", exc)
             self.finished.emit(None, False)
 
 
@@ -146,8 +153,14 @@ class DownloadWorker(QObject):
             self.error.emit(str(e))
 
 
-def check_for_updates_sync(current_version: str) -> tuple[Any, bool] | tuple[None, Literal[False]]:
+def check_for_updates_sync(current_version: str) -> tuple[Any, bool] | None:
     """Synchronous helper that returns (release_info, has_update).
+
+    Returns ``None`` when the check itself failed (no internet, blocked or
+    proxied ``api.github.com``, GitHub API rate limit, malformed response).
+    That tri-state matters: a failed check must never be reported as "you are
+    on the latest version" — exactly what the manual check in the classic and
+    the modern UI relies on.
 
     Suitable for quick manual checks from the menu where a full thread setup
     is overkill and the call is already user-triggered.
@@ -157,11 +170,12 @@ def check_for_updates_sync(current_version: str) -> tuple[Any, bool] | tuple[Non
             GITHUB_RELEASES_URL,
             headers={"Accept": "application/vnd.github.v3+json", "User-Agent": USER_AGENT},
         )
-        with urlopen(req, timeout=15) as response:
+        with urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             release = json.loads(response.read().decode("utf-8"))
 
         latest_version = normalize_tag(release.get("tag_name", ""))
         has_update: bool = _parse_version(latest_version) > _parse_version(current_version)
         return release, has_update
-    except Exception:
-        return None, False
+    except Exception as exc:
+        _logger.warning("Manuelle Update-Prüfung fehlgeschlagen: %s", exc)
+        return None

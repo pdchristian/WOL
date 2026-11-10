@@ -3,7 +3,7 @@
 import os
 import sys
 from datetime import datetime
-from typing import Any, Literal, NoReturn
+from typing import Any, NoReturn
 
 from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QFont, QIcon
@@ -193,7 +193,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        result: tuple[Any, bool] | tuple[None, Literal[False]] = check_for_updates_sync(current_version=__version__)
+        result: tuple[Any, bool] | None = check_for_updates_sync(current_version=__version__)
 
         if result is None:
             # No internet / network error
