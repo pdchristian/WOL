@@ -20,7 +20,7 @@ eigene Änderungen trägt. ``tests/test_version_sync.py`` stellt sicher, dass
 jede Linie mit ihren Build-Dateien übereinstimmt.
 """
 
-__version__ = "2.5.3"
+__version__ = "2.5.4"
 
 # Android/iOS WebView clients — 2.5.3: the batch play button and its
 # confirmation prompt landed here too, so both lines move together again.

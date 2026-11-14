@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>WOL – Prototyp: Inferenz-Anzeige im Statusleisten-Symbol (Tray)</title>
+<style>
+  :root {
+    --bg: #0f1115; --surface: #1a1d24; --surface-hover: #232733; --border: #2c303a;
+    --text: #e6e8ee; --text-dim: #9aa0ab; --accent: #00b8a9; --accent-dark: #006b63;
+    --online: #22c55e; --offline: #ef4444; --unknown: #f59e0b; --danger: #e0485a;
+    --svc: #f97316;            /* llama-orange  = Inferenz läuft gerade   */
+    --idle: #9aa0ab;           /* grau          = Inferenz gestartet/idle */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Segoe UI", sans-serif; }
+  body { background: var(--bg); color: var(--text); padding: 26px 34px 60px; }
+  h1 { font-size: 22px; font-weight: 600; }
+  h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px;
+       color: var(--text-dim); margin: 26px 0 10px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin: 4px 0 18px; }
+
+  /* ── Demo-Steuerleiste (nur Prototyp) ── */
+  .demo-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: rgba(249,115,22,.07); border: 1px dashed rgba(249,115,22,.45);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; font-size: 12.5px; }
+  .demo-bar .tag { font-weight: 700; color: var(--svc); text-transform: uppercase; letter-spacing: .8px; font-size: 11px; }
+  .btn { border: 1px solid var(--border); border-radius: 10px; padding: 8px 13px; font-size: 12.5px;
+    font-weight: 600; cursor: pointer; background: var(--surface); color: var(--text); transition: .15s; }
+  .btn:hover { background: var(--surface-hover); }
+  .btn.sel { background: var(--accent); color: #032019; border-color: transparent; }
+  .demo-bar label { display: flex; align-items: center; gap: 6px; color: var(--text-dim); cursor: pointer; }
+  .demo-bar input[type=checkbox], .demo-bar input[type=radio] { accent-color: var(--accent); }
+  .demo-bar .hint { color: var(--text-dim); font-style: italic; margin-left: auto; }
+
+  /* ── App-Marke (vereinfachtes WOL-Icon) ── */
+  .appmark { border-radius: 22%; background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
+  .appmark svg { color: #fff; }
+
+  /* Inferenz-Overlay (Blitz oder Punkt), unten rechts aufgesetzt */
+  .ov { position: absolute; right: -14%; bottom: -14%; display: flex; align-items: center; justify-content: center; }
+  .ov .ring { position: absolute; inset: 0; border-radius: 50%; background: var(--bg); } /* Freistellung */
+  .ov svg, .ov .dot { position: relative; }
+  .ov .dot { border-radius: 50%; }
+  .ov.idle .dot { background: var(--idle); }
+  .ov.active .dot { background: var(--svc); }   /* statisch — Pulsieren nur im Dashboard */
+  .ov.warn .dot { background: transparent; border: 2px solid var(--unknown); }
+
+  /* ── Windows-Taskleiste ── */
+  .win-taskbar { display: flex; align-items: center; height: 56px; border-radius: 12px;
+    background: #1c2027; border: 1px solid var(--border); padding: 0 14px; gap: 10px; position: relative; }
+  .win-taskbar .tb-icon { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); font-size: 15px; }
+  .win-taskbar .sep { width: 1px; height: 26px; background: var(--border); }
+  .win-taskbar .tray { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .tray-slot { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .tray-slot:hover { background: rgba(255,255,255,.06); }
+  .clock { font-size: 12px; text-align: right; line-height: 1.35; color: var(--text); }
+  .clock span { color: var(--text-dim); font-size: 11px; }
+
+  /* Tooltip-Mock */
+  .tip { position: absolute; bottom: 62px; right: 60px; background: #20242d; border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 12px; font-size: 12px; max-width: 340px; line-height: 1.5;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5); display: none; }
+  .tip.show { display: block; }
+  .tip b { font-weight: 600; }
+  .tip .st { display: inline-flex; align-items: center; gap: 6px; margin-top: 3px; }
+  .tip .st .d { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ── macOS-Menüleiste ── */
+  .mac-menubar { display: flex; align-items: center; height: 34px; border-radius: 10px;
+    background: #16181d; border: 1px solid var(--border); padding: 0 14px; gap: 16px; }
+  .mac-menubar .apple { font-size: 15px; }
+  .mac-menubar .mb-app { font-weight: 700; font-size: 13px; }
+  .mac-menubar .mb { font-size: 13px; color: var(--text); }
+  .mac-menubar .mb-right { margin-left: auto; display: flex; align-items: center; gap: 14px; color: var(--text); font-size: 13px; }
+  .mac-menubar .mb-right span { white-space: nowrap; }
+  .mb-slot { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; }
+
+  /* ── Zustands-Matrix ── */
+  table.matrix { border-collapse: collapse; width: 100%; max-width: 980px; }
+  table.matrix th, table.matrix td { border: 1px solid var(--border); padding: 12px 14px; font-size: 12.5px;
+    text-align: left; vertical-align: middle; background: var(--surface); }
+  table.matrix th { background: var(--surface-hover); color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: .6px; font-size: 11px; }
+  table.matrix td.center { text-align: center; }
+  .state-name { font-weight: 700; }
+  .state-name.orange { color: var(--svc); } .state-name.gray { color: var(--idle); }
+  .state-name.amber { color: var(--unknown); } .state-name.off { color: var(--text-dim); }
+
+  /* ── Aggregations-Beispiel ── */
+  .agg { display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+  .chip .model { font-family: Consolas, monospace; font-size: 11px; font-weight: 400; opacity: .75;
+    padding-left: 7px; border-left: 1px solid currentColor; }
+  .chip.active { background: rgba(249,115,22,.14); color: var(--svc); border-color: rgba(249,115,22,.4); }
+  .chip.idle { background: rgba(154,160,171,.09); color: var(--idle); border-color: rgba(154,160,171,.3); }
+  .chip.hidden { background: rgba(154,160,171,.05); color: #5b6675; border-color: rgba(154,160,171,.18); }
+  .agg .arrow { font-size: 20px; color: var(--text-dim); }
+  .agg .rule { color: var(--text-dim); font-size: 12px; margin-left: auto; font-style: italic; }
+  .agg .chip { cursor: pointer; }
+  .agg .chip.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .agg .chip .st { font-family: Consolas, monospace; font-size: 10.5px; opacity: .8; }
+  select { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); padding: 8px 10px; font-size: 12.5px; outline: none; }
+
+  /* ── Hinweise ── */
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 980px; }
+  .note { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: 12.5px; line-height: 1.6; }
+  .note h3 { font-size: 12.5px; margin-bottom: 6px; }
+  .note.pro { border-left: 3px solid var(--online); }
+  .note.con { border-left: 3px solid var(--unknown); }
+  .note.plat { border-left: 3px solid var(--accent); }
+  .note.sem { border-left: 3px solid var(--svc); }
+  code { font-family: Consolas, monospace; font-size: 11.5px; background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Statusleisten-Symbol mit Inferenz-Anzeige</h1>
+<p class="sub">Vorschlag: Das Tray-/Menüleisten-Symbol des Wake-on-LAN Managers erhält ein Overlay (Punkt, alternativ Blitz),
+das den Inferenz-Zustand (z.&nbsp;B. Strata, llama-server) <b>nur des aktuell gewählten Geräts</b> spiegelt — dieselbe
+Semantik wie das bestehende Geräte-Badge (v2.5.0), andere Geräte bleiben unberücksichtigt.</p>
+
+<!-- ══════════ Demo-Steuerung ══════════ -->
+<div class="demo-bar">
+  <span class="tag">Demo</span>
+  <label>Aktuelles Gerät:
+    <select id="devSel">
+      <option value="0">Dev-Server — Strata @ :8080 (Job läuft)</option>
+      <option value="1">GPU-Box — llama-server @ :8081 (idle)</option>
+      <option value="2">Mini-PC — Strata @ :8080 (nicht messbar)</option>
+      <option value="3">Gaming-PC — kein Server / Port zu</option>
+    </select>
+  </label>
+  <label><input type="radio" name="glyph" value="dot" checked> Punkt</label>
+  <label><input type="radio" name="glyph" value="bolt"> Blitz</label>
+  <label><input type="checkbox" id="sim"> Jobsimulation am aktuellen Gerät (grau → orange → grau)</label>
+  <span class="hint">Symbol zeigt nur den Zustand des gewählten Geräts</span>
+</div>
+
+<!-- ══════════ Windows-Taskleiste ══════════ -->
+<h2>Windows — Infobereich (Tray)</h2>
+<div class="win-taskbar">
+  <div class="tb-icon">🔍</div>
+  <div class="tb-icon">📁</div>
+  <div class="sep"></div>
+  <div class="tray">
+    <div class="tb-icon">🔊</div>
+    <div class="tb-icon">🌐</div>
+    <div class="tray-slot" id="winTraySlot">
+      <div class="appmark" id="winIcon" style="width:24px;height:24px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>
+        </svg>
+        <div class="ov" id="winOv"></div>
+      </div>
+    </div>
+    <div class="clock">17:28<br><span>14.11.2026</span></div>
+  </div>
+  <div class="tip" id="winTip"></div>
+</div>
+
+<!-- ══════════ macOS-Menüleiste ══════════ -->
+<h2>macOS — Menüleiste (farbig, wie Qt-Symbol)</h2>
+<div class="mac-menubar">
+  <span class="apple"></span><span class="mb-app">WOL Manager</span>
+  <span class="mb">Ablage</span><span class="mb">Bearbeiten</span><span class="mb">Ansicht</span>
+  <div class="mb-right">
+    <span>🔋 100 %</span><span>WLAN</span><span>17:28</span>
+    <div class="mb-slot">
+      <div class="appmark" id="macIcon" style="width:20px;height:20px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>
+        </svg>
+        <div class="ov" id="macOv"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>macOS — Menüleiste (Template/monochrom — Fallback)</h2>
+<div class="mac-menubar">
+  <span class="apple"></span><span class="mb-app">WOL Manager</span>
+  <span class="mb">Ablage</span><span class="mb">Bearbeiten</span><span class="mb">Ansicht</span>
+  <div class="mb-right">
+    <span>🔋 100 %</span><span>WLAN</span><span>17:28</span>
+    <div class="mb-slot">
+      <div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;position:relative">
+        <svg id="macMonoApp" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d7d9de" stroke-width="2.2" stroke-linecap="round">
+          <path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>
+        </svg>
+        <div id="macMonoOv" style="position:absolute;right:-4px;bottom:-4px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ Zustands-Matrix ══════════ -->
+<h2>Zustands-Matrix (Zustand des <b>aktuellen Geräts</b>)</h2>
+<table class="matrix">
+  <tr><th style="width:150px">Zustand</th><th style="width:90px">Punkt</th><th style="width:90px">Blitz</th><th>Bedeutung / Tooltip</th></tr>
+  <tr>
+    <td class="state-name off">none / hidden</td>
+    <td class="center" id="mxNoneDot"></td><td class="center" id="mxNoneBolt"></td>
+    <td>Das aktuelle Gerät überwacht keinen Inferenz-Server, oder dessen API-Port ist zu (Server aus).<br><i>„Wake-on-LAN Manager läuft im Iconbereich weiter“</i> (unveränderter Tooltip)</td>
+  </tr>
+  <tr>
+    <td class="state-name gray">idle (grau)</td>
+    <td class="center" id="mxDotIdle"></td><td class="center" id="mxBoltIdle"></td>
+    <td><b>Inferenz gestartet, aber idle.</b> Der überwachte Server <i>dieses Geräts</i> ist erreichbar (API antwortet), aktuell läuft jedoch kein Job — <code>requests_active == 0</code>.<br><i>„Inferenz: Der überwachte Server ist erreichbar, aber idle.“</i></td>
+  </tr>
+  <tr>
+    <td class="state-name orange">active (orange)</td>
+    <td class="center" id="mxDotActive"></td><td class="center" id="mxBoltActive"></td>
+    <td><b>Inferenz läuft gerade.</b> Auf dem überwachten Server <i>dieses Geräts</i> wird jetzt verarbeitet (Strata/llama.cpp/vLLM melden laufende oder wartende Requests) — <code>requests_active &gt; 0</code>. Pulsieren nur im Dashboard, in der Leiste statisch (16–24&nbsp;px zu klein für Animation).<br><i>„Inferenz: Es läuft gerade ein Job auf dem überwachten Server.“</i></td>
+  </tr>
+  <tr>
+    <td class="state-name amber">warn (amber, hohler Ring)</td>
+    <td class="center" id="mxDotWarn"></td><td class="center" id="mxBoltWarn"></td>
+    <td>API-Port offen, Aktivität aber nicht messbar (kein /metrics, zu langsam, oder API-Key + Host &lt; v10). Beim Punkt ist der <b>hohle Ring</b> das Warn-Signal (Form statt Farbe — farbsicher); beim Blitz der Schrägstrich wie im Geräte-Badge.<br><i>„Inferenz: API-Port erreichbar, Aktivität nicht messbar …“</i></td>
+  </tr>
+</table>
+
+<!-- ══════════ Aktuelles Gerät ══════════ -->
+<h2>Nur das aktuelle Gerät — andere Geräte zeigen nichts an</h2>
+<div class="agg">
+  <span class="chip active sel" data-dev="0">Dev-Server <span class="model">Strata :8080</span> <span class="st">läuft</span></span>
+  <span class="chip idle" data-dev="1">GPU-Box <span class="model">llama-server :8081</span> <span class="st">idle</span></span>
+  <span class="chip active" data-dev="2" style="background:rgba(245,158,11,.13);color:var(--unknown);border-color:rgba(245,158,11,.4)">Mini-PC <span class="model">Strata :8080</span> <span class="st">warn</span></span>
+  <span class="chip hidden" data-dev="3">Gaming-PC <span class="model">aus</span></span>
+  <span class="arrow">→</span>
+  <div class="appmark" style="width:30px;height:30px">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+      <path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>
+    </svg>
+    <div class="ov" id="aggOv"></div>
+  </div>
+  <span class="rule">Das Symbol folgt der Auswahl im Gerätebereich/Dashboard — Chips anklicken</span>
+</div>
+
+<!-- ══════════ Hinweise ══════════ -->
+<h2>Bewertung der Einfärbung „grau = gestartet, orange = läuft“</h2>
+<div class="notes">
+  <div class="note sem">
+    <h3>Semantik (zwei verschiedene Aussagen)</h3>
+    <b>Grau</b> = <i>Bereitschaft</i>: Der Dienst ist gestartet und die API ist erreichbar — „ich könnte jetzt sofort loslegen“.
+    <b>Orange</b> = <i>Aktivität</i>: In diesem Moment wird ein Request verarbeitet (GPU arbeitet).
+    Das ist genau die Unterscheidung, die das Geräte-Badge seit 2.5.0 schon trifft — die Leiste spricht nur
+    dieselbe Sprache, bezogen auf <b>ein</b> Gerät.
+  </div>
+  <div class="note sem">
+    <h3>Nur das aktuelle Gerät</h3>
+    Das Symbol folgt der Auswahl im Gerätebereich/Dashboard: gewähltes Gerät = Dev-Server → Punkt zeigt dessen
+    Inferenz-Zustand. Was „aktuell“ heißt, muss der Tooltip nennen (<i>„… auf Dev-Server“</i>), sonst liest man den
+    grauen Punkt fälschlich als „überall läuft nichts“. <b>Fenster versteckt?</b> Das Tray-Symbol existiert nur im
+    Hintergrundbetrieb — dort bleibt das zuletzt gewählte Gerät maßgeblich. Nebenwirkung: die Abfrage muss im
+    Hintergrund nur noch <i>ein</i> Gerät sweepen (günstiger als der volle Sweep).
+  </div>
+  <div class="note pro">
+    <h3>Gewinn</h3>
+    Ein Blick sagt: <b>orange</b> = gleich wird ein Ergebnis fertig / GPU nicht für anderes blockieren;
+    <b>grau</b> = Server lebt, wartet nur (z.&nbsp;B. Modell geladen, nichts angefragt);
+    <b>kein Symbol</b> = nichts läuft / Port zu — ein abgestürzter oder gestoppter Server ist damit sofort von einem
+    idle Server unterscheidbar. Der grau-Zustand beantwortet außerdem die häufigste Frage: „Läuft bei mir überhaupt etwas,
+    oder hat Strata nur Startprobleme?“
+  </div>
+  <div class="note con">
+    <h3>Kosten / Risiken</h3>
+    Grau neben dem dunklen Icon ist schwer sichtbar (Kontrast!) — ggf. helleres Grau <code>#b6bcc7</code>.
+    Amber (warn) und Orange (active) sind auf 16&nbsp;px fast gleich — beim Punkt löst das der <b>hohle Ring</b>
+    (Form statt Farbe), beim Blitz der Schrägstrich. Kurze Jobs (&lt; Abfrageintervall 10&nbsp;s) können
+    flackern oder unsichtbar bleiben; Zustandswechsel sind bis zu ein Intervalt verzögert. Beim Geräte-Wechsel
+    springt die Symbolbedeutung mit — Gewöhnungsaufgabe.
+  </div>
+  <div class="note plat">
+    <h3>Plattform-Hinweise</h3>
+    <b>Windows:</b> Overlay auf das 16×16-Icon (48×48-Bitmap rechnen, DPI beachten); Tooltip nennt immer das Gerät
+    („Inferenz läuft gerade auf Dev-Server (Strata @ :8080)“). <b>macOS:</b> Menüleisten-Symbole sind eigentlich monochrome
+    Template-Images — Farbe wird dort nicht zuverlässig dargestellt. Fallback: Punkt <b>gefüllt</b> (läuft) vs. <b>Ring</b>
+    (idle) vs. <b>Ring+Strich</b> (warn) statt Farbe, oder bewusst farbiges Nicht-Template-Icon (wie im farbigen Mock oben).
+    <b>Beachten:</b> Das Tray-Symbol existiert heute nur, solange das Fenster versteckt ist (close-to-tray) —
+    die Anzeige gilt also für den Hintergrundbetrieb mit dem zuletzt gewählten Gerät.
+  </div>
+</div>
+
+<script>
+// ── Glyph-Definitionen (feather „zap“ wie in modern_theme._bolt_url) ──
+const ZAP = 'M13 2 3 14h9l-1 8 10-12h-9l1-8z';
+function boltSvg(color, size, slash) {
+  // slash = Freistellungs-/Strichfarbe für den durchgestrichenen warn-Blitz
+  let extra = '';
+  if (slash) extra = `<path d="M4 20 20 4" stroke="${slash}" stroke-width="4.6" stroke-linecap="round"/>` +
+                     `<path d="M4 20 20 4" stroke="${color}" stroke-width="2.2" stroke-linecap="round"/>`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}">${'<path d="'+ZAP+'"/>'}${extra}</svg>`;
+}
+const COLORS = { idle: '#9aa0ab', active: '#f97316', warn: '#f59e0b' };
+
+// Nur das AKTUELLE Gerät steuert das Symbol — andere Geräte zeigen nichts an.
+const DEVICES = [
+  { name: 'Dev-Server', svc: 'Strata @ :8080',       state: 'active' },
+  { name: 'GPU-Box',    svc: 'llama-server @ :8081', state: 'idle' },
+  { name: 'Mini-PC',    svc: 'Strata @ :8080',       state: 'warn' },
+  { name: 'Gaming-PC',  svc: 'kein Server',          state: 'none' },
+];
+const STATE_TIPS = {
+  none:   () => '<b>Wake-on-LAN Manager</b> läuft im Iconbereich weiter',
+  idle:   d => `<b>Wake-on-LAN Manager</b> — Inferenz auf <b>${d.name}</b> gestartet, aber idle (${d.svc}).`,
+  active: d => `<b>Wake-on-LAN Manager</b> — Inferenz läuft gerade auf <b>${d.name}</b> (${d.svc}).`,
+  warn:   d => `<b>Wake-on-LAN Manager</b> — Inferenz auf <b>${d.name}</b>: API-Port erreichbar, Aktivität nicht messbar.`,
+};
+
+let devIdx = 0, glyph = 'dot', simTimer = null, simState = 'idle';
+const curState = () => (simTimer && DEVICES[devIdx].state !== 'none') ? simState : DEVICES[devIdx].state;
+
+function overlayHtml(st, g, px) {
+  if (st === 'none') return '';
+  const c = COLORS[st];
+  if (g === 'dot') {
+    const d = px * 0.42;
+    return `<span class="ring"></span><span class="dot" style="width:${d}px;height:${d}px"></span>`;
+  }
+  const s = px * 0.52;
+  if (st === 'warn') return `<span class="ring"></span>${boltSvg(c, s, '#1c2027')}`;
+  return `<span class="ring"></span>${boltSvg(c, s)}`;
+}
+
+function monoOverlay(st) {
+  // macOS-Template: Form statt Farbe — gefüllt (läuft) vs. Kontur (idle), warn = Kontur+Strich
+  if (st === 'none') return '';
+  if (glyph === 'dot') {
+    if (st === 'active') return '<svg width="10" height="10" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#d7d9de"/></svg>';
+    if (st === 'idle')   return '<svg width="10" height="10" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="#d7d9de" stroke-width="2.6"/></svg>';
+    return '<svg width="10" height="10" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="#d7d9de" stroke-width="2.6"/><path d="M5 19 19 5" stroke="#d7d9de" stroke-width="2.6"/></svg>';
+  }
+  if (st === 'active') return boltSvg('#d7d9de', 10);
+  if (st === 'idle')   return `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d7d9de" stroke-width="2"><path d="${ZAP}"/></svg>`;
+  return boltSvg('#d7d9de', 10, '#16181d');
+}
+
+function render() {
+  const st = curState(), dev = DEVICES[devIdx];
+  // Tray-Overlays (Windows 24px, macOS farbig 20px)
+  for (const [id, px] of [['winOv', 24], ['macOv', 20], ['aggOv', 30]]) {
+    const el = document.getElementById(id);
+    el.className = 'ov ' + st;
+    el.style.width = el.style.height = (px * 0.55) + 'px';
+    el.innerHTML = overlayHtml(st, glyph, px);
+    el.style.display = st === 'none' ? 'none' : 'flex';
+  }
+  document.getElementById('macMonoOv').innerHTML = monoOverlay(st);
+
+  // Tooltip nennt das Gerät, damit der Punkt nicht als „global“ missverstanden wird
+  const tip = document.getElementById('winTip');
+  tip.innerHTML = STATE_TIPS[st](dev);
+  tip.classList.add('show');
+
+  // Auswahl synchron halten (Select + Chips)
+  document.getElementById('devSel').value = devIdx;
+  document.querySelectorAll('.agg .chip').forEach(c =>
+    c.classList.toggle('sel', +c.dataset.dev === devIdx));
+
+  // Matrix-Zellen (statisch, beide Varianten)
+  document.getElementById('mxBoltIdle').innerHTML   = boltSvg(COLORS.idle, 15);
+  document.getElementById('mxBoltActive').innerHTML = boltSvg(COLORS.active, 15);
+  document.getElementById('mxBoltWarn').innerHTML   = boltSvg(COLORS.warn, 15, '#1a1d24');
+  document.getElementById('mxDotIdle').innerHTML    = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${COLORS.idle}"></span>`;
+  document.getElementById('mxDotActive').innerHTML  = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${COLORS.active}"></span>`;
+  document.getElementById('mxDotWarn').innerHTML    = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;border:2.5px solid ${COLORS.warn}"></span>`;
+  document.getElementById('mxNoneBolt').innerHTML   = '<span style="color:#5b6675">—</span>';
+  document.getElementById('mxNoneDot').innerHTML    = '<span style="color:#5b6675">—</span>';
+}
+
+function pickDevice(i) { devIdx = i; render(); }
+document.getElementById('devSel').addEventListener('change', e => pickDevice(+e.target.value));
+document.querySelectorAll('.agg .chip').forEach(c => c.addEventListener('click', () => pickDevice(+c.dataset.dev)));
+document.querySelectorAll('input[name=glyph]').forEach(r => r.addEventListener('change', () => {
+  glyph = r.value; render();
+}));
+
+// Jobsimulation am aktuellen Gerät: idle → active → idle (wie ein echter Sweep-Takt)
+document.getElementById('sim').addEventListener('change', e => {
+  if (!e.target.checked) { clearInterval(simTimer); simTimer = null; render(); return; }
+  if (DEVICES[devIdx].state === 'none') { e.target.checked = false; return; }
+  simState = 'idle'; render();
+  simTimer = setInterval(() => {
+    simState = simState === 'idle' ? 'active' : 'idle'; render();
+  }, 2500);
+});
+
+render();
+</script>
+</body>
+</html>

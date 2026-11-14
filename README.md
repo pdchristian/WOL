@@ -1,6 +1,6 @@
 # Wake-on-LAN Manager
 
-**Version 2.5.3 - Batch Play Edition**
+**Version 2.5.4 - Batch Play Edition**
 
 A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN magic packets to devices on your local network.
 

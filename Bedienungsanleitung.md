@@ -116,6 +116,22 @@ Standardmäßig beendet das Schließen des Fensters (✕) die App. Mit der Optio
 > bereitstellt (unter Windows immer). Deaktivieren Sie die Option, verhält sich
 > die App wieder wie gewohnt.
 
+**Inferenz-Punkt am Tray-Symbol:** Ist Ihr eigenes Gerät als Inferenz-Gerät
+überwacht (siehe [Inferenz-Anzeige](#inferenz-anzeige-blitz-in-der-statusanzeige)),
+trägt das Tray-Symbol unten rechts einen **Punkt**: **orange** = auf diesem
+Gerät läuft gerade ein Inferenz-Job, **grau** = der überwachte Server ist
+bereit, aber idle, ein **bernsteinfarbener Ring** = Port erreichbar, Aktivität
+nicht messbar. Kein Punkt = nichts zu melden. Das ist die Antwort auf die Frage
+*„Läuft meine Inferenz gerade?“*, ohne das Fenster holen zu müssen. Gemeint ist
+immer das **eigene Gerät** – also das Gerät, dessen IP zu diesem Rechner gehört
+und das auf den Karten mit *(ich)* markiert ist; das geöffnete Dashboard ändert
+nichts daran. Ist Ihr eigenes Gerät nicht als Inferenz-Gerät überwacht, zeigt
+das Symbol keinen Punkt. Andere Geräte werden nicht zusammengefasst.
+Der graue Punkt entspricht dabei dem grauen Blitz der Geräte-Kachel: Server
+bereit, aber idle. Abgefragt wird
+nur dieses eine Gerät, und nur solange das Fenster versteckt ist (Intervall wie
+im Geräte-Intervall-Dropdown); der Tooltip des Symbols nennt Gerät und Zustand.
+
 ### Mehrere Instanzen
 
 Standardmäßig läuft die App **nur einmal gleichzeitig**. Starten Sie sie zum
@@ -764,4 +780,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.5.3 | Wake-on-LAN Manager*
+*Version 2.5.4 | Wake-on-LAN Manager*

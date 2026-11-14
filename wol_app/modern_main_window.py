@@ -43,7 +43,13 @@ from wol_app.config import (
     SIDEBAR_WIDTH_MIN,
 )
 from wol_app.app_core import HEADLESS_MODE
-from wol_app.modern_theme import DARK, LIGHT, app_icon_pixmap, apply_modern_theme
+from wol_app.modern_theme import (
+    DARK,
+    LIGHT,
+    app_icon_pixmap,
+    apply_modern_theme,
+    tray_icon_with_inference,
+)
 from wol_app.schedule_runner import dispatch_schedule_action
 from wol_app.translations import Translations
 from wol_app.utils import (
@@ -90,6 +96,15 @@ NAV_DEFS = [
     ("📋", "modern.nav.logs"),
 ]
 
+#: Tray tooltip line per inference dot state (the dot alone cannot say
+#: WHICH device it refers to — the tooltip must name it).
+TRAY_INFER_TIPS = {
+    "active": "tray.infer.active",
+    "idle": "tray.infer.idle",
+    "warn": "tray.infer.warn",
+    "warn_key": "tray.infer.warn_key",
+}
+
 
 
 
@@ -135,6 +150,15 @@ class ModernMainWindow(QMainWindow):
         self._tray: QSystemTrayIcon | None = None
         self._tray_menu: QMenu | None = None
         self._quitting: bool = False
+        # Inference dot on the tray icon: follows the LAST dashboard device
+        # (the one the user was looking at when the window was hidden) —
+        # never an aggregate over all devices. Polled only while hidden.
+        # Restored from the config so a fresh start straight into the tray
+        # still reports the device the user cares about.
+        self._tray_infer_device: str | None = None
+        self._tray_infer_state: str = "none"
+        self._tray_infer_timer: QTimer | None = None
+        self._tray_base_icon: QIcon | None = None
 
         self._setup_ui()
         self._apply_sidebar_mode()
@@ -224,6 +248,9 @@ class ModernMainWindow(QMainWindow):
         # Prev/next skips devices whose last ping said "offline".
         self.devices_view.statuses_refreshed.connect(
             self.dashboard_view.set_nav_statuses)
+        # Inference dot on the tray icon (always the local machine).
+        self.devices_view.inference_state_changed.connect(
+            self._on_tray_inference_state)
 
         # Sidebar resize/collapse wiring (after the widgets exist).
         self._sidebar_save_timer = QTimer(self)
@@ -610,6 +637,7 @@ class ModernMainWindow(QMainWindow):
             self._tray.hide()
             self._tray = None
             self._tray_menu = None
+            self._stop_tray_inference_poll()
 
     def _ensure_tray(self) -> QSystemTrayIcon | None:
         """Create the tray icon lazily (visible only while the window hides)."""
@@ -626,7 +654,8 @@ class ModernMainWindow(QMainWindow):
                 icon = QIcon(icon_path)
         if icon.isNull():
             return None  # no usable icon at all — keep window-close behaviour
-        tray = QSystemTrayIcon(icon, self)
+        self._tray_base_icon = icon
+        tray = QSystemTrayIcon(self._tray_infer_icon(), self)
         self._tray_menu = QMenu(self)
         open_action = self._tray_menu.addAction(
             Translations.tr("tray.menu.open"))
@@ -635,8 +664,7 @@ class ModernMainWindow(QMainWindow):
             Translations.tr("tray.menu.quit"))
         quit_action.triggered.connect(self._quit_application)
         tray.setContextMenu(self._tray_menu)
-        tray.setToolTip(Translations.tr(
-            "tray.tooltip", app=Translations.tr("app.name")))
+        tray.setToolTip(self._tray_tooltip())
         tray.activated.connect(self._on_tray_activated)
         self._tray = tray
         return tray
@@ -646,6 +674,95 @@ class ModernMainWindow(QMainWindow):
         if reason in (QSystemTrayIcon.ActivationReason.Trigger,
                       QSystemTrayIcon.ActivationReason.DoubleClick):
             self._show_from_tray()
+
+    # ── Inference dot on the tray icon (always the local machine) ─────
+
+    def _start_tray_inference_poll(self) -> None:
+        """Sweep only the local device while the window is hidden.
+
+        The tray dot reports the machine this app runs on — resolved with
+        the same "(ich)" detection as the device cards
+        (``DevicesView.local_inference_target_id()``), so opening a
+        dashboard never moves the dot's subject. No local watched device
+        means no dot and no timer.
+        """
+        device_id = self.devices_view.local_inference_target_id()
+        if device_id is None:
+            return
+        self._tray_infer_device = device_id
+        interval = max(1000, self.config.get_inference_interval_ms())
+        if self._tray_infer_timer is None:
+            self._tray_infer_timer = QTimer(self)
+            self._tray_infer_timer.timeout.connect(
+                self._tick_tray_inference_poll)
+        self._tray_infer_timer.setInterval(interval)
+        # Show the last known verdict right away, then fetch a fresh one.
+        self._tray_infer_state = (
+            self.devices_view.inference_state_for(device_id) or "none")
+        self._apply_tray_infer_icon()
+        self.devices_view.refresh_inference_single(device_id)
+        self._tray_infer_timer.start()
+
+    def _tick_tray_inference_poll(self) -> None:
+        """Timer tick: re-resolve the local device, then sweep it.
+
+        Re-resolving keeps the dot honest when devices are edited while
+        the window is hidden (IP change, watch toggled).
+        """
+        device_id = self.devices_view.local_inference_target_id()
+        if device_id != self._tray_infer_device:
+            self._tray_infer_device = device_id
+            self._tray_infer_state = (
+                self.devices_view.inference_state_for(device_id)
+                if device_id else None) or "none"
+            self._apply_tray_infer_icon()
+        if device_id is not None:
+            self.devices_view.refresh_inference_single(device_id)
+
+    def _stop_tray_inference_poll(self) -> None:
+        if self._tray_infer_timer is not None:
+            self._tray_infer_timer.stop()
+
+    def _on_tray_inference_state(self, device_id: str, state: str) -> None:
+        """Devices-view sweep verdict — repaint the dot if it is ours."""
+        if device_id != self._tray_infer_device or self._tray is None:
+            return
+        if state == self._tray_infer_state:
+            return
+        self._tray_infer_state = state
+        if self._tray.isVisible():
+            self._apply_tray_infer_icon()
+
+    def _tray_infer_icon(self) -> QIcon:
+        """App icon plus the inference dot of the tracked device."""
+        base = self._tray_base_icon
+        if base is None:
+            return QIcon()
+        if self._tray_infer_state in ("none", "hidden"):
+            return base
+        pix = tray_icon_with_inference(
+            base.pixmap(64, 64), self._tray_infer_state)
+        return QIcon(pix) if not pix.isNull() else base
+
+    def _apply_tray_infer_icon(self) -> None:
+        if self._tray is None:
+            return
+        self._tray.setIcon(self._tray_infer_icon())
+        self._tray.setToolTip(self._tray_tooltip())
+
+    def _tray_tooltip(self) -> str:
+        """Tray tooltip: base line plus the inference line (names the device).
+
+        The dot alone cannot say WHICH device it refers to, so the tooltip
+        must name it — otherwise a grey dot reads as "nothing runs anywhere".
+        """
+        base = Translations.tr("tray.tooltip", app=Translations.tr("app.name"))
+        key = TRAY_INFER_TIPS.get(self._tray_infer_state)
+        if key is None or self._tray_infer_device is None:
+            return base
+        device = self.config.get_device_by_id(self._tray_infer_device) or {}
+        name = device.get("name", "") or self._tray_infer_device
+        return base + "\n" + Translations.tr(key, device=name)
 
     def _on_about_to_quit(self) -> None:
         """Hide the tray icon when the process ends, however it ends."""
@@ -671,6 +788,7 @@ class ModernMainWindow(QMainWindow):
         """
         if self._tray is not None:
             self._tray.hide()
+        self._stop_tray_inference_poll()
         self.showNormal()
         self.raise_()
         self.activateWindow()
@@ -752,6 +870,7 @@ class ModernMainWindow(QMainWindow):
             return
         tray.show()
         self.hide()
+        self._start_tray_inference_poll()
 
     def _quit_application(self) -> None:
         """The one real exit path while tray mode is active."""
@@ -798,8 +917,7 @@ class ModernMainWindow(QMainWindow):
 
         # Tray icon tooltip + context menu (only while the tray exists).
         if self._tray is not None and self._tray_menu is not None:
-            self._tray.setToolTip(Translations.tr(
-                "tray.tooltip", app=Translations.tr("app.name")))
+            self._tray.setToolTip(self._tray_tooltip())
             open_action, quit_action = self._tray_menu.actions()
             open_action.setText(Translations.tr("tray.menu.open"))
             quit_action.setText(Translations.tr("tray.menu.quit"))

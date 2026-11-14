@@ -13,8 +13,8 @@ classic UI or the shared dialogs.
 import os
 import tempfile
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QApplication
 
 from wol_app.utils import get_resource_path
@@ -70,6 +70,60 @@ def app_icon_pixmap(size: int) -> QPixmap | None:
                     Qt.TransformationMode.SmoothTransformation,
                 )
     return None
+
+
+#: Dot colour per inference state for the tray overlay. Same palette as the
+#: status-pill badge (llama-orange / text-dim grey / amber "unknown").
+_INFER_TRAY_COLORS = {
+    "active": "#f97316",
+    "idle": "#9aa0ab",
+    "warn": "#f59e0b",
+    "warn_key": "#f59e0b",
+}
+
+
+def tray_icon_with_inference(base: QPixmap, state: str) -> QPixmap:
+    """App icon with the inference dot overlay for the notification area.
+
+    Mirrors the status-pill badge semantics (host protocol v9) but for the
+    ONE device the tray follows (the last dashboard device): filled orange
+    dot = a job runs right now, filled grey dot = the watched server is up
+    but idle, hollow amber ring = activity unmeasurable (form carries the
+    difference, not colour — a struck dot would vanish at 16 px). Any
+    other state (incl. "none"/"hidden") returns the base icon unchanged.
+
+    The dot sits at the bottom-right corner with a dark knockout ring so
+    it stays readable on light and dark taskbars alike.
+    """
+    pix = QPixmap(base)
+    color = _INFER_TRAY_COLORS.get(state)
+    if pix.isNull() or color is None:
+        return pix
+
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    s = min(pix.width(), pix.height())
+    cx = pix.width() - 0.20 * pix.width()
+    cy = pix.height() - 0.20 * pix.height()
+    r = 0.21 * s
+
+    # Knockout ring: separates the dot from the icon and the taskbar.
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(18, 20, 26))  # #12141a console background
+    painter.drawEllipse(QPointF(cx, cy), r + 0.06 * s, r + 0.06 * s)
+
+    if state in ("warn", "warn_key"):
+        pen = QPen(QColor(color))
+        pen.setWidthF(max(2.0, 0.09 * s))
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(QPointF(cx, cy), 0.62 * r, 0.62 * r)
+    else:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(color))
+        painter.drawEllipse(QPointF(cx, cy), r, r)
+    painter.end()
+    return pix
 
 
 def _svg_url(name: str, svg: str) -> str:

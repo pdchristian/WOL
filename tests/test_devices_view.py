@@ -430,6 +430,92 @@ class TestGridRightEdgeFlush:
             assert abs(right - (content.width() - PAGE_MARGIN_H)) <= 2
 
 
+class TestInferenceSingleSweep:
+    """Tray dot support: sweep ONE device, announce verdicts via signal."""
+
+    @staticmethod
+    def _watched_config(tmp_config):
+        tmp_config.config["devices"] = [
+            {"id": "d1", "name": "Box A", "mac": "AA:BB:CC:DD:EE:01",
+             "ip": "192.168.1.10", "enabled": True,
+             "username": "u", "password": "p",
+             "watch_processes": ["strata:8080"]},
+            {"id": "d2", "name": "Box B", "mac": "AA:BB:CC:DD:EE:02",
+             "ip": "192.168.1.20", "enabled": True,
+             "username": "u", "password": "p",
+             "watch_processes": ["llama-server.exe:8081"]},
+            {"id": "d3", "name": "No watch", "mac": "AA:BB:CC:DD:EE:03",
+             "ip": "192.168.1.30", "enabled": True,
+             "username": "u", "password": "p"},
+        ]
+        return tmp_config
+
+    def test_single_sweep_targets_only_that_device(self, qapp, tmp_config,
+                                                   monkeypatch):
+        view = DevicesView(self._watched_config(tmp_config))
+        captured: list = []
+        monkeypatch.setattr(view, "_start_inference_sweep", captured.append)
+        view.refresh_inference_single("d1")
+        assert [[t["id"] for t in batch] for batch in captured] == [["d1"]]
+
+    def test_single_sweep_of_unwatched_device_stays_empty(self, qapp,
+                                                          tmp_config,
+                                                          monkeypatch):
+        view = DevicesView(self._watched_config(tmp_config))
+        captured: list = []
+        monkeypatch.setattr(view, "_start_inference_sweep", captured.append)
+        view.refresh_inference_single("d3")
+        assert captured == [[]]
+
+    def test_full_sweep_still_targets_every_watched_device(self, qapp,
+                                                           tmp_config,
+                                                           monkeypatch):
+        view = DevicesView(self._watched_config(tmp_config))
+        captured: list = []
+        monkeypatch.setattr(view, "_start_inference_sweep", captured.append)
+        view.refresh_inference()
+        assert sorted(t["id"] for t in captured[0]) == ["d1", "d2"]
+
+    def test_state_change_emits_signal_once_per_verdict(self, qapp, tmp_config):
+        view = DevicesView(self._watched_config(tmp_config))
+        got: list = []
+        view.inference_state_changed.connect(
+            lambda did, st: got.append((did, st)))
+        resp = {"protocol": 9, "processes": {
+            "strata:8080": {"api_port": 8080, "api_port_open": True,
+                            "running": True, "requests_active": 1}}}
+        view._on_inference_finished([("d1", resp)])
+        assert got == [("d1", "active")]
+        assert view.inference_state_for("d1") == "active"
+        # Same verdict again — the tray must not be repainted needlessly.
+        view._on_inference_finished([("d1", resp)])
+        assert got == [("d1", "active")]
+
+    def test_state_for_never_polled_device_is_none(self, qapp, tmp_config):
+        view = DevicesView(self._watched_config(tmp_config))
+        assert view.inference_state_for("d1") is None
+
+    def test_local_target_is_the_ich_device(self, qapp, tmp_config,
+                                            monkeypatch):
+        import wol_app.views.devices_view as dv
+
+        view = DevicesView(self._watched_config(tmp_config))
+        monkeypatch.setattr(dv, "get_local_ips", lambda: {"192.168.1.20"})
+        assert view.local_inference_target_id() == "d2"
+
+    def test_local_target_requires_a_watched_local_device(self, qapp,
+                                                          tmp_config,
+                                                          monkeypatch):
+        import wol_app.views.devices_view as dv
+
+        view = DevicesView(self._watched_config(tmp_config))
+        # Local machine is d3 — no watch list, nothing to report.
+        monkeypatch.setattr(dv, "get_local_ips", lambda: {"192.168.1.30"})
+        assert view.local_inference_target_id() is None
+        monkeypatch.setattr(dv, "get_local_ips", lambda: set())
+        assert view.local_inference_target_id() is None
+
+
 class TestLocaleKeyConsistency:
     """Guard against one-sided locale maintenance (C5).
 

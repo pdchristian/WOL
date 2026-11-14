@@ -280,6 +280,165 @@ class TestCloseToTrayWindow:
         assert seen == [None]
 
 
+class TestTrayInferenceDot:
+    """Inference dot on the tray icon — always the LOCAL machine."""
+
+    LOCAL_IP = "192.168.1.10"
+
+    @pytest.fixture()
+    def window_with_local_device(self, qapp, config, monkeypatch):
+        import wol_app.views.devices_view as dv
+        from wol_app.modern_main_window import ModernMainWindow
+
+        monkeypatch.setattr(
+            ModernMainWindow, "_tray_supported", staticmethod(lambda: True))
+        monkeypatch.setattr(dv, "get_local_ips", lambda: {self.LOCAL_IP})
+        device = config.add_device("Dev-Server", "AA:BB:CC:DD:EE:FF")
+        device["ip"] = self.LOCAL_IP
+        device["username"] = "u"
+        device["password"] = "p"
+        device["watch_processes"] = ["strata:8080"]
+        window = ModernMainWindow(config, dark_mode=True)
+        window.show()
+        # No real network here; the sweep itself is covered in
+        # tests/test_devices_view.py.
+        window.devices_view.refresh_inference_single = lambda device_id: None
+        yield window, device["id"]
+        window._quitting = True
+        if window._tray_infer_timer is not None:
+            window._tray_infer_timer.stop()
+        if window._tray is not None:
+            window._tray.hide()
+        window.close()
+
+    def test_hide_tracks_the_local_device(self, window_with_local_device):
+        window, dev_id = window_with_local_device
+        window._hide_to_tray()
+        assert window._tray_infer_device == dev_id
+        assert window._tray_infer_timer is not None
+        assert window._tray_infer_timer.isActive()
+        window._show_from_tray()
+        assert not window._tray_infer_timer.isActive()
+
+    def test_dashboard_opening_does_not_move_the_dot(
+            self, window_with_local_device):
+        window, dev_id = window_with_local_device
+        other = window.config.add_device("Anderer", "11:22:33:44:55:66")
+        window.open_device_dashboard(other["id"])
+        window._hide_to_tray()
+        assert window._tray_infer_device == dev_id
+
+    def test_hide_without_local_device_starts_nothing(
+            self, window_with_local_device, monkeypatch):
+        import wol_app.views.devices_view as dv
+
+        window, _ = window_with_local_device
+        monkeypatch.setattr(dv, "get_local_ips", lambda: set())
+        window._hide_to_tray()
+        assert (window._tray_infer_timer is None
+                or not window._tray_infer_timer.isActive())
+
+    def test_tick_re_resolves_the_local_device(self, window_with_local_device,
+                                               monkeypatch):
+        import wol_app.views.devices_view as dv
+
+        window, dev_id = window_with_local_device
+        window._hide_to_tray()
+        assert window._tray_infer_device == dev_id
+        monkeypatch.setattr(dv, "get_local_ips", lambda: set())
+        window._tick_tray_inference_poll()
+        assert window._tray_infer_device is None
+        assert window._tray_infer_state == "none"
+
+    def test_state_update_repaints_icon_and_names_device(
+            self, window_with_local_device):
+        window, dev_id = window_with_local_device
+        window._hide_to_tray()
+        base_img = window._tray.icon().pixmap(64, 64).toImage()
+
+        window._on_tray_inference_state(dev_id, "active")
+
+        assert window._tray_infer_state == "active"
+        tip = window._tray.toolTip()
+        assert Translations.tr("tray.infer.active",
+                               device="Dev-Server") in tip
+        assert window._tray.icon().pixmap(64, 64).toImage() != base_img
+
+    def test_hidden_verdict_clears_the_dot(self, window_with_local_device):
+        window, dev_id = window_with_local_device
+        window._hide_to_tray()
+        window._on_tray_inference_state(dev_id, "active")
+        active_img = window._tray.icon().pixmap(64, 64).toImage()
+
+        window._on_tray_inference_state(dev_id, "hidden")
+
+        assert window._tray_infer_state == "hidden"
+        assert (window._tray.icon().pixmap(64, 64).toImage()
+                != active_img)
+        assert Translations.tr("tray.infer.active",
+                               device="Dev-Server") not in window._tray.toolTip()
+
+    def test_other_device_verdict_is_ignored(self, window_with_local_device):
+        window, dev_id = window_with_local_device
+        window._hide_to_tray()
+        assert window._tray_infer_device == dev_id
+        window._on_tray_inference_state("some-other-device", "active")
+        assert window._tray_infer_state == "none"
+
+    def test_tooltip_without_inference_is_the_base_line(
+            self, window_with_local_device):
+        window, dev_id = window_with_local_device
+        window._hide_to_tray()
+        base = Translations.tr("tray.tooltip",
+                               app=Translations.tr("app.name"))
+        assert window._tray_tooltip() == base
+
+
+class TestTrayInferenceOverlayDrawing:
+    """tray_icon_with_inference: filled dot vs. hollow ring at 64 px."""
+
+    @staticmethod
+    def _base():
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QPixmap
+
+        pix = QPixmap(64, 64)
+        pix.fill(Qt.GlobalColor.transparent)
+        return pix
+
+    @staticmethod
+    def _rgb(color):
+        return (color.red(), color.green(), color.blue())
+
+    def test_none_state_leaves_base_untouched(self):
+        from wol_app.modern_theme import tray_icon_with_inference
+
+        out = tray_icon_with_inference(self._base(), "none").toImage()
+        assert out.pixelColor(51, 51).alpha() == 0
+
+    def test_active_dot_is_llama_orange(self):
+        from wol_app.modern_theme import tray_icon_with_inference
+
+        out = tray_icon_with_inference(self._base(), "active").toImage()
+        assert self._rgb(out.pixelColor(51, 51)) == (0xF9, 0x73, 0x16)
+
+    def test_idle_dot_is_grey(self):
+        from wol_app.modern_theme import tray_icon_with_inference
+
+        out = tray_icon_with_inference(self._base(), "idle").toImage()
+        assert self._rgb(out.pixelColor(51, 51)) == (0x9A, 0xA0, 0xAB)
+
+    def test_warn_is_a_hollow_amber_ring(self):
+        """Centre stays knockout (no filled dot) — the ring carries warn."""
+        from wol_app.modern_theme import tray_icon_with_inference
+
+        out = tray_icon_with_inference(self._base(), "warn").toImage()
+        assert self._rgb(out.pixelColor(51, 51)) == (0x12, 0x14, 0x1A)
+        ring = out.pixelColor(60, 51)
+        assert (ring.red(), ring.green()) == (0xF5, 0x9E)
+        assert ring.blue() <= 0x30
+
+
 class TestSettingsViewCloseToTray:
     def test_toggle_loads_and_saves(self, qapp, config, monkeypatch):
         from PyQt6.QtWidgets import QMessageBox

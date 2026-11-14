@@ -700,6 +700,10 @@ class DevicesView(QWidget):
     devices_changed = pyqtSignal()
     dashboard_requested = pyqtSignal(str)  # device id — open the dashboard view
     statuses_refreshed = pyqtSignal(dict)  # device id -> status (dashboard nav)
+    # device id -> inference badge state after a sweep verdict
+    # ("active" | "idle" | "warn" | "warn_key" | "hidden") — drives the
+    # inference dot on the tray icon (last dashboard device while hidden).
+    inference_state_changed = pyqtSignal(str, str)
 
     def __init__(self, config_manager: Any, parent=None) -> None:
         super().__init__(parent)
@@ -1380,11 +1384,42 @@ class DevicesView(QWidget):
 
     def refresh_inference(self) -> None:
         """Poll the inference badge state for every watch-configured device."""
+        self._start_inference_sweep(self._inference_targets())
+
+    def refresh_inference_single(self, device_id: str) -> None:
+        """Poll the inference badge state for ONE device (tray display).
+
+        The notification area mirrors only the last dashboard device, so a
+        hidden window sweeps just that one host instead of every watched
+        device. Same single-flight guard and gating as the full sweep.
+        """
+        targets = [t for t in self._inference_targets() if t["id"] == device_id]
+        self._start_inference_sweep(targets)
+
+    def inference_state_for(self, device_id: str) -> str | None:
+        """Last known badge state of a device (None = never polled)."""
+        return self._inference_states.get(device_id)
+
+    def local_inference_target_id(self) -> str | None:
+        """Badge-sweep id of the machine this app runs on (tray subject).
+
+        The tray dot always mirrors the LOCAL device — the same "(ich)"
+        detection as the device cards: the device IP appears in
+        ``get_local_ips()``. None when the local machine is not a watched
+        device (then the tray has nothing to report).
+        """
+        local_ips = get_local_ips()
+        for t in self._inference_targets():
+            if t["ip"] in local_ips:
+                return t["id"]
+        return None
+
+    def _start_inference_sweep(self, targets: list) -> None:
+        """Run one InferenceSweepWorker over *targets* (single-flight)."""
         if HEADLESS_MODE:
             return
         if self._inference_thread is not None and self._inference_thread.isRunning():
             return  # single-flight: never stack sweeps
-        targets = self._inference_targets()
         if not targets:
             return
 
@@ -1410,6 +1445,8 @@ class DevicesView(QWidget):
                 response, ConfigManager.get_device_api_key(device))
             if state is None:
                 continue  # no verdict (pre-v9 host / unreachable) — keep last
+            if self._inference_states.get(device_id) != state:
+                self.inference_state_changed.emit(device_id, state)
             self._inference_states[device_id] = state
             card = self._cards.get(device_id)
             if card is not None:
