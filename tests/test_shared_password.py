@@ -1,8 +1,7 @@
 """Tests for the shared-password feature (apply password to same-username devices).
 
-Covers: ConfigManager.get_devices_by_username, the shared helper module, the
-modern device dialog (ModernShutdownConfirmDialog Ja/Nein) and the classic
-DeviceDialog (QMessageBox.question).
+Covers: ConfigManager.get_devices_by_username, the shared helper module and
+the modern device dialog (ModernShutdownConfirmDialog Ja/Nein).
 """
 
 import os
@@ -190,65 +189,6 @@ class TestModernDialogSharedPassword:
         confirm = calls[0]
         assert confirm.yes_btn.objectName() == "primaryButton"
         assert confirm._show_icon is False
-
-
-class TestClassicDialogSharedPassword:
-    def _patch_question(self, monkeypatch, answer):
-        from wol_app import device_dialog
-
-        calls: list = []
-
-        def fake_question(parent, title, text, buttons, *a, **k):
-            calls.append((title, text))
-            return answer
-
-        monkeypatch.setattr(QMessageBox, "question",
-                            staticmethod(fake_question))
-        return calls
-
-    def test_yes_applies_password(self, qapp, config, monkeypatch):
-        from wol_app.device_dialog import DeviceDialog
-
-        calls = self._patch_question(
-            monkeypatch, QMessageBox.StandardButton.Yes)
-        config.update_device(config.get_device_by_name("Gamma")["id"],
-                             username="shared")
-        device = config.get_device_by_name("Alpha")
-        dialog = DeviceDialog(config, device=device)
-        dialog.username_input.setText("shared")
-        dialog.password_input.setText("classic-pw")
-        dialog._save()
-        assert len(calls) == 1
-        assert "shared" in calls[0][1]
-        assert config.get_device_by_name("Alpha")["password"] == "classic-pw"
-        assert config.get_device_by_name("Gamma")["password"] == "classic-pw"
-
-    def test_no_keeps_others(self, qapp, config, monkeypatch):
-        from wol_app.device_dialog import DeviceDialog
-
-        config.update_device(config.get_device_by_name("Gamma")["id"],
-                             username="shared")
-        self._patch_question(monkeypatch, QMessageBox.StandardButton.No)
-        device = config.get_device_by_name("Alpha")
-        dialog = DeviceDialog(config, device=device)
-        dialog.username_input.setText("shared")
-        dialog.password_input.setText("classic-pw")
-        dialog._save()
-        assert config.get_device_by_name("Alpha")["password"] == "classic-pw"
-        assert config.get_device_by_name("Gamma").get("password", "") == ""
-
-    def test_no_question_without_matches(self, qapp, config, monkeypatch):
-        from wol_app.device_dialog import DeviceDialog
-
-        calls = self._patch_question(
-            monkeypatch, QMessageBox.StandardButton.Yes)
-        device = config.get_device_by_name("Beta")  # user Other, no twin
-        dialog = DeviceDialog(config, device=device)
-        dialog.username_input.setText("Other")
-        dialog.password_input.setText("solo-pw")
-        dialog._save()
-        assert calls == []
-        assert config.get_device_by_name("Beta")["password"] == "solo-pw"
 
 
 class TestApiKeyShareHelper:

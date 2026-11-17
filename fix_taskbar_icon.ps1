@@ -33,15 +33,6 @@ if (-not (Test-Path $srcModern)) {
 }
 $modernTarget = Join-Path $installDir "icon_modern.ico"
 
-# Current UI mode from the user config -> icon for the shortcut.
-$mode = "modern"
-$cfgPath = Join-Path $env:USERPROFILE ".wol_app\config.json"
-if (Test-Path $cfgPath) {
-    try { $mode = (Get-Content $cfgPath -Raw | ConvertFrom-Json).ui.layout_mode } catch { }
-}
-if ($mode -notin @("modern", "classic")) { $mode = "modern" }
-Write-Host "UI-Modus laut Konfiguration: $mode" -ForegroundColor Cyan
-
 Write-Host "[1/4] icon_modern.ico in die Installation kopieren..." -ForegroundColor Yellow
 Copy-Item $srcModern $modernTarget -Force
 Write-Host "  OK: $modernTarget" -ForegroundColor Green
@@ -58,8 +49,7 @@ if (Test-Path $srcExe) {
     Write-Host "  (kein dist-Build gefunden - zuerst .\build.ps1 ausfuehren)" -ForegroundColor Yellow
 }
 
-Write-Host "[3/4] Startmenue-/Desktop-Verknuepfung auf das Icon des UI-Modus setzen..." -ForegroundColor Yellow
-$iconForMode = if ($mode -eq "modern") { $modernTarget } else { Join-Path $installDir "icon.ico" }
+Write-Host "[3/4] Startmenue-/Desktop-Verknuepfung auf das gruene App-Icon setzen..." -ForegroundColor Yellow
 $shell = New-Object -ComObject WScript.Shell
 $shortcutPaths = @(
     "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Wake-on-LAN Manager\Wake-on-LAN Manager.lnk",
@@ -71,7 +61,7 @@ $fixed = 0
 foreach ($p in $shortcutPaths) {
     if (Test-Path $p) {
         $sc = $shell.CreateShortcut($p)
-        $sc.IconLocation = "$iconForMode,0"
+        $sc.IconLocation = "$modernTarget,0"
         $sc.Save()
         Write-Host "  OK: $p" -ForegroundColor Green
         $fixed++
@@ -92,7 +82,4 @@ Start-Sleep -Milliseconds 800
 if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer }
 
 Write-Host ""
-Write-Host "Fertig. Die Taskleiste folgt jetzt dem aktiven UI-Modus:" -ForegroundColor Green
-Write-Host "  Moderne UI  -> gruenes Icon" -ForegroundColor Green
-Write-Host "  Klassische UI -> blaues Icon" -ForegroundColor Blue
-Write-Host "(Nach einem UI-Wechsel in den Einstellungen die App neu starten.)" -ForegroundColor Gray
+Write-Host "Fertig. Taskleiste und Verknuepfungen zeigen jetzt das gruene App-Icon." -ForegroundColor Green

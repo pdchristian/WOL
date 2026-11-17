@@ -7,7 +7,7 @@ the existing display-mode setting.
 
 All rules are objectName-based (``#sidebar``, ``#navItem``, ``#panel`` …)
 so they only affect widgets of the modern window and never leak into the
-classic UI or the shared dialogs.
+shared dialogs.
 """
 
 import os

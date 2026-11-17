@@ -2,13 +2,10 @@
 
 Sidebar-based layout mirroring design_prototype/dark_control_center_full.html:
 Geräte / Verwalten / Zeitplan / Protokolle + application footer (settings,
-about, quit). Feature-identical to the classic ``MainWindow``; in this
-iteration "Verwalten", "Zeitplan", "Protokolle", "Einstellungen" and
-"Über" (incl. the update check) are native screens — the remaining areas
-reuse the existing dialogs or show placeholders.
+about, quit). It is the application's only layout — the classic single-window
+``MainWindow`` and the ``ui.layout_mode`` switch were removed.
 
-The window is selected at startup via ``ui.layout_mode`` (installer choice /
-settings dialog); see :func:`wol_app.main_window.main`.
+Started by :func:`run_modern_window` from ``run.py`` on every platform.
 """
 
 import os
@@ -533,7 +530,7 @@ class ModernMainWindow(QMainWindow):
         elif index < len(self.nav_buttons):
             self._active_nav_btn = self.nav_buttons[index]
 
-    # ── Application actions (reuse classic dialogs) ──────────────────────
+    # ── Application actions (shared dialogs) ─────────────────────────────
 
     def _confirm_quit(self) -> None:
         """Ask for confirmation before closing the window (modern layout).
@@ -585,18 +582,13 @@ class ModernMainWindow(QMainWindow):
         # The "keep running in the notification area" toggle may have
         # changed — apply it live, no restart required.
         self._apply_tray_mode()
-        if self.settings_view.restart_required:
-            QMessageBox.information(
-                self,
-                Translations.tr("app.name"),
-                Translations.tr("settings.restart_required"),
-            )
         self._retranslate()
 
     def _on_schedule_fired(self, device_id: str, action: str) -> None:
         """Dispatch a fired schedule entry (wake / shutdown).
 
-        Shares the logic with the classic layout via schedule_runner.
+        Dispatches a fired schedule entry (wake / shutdown) through
+        :func:`wol_app.schedule_runner.dispatch_schedule_action`.
         """
         dispatch_schedule_action(
             self.config, self.engine, device_id, action,

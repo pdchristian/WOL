@@ -455,18 +455,6 @@ class TestSettingsViewCloseToTray:
         view._save()
         assert config.get_close_to_tray() is False
 
-    def test_save_does_not_require_restart(self, qapp, config, monkeypatch):
-        from PyQt6.QtWidgets import QMessageBox
-
-        from wol_app.views.settings_view import SettingsView
-
-        monkeypatch.setattr(QMessageBox, "information",
-                            staticmethod(lambda *a, **k: None))
-        view = SettingsView(config)
-        view.close_to_tray_toggle.setChecked(True)
-        view._save()
-        assert view.restart_required is False
-
     def test_reset_restores_default_on(self, qapp, config, monkeypatch):
         from PyQt6.QtWidgets import QMessageBox
 

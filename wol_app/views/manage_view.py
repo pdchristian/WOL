@@ -12,9 +12,8 @@ Layout (top to bottom):
    "Hinzufügen" button.
 
 All persistence goes through the shared ``ConfigManager``; the modern
-``ModernDeviceDialog`` is used for add/edit, while workers and helpers
-are reused from the classic UI (``ScanWorker``, ``StatusWorker``,
-``device_io``).
+``ModernDeviceDialog`` is used for add/edit, while workers and helpers come
+from ``ScanWorker``, :mod:`wol_app.app_core` and :mod:`wol_app.device_io`.
 """
 
 from typing import Any
@@ -308,7 +307,7 @@ class ManageView(QWidget):
         self.scan_btn.clicked.connect(self._start_scan)
         scan_actions.addWidget(self.scan_btn)
 
-        # Platform detection toggle (same semantics as the classic dialog)
+        # Platform detection toggle (same semantics as the scan options)
         self.os_detect_toggle = ToggleWithLabel(
             Translations.tr("scan_dialog.opt.detect_os"), checked=True)
         self.os_detect_toggle.setToolTip(

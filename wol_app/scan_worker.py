@@ -1,4 +1,4 @@
-"""Background worker for network scanning (shared by classic and modern UI)."""
+"""Background worker for network scanning."""
 
 from PyQt6.QtCore import QObject, pyqtSignal
 

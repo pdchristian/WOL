@@ -12,7 +12,7 @@
 | **runtime**         | Python 3.10+                                                          |
 | **author**          | pdchristian                                                           |
 | **repository**      | https://github.com/pdchristian/WOL                                     |
-| **description**     | A powerful desktop application for managing network devices via Wake-on-LAN magic packets, ICMP ping status monitoring, remote shutdown (SMB and Host Service), and automated scheduling. Ships two interchangeable UIs — a classic window and a modern "Dark Control Center" sidebar layout (new in 2.0.0) — built with PyQt6 and hardened against CWE-2025 top security risks. |
+| **description**     | A powerful desktop application for managing network devices via Wake-on-LAN magic packets, ICMP ping status monitoring, remote shutdown (SMB and Host Service), and automated scheduling. Ships a single modern "Dark Control Center" sidebar UI (new in 2.0.0) — built with PyQt6 and hardened against CWE-2025 top security risks. |
 
 ---
 
@@ -30,7 +30,7 @@ Wake-on-LAN Manager is a cross-platform desktop GUI application (Windows · Ubun
 - Multi-language support (English, German, French, Spanish)
 - Auto-update checking and downloading from GitHub Releases
 - Professional installer/uninstaller with Windows registry integration
-- **Two interchangeable UIs (new in 2.0.0):** a classic window (`MainWindow`) and a modern **"Dark Control Center"** sidebar layout (`ModernMainWindow`) with native *Devices / Manage / Schedule / Logs / Settings / About* screens — feature-identical, selectable at install time or in Settings
+- **Modern UI ("Dark Control Center", new in 2.0.0):** the single main window (`ModernMainWindow`) with native *Devices / Manage / Schedule / Logs / Settings / About* screens — the former classic window and its layout selection have been removed
 
 ### Default Configuration Path
 ```
@@ -56,24 +56,25 @@ Wake-on-LAN Manager is a cross-platform desktop GUI application (Windows · Ubun
 ### 2.2 Module Dependency Graph
 
 ```
-run.py
- └── wol_app/main_window.py        (MainWindow, StatusWorker, entry point main())
+run.py                            (cross-platform entry point, starts the Modern UI)
+ └── wol_app/modern_main_window.py  (ModernMainWindow, run_modern_window)
       ├── wol_app/config.py        (ConfigManager singleton, input validation)
       ├── wol_app/crypto.py        (AES-256-GCM encrypt/decrypt, DPAPI key)
       ├── wol_app/wol_engine.py    (WOLEngine: WoL packets, ping, shutdown, scheduler)
+      ├── wol_app/app_core.py      (HEADLESS_MODE, StatusWorker, thread registry)
       ├── wol_app/network_scanner.py  (interface detection, subnet scanning)
       ├── wol_app/os_detect.py     (passive platform fingerprinting: TTL, SMB, OUI, host service)
       ├── wol_app/translations.py  (Translations singleton, i18n)
-      ├── wol_app/device_dialog.py   (add/edit device UI)
-      ├── wol_app/schedule_dialog.py (schedule management UI)
-      ├── wol_app/settings_dialog.py (network/language/update settings UI)
-      ├── wol_app/log_dialog.py    (activity log viewer)
-      ├── wol_app/network_scan_dialog.py (ScanWorker, NetworkScanDialog)
+      ├── wol_app/device_io.py     (device import/export helpers)
+      ├── wol_app/scan_worker.py   (ScanWorker — subnet scanning QThread)
+      ├── wol_app/schedule_runner.py (dispatch_schedule_action)
+      ├── wol_app/shutdown_flow.py (host-service shutdown flow)
+      ├── wol_app/remote_desktop.py (Remote Desktop launch)
       ├── wol_app/updater.py       (UpdateChecker, DownloadWorker)
       ├── wol_app/update_dialog.py (UpdateAvailableDialog, _launch_installer_safe)
       │
-      │  Modern UI (new in 2.0.0) — selected when ui.layout_mode == "modern"
-      ├── wol_app/modern_main_window.py  (ModernMainWindow, run_modern_window)
+      │  Modern UI screens ("Dark Control Center", new in 2.0.0) — the only UI,
+      │  started unconditionally on Windows, Linux and macOS
       │    ├── wol_app/modern_theme.py    (DARK/LIGHT tokens, apply_modern_theme)
       │    ├── wol_app/views/devices_view.py   (DevicesView — status cards + device list)
       │    ├── wol_app/views/manage_view.py    (ManageView — devices + network scan)
@@ -93,7 +94,7 @@ run.py
       ├── wol_app/host_service_client.py  (send_host_command, get_metrics, run_batch — TCP 8765)
       └── wol_app/metrics_worker.py       (MetricsWorker / BatchWorker — cancellable QThread workers)
 
-installer.py                    (standalone installer, registry integration, UI-mode choice)
+installer.py                    (standalone installer, registry integration)
 uninstaller.py                  (standalone uninstaller, data wiping)
 build.ps1                       (PowerShell build orchestration script)
 ```
@@ -112,11 +113,11 @@ build.ps1                       (PowerShell build orchestration script)
 The application uses a QThread-based worker pattern for all background operations:
 
 ```
-MainWindow (QApplication main thread)
+ModernMainWindow (QApplication main thread)
  ├── StatusWorker       → QThread for periodic status refresh (30s interval)
  ├── UpdateChecker      → QThread for GitHub release checking
  ├── DownloadWorker     → QThread for update downloads
- └── ScanWorker         → QThread (in network_scan_dialog) for subnet scanning
+ └── ScanWorker         → QThread (in scan_worker) for subnet scanning
 
 DeviceDashboardView (modern UI, stack index 6)
  ├── MetricsWorker      → QThread per poll tick (get_metrics, 5 s socket timeout)
@@ -134,7 +135,7 @@ DeviceListView (modern UI, devices)
 Scheduler              → threading.Timer (60s recurrence, re-arms on each check)
 ```
 
-**Module-level thread registry** (`_active_threads` in `main_window.py`):
+**Module-level thread registry** (`_active_threads` in `app_core.py`):
 All created QThread instances are appended to a module-level list `_active_threads` to prevent premature garbage collection during C-level I/O operations. Threads are removed from the registry on the `finished` signal via a connected callback.
 
 **HEADLESS_MODE** environment variable:
@@ -287,8 +288,6 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
     "device_sort_order": "ascending",
     "language": "en",
     "remote_desktop_resolution": "1920x1080",
-    "layout_mode": "classic",
-    "layout_mode_user_set": false,
     "display_mode": "auto",
     "devices_view_mode": "grid",
     "devices_sort_key": "name",
@@ -316,18 +315,17 @@ Thread-safe singleton-style configuration manager with JSON persistence. Key met
 
 > **Remote access routing:** the `remote` section decides which client the Remote buttons open. `remote.protocol_by_os` maps the platform stored on a device (`os` key, normalised via `utils.normalize_os`) to `rdp` (`mstsc`), `vnc` (TurboVNC) or `rustdesk` (RustDesk); an unknown platform — `os` missing or `"unknown"` — always falls back to `rdp`, the historical behaviour. `remote.vnc_viewer_path` overrides auto-detection (`""` = `utils.find_vnc_viewer()`), `remote.vnc_port` is the TCP port (default 5900, clamped 1–65535); the same pattern applies to `remote.rustdesk_path` (`""` = `utils.find_rustdesk_client()`, which looks in the RustDesk install directories, `/Applications/RustDesk.app/Contents/MacOS/RustDesk` and on `PATH`) and `remote.rustdesk_direct_port` (default `DEFAULT_RUSTDESK_DIRECT_PORT = 21118`, clamped 1–65535, the port RustDesk's *Direct IP Access* answers on). Accessors: `ConfigManager.get_remote_protocol(os_id)` / `set_remote_protocol()` / `get_vnc_viewer_path()` / `set_vnc_viewer_path()` / `get_vnc_port()` / `set_vnc_port()` / `get_rustdesk_path()` / `set_rustdesk_path()` / `get_rustdesk_direct_port()` / `set_rustdesk_direct_port()`; invalid stored values fall back to the per-platform default. The section is materialised by the deep-merge in `_load()`, so old config files need no migration.
 >
-> **macOS default switched to RustDesk (one-time migration):** TurboVNC proved far too slow against Mac targets, so `DEFAULT_REMOTE_PROTOCOL_BY_OS` now maps `macos → rustdesk`. A config that already persisted `macos: "vnc"` would otherwise keep it forever, so `ConfigManager._apply_rustdesk_default()` (called from `__init__`) flips a stored `vnc` to `rustdesk` **once** — but only while `remote.protocol_user_set` is falsy. Any explicit choice (`set_remote_protocol()`, which sets that flag, mirroring `ui.layout_mode_user_set`) survives the upgrade, and the flag plus the new value are saved in the same pass.
+> **macOS default switched to RustDesk (one-time migration):** TurboVNC proved far too slow against Mac targets, so `DEFAULT_REMOTE_PROTOCOL_BY_OS` now maps `macos → rustdesk`. A config that already persisted `macos: "vnc"` would otherwise keep it forever, so `ConfigManager._apply_rustdesk_default()` (called from `__init__`) flips a stored `vnc` to `rustdesk` **once** — but only while `remote.protocol_user_set` is falsy. Any explicit choice (`set_remote_protocol()`, which sets that flag) survives the upgrade, and the flag plus the new value are saved in the same pass.
 >
 > **RustDesk addressing:** `utils.build_rustdesk_target(peer_id, ip, direct_port)` prefers the device's own RustDesk id and otherwise builds `ip:port`. RustDesk is launched as `rustdesk --connect <target>`; a running instance receives the request through its own IPC (URI scheme on macOS, `WM_USER+2` on Windows, D-Bus on Linux) instead of starting a second process. There is no CLI flag for the display mode — RustDesk remembers it per peer — so `_start_rustdesk()` deliberately ignores the tile's fullscreen flag.
 
-> **UI layout & display mode (new in 2.0.0):**
-> - `ui.layout_mode` — `"classic"` (single-view `MainWindow`) or `"modern"` (sidebar `ModernMainWindow`). On first start the installer-written registry value `HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode` wins (see `ConfigManager._apply_installer_ui_mode`); `layout_mode_user_set` is set to `true` once the user picks a layout in Settings, after which the registry hint is ignored.
-> - `ui.display_mode` — `"auto"` / `"light"` / `"dark"`; respected by both layouts (defaults to `"auto"` when absent).
+> **Display mode & device view (new in 2.0.0):**
+> - `ui.display_mode` — `"auto"` / `"light"` / `"dark"`; respected by the Modern UI (defaults to `"auto"` when absent).
 > - `ui.devices_view_mode` — `"grid"` (Kachelansicht) or `"list"` (Geräteliste) on the modern Devices screen; toggled via the toolbar icon, persisted by `ConfigManager.set_devices_view_mode()`.
 > - `ui.devices_sort_key` — `"name"` / `"ip"` / `"mac"` / `"status"` sort order of the modern Devices screen (status ranks Online → Offline → Unknown); persisted by `ConfigManager.set_devices_sort_key()`.
 > - `ui.dashboard_interval_ms` — polling interval of the per-device dashboard (ms, clamped to 2000–60000, default 3000); `ConfigManager.get/set_dashboard_interval_ms()`.
-> - `ui.close_to_tray` — modern layout only: closing the window hides it to the system tray (`QSystemTrayIcon`, created lazily by `ModernMainWindow._ensure_tray`) instead of quitting; `app.setQuitOnLastWindowClosed` is flipped by `_apply_tray_mode()`, the real exit path is `_quit_application()` (`_quitting` flag bypasses the `closeEvent` redirect). The quit confirmation gains a *Minimieren* button (`MINIMIZE_RESULT_CODE` from `views/shutdown_confirm_dialog.py`) only while the tray is active; ignored when `HEADLESS_MODE` or `QSystemTrayIcon.isSystemTrayAvailable()` is false. `ConfigManager.get/set_close_to_tray()`, applied live via `settings_saved` → `_apply_tray_mode()`. **Since 2.5.4 the tray icon carries the local machine's inference state** (dot overlay, `modern_theme.tray_icon_with_inference`; polling only while hidden, subject always resolved by `DevicesView.local_inference_target_id()` — the `(ich)` detection via `network_scanner.get_local_ips()`, re-resolved on every tick — see the 2.5.4 changelog row and `DevicesView.inference_state_changed`).
-> - `ui.allow_multiple_instances` — single-instance lock (default `false` = one process). `wol_app/single_instance.py::ensure_primary_instance(app, config)` is called from both entry points (`main_window.main()`, `run.py::_main_linux()`) right after `ConfigManager()`. Key = sha256[:16] of the config path → `QLockFile` `instance-<key>.lock` next to `config.json` plus a `QLocalServer` `WakeOnLAN-<key>`; a second launch sends `RAISE` to the running server (opens/raises the window via `bring_to_front()`) and returns `None` (entry point exits 0). **Raising a minimized window needs the platform helper `utils.force_window_foreground(widget)`** (2.5.1): the running instance is a *background* process, so `showNormal()`/`raise_()`/`activateWindow()` alone leave it behind everything (Windows flashes the taskbar button, macOS keeps the window in the Dock). Windows: `AttachThreadInput` onto the foreground thread + `SetForegroundWindow` (restore only when `IsIconic`, so a maximized window stays maximized). macOS: `winId()` is the `QNSView` → its `window` selector gives the `NSWindow` → `deminiaturize:` + `activateIgnoringOtherApps:` + `NSRunningApplication.activateWithOptions_` (PyObjC via `pyobjc-framework-Cocoa`, `hiddenimports` in the macOS spec; a ctypes `objc_msgSend` fallback covers a plain venv — `objc_getVariable("NSApp")` is not exported, `[NSApplication sharedApplication]` returns Qt's `QNSApplication`). **On macOS the socket `RAISE` is usually never reached at all** (2.5.1): LaunchServices does not start a second process for a running app, it activates the running one and delivers a reopen Apple Event, which Qt's delegate answers without un-miniaturising anything. `utils.install_macos_reopen_handler(callback)` therefore subclasses the class of `NSApp.delegate()` (`QCocoaApplicationDelegate`), overrides `applicationShouldHandleReopen:hasVisibleWindows:` to run `bring_to_front()` and forwards to the superclass via `objc.super` (plain `super()` triggers PyObjC's `ObjCSuperWarning`); installed from `run_modern_window()` regardless of the guard, delegate + callback kept alive in `_macos_reopen_state` because NSApplication holds its delegate weakly, and re-installing only swaps the callback. `open -n`/terminal launches still take the socket path. No-op on X11 (window managers honour `activateWindow()`). **Strict contract:** if the lock is held, the second launch always exits — even when the holder never answers the raise request (the old fail-open path — reclaim the lock and start anyway — was the bug that let two instances coexist with the default setting; it is gone). QLockFile reclaims crashed-process locks inside `tryLock()` (dead PID ⇒ stale), so a failed `tryLock` means the holder is alive. Bypassed entirely when `HEADLESS_MODE` or the setting is on (`_NoopGuard`). Guard is released on `app.aboutToQuit`. `ConfigManager.get/set_allow_multiple_instances()`, toggled in both settings UIs, effective on next start. **Self-healing default:** `ConfigManager._ensure_single_instance_key()` writes `ui.allow_multiple_instances: false` into `config.json` on load when the key is absent (first run after install/upgrade), so the effective single-instance default is explicit on disk.
+> - `ui.close_to_tray` — closing the window hides it to the system tray (`QSystemTrayIcon`, created lazily by `ModernMainWindow._ensure_tray`) instead of quitting; `app.setQuitOnLastWindowClosed` is flipped by `_apply_tray_mode()`, the real exit path is `_quit_application()` (`_quitting` flag bypasses the `closeEvent` redirect). The quit confirmation gains a *Minimieren* button (`MINIMIZE_RESULT_CODE` from `views/shutdown_confirm_dialog.py`) only while the tray is active; ignored when `HEADLESS_MODE` or `QSystemTrayIcon.isSystemTrayAvailable()` is false. `ConfigManager.get/set_close_to_tray()`, applied live via `settings_saved` → `_apply_tray_mode()`. **Since 2.5.4 the tray icon carries the local machine's inference state** (dot overlay, `modern_theme.tray_icon_with_inference`; polling only while hidden, subject always resolved by `DevicesView.local_inference_target_id()` — the `(ich)` detection via `network_scanner.get_local_ips()`, re-resolved on every tick — see the 2.5.4 changelog row and `DevicesView.inference_state_changed`).
+> - `ui.allow_multiple_instances` — single-instance lock (default `false` = one process). `wol_app/single_instance.py::ensure_primary_instance(app, config)` is called from the entry point (`run.py::main()`) right after `ConfigManager()`. Key = sha256[:16] of the config path → `QLockFile` `instance-<key>.lock` next to `config.json` plus a `QLocalServer` `WakeOnLAN-<key>`; a second launch sends `RAISE` to the running server (opens/raises the window via `bring_to_front()`) and returns `None` (entry point exits 0). **Raising a minimized window needs the platform helper `utils.force_window_foreground(widget)`** (2.5.1): the running instance is a *background* process, so `showNormal()`/`raise_()`/`activateWindow()` alone leave it behind everything (Windows flashes the taskbar button, macOS keeps the window in the Dock). Windows: `AttachThreadInput` onto the foreground thread + `SetForegroundWindow` (restore only when `IsIconic`, so a maximized window stays maximized). macOS: `winId()` is the `QNSView` → its `window` selector gives the `NSWindow` → `deminiaturize:` + `activateIgnoringOtherApps:` + `NSRunningApplication.activateWithOptions_` (PyObjC via `pyobjc-framework-Cocoa`, `hiddenimports` in the macOS spec; a ctypes `objc_msgSend` fallback covers a plain venv — `objc_getVariable("NSApp")` is not exported, `[NSApplication sharedApplication]` returns Qt's `QNSApplication`). **On macOS the socket `RAISE` is usually never reached at all** (2.5.1): LaunchServices does not start a second process for a running app, it activates the running one and delivers a reopen Apple Event, which Qt's delegate answers without un-miniaturising anything. `utils.install_macos_reopen_handler(callback)` therefore subclasses the class of `NSApp.delegate()` (`QCocoaApplicationDelegate`), overrides `applicationShouldHandleReopen:hasVisibleWindows:` to run `bring_to_front()` and forwards to the superclass via `objc.super` (plain `super()` triggers PyObjC's `ObjCSuperWarning`); installed from `run_modern_window()` regardless of the guard, delegate + callback kept alive in `_macos_reopen_state` because NSApplication holds its delegate weakly, and re-installing only swaps the callback. `open -n`/terminal launches still take the socket path. No-op on X11 (window managers honour `activateWindow()`). **Strict contract:** if the lock is held, the second launch always exits — even when the holder never answers the raise request (the old fail-open path — reclaim the lock and start anyway — was the bug that let two instances coexist with the default setting; it is gone). QLockFile reclaims crashed-process locks inside `tryLock()` (dead PID ⇒ stale), so a failed `tryLock` means the holder is alive. Bypassed entirely when `HEADLESS_MODE` or the setting is on (`_NoopGuard`). Guard is released on `app.aboutToQuit`. `ConfigManager.get/set_allow_multiple_instances()`, toggled in the settings screen, effective on next start. **Self-healing default:** `ConfigManager._ensure_single_instance_key()` writes `ui.allow_multiple_instances: false` into `config.json` on load when the key is absent (first run after install/upgrade), so the effective single-instance default is explicit on disk.
 
 ### 4.3 Device Schema
 
@@ -735,46 +733,9 @@ user_dir = Path(os.path.expandvars(f"%USERPROFILE%"))
 
 ## 7. UI Components
 
-### 7.1 MainWindow (`main_window.py`)
+### 7.1 Modern UI (`modern_main_window.py`, new in 2.0.0)
 
-Central application window with device table, toolbar actions, and menu bar.
-
-**Menu Structure:**
-```
-File
- ├── Devices (Ctrl+D)        → Device Manager dialog
- ├── Schedule (Ctrl+S)       → Schedule Manager dialog
- └── Exit (Ctrl+Q)           → Close application
-
-Tools
- ├── Network Scan (Ctrl+N)   → Network Scan dialog
- ├── Settings (Ctrl+E)       → Settings dialog
- └── Logs (Ctrl+L)          → Log Viewer dialog
-
-Help
- ├── Check for Updates (Ctrl+U) → Manual update check
- └── About                   → About dialog
-```
-
-**Toolbar Actions:**
-| Button              | Action                               |
-|---------------------|--------------------------------------|
-| Wake Selected       | Send WoL packet to selected devices  |
-| Wake All            | Wake all enabled devices             |
-| Ping                | Refresh status for selected device   |
-| Refresh Statuses    | Check all device statuses            |
-| Shutdown            | Remote shutdown of selected device   |
-| Manage Devices      | Open device manager                  |
-
-**Device Table Columns:**
-`[Name] [MAC] [IP Address] [Status] [Enabled]`
-
-### 7.2 Modern UI (`modern_main_window.py`, new in 2.0.0)
-
-A second, feature-identical main window: a **sidebar-based "Dark Control Center"** layout. It is selected at startup by `main()` when `ConfigManager.get_layout_mode() == "modern"` (otherwise the classic `MainWindow` runs). The layout mode is:
-
-- Chosen **at install time** — the Inno Setup installer writes `HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode` (`modern`/`classic`), read once on first start by `ConfigManager._apply_installer_ui_mode()`.
-- Switchable **at runtime** via `ConfigManager.set_layout_mode()` from the Settings dialog / SettingsView (requires an app restart).
+The application's only main window: a **sidebar-based "Dark Control Center"** layout. `run.py` starts it through `run_modern_window()` on Windows, Linux and macOS — the former classic `MainWindow` and the `ui.layout_mode` setting (including the installer's `UiMode` registry value and the Settings combo box) have been removed.
 
 **`ModernMainWindow` structure:**
 - Left **sidebar** (fixed 230 px) with two sections:
@@ -782,15 +743,15 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
   - *Application*: `Settings` / `About` / `Quit`
 - Right **`QStackedWidget`** with six sidebar screens plus one detail screen:
 
-| Index | Screen            | Module (`views/`)   | Replaces (classic)              |
-|-------|-------------------|---------------------|--------------------------------|
-| 0     | Devices           | `devices_view.py`   | device table + status column    |
-| 1     | Manage            | `manage_view.py`    | Device Manager + Network Scan   |
-| 2     | Schedule          | `schedule_view.py`  | Schedule Manager dialog         |
-| 3     | Logs              | `logs_view.py`      | Log Viewer dialog               |
-| 4     | Settings          | `settings_view.py`  | Settings dialog                 |
-| 5     | About / Update    | `update_view.py`    | About dialog + manual update    |
-| 6     | Device Dashboard  | `dashboard_view.py` | (new — no sidebar entry)        |
+| Index | Screen            | Module (`views/`)   |
+|-------|-------------------|---------------------|
+| 0     | Devices           | `devices_view.py`   |
+| 1     | Manage            | `manage_view.py`    |
+| 2     | Schedule          | `schedule_view.py`  |
+| 3     | Logs              | `logs_view.py`      |
+| 4     | Settings          | `settings_view.py`  |
+| 5     | About / Update    | `update_view.py`    |
+| 6     | Device Dashboard  | `dashboard_view.py` |
 
 **Key behaviors:**
 - **Dual view** (`DevicesView`): the toolbar toggle (icon top-left, SVG glyphs `#viewListButton` three-lines / `#viewGridButton` four-tiles) switches between
@@ -799,31 +760,24 @@ A second, feature-identical main window: a **sidebar-based "Dark Control Center"
   Both views share `_statuses` and rebuild via `refresh_devices()`. Auto-refresh every 30 s (`QTimer`), paused when hidden.
 - **Status/platform pill (`widgets/status_pill.py`, `StatusPill`):** one chip combining the online dot (`pillDotOnline`/`pillDotOffline`/`pillDotUnknown`) with the detected platform (`🪟 Windows` / `🍏 macOS` / `🐧 Linux`, `❓` when never detected). `os_display_text()` (in `utils.py`, shared with the scan tables) prefixes estimated readings with `~`; the confidence of a stored device comes from its `os_confidence` key (`config.get_device_os_confidence()`), which both the scan-import paths and the automatic backfill write, so the tooltip names the source instead of staying neutral. Cards replace the old standalone dot; list rows keep their left dot *and* gain the pill.
 - **Automatic platform backfill:** `DevicesView.detect_missing_platforms()` starts `app_core.OsDetectWorker` once per session for every enabled device that has an address but no stored `os` (devices added manually or before detection existed). Results are persisted with `config.set_device_os(id, os, confidence)` and the cards/rows are rebuilt, which also switches the Remote tiles to the right client. Skipped in headless mode; the refresh button re-arms the devices that are still without a platform (they were probably offline).
-- **Platform routing (RDP · TurboVNC · RustDesk):** `DevicesView` passes `remote_desktop.resolve_remote_protocol(config, device)` into every `DeviceCard`/`DeviceListRow`, which use it for the remote tile tooltips (`remote_tooltip()` — action + client name) and the card context menu. `start_remote_desktop()` branches on the same call: `vnc` → `_start_vnc()` → `utils.launch_vnc()` (auto-detects `vncviewerw.bat` under `Program Files\TurboVNC`, connects `ip::port`, `-FullScreen 1`; the stored password is put on the **clipboard** with an info dialog — never argv, never disk; a missing viewer raises `RuntimeError` → `dialog.vnc_missing.*` warning; the session is logged as `VNC`). `rustdesk` → `_start_rustdesk()` → `utils.launch_rustdesk()` (`rustdesk --connect <id | ip:21118>`, id preferred over the address, invalid ids ignored; password via the shared `_copy_password_to_clipboard()` helper, logged as `RUSTDESK`, missing client → `dialog.rustdesk_missing.*`). `rdp` keeps the untouched mstsc path (temp `.rdp`, `cmdkey`, fast-exit retry). Desktop layouts only — Android/iOS are unaffected.
+- **Platform routing (RDP · TurboVNC · RustDesk):** `DevicesView` passes `remote_desktop.resolve_remote_protocol(config, device)` into every `DeviceCard`/`DeviceListRow`, which use it for the remote tile tooltips (`remote_tooltip()` — action + client name) and the card context menu. `start_remote_desktop()` branches on the same call: `vnc` → `_start_vnc()` → `utils.launch_vnc()` (auto-detects `vncviewerw.bat` under `Program Files\TurboVNC`, connects `ip::port`, `-FullScreen 1`; the stored password is put on the **clipboard** with an info dialog — never argv, never disk; a missing viewer raises `RuntimeError` → `dialog.vnc_missing.*` warning; the session is logged as `VNC`). `rustdesk` → `_start_rustdesk()` → `utils.launch_rustdesk()` (`rustdesk --connect <id | ip:21118>`, id preferred over the address, invalid ids ignored; password via the shared `_copy_password_to_clipboard()` helper, logged as `RUSTDESK`, missing client → `dialog.rustdesk_missing.*`). `rdp` keeps the untouched mstsc path (temp `.rdp`, `cmdkey`, fast-exit retry). Desktop only — Android/iOS are unaffected.
 - **Sorting** (`DevicesView`): drop-down left of the search field — *Namen* (alphabetical), *IP-Adresse* (numeric via `_ip_sort_key`), *MAC-Adresse* (ascending), *Status* (rank Online → Offline → Unknown, then name). Persisted to `ui.devices_sort_key`; applies to both views; re-sorts after status updates when sorting by status.
 - **Cross-sync:** `ModernMainWindow._on_devices_changed` keeps the device lists of `DevicesView` and `ManageView` in sync when a device is added/edited/removed in either area.
-- **Shared flows:** both layouts reuse `wol_app/remote_desktop.py` (`start_remote_desktop`) and `wol_app/shutdown_flow.py` (`confirm_shutdown`/`execute_shutdown`), the same `ConfigManager` API, the same `WOLEngine`, and the classic `UpdateAvailableDialog` for downloads.
-- **Theming:** `modern_theme.py` provides `DARK`/`LIGHT` token sets and `apply_modern_theme()`; objectName-based QSS so it never leaks into the classic UI. Respects `ui.display_mode` (auto/light/dark).
+- **Shared flows:** all screens reuse `wol_app/remote_desktop.py` (`start_remote_desktop`) and `wol_app/shutdown_flow.py` (`confirm_shutdown`/`execute_shutdown`), the same `ConfigManager` API, the same `WOLEngine`, and `UpdateAvailableDialog` for downloads.
+- **Theming:** `modern_theme.py` provides `DARK`/`LIGHT` token sets and `apply_modern_theme()`; objectName-based QSS. Respects `ui.display_mode` (auto/light/dark).
 - **Native dialogs:** `ModernDeviceDialog` (`views/device_edit_dialog.py`) and `ModernScheduleEditDialog` (`views/schedule_edit_dialog.py`); `widgets/toggle_switch.py` provides `ToggleSwitch`/`ToggleWithLabel`.
-- **Settings screen (`settings_view.py`):** grouped cards (`Group`, QSS `#settingsGroup` / `#settingsGroupTitle`, heading uppercased in Python since QSS has no `text-transform`) instead of one flat grid — **Network** (broadcast IP/port), **Appearance** (language, display mode, layout mode), **Remote access** (RDP resolution, `vnc_viewer_path`, `vnc_port`, `rustdesk_path`, `rustdesk_direct_port`, and one protocol combo per platform — RDP · TurboVNC · RustDesk), **Misc** (default shutdown method, log limit, auto-update switch + interval, close-to-tray, multiple instances, public-network privilege gate, macOS host service). `Field(label_key, widget, hint_key=…)` renders label + control + optional `#fieldHint` line. Navigation is unchanged — no new sidebar entries.
-- **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution, close-to-tray, `remote` section) — devices/schedules/logs and the layout mode are preserved.
+- **Settings screen (`settings_view.py`):** grouped cards (`Group`, QSS `#settingsGroup` / `#settingsGroupTitle`, heading uppercased in Python since QSS has no `text-transform`) instead of one flat grid — **Network** (broadcast IP/port), **Appearance** (language, display mode), **Remote access** (RDP resolution, `vnc_viewer_path`, `vnc_port`, `rustdesk_path`, `rustdesk_direct_port`, and one protocol combo per platform — RDP · TurboVNC · RustDesk), **Misc** (default shutdown method, log limit, auto-update switch + interval, close-to-tray, multiple instances, public-network privilege gate, macOS host service). `Field(label_key, widget, hint_key=…)` renders label + control + optional `#fieldHint` line. Navigation is unchanged — no new sidebar entries.
+- **Settings reset:** `SettingsView._reset_to_defaults()` restores factory defaults for the settings sections only (network, updates, log limit, shutdown method, language, display mode, RDP resolution, close-to-tray, `remote` section) — devices/schedules/logs are preserved.
 - **Device Dashboard (`dashboard_view.py`, stack index 6, no sidebar entry):** opened via the 📊 tile on each device card/row (between the remote-desktop tiles and edit) or the context menu — `DevicesView.dashboard_requested(device_id)` → `ModernMainWindow.open_device_dashboard()` (also refreshes the header on `_on_devices_changed`; `closeEvent` and `back_requested` → nav index 0 call `cancel_workers()`). Widgets: `RingGauge` (painted arc, "–" when `None`), `Sparkline` (60-sample deque, gaps break the line), `MetricCard` (CPU/RAM/GPU/VRAM, gauge colours from theme tokens `gauge_cpu`/`gauge_ram`/`gauge_gpu`/`gauge_vram`). Polls `get_metrics()` every `ui.dashboard_interval_ms` (single-flight `_metrics_busy`, paused in `hideEvent`, guarded by `HEADLESS_MODE`); offline keeps the last values but flips the badge and shows the error in `status_line`. Batch library (QListWidget + editor + console) persists via `ConfigManager.set_device_batches()`; running a batch requires the device's `allow_batch` checkbox and the host-side gate (see §5.5). Each library row also carries a ▶ badge (`BatchListWidget.play_requested` → `_run_batch_row()`): the rect comes from `_play_badge_rect()` (shared by painter and hit test), the glyph is painted in `paintEvent` — a delegate would fight the `QListWidget#batchList::item` QSS and the InternalMove drag path — and the press is swallowed so it can never start a drag. Every run (badge or "Ausführen") first asks `ModernShutdownConfirmDialog(..., icon="play")` naming batch + device (`modern.dashboard.batch.run.title` / `.run.message`); if a run is impossible (opt-in off, no credentials, host offline, run in flight) the badge dims and the badge press reports the reason in `status_line` instead of opening the prompt. Same UX as the Watch and both mobile apps.
 
 ### 7.3 Dialog Components
 
 | Dialog               | Module                    | Purpose                         |
 |----------------------|---------------------------|---------------------------------|
-| DeviceDialog         | `device_dialog.py`        | Add/edit device with validation |
-| ScheduleDialog       | `schedule_dialog.py`      | Manage wake/shutdown schedules  |
-| SettingsDialog       | `settings_dialog.py`      | Network, language, update config|
-| LogDialog            | `log_dialog.py`           | View/clear activity logs        |
-| NetworkScanDialog    | `network_scan_dialog.py`  | Discover devices on network     |
 | UpdateAvailableDialog| `update_dialog.py`        | Show release notes + download   |
-| UpdateErrorDialog    | `update_dialog.py`        | Network error during update     |
-| UpdateInfoDialog     | `update_dialog.py`        | "Already up to date" message    |
 | ModernShutdownConfirmDialog | `views/shutdown_confirm_dialog.py` | Modern confirm dialog; device shutdown (Ja/Nein) or window quit (Ja/Minimieren/Nein via `min_key`, result `MINIMIZE_RESULT_CODE`); generic reuse via `title_key`/`message_key`/`message_kwargs`/`yes_object_name`/`show_icon` (e.g. shared-password prompt) and `icon` (`"power"` danger glyph, `"play"` accent play badge for batch runs, `"none"`) |
 
-**Shared password (all platforms):** after saving a device with username + password, the app offers to apply the password to every other device with the same (case-insensitive) username. Core helper: `wol_app/shared_password.py` (`collect_share_targets` skips empty user/password and devices that already store the identical password → no popup; `apply_password` loops `update_device`). Desktop: `ModernDeviceDialog._offer_shared_password` (ModernShutdownConfirmDialog, primaryButton, no icon) and classic `DeviceDialog._offer_shared_password` (`QMessageBox.question`), both before `device_saved.emit`. Mobile: `offerSharedPassword()` in both `app.js` (after `saveDevice`, `openConfirm` sheet, then `saveDeviceNative(d,{password})` per target); empty password = keep stored → never asks.
+**Shared password (all platforms):** after saving a device with username + password, the app offers to apply the password to every other device with the same (case-insensitive) username. Core helper: `wol_app/shared_password.py` (`collect_share_targets` skips empty user/password and devices that already store the identical password → no popup; `apply_password` loops `update_device`). Desktop: `ModernDeviceDialog._offer_shared_password` (ModernShutdownConfirmDialog, primaryButton, no icon), called before `device_saved.emit`. Mobile: `offerSharedPassword()` in both `app.js` (after `saveDevice`, `openConfirm` sheet, then `saveDeviceNative(d,{password})` per target); empty password = keep stored → never asks.
 
 ---
 

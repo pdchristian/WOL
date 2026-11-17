@@ -16,13 +16,13 @@ A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN ma
 > **New in 2.2.1:** **Remote Desktop auto-retry for xrdp/Ubuntu hosts** — if a session with a stored password closes within 10 seconds (black screen, window vanishes), the app offers to reconnect **without the stored password** so it can be typed directly into the Remote Desktop prompt.
 > **New in 2.2.0:** **Watched processes / service status** on the dashboard — watch named processes (e.g. `llama-server.exe`) on the target and see live status chips, PID, uptime, RAM/CPU, API-port reachability and the loaded llama.cpp model. Configured per device directly in the device dialog. Requires **WOL Host Service protocol v3** (older hosts simply hide the panel).
 > **New in 2.1.0:** a per-device **Dashboard** — live **CPU / RAM / GPU / VRAM** gauges with rolling sparklines plus **remote batch execution** (per-device script library, console output, exit code & duration). Opened via the 📊 tile on each device (no sidebar entry). Requires the updated **WOL Host Service** (protocol v2); batch runs need a double opt-in (per-device checkbox + `--enable-batch` on the target).
-> **New in 2.0.0:** a redesigned **Modern UI** ("Dark Control Center") with a sidebar and four native areas — *Geräte* (device status cards or device list), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens. It is feature-identical to the classic window and can be selected at install time or switched in **Settings → Design** at any time.
+> **New in 2.0.0:** a redesigned **Modern UI** ("Dark Control Center") with a sidebar and four native areas — *Geräte* (device status cards or device list), *Verwalten* (device management + network scan), *Zeitplan* (schedules) and *Protokolle* (activity log) — plus native *Einstellungen* and *Über* screens. It is now the **only** UI: the classic window and the design selection in the installer/Settings have been removed.
 
 🔒 **Security Note:** Passwords are encrypted with AES-256-GCM (DPAPI-protected master key), legacy plaintext passwords are auto-re-encrypted on load, and all subprocess calls use `shell=False` with input validation. See [SECURITY.md](SECURITY.md) for details.
 
 ## Features
 
-- **Modern UI (new in 2.0.0)** — A redesigned "Dark Control Center" layout with a sidebar and native *Geräte* / *Verwalten* / *Zeitplan* / *Protokolle* / *Einstellungen* / *Über* screens (dark or light display mode). The *Geräte* screen offers a **card view and a list view** (toggle icon) plus a **sort drop-down** (name / IP / MAC / status). Feature-identical to the classic window; choose it at install time or switch it in **Settings → Design**
+- **Modern UI (new in 2.0.0)** — A redesigned "Dark Control Center" layout with a sidebar and native *Geräte* / *Verwalten* / *Zeitplan* / *Protokolle* / *Einstellungen* / *Über* screens (dark or light display mode). The *Geräte* screen offers a **card view and a list view** (toggle icon) plus a **sort drop-down** (name / IP / MAC / status)
 - **Device Dashboard (new in 2.1.0)** — Per-device live metrics (CPU / RAM / GPU / VRAM ring gauges + rolling sparklines, hostname & uptime, configurable 2–10 s polling) and **remote batch execution** with a per-device script library, console output (stdout/stderr, exit code, duration) and cancellation. GPU/VRAM via `nvidia-smi` (NVIDIA only, "n/a" otherwise). Opened via the 📊 tile on each device — no sidebar entry. Batch runs are double-gated: a per-device checkbox plus `--enable-batch` on the target host (SYSTEM privileges!)
 - **Watched processes / service status (new in 2.2.0)** — The dashboard can watch named processes on the target (e.g. `llama-server.exe`) and shows a live **status chip** in the header plus a **Services panel** (PID, uptime, process RAM/CPU, API-port reachability and the loaded llama.cpp model). Configure per device via `config.json` → `"watch_processes": ["llama-server.exe:8080"]` (the `:port` turns the chip green only once the API also answers; without it, "running" is enough). Requires Host Service **protocol v3** — older hosts simply omit it (chip hidden, no error). A heuristic "⚡ Inference active" badge lights up while a ready service coincides with high GPU load.
 - **Inference badge in the device list (new in 2.5.0)** — The status pill of every device card/list row shows a **lightning bolt** while a watched API server processes requests *right now* (Host Service **protocol v9**, `requests_active` — llama.cpp `requests_processing`/`requests_deferred` or JSON `live.*`). Orange = job running, dimmed = idle, amber = API port open but unmeasurable, hidden while the watched server is off (port closed); the toolbar drop-down sets the poll interval (5–30 s, default 10 s). Requires the updated Host Service — older hosts simply hide the badge
@@ -372,7 +372,7 @@ limitations: [docs/macos/README.md](docs/macos/README.md).
 - **Legacy plaintext passwords** are auto-re-encrypted on load (`_reencrypt_plaintext_passwords`)
 
 #### 🛠️ Reliability
-- **Thread tracking:** `_track_thread()` in `main_window.py` auto-removes QThread references on finish — no memory leak
+- **Thread tracking:** `_track_thread()` in `app_core.py` auto-removes QThread references on finish — no memory leak
 - **Version parsing:** `_parse_version()` in `updater.py` normalizes to 3 segments and rejects invalid versions
 
 #### ⚡ Performance
@@ -423,8 +423,8 @@ limitations: [docs/macos/README.md](docs/macos/README.md).
 - `network_scanner.py`: Secure subprocess execution with resource limits
 - `crypto.py`: Memory sanitization for passwords, input validation
 - `config.py`: Path validation, secure file permissions, log sanitization
-- `device_dialog.py`: Input validation for devices
-- `settings_dialog.py`: Input validation for network settings
+- `views/device_edit_dialog.py`: Input validation for devices
+- `utils.py`: Input validation for network settings
 - `wol_engine.py`: Secure magic packet creation and status checks
 - `installer.py`: Secure deletion of user data, version 1.3.1
 

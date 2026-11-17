@@ -1,11 +1,8 @@
 """Shared application core for the Wake-on-LAN Manager (Windows + Linux).
 
 Holds the headless-mode flag, the thread-tracking registry and the
-status-check worker that the modern views import. Keeping these here means
-the views depend only on :mod:`wol_app.app_core`, never on the classic
-``MainWindow`` — which does not exist on the Linux (Modern-UI-only) port.
-
-``wol_app.main_window`` re-exports these symbols for backwards compatibility.
+status-check worker that the views import, so every screen depends only on
+:mod:`wol_app.app_core`.
 """
 
 import os

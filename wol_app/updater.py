@@ -159,11 +159,10 @@ def check_for_updates_sync(current_version: str) -> tuple[Any, bool] | None:
     Returns ``None`` when the check itself failed (no internet, blocked or
     proxied ``api.github.com``, GitHub API rate limit, malformed response).
     That tri-state matters: a failed check must never be reported as "you are
-    on the latest version" — exactly what the manual check in the classic and
-    the modern UI relies on.
+    on the latest version" — exactly what the manual update check relies on.
 
-    Suitable for quick manual checks from the menu where a full thread setup
-    is overkill and the call is already user-triggered.
+    Suitable for quick manual checks where a full thread setup is overkill
+    and the call is already user-triggered.
     """
     try:
         req = Request(

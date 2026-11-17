@@ -50,7 +50,7 @@ sudo apt install ./dist/wake-on-lan-manager_*_all.deb
 ```
 
 - Nutzt nur `dpkg-deb` — kein debhelper, kein fakeroot, kein root nötig.
-- Shippt Modern UI (klassische UI-Dateien werden exkludiert) + Host Service als
+- Shippt die Modern UI (die einzige UI) + Host Service als
   systemd-Unit (`wol-host-service`, TCP 8765) + CLI `/usr/bin/wol-host-service`.
 - **Pitfall:** Build nicht auf NTFS-Mounts (z. B. `/mnt/c` unter WSL) — dpkg-deb
   lehnt das control-Verzeichnis wegen 777-Rechten ab. Projekt nach `/tmp` kopieren:

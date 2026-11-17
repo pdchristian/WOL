@@ -1,9 +1,7 @@
-"""Shared Remote Desktop launch flow for the classic and modern layouts.
+"""Shared Remote Desktop launch flow.
 
-Extracted from ``MainWindow._remote_desktop_selected`` so both UIs start
-``mstsc`` with identical behaviour: IP validation, credential passthrough
-and resolution selection (fixed value or "auto" from the primary screen's
-physical pixels).
+Starts ``mstsc`` with IP validation, credential passthrough and resolution
+selection (fixed value or "auto" from the primary screen's physical pixels).
 
 Platform routing: the detected platform of the device (``os`` key, see
 ``wol_app.os_detect``) decides which client opens —

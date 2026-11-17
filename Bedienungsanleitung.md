@@ -64,40 +64,29 @@ Starten Sie die Anwendung über:
 - Die **Desktop-Verknüpfung** (Doppelklick)
 - Das **Windows-Startmenü** → *Wake-on-LAN Manager*
 
-> **Ab Version 2.0.0** gibt es zwei Oberflächen – die **moderne** (Standard) und die **klassische** Ansicht. Welche beim Start geladen wird, haben Sie beim Installieren gewählt oder können Sie in den **Einstellungen → Design** ändern (Details im [nächsten Kapitel](#die-moderne-benutzeroberfläche)). Beide bieten identische Funktionen.
-
-**Klassische Ansicht – Hauptbestandteile:**
-- **Menüleiste** oben (Datei, Tools, Hilfe)
-- **Aktionen-Schaltflächen** (Alle Geräte wecken, Status aktualisieren)
-- **Gerätetabelle** mit Name, MAC-Adresse, IP und Status
-- **Statusleiste** unten mit aktuellen Meldungen
+> **Hinweis:** Die App startet immer in der **modernen** Oberfläche
+> ("Dark Control Center"). Die frühere klassische Fensteransicht mit Menüleiste
+> und Gerätetabelle wurde mitsamt der Design-Auswahl entfernt; Details im
+> [nächsten Kapitel](#die-moderne-benutzeroberfläche).
 
 ---
 
 ## Die moderne Benutzeroberfläche
 
-Mit **Version 2.0.0** ist ein neues, modernes App-Design (**"Dark Control Center"**) hinzugekommen: Statt der klassischen Fensteransicht mit Menüleiste und Tabelle führt die moderne Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
-
-> **Wichtig:** Die moderne und die klassische Oberfläche bieten **exakt dieselben Funktionen** – sie unterscheiden sich nur im Layout. Alle Einstellungen, Geräte, Zeitpläne, Protokolle und Sicherheitsfunktionen sind identisch. Sie können jederzeit zwischen beiden wechseln.
-
-### Das App-Design wählen
-
-- **Beim Installieren:** Der Installer fragt nach dem gewünschten Design – **Moderne App** (dunkles Control-Center-Layout mit Seitenleiste) oder **Klassische App** (traditionelles Fenster-Layout).
-- **Jederzeit in der App:** Unter **Einstellungen → Design** (klassisch: **Tools → Einstellungen...**, modern: Bildschirm **Einstellungen**) können Sie zwischen **Klassische App** und **Moderne App** wechseln.
-  > **Hinweis:** Eine Änderung des Designs erfordert einen **Neustart der App**.
+Mit **Version 2.0.0** wurde das moderne App-Design (**"Dark Control Center"**) eingeführt: Statt einer Fensteransicht mit Menüleiste und Tabelle führt die Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
 
 ### Anzeige-Modus (dunkel / hell / automatisch)
-Im selben Bereich **Design/Anzeige** wählen Sie den **Anzeige-Modus**:
+Im Bereich **Darstellung** der Einstellungen wählen Sie den **Anzeige-Modus**:
 - **Automatisch** – folgt dem Windows-Systemthema
 - **Hell** – helles Design
 - **Dunkel** – dunkles Design
 
-Der gewählte Modus wird von **beiden** Layouts (modern und klassisch) respektiert.
+Der gewählte Modus gilt für die gesamte App.
 
 ### Im Iconbereich bleiben beim Schließen
 
 Standardmäßig beendet das Schließen des Fensters (✕) die App. Mit der Option
-**„Beim Schließen im Iconbereich bleiben"** (moderne Oberfläche: Bildschirm
+**„Beim Schließen im Iconbereich bleiben"** (Bildschirm
 **Einstellungen → Beim Schließen im Iconbereich bleiben**) ändert sich das:
 
 - **Schließen-Button (✕)** – das Fenster verschwindet, die App läuft im
@@ -143,9 +132,8 @@ keine konkurrierenden Prozesse. Ein Lockfile neben der Konfigurationsdatei
 abgestürzten Prozesses wird automatisch freigegeben.
 
 Möchten Sie die App mehrfach parallel starten, aktivieren Sie **„Mehrere
-Instanzen gleichzeitig erlauben"** (moderne Oberfläche: Bildschirm
-**Einstellungen**, klassische Oberfläche: Dialog **Einstellungen →
-Anwendung**). Nach dem nächsten Start verhält sich jede Instanz wieder
+Instanzen gleichzeitig erlauben"** auf dem Bildschirm **Einstellungen**.
+Nach dem nächsten Start verhält sich jede Instanz wieder
 vollständig eigenständig.
 
 > **Hinweis:** Die Einstellung wirkt erst beim nächsten Start. Nutzen Sie
@@ -238,20 +226,20 @@ Links neben dem Suchfeld befindet sich ein **Sortier-Drop-down** mit folgenden O
 
 Die gewählte Sortierung wird **gespeichert** und gilt für **beide Ansichten**. Über das Suchfeld können Sie die Geräte zusätzlich **live filtern** (nach Name, MAC, IP oder Benutzername). Die Status-Punkte werden **alle 30 Sekunden automatisch** aktualisiert — bei Sortierung nach **Status** sortiert sich die Liste nach jedem Update neu.
 
-> **Tipp:** Die Bereiche *Verwalten*, *Zeitplan*, *Protokolle*, *Einstellungen* und *Über* sind in der modernen Oberfläche **eigene Bildschirme** (keine Dialoge mehr). Die klassischen Menüs (Datei, Tools, Hilfe) existieren in der modernen Oberfläche nicht – alle Funktionen sind über die Seitenleiste erreichbar.
+> **Tipp:** Die Bereiche *Verwalten*, *Zeitplan*, *Protokolle*, *Einstellungen* und *Über* sind **eigene Bildschirme** (keine Dialoge). Ein Menü (Datei, Tools, Hilfe) existiert nicht – alle Funktionen sind über die Seitenleiste erreichbar.
 
 ---
 
 ## Geräte verwalten
 
-> **Moderne Oberfläche:** In der modernen Ansicht finden Sie die Geräte-Verwaltung unter **Bereiche → Verwalten** (statt über das Menü *Datei → Geräte verwalten...*). Dort können Sie Geräte hinzufügen, bearbeiten, löschen, importieren/exportieren und mit Suchfeld filtern – zusätzlich ist der **Netzwerk-Scan** direkt auf demselben Bildschirm integriert.
+> Die Geräte-Verwaltung finden Sie unter **Bereiche → Verwalten**. Dort können Sie Geräte hinzufügen, bearbeiten, löschen, importieren/exportieren und mit Suchfeld filtern – zusätzlich ist der **Netzwerk-Scan** direkt auf demselben Bildschirm integriert.
 
 ### Geräte suchen
-Über dem Suchfeld der Gerätetabelle (im Hauptfenster und im Geräte-Manager) können Sie die Liste **live filtern**. Geben Sie einen Begriff ein – die Tabelle zeigt nur noch Geräte, deren **Name**, **MAC-Adresse**, **IP-Adresse** oder **Benutzername** den Suchbegriff enthält. Ein leeres Feld zeigt wieder alle Geräte.
+Über dem Suchfeld des Bildschirms **Verwalten** (und der Geräteübersicht **Geräte**) können Sie die Liste **live filtern**. Geben Sie einen Begriff ein – die Liste zeigt nur noch Geräte, deren **Name**, **MAC-Adresse**, **IP-Adresse** oder **Benutzername** den Suchbegriff enthält. Ein leeres Feld zeigt wieder alle Geräte.
 
 ### Gerät hinzufügen
-1. Menü: **Datei → Geräte verwalten...** (oder `Strg+D`)
-2. Klicken Sie auf **+ Gerät hinzufügen**.
+1. Seitenleiste: **Verwalten**, Abschnitt *Geräte-Verwaltung*
+2. Klicken Sie auf **+ Hinzufügen**.
 3. Geben Sie folgende Daten ein:
    - **Gerätename:** Ein sprechender Name (z. B. "Büro-PC", "Gaming-Rig")
    - **MAC-Adresse:** Die MAC-Adresse des Zielsystems (Format: `AA:BB:CC:DD:EE:FF`)
@@ -261,14 +249,14 @@ Die gewählte Sortierung wird **gespeichert** und gilt für **beide Ansichten**.
 4. Klicken Sie auf **Speichern**.
 
 ### Gerät bearbeiten
-1. Menü: **Datei → Geräte verwalten...**
-2. Wählen Sie das Gerät in der Tabelle aus.
-3. Klicken Sie auf **Bearbeiten**.
-4. Ändern Sie die gewünschten Felder und klicken Sie auf **Aktualisieren**.
+1. Seitenleiste: **Verwalten**, Abschnitt *Geräte-Verwaltung*
+2. Suchen Sie das Gerät in der Liste.
+3. Klicken Sie auf das Bearbeiten-Symbol (oder doppelklicken Sie auf die Zeile).
+4. Ändern Sie die gewünschten Felder und klicken Sie auf **Speichern**.
 
 ### Gerät löschen
-1. Menü: **Datei → Geräte verwalten...**
-2. Wählen Sie das Gerät aus und klicken Sie auf **Löschen**.
+1. Seitenleiste: **Verwalten**, Abschnitt *Geräte-Verwaltung*
+2. Klicken Sie bei dem Gerät auf das Löschen-Symbol.
 3. Bestätigen Sie die Abfrage.
 
 ---
@@ -357,8 +345,8 @@ Falls das Zielsystem keine Authentifizierung für die Remote-Shutdown-Funktion e
 Falls das Zielsystem eine Authentifizierung erfordert (z. B. bei Domänen-Konten oder geschützten Freigaben), müssen Sie **Nutzername** und **Passwort** für das Gerät hinterlegen:
 
 1. **Gerät konfigurieren:**
-   - Öffnen Sie den Geräte-Manager (**Datei → Geräte verwalten...** oder `Strg+D`).
-   - Wählen Sie das Gerät aus und klicken Sie auf **Bearbeiten**.
+   - Öffnen Sie die Seitenleiste **Verwalten** (Abschnitt *Geräte-Verwaltung*).
+   - Klicken Sie bei dem Gerät auf das Bearbeiten-Symbol.
    - Tragen Sie im Feld **Nutzer** den Benutzernamen ein (z. B. `Administrator` oder `Domain\Benutzername`).
    - Tragen Sie im Feld **Passwort** das zugehörige Passwort ein.
      > **Sicherheit:** Das Passwort wird **automatisch verschlüsselt** gespeichert (siehe [Passwort-Verschlüsselung](#passwort-verschlüsselung)).
@@ -397,15 +385,15 @@ Diese zweite Shutdown-Variante setzt einen kleinen Windows-Dienst (**WOL Host Se
 4. Für das Gerät müssen **Benutzername und Passwort** eines Kontos mit Shutdown-Berechtigung hinterlegt sein (z. B. `Administrator` oder `DOMAIN\Benutzer`).
 
 ### Shutdown-Methode pro Gerät wählen
-1. Öffnen Sie den **Geräte-Manager** (**Datei → Geräte verwalten...** oder `Strg+D`).
-2. Wählen Sie das Gerät aus und klicken Sie auf **Bearbeiten**.
+1. Öffnen Sie die Seitenleiste **Verwalten** (Abschnitt *Geräte-Verwaltung*).
+2. Klicken Sie bei dem Gerät auf das Bearbeiten-Symbol.
 3. Setzen Sie im Feld **Shutdown-Methode** den Wert **Host-Service (empfohlen)** oder **SMB (Windows-Freigabe)**.
 4. Speichern Sie die Änderungen.
 
-> **Standard-Methode:** In den Einstellungen (**Tools → Einstellungen... → Remote-Herunterfahren**) können Sie die Standard-Methode für **neue** Geräte festlegen. Der anfängliche Standard ist **Host-Service**. Bestehende Geräte (vor v1.7.0) behalten die bisherige SMB-Methode.
+> **Standard-Methode:** Auf dem Bildschirm **Einstellungen** (Bereich **Sonstiges**) legen Sie die Standard-Methode für **neue** Geräte fest. Der anfängliche Standard ist **Host-Service**. Bestehende Geräte (vor v1.7.0) behalten die bisherige SMB-Methode.
 
 ### Herunterfahren auslösen
-1. Wählen Sie das Gerät in der Hauptansicht aus.
+1. Öffnen Sie die Seitenleiste **Geräte** und wählen Sie die Geräte-Kachel.
 2. Klicken Sie auf **Herunterfahren** und bestätigen Sie den Dialog.
 3. Die Anwendung sendet den JSON-Befehl an den Host-Service des Zielsystems. Das Gerät wird sofort heruntergefahren.
 
@@ -491,10 +479,10 @@ Die Zuordnung ist einstellbar: **Einstellungen → Bereich „Remote-Zugang“ �
 > **Passwort:** Weder TurboVNC noch RustDesk bekommen das Passwort als Befehlszeilenargument – bei RustDesk würde es sonst offen im Prozessverzeichnis stehen. Die Anwendung legt das gespeicherte Passwort deshalb **in die Zwischenablage** und teilt das vorab mit; Sie fügen es im Verbindungsfenster ein. RustDesk merkt sich das Passwort anschließend pro Gegenstelle. Jede gestartete Sitzung wird im Protokoll als `VNC` bzw. `RUSTDESK` vermerkt.
 
 ### Remote Desktop starten
-1. Klicken Sie mit der **rechten Maustaste** auf das Gerät in der Gerätetabelle.
-2. Wählen Sie im Kontextmenü:
-   - **Remote Fullscreen** – öffnet die Sitzung im Vollbild
-   - **Remote Window** – öffnet die Sitzung in einem Fenster mit der konfigurierten Auflösung
+1. Öffnen Sie die Seitenleiste **Geräte** und wählen Sie die Geräte-Kachel.
+2. Klicken Sie auf eines der Remote-Desktop-Symbole der Kachel:
+   - **Vollbild** – öffnet die Sitzung im Vollbild
+   - **Fenster** – öffnet die Sitzung in einem Fenster mit der konfigurierten Auflösung
 3. Die Windows-Remotedesktopverbindung (`mstsc`) startet und verbindet sich mit dem Gerät.
 
 > **Voraussetzung:** Auf dem Zielsystem muss **Remotedesktop** aktiviert sein (Systemeigenschaften → Remotefunktionen → „Remotedesktopverbindungen zulassen“). Das Gerät muss eine **IP-Adresse oder einen Hostnamen** besitzen; Benutzername und Passwort sind optional – ohne Passwort fragt `mstsc` beim Verbinden danach.
@@ -508,7 +496,7 @@ Die Zuordnung ist einstellbar: **Einstellungen → Bereich „Remote-Zugang“ �
 > **Automatischer 2. Versuch ohne Passwort:** Wird ein gespeichertes Passwort verwendet und schließt sich `mstsc` innerhalb von 10 Sekunden wieder (schwarzes Bild, Fenster verschwindet – das typische Antwortverhalten von xrdp/Ubuntu auf ein falsches Passwort), fragt die Anwendung nach, ob **ohne das gespeicherte Passwort** neu verbunden werden soll. Bestätigen Sie die Rückfrage, entfernt die Anwendung den Eintrag `TERMSRV/<Host>` aus dem Windows-Anmeldeinformations-Manager und startet `mstsc` erneut – mit vor ausgefülltem Benutzernamen, sodass Sie das Passwort direkt im Remotedesktop-Fenster eingeben können. Das im Geräteeintrag gespeicherte Passwort bleibt dabei unverändert; im Protokoll wird der Vorfall als Warnung (`RDP`) festgehalten. Verbindungen, die länger als 10 Sekunden bestehen, sowie Verbindungen ganz ohne gespeichertes Passwort lösen keine Rückfrage aus.
 
 ### Auflösung für das Fenster einstellen
-1. Moderne Oberfläche: Seitenleiste **Einstellungen**, Bereich **Remote-Zugang** · klassische Oberfläche: **Tools → Einstellungen...**
+1. Seitenleiste **Einstellungen**, Bereich **Remote-Zugang**.
 2. Wählen Sie im Drop-Down **Auflösung** die gewünschte Fensterauflösung (z. B. `1920 × 1080`) oder **Optimiert (Bildschirmgröße)**.
 3. Klicken Sie auf **Speichern**.
 
@@ -522,11 +510,11 @@ Der Bildschirm **Einstellungen** (Seitenleiste → ⚙ **Einstellungen**) gliede
 | Bereich | Inhalt |
 |---------|--------|
 | **Netzwerk** | Broadcast-IP, Broadcast-Port |
-| **Darstellung** | Sprache, Farbschema (hell/dunkel/auto), **Design** (Modern/Klassisch) |
+| **Darstellung** | Sprache, Farbschema (hell/dunkel/auto) |
 | **Remote-Zugang** | **Auflösung** (RDP-Fenster), **VNC-Client (Pfad)**, **VNC-Port**, **RustDesk-Client (Pfad)**, **RustDesk-Port**, **Client je Plattform** (Windows/macOS/Linux → RDP, Turbo VNC oder RustDesk) |
 | **Sonstiges** | Standard-Herunterfahrmethode, max. Protokolleinträge, **Automatisch nach Updates suchen** + Intervall, **Im Iconbereich bleiben beim Schließen**, mehrere Instanzen, Berechtigung in öffentlichen Netzwerken, Host Service (macOS) |
 
-> Die Einstellungen zum Remote-Zugang liegen damit gesammelt in einem Bereich: die RDP-Auflösung (früher eigene Gruppe „Remote-Desktop“ im Einstellungs-Dialog) zusammen mit VNC-Client, VNC-Port, RustDesk-Client, RustDesk-Port und der Client-Zuordnung. An der Menüführung der klassischen Oberfläche hat sich nichts geändert.
+> Die Einstellungen zum Remote-Zugang liegen gesammelt in einem Bereich: die RDP-Auflösung (früher eine eigene Gruppe „Remote-Desktop“ im Einstellungs-Dialog) zusammen mit VNC-Client, VNC-Port, RustDesk-Client, RustDesk-Port und der Client-Zuordnung.
 
 ---
 
@@ -629,8 +617,8 @@ Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
 
 ## Zeitpläne erstellen
 
-1. Menü: **Datei → Zeitpläne verwalten...** (oder `Strg+S`)
-2. Klicken Sie auf **+ Zeitplan hinzufügen**.
+1. Seitenleiste: **Zeitplan**
+2. Klicken Sie auf **+ Zeitplan erstellen**.
 3. Konfigurieren Sie:
    - **Gerät:** Wählen Sie das Zielgerät
    - **Stunde & Minute:** Wann soll das Gerät geweckt werden?
@@ -640,13 +628,13 @@ Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
 
 > Der Zeitplan-Checker läuft im Hintergrund und löst Wake-on-LAN-Signale automatisch aus.
 
-> **Tipp:** Über dem Suchfeld der Zeitplan-Tabelle können Sie die Liste **live filtern** – nach Gerätename, Zeit (HH:MM), Aktion, Wochentagen oder Aktiviert-Zustand.
+> **Tipp:** Über dem Suchfeld des Bildschirms **Zeitplan** können Sie die Liste **live filtern** – nach Gerätename, Zeit (HH:MM), Aktion, Wochentagen oder Aktiviert-Zustand.
 
 ---
 
 ## Netzwerkeinstellungen
 
-1. Menü: **Tools → Netzwerkeinstellungen...**
+1. Seitenleiste: **Einstellungen**, Bereich *Netzwerk*
 2. Konfigurieren Sie:
    - **Broadcast-IP:** Standard `255.255.255.255` (für lokales Netzwerk)
    - **Broadcast-Port:** Standard `7` (oder `9`)
@@ -660,7 +648,7 @@ Im unteren Bereich verwalten Sie eine **Batch-Bibliothek pro Gerät**:
 
 ## Protokoll anzeigen
 
-1. Menü: **Tools → Protokoll anzeigen...** (oder `Strg+L`)
+1. Seitenleiste: **Protokolle**
 2. Das Protokoll zeigt alle Aktionen mit Zeitstempel:
    - Wake-on-LAN-Sendungen (erfolgreich/fehlerhaft)
    - Automatische Zeitplan-Auslösungen
@@ -711,7 +699,7 @@ Die Passwort-Verschlüsselung basiert auf einer Kombination aus **AES-256-GCM** 
    - Falls ein anderer Windows-Benutzer auf demselben System die Anwendung nutzt, kann dieser die Passwörter **nicht entschlüsseln**, da sie an Ihren Benutzerkonten gebunden sind.
 
 ⚠ **Sicherheitskopie:**
-   - Erstellen Sie regelmäßig **Sicherheitskopien** Ihrer Geräteeinstellungen (über **Datei → Geräte exportieren...**).
+   - Erstellen Sie regelmäßig **Sicherheitskopien** Ihrer Geräteeinstellungen (über **Verwalten → Exportieren**).
    - Beachten Sie, dass die exportierten Passwörter **nur auf demselben System und Benutzer** entschlüsselt werden können.
 
 ---
@@ -747,10 +735,7 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 | Taste | Aktion |
 |-------|--------|
-| `Strg+D` | Geräte verwalten |
-| `Strg+S` | Zeitpläne verwalten |
-| `Strg+L` | Protokoll anzeigen |
-| `Strg+Q` | Anwendung beenden |
+| `Strg+B` | Seitenleiste ein-/ausklappen |
 
 ---
 

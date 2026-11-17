@@ -11,10 +11,9 @@ Layout mirrors the prototype's settings screen
 3. An info label and a toolbar with "Zurücksetzen" and "Speichern"
    (primary) aligned to the right.
 
-Feature-identical to the classic ``SettingsDialog`` — all persistence goes
-through the shared ``ConfigManager`` using the same setters and the same
-input validation (``_validate_broadcast_ip`` / ``_validate_port`` are
-imported from ``wol_app.settings_dialog``) — plus the ``remote`` section
+All persistence goes through the shared ``ConfigManager``, with the same
+input validation as before (``validate_broadcast_ip`` / ``validate_port``
+from :mod:`wol_app.utils`) — plus the ``remote`` section
 that maps each platform to RDP or TurboVNC. The prototype's
 "Auto-Refresh" and "Host-Service Port" fields have no backend and are
 intentionally omitted.
@@ -25,9 +24,7 @@ switch moved down next to the other switches.
 
 The "Zurücksetzen" button restores factory defaults for the settings
 sections only (network, updates, log limit, shutdown method, language,
-display mode, remote routing); devices, schedules and logs are kept. The
-layout mode is deliberately *not* reset — doing so would eject the user from
-the modern layout mid-session.
+display mode, remote routing); devices, schedules and logs are kept.
 
 After a successful save the view emits ``settings_saved`` so the main
 window can re-apply the modern theme and retranslate every screen.
@@ -66,17 +63,22 @@ from wol_app.config import (
     VNC_PORT_MAX,
     VNC_PORT_MIN,
 )
-from wol_app.settings_dialog import _validate_broadcast_ip, _validate_port
 from wol_app.translations import Translations
-from wol_app.utils import OS_LINUX, OS_MACOS, OS_WINDOWS
+from wol_app.utils import (
+    OS_LINUX,
+    OS_MACOS,
+    OS_WINDOWS,
+    validate_broadcast_ip,
+    validate_port,
+)
 from wol_app.widgets.toggle_switch import ToggleWithLabel
 
 
 def _label(key: str) -> str:
     """Field label from an existing ``settings.label.*`` key.
 
-    The classic dialog uses form labels with a trailing colon; the
-    prototype's field labels have none — strip it.
+    Locale labels carry a trailing colon; the prototype's field labels have
+    none — strip it.
     """
     return Translations.tr(key).rstrip(":").strip()
 
@@ -180,7 +182,6 @@ class SettingsView(QWidget):
     def __init__(self, config_manager: Any, parent=None) -> None:
         super().__init__(parent)
         self.config: Any = config_manager
-        self.restart_required: bool = False
         self._setup_ui()
         self._load_settings()
 
@@ -253,21 +254,6 @@ class SettingsView(QWidget):
         self.field_display_mode = Field(
             "settings.label.display_mode", self.display_mode_combo)
         self.group_appearance.add(self.field_display_mode, 0, 1)
-
-        self.layout_mode_combo = QComboBox()
-        self.layout_mode_combo.addItem(
-            Translations.tr("settings.layout.classic"), "classic")
-        self.layout_mode_combo.addItem(
-            Translations.tr("settings.layout.modern"), "modern")
-        self.field_layout_mode = Field(
-            "settings.group.layout", self.layout_mode_combo)
-        self.group_appearance.add(self.field_layout_mode, 1, 0)
-
-        layout_hint = QLabel(Translations.tr("settings.layout.restart_hint"))
-        layout_hint.setObjectName("fieldHint")
-        layout_hint.setWordWrap(True)
-        self.group_appearance.add(layout_hint, 2, 0)
-        self.layout_hint = layout_hint
 
         # ── Remote-Zugang (the former "Remote Einstellungen" menu entry) ──
         self.remote_desktop_resolution_combo = QComboBox()
@@ -479,8 +465,6 @@ class SettingsView(QWidget):
             self.language_combo, ui.get("language", "en"))
         self._select_combo_data(
             self.display_mode_combo, ui.get("display_mode", "auto"))
-        self._select_combo_data(
-            self.layout_mode_combo, self.config.get_layout_mode())
 
         update_settings = self.config.get_update_settings()
         self.auto_update_toggle.setChecked(
@@ -514,18 +498,18 @@ class SettingsView(QWidget):
         ip: str = self.broadcast_ip_input.text().strip()
         port: int = self.broadcast_port_input.value()
 
-        # Input validation — identical to the classic SettingsDialog
+        # Input validation
         if not ip:
             QMessageBox.warning(
                 self, Translations.tr("dialog.error.missing_ip"),
                 Translations.tr("dialog.error.msg.missing_ip"))
             return
-        if not _validate_broadcast_ip(ip):
+        if not validate_broadcast_ip(ip):
             QMessageBox.warning(
                 self, Translations.tr("dialog.error.invalid_ip"),
                 Translations.tr("dialog.error.msg.invalid_ip"))
             return
-        if not _validate_port(port):
+        if not validate_port(port):
             QMessageBox.warning(
                 self, Translations.tr("dialog.error.invalid_port"),
                 Translations.tr("dialog.error.msg.invalid_port"))
@@ -546,11 +530,6 @@ class SettingsView(QWidget):
         selected_mode = self.display_mode_combo.currentData()
         if selected_mode:
             self.config.update_ui_settings(display_mode=selected_mode)
-
-        selected_layout = self.layout_mode_combo.currentData()
-        if selected_layout and selected_layout != self.config.get_layout_mode():
-            self.config.set_layout_mode(selected_layout)
-            self.restart_required = True
 
         self.config.update_update_settings(
             auto_check_enabled=self.auto_update_toggle.isChecked(),
@@ -650,7 +629,6 @@ class SettingsView(QWidget):
         self.field_broadcast_port.retranslate("settings.label.broadcast_port")
         self.field_language.retranslate("settings.label.language")
         self.field_display_mode.retranslate("settings.label.display_mode")
-        self.field_layout_mode.retranslate("settings.group.layout")
         self.field_interval.retranslate("settings.label.interval")
         self.field_max_logs.retranslate("settings.label.max_logs")
         self.field_rdp.retranslate("settings.label.remote_desktop_resolution")
@@ -668,7 +646,6 @@ class SettingsView(QWidget):
                 combo.setItemText(idx, Translations.tr(client_key))
         self.field_shutdown_method.retranslate(
             "settings.label.default_shutdown_method")
-        self.layout_hint.setText(Translations.tr("settings.layout.restart_hint"))
         self.info_label.setText(Translations.tr("settings.info.text"))
 
         # Combo item texts (data stays the same, only labels change)
@@ -679,9 +656,6 @@ class SettingsView(QWidget):
                 ("settings.display_mode.auto", "settings.display_mode.light",
                  "settings.display_mode.dark")):
             self.display_mode_combo.setItemText(idx, Translations.tr(key))
-        for idx, key in enumerate(
-                ("settings.layout.classic", "settings.layout.modern")):
-            self.layout_mode_combo.setItemText(idx, Translations.tr(key))
         for idx, key in enumerate(
                 ("settings.interval.daily", "settings.interval.weekly",
                  "settings.interval.monthly")):

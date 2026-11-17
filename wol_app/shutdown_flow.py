@@ -1,15 +1,14 @@
-"""Shared remote-shutdown flow for the classic and modern layouts.
+"""Shared remote-shutdown flow.
 
-Extracted from ``MainWindow._shutdown_selected`` / ``_execute_shutdown`` /
-``_execute_host_service_shutdown`` so both UIs show the same confirmation
-dialog and use the same execution paths:
+Shows the confirmation dialog and runs the same execution paths for the
+devices screen and the scheduler:
 
 - ``host_service``: WOL Host Service over TCP (port 8765);
 - otherwise: ``net use \\\\<ip>\\IPC$`` + ``shutdown /m \\\\<ip> /s /t 0 /f``.
 
 UI status feedback is injected via ``status_fn(msg, timeout_ms)`` exactly
-like :mod:`wol_app.schedule_runner`, so the modern layout (no status bar)
-can pass a no-op.
+like :mod:`wol_app.schedule_runner`, so a caller without a status bar can
+pass a no-op.
 """
 
 import subprocess

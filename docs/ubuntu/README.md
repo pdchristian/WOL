@@ -1,8 +1,8 @@
 # Ubuntu / Debian-Port – Arbeitsdokumentation
 
 Zusätzlich zur Windows-Version wird der Wake-on-LAN Manager als Ubuntu-Debian-Paket
-(`.deb`) bereitgestellt. Funktionen identisch außer der klassischen UI
-(Modern UI only). Host Service als Linux-/systemd-Variante.
+(`.deb`) bereitgestellt. Funktionen identisch – die Modern UI ist die einzige
+UI. Host Service als Linux-/systemd-Variante.
 
 ## Status
 | Phase | Inhalt | Status |
@@ -18,8 +18,9 @@ Zusätzlich zur Windows-Version wird der Wake-on-LAN Manager als Ubuntu-Debian-P
 - Der „Jetzt aktualisieren"-Knopf im Update-Dialog lädt die Windows-`.exe`
   herunter; auf Linux schlägt das Starten fehl (no-op, kein Crash). Empfehlung:
   Release-Seite via Changelog-Link nutzen (funktioniert wie bei Android/Port).
-- `settings_dialog.py` wird mitgeliefert, weil `settings_view.py` dessen
-  reine Validatoren importiert; der Dialog selbst wird auf Linux nie geöffnet.
+- `settings_view.py` bezieht die Broadcast-/Port-Validatoren aus `utils.py`;
+  die Windows-Anteile von `utils.py` werden auf Linux über `sys.platform`-
+  Guards nie ausgeführt.
 - `test_sidebar.py`-Fehler/`0xC0000409` beim pytest-Teardown auf Windows sind
   vorbestehende Flakiness (Qt-Shutdown-Race), unabhängig von diesem Port.
 
@@ -37,7 +38,7 @@ Zusätzlich zur Windows-Version wird der Wake-on-LAN Manager als Ubuntu-Debian-P
 - Build/Test: **echte Ubuntu-VM/Host** (Repo liefert Skripte + Anleitung).
 - Distribution: **lokales `.deb` + GitHub Release** (kein PPA/apt-Repo).
 - RDP: **analoger Retry für xfreerdp** (nicht überspringen).
-- Klassische UI: in Ubuntu **nicht** enthalten.
+- Klassische UI: entfernt (gilt plattformübergreifend).
 
 ## Paritätslücke Port(2.1.0) → Windows(2.2.1)
 - Watched Processes (Host-Protokoll v3/v4: `watch`/`processes`/`models`, llama.cpp),

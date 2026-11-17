@@ -1,14 +1,14 @@
 # Phase 1 – Merge in Monorepo  (depends on P0)
 
-1.1 `app_core.py` aus Port → `wol_app/app_core.py`. Windows `main_window.py`
-    importiert `HEADLESS_MODE`/`StatusWorker`/`_track_thread` aus `app_core`
-    (Re-Export, Verhalten unverändert).
+1.1 `app_core.py` aus Port → `wol_app/app_core.py`. `run.py` und
+    `modern_main_window.py` importieren `HEADLESS_MODE`/`StatusWorker`/
+    `_track_thread` aus `app_core`.
 1.2 Moderne Dialoge aus Port übernehmen, falls Windows-Baum abweicht:
     `views/device_edit_dialog.py`, `views/schedule_edit_dialog.py`,
     `views/shutdown_confirm_dialog.py`. `views/`+`widgets/`-Dateilisten abgleichen.
 1.3 `run.py` plattformverzweigt (siehe Architektur). `run_modern_window`-Logik
     aus Port-`run.py` in den geteilten Entry verlagern.
-1.4 Klassische UI-Dateien bleiben; auf Linux kein Import.
+1.4 Klassische UI-Dateien wurden entfernt; es existiert nur noch die Modern UI.
 
 # Phase 2 – Plattform-Shims  (depends on P1)
 
@@ -23,9 +23,9 @@
     Hinweis: `remote_desktop.py` und `network_scanner.py` behalten ihre
     plattformspezifischen Implementierungen (Windows: mstsc/.rdp, Linux:
     xfreerdp/`ip neigh`) und werden per `sys.platform`-Import geladen.
-2.5 `settings_dialog.py`-Validatoren `_validate_broadcast_ip`/`_validate_port`
-    bleiben wie sie sind (Windows-Dialog existiert; Linux-views importieren
-    daraus – unverändert lassen, solange Tests grün).
+2.5 Broadcast-/Port-Validatoren liegen in `utils.py`
+    (`validate_broadcast_ip`/`validate_port`) und werden von den Views direkt
+    dort importiert (der frühere `settings_dialog.py` existiert nicht mehr).
 2.6 `requirements.txt` PEP-508-Marker (siehe Architektur).
 
 ## Abnahmekriterium P1+P2

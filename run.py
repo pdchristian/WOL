@@ -1,12 +1,11 @@
 """Wake-on-LAN Manager - Main Entry Point (Windows + Linux + macOS).
 
-On Windows the classic single-window layout and the modern "Control Center"
-layout are both available; the choice is made via ``ui.layout_mode`` (see
-:func:`wol_app.main_window.main`).
+The app always starts the Modern "Control Center" UI
+(:mod:`wol_app.modern_main_window`). The classic single-window layout and the
+``ui.layout_mode`` switch that selected it were removed, so no classic
+module is imported on any platform.
 
-On Linux (the Ubuntu/GNOME port) and macOS only the Modern UI ships - the
-classic window and its dialogs are never imported, so no Windows-only code
-is loaded. The WOL Host Service (``wol_host_service_linux.py``, systemd /
+The WOL Host Service (``wol_host_service_linux.py``, systemd /
 ``wol_host_service_macos.py``, launchd; TCP 8765) is installed alongside
 the app and provides remote shutdown/reboot, dashboard metrics and (opt-in)
 remote script execution.
@@ -16,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import NoReturn
 
 # A leftover QT_QPA_PLATFORM=offscreen (e.g. exported in the shell for the
 # headless test suite) would make the app start without fonts ("QFontDatabase:
@@ -26,42 +26,51 @@ if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
     del os.environ["QT_QPA_PLATFORM"]
 
 
-def _main_linux():
-    """Modern-UI-only entry for Linux/GNOME (never imports main_window)."""
+def _run_modern_ui() -> NoReturn:
+    """Start the Modern UI - the only layout, on every platform."""
     import os
-    from typing import NoReturn
 
     from PyQt6.QtGui import QIcon
     from PyQt6.QtWidgets import QApplication
 
     from wol_app.config import ConfigManager
+    from wol_app.modern_main_window import run_modern_window
     from wol_app.theme import _system_uses_dark, apply_display_mode
     from wol_app.translations import Translations
     from wol_app.utils import get_resource_path
     from wol_app.watchdog import maybe_start_watchdog
 
-    # X11/XWayland WM_CLASS instance name: GNOME matches the running window
-    # against the StartupWMClass key of the desktop file (case-sensitive).
-    # Qt derives the instance name from argv[0] - "python3" when started via
-    # the launcher script - so GNOME finds no launcher and shows the generic
-    # gear icon in the Dash/Dock. RESOURCE_NAME overrides the instance name
-    # and must be set BEFORE the QApplication is created. (On Wayland the
-    # app_id comes from setDesktopFileName below - both are needed.)
-    os.environ.setdefault("RESOURCE_NAME", "wake-on-lan-manager")
+    if sys.platform == "win32":
+        # Windows groups a taskbar button with the installed shortcut when the
+        # AppUserModelIDs match, and then shows the SHORTCUT's icon. Our own ID
+        # keeps the button separate, so the green window icon wins.
+        from wol_app.utils import set_app_user_model_id
+
+        set_app_user_model_id("WakeOnLAN.Manager.Modern")
+    else:
+        # X11/XWayland WM_CLASS instance name: GNOME matches the running window
+        # against the StartupWMClass key of the desktop file (case-sensitive).
+        # Qt derives the instance name from argv[0] - "python3" when started via
+        # the launcher script - so GNOME finds no launcher and shows the generic
+        # gear icon in the Dash/Dock. RESOURCE_NAME overrides the instance name
+        # and must be set BEFORE the QApplication is created. (On Wayland the
+        # app_id comes from setDesktopFileName below - both are needed.)
+        os.environ.setdefault("RESOURCE_NAME", "wake-on-lan-manager")
 
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")  # Consistent modern look on Linux/GNOME
+    app.setStyle("Fusion")  # Consistent modern look on every platform
     app.setApplicationName("Wake-on-LAN Manager")
     app.setOrganizationName("WakeOnLAN")
 
-    # GNOME (Dock + top bar) associates the running window with its launcher
-    # through the desktop file name: it becomes the Wayland app id and the X11
-    # WM_CLASS. Without it Qt derives both from argv[0] - which is "python3"
-    # when started via the launcher script - so GNOME shows a generic icon
-    # even though the app grid entry (icon_modern.png) is correct. The name
-    # must match the .desktop file (wake-on-lan-manager.desktop) and its
-    # StartupWMClass key, as installed by install.sh / packaging/build_deb.sh.
-    app.setDesktopFileName("wake-on-lan-manager")
+    if sys.platform != "win32":
+        # GNOME (Dock + top bar) associates the running window with its launcher
+        # through the desktop file name: it becomes the Wayland app id and the X11
+        # WM_CLASS. Without it Qt derives both from argv[0] - which is "python3"
+        # when started via the launcher script - so GNOME shows a generic icon
+        # even though the app grid entry (icon_modern.png) is correct. The name
+        # must match the .desktop file (wake-on-lan-manager.desktop) and its
+        # StartupWMClass key, as installed by install.sh / packaging/build_deb.sh.
+        app.setDesktopFileName("wake-on-lan-manager")
 
     # Diagnostics: set WOL_WATCHDOG=1 (or seconds) to dump all thread stacks
     # to ~/.wol_app/wol_watchdog.log when the GUI thread hangs.
@@ -87,35 +96,24 @@ def _main_linux():
     display_mode = config.config.get("ui", {}).get("display_mode", "auto")
     apply_display_mode(app, display_mode)
 
-    # Application window icon (modern icon preferred).
-    icon_path: str = get_resource_path("icon_modern.png")
-    if not os.path.exists(icon_path):
-        icon_path = get_resource_path("icon.png")
-    if os.path.exists(icon_path):
-        app.setWindowIcon(QIcon(icon_path))
+    # Application window icon: the green modern icon, with older builds as fallback.
+    for icon_name in ("icon_modern.ico", "icon_modern.png", "icon.png", "icon.ico"):
+        icon_path = get_resource_path(icon_name)
+        if os.path.exists(icon_path):
+            app.setWindowIcon(QIcon(icon_path))
+            break
 
     dark = display_mode == "dark" or (
         display_mode == "auto" and _system_uses_dark()
     )
 
-    from wol_app.modern_main_window import run_modern_window
-
     run_modern_window(config, dark_mode=dark, guard=guard)
     raise SystemExit(0)  # unreachable: run_modern_window calls sys.exit
 
 
-def main():
-    """Platform-dispatching entry point.
-
-    Windows keeps the full feature set (classic + modern UI); Linux and
-    macOS run the Modern UI only and never import the classic
-    ``main_window`` module.
-    """
-    if sys.platform == "win32":
-        from wol_app.main_window import main as _main_windows
-
-        return _main_windows()
-    return _main_linux()
+def main() -> NoReturn:
+    """Entry point for Windows, Linux and macOS (Modern UI only)."""
+    return _run_modern_ui()
 
 
 if __name__ == "__main__":

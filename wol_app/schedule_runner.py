@@ -1,9 +1,8 @@
 """Shared dispatch logic for fired schedule entries.
 
-Used by both the classic ``MainWindow`` and the modern
-``ModernMainWindow`` so scheduled wakes and remote shutdowns behave
-identically in either layout. The UI feedback (status bar messages) is
-injected via a ``status_fn(msg, timeout_ms)`` callback.
+Used by ``ModernMainWindow`` and the devices screen so scheduled wakes and
+remote shutdowns behave identically. The UI feedback (status bar messages)
+is injected via a ``status_fn(msg, timeout_ms)`` callback.
 """
 
 import sys
@@ -32,8 +31,7 @@ def dispatch_schedule_action(
 ) -> None:
     """Handle a fired schedule entry: wake the device or shut it down.
 
-    Mirrors the classic ``MainWindow._on_schedule_fired`` flow, including
-    the host-service and IPC$/shutdown.exe shutdown paths.
+    Handles both the host-service and the IPC$/shutdown.exe shutdown paths.
     """
     if action == "shutdown":
         scheduled_shutdown(config, device_id, status_fn)

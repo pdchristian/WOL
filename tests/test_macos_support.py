@@ -738,9 +738,7 @@ class TestConfigPromptedVersion:
     """Round-trip of the ui.hostservice_prompted_version marker."""
 
     def _config(self, tmp_path):
-        with patch("wol_app.config.read_ui_mode_from_registry",
-                   return_value=None):
-            return ConfigManager(config_path=str(tmp_path / "config.json"))
+        return ConfigManager(config_path=str(tmp_path / "config.json"))
 
     def test_default_none(self, tmp_path):
         assert self._config(tmp_path).get_hostservice_prompted_version() \

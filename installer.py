@@ -592,6 +592,24 @@ def create_start_menu_folder(install_dir, exe_dest):
 
 # --- Custom Action modes (invoked by the Inno Setup installer via Exec) ---
 
+def remove_obsolete_ui_mode_value():
+    """Delete the ``UiMode`` value written by installers before 2.6.0.
+
+    Up to 2.5.4 the Inno Setup wizard asked for the app design and recorded
+    it in ``HKLM\\SOFTWARE\\Wake-on-LAN Manager``. The classic layout is gone,
+    so the app no longer reads the value — remove it on the next install so
+    no orphaned setting lingers.
+    """
+    try:
+        winreg.DeleteValue(winreg.HKEY_LOCAL_MACHINE,
+                           r"SOFTWARE\Wake-on-LAN Manager", "UiMode")
+        print("  Removed obsolete UiMode registry value.")
+    except FileNotFoundError:
+        pass  # nothing to clean up
+    except Exception as e:
+        print(f"  Warning: Could not remove UiMode value: {e}")
+
+
 def cmd_preinstall_cleanup(install_dir, remove_data=False):
     """Remove a previous installation before a fresh install.
 
@@ -611,6 +629,9 @@ def cmd_preinstall_cleanup(install_dir, remove_data=False):
 
     # Remove the Add/Remove Programs registry entry
     unregister_app_from_registry()
+
+    # Remove the UI-design choice recorded by installers up to 2.5.4
+    remove_obsolete_ui_mode_value()
 
     # Remove Start Menu shortcuts (all users)
     start_menu_folder = os.path.join(

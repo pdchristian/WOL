@@ -1,7 +1,7 @@
-"""Device import/export shared by the classic dialogs and the modern UI.
+"""Device import/export for the modern UI.
 
 The functions show their own file dialogs and result message boxes (with
-*parent* as owner) and report success via return values, so both UIs can
+*parent* as owner) and report success via return values, so callers can
 simply call them and refresh their views afterwards.
 """
 

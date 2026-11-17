@@ -1,7 +1,9 @@
-"""Update Dialogs for Wake-on-LAN Manager.
+"""Update dialog for Wake-on-LAN Manager.
 
-Shows release notes when a new version is available and provides
-buttons to download, dismiss, or skip the update.
+Shows release notes when a new version is available and provides buttons to
+download, dismiss, or skip the update. Shared by the Modern UI's update
+screen (:mod:`wol_app.views.update_view`), which embeds the download and
+install flow of :class:`UpdateAvailableDialog`.
 """
 
 import os
@@ -328,67 +330,3 @@ class UpdateAvailableDialog(QDialog):
         if hasattr(self, '_progress') and self._progress:
             self._progress.close()
             self._show_error(Translations.tr("update_dialog.download_failed_msg", message=message))
-class UpdateInfoDialog(QDialog):
-    """Simple confirmation dialog when the user is already on the latest version."""
-
-    def __init__(self, current_version: str, parent=None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(Translations.tr("update_info.title"))
-        self.setMinimumWidth(380)
-        self._setup_ui(current_version)
-
-    def _setup_ui(self, version: str) -> None:
-        layout = QVBoxLayout(self)
-
-        icon_label = QLabel("✅")
-        icon_label.setStyleSheet("font-size: 32px;")
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(icon_label)
-
-        info_label = QLabel(
-            f"<b>{Translations.tr('update_info.up_to_date')}</b><br>"
-            f"Wake-on-LAN Manager {version}"
-        )
-        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        ok_btn = QPushButton("OK")
-        ok_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(ok_btn)
-        layout.addLayout(btn_layout)
-
-
-class UpdateErrorDialog(QDialog):
-    """Shown when the update check itself fails (network error, etc.)."""
-
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(Translations.tr("update_error.title"))
-        self.setMinimumWidth(380)
-        self._setup_ui()
-
-    def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-
-        icon_label = QLabel("⚠️")
-        icon_label.setStyleSheet("font-size: 32px;")
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(icon_label)
-
-        info_label = QLabel(
-            f"<b>{Translations.tr('update_error.check_failed')}</b><br><br>"
-            f"{Translations.tr('update_error.check_connection_msg')}"
-        )
-        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        ok_btn = QPushButton("OK")
-        ok_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(ok_btn)
-        layout.addLayout(btn_layout)

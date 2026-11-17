@@ -2,9 +2,8 @@
 
 Visually aligned with the Dark Control Center design (dialog background =
 window bg, form inside a surface panel, labels above inputs, 2-column
-field pairs, toggle row with the switch on the right); functionally
-equivalent to the classic ``DeviceDialog`` in ``wol_app.device_dialog``
-and writes through the same ``ConfigManager`` API.
+field pairs, toggle row with the switch on the right); writes through the
+``ConfigManager`` API.
 """
 
 from typing import Any

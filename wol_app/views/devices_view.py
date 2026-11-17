@@ -12,9 +12,9 @@ Layout mirrors the prototype's devices screen
    offline/unknown, "Herunterfahren" while online.
 
 All persistence goes through the shared ``ConfigManager``; the wake/ping
-engine and the status worker are reused from the classic UI, the remote
-desktop and shutdown flows from :mod:`wol_app.remote_desktop` /
-:mod:`wol_app.shutdown_flow`.
+engine and the status worker come from :mod:`wol_app.wol_engine` /
+:mod:`wol_app.app_core`, the remote desktop and shutdown flows from
+:mod:`wol_app.remote_desktop` / :mod:`wol_app.shutdown_flow`.
 """
 
 from typing import Any
@@ -424,7 +424,7 @@ class DeviceListRow(QWidget):
     # ── Status ────────────────────────────────────────────────────
 
     def _display_name(self, local_ips: set[str]) -> str:
-        """Device name with the classic "(ich)" marker for the local machine."""
+        """Device name, suffixed with the "(ich)"/"disabled" markers."""
         name = self.device_name
         if self._device_ip in local_ips:
             name = f"{name} {Translations.tr('device.me')}"
@@ -605,7 +605,7 @@ class DeviceCard(QWidget):
     # ── Status ───────────────────────────────────────────────────────────
 
     def _display_name(self, local_ips: set[str]) -> str:
-        """Device name with the classic "(ich)" marker for the local machine."""
+        """Device name, suffixed with the "(ich)"/"disabled" markers."""
         name = self.device_name
         if self._device_ip in local_ips:
             name = f"{name} {Translations.tr('device.me')}"
@@ -1166,7 +1166,7 @@ class DevicesView(QWidget):
         dialog.exec()
 
     def _wake_all(self) -> None:
-        """Wake all enabled devices (confirmation like the classic layout)."""
+        """Wake all enabled devices after an explicit confirmation."""
         devices = [d for d in self.config.get_devices() if d.get("enabled", True)]
         if not devices:
             QMessageBox.information(

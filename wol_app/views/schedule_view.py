@@ -38,7 +38,7 @@ ROW_HEIGHT = 64
 def format_days(days: list) -> str:
     """Human-readable day summary like the prototype ("Sa · So", "Wochentags").
 
-    Empty list means "every day" (mirrors the classic dialog).
+    Empty list means "every day".
     """
     if not days or len(days) >= 7:
         return Translations.tr("modern.schedule.days.every")

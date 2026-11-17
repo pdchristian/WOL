@@ -55,16 +55,10 @@ for doc in README.md SECURITY.md; do
 done
 
 # wol_app package incl. locales, stripped of __pycache__ / *.pyc.
-# The classic single-window UI (and its dialogs) are NOT part of the Ubuntu
-# port: they are excluded so the package ships the Modern UI only. settings_dialog.py
-# stays because settings_view imports its pure validators (Linux-safe).
+# The package ships the Modern UI only — the classic single-window UI and its
+# dialogs were removed from the source tree.
 ( cd "$PROJECT_DIR" && tar \
     --exclude='__pycache__' --exclude='*.pyc' \
-    --exclude='wol_app/main_window.py' \
-    --exclude='wol_app/device_dialog.py' \
-    --exclude='wol_app/log_dialog.py' \
-    --exclude='wol_app/network_scan_dialog.py' \
-    --exclude='wol_app/schedule_dialog.py' \
     --exclude='wol_app/graphify-out' \
     -cf - wol_app ) \
     | ( cd "$STAGE/$APP_DIR" && tar -xf - )

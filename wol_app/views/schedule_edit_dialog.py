@@ -1,9 +1,7 @@
 """Modern UI: dialog for creating/editing a schedule entry.
 
 Visually aligned with the Dark Control Center design (panel sections,
-modern buttons); functionally equivalent to the classic
-``ScheduleEditDialog`` in ``wol_app.schedule_dialog`` and writes through
-the same ``ConfigManager`` API.
+modern buttons); writes through the ``ConfigManager`` schedule API.
 """
 
 from typing import Any

@@ -11,10 +11,10 @@ block (max-width 420 px, vertically centered, no page header):
    "Changelog", plus an inline status label for the check result.
 
 The check itself reuses the shared ``updater.check_for_updates_sync``
-(same GitHub Releases API as the classic UI) on a background
-``QThread``; when an update is available the classic
-``UpdateAvailableDialog`` opens so download/install stays feature
-identical. "Changelog" opens the GitHub releases page in the browser.
+(GitHub Releases API) on a background ``QThread``; when an update is
+available the shared ``UpdateAvailableDialog`` opens and handles the
+download and install. "Changelog" opens the GitHub releases page in the
+browser.
 """
 
 from typing import Any
@@ -45,8 +45,8 @@ class _CheckWorker(QObject):
     """Background worker around the synchronous update check.
 
     Emits ``finished`` with ``(release_info, has_update)`` or ``None``
-    when the check failed (network/parse error) — the same tri-state the
-    classic manual menu check distinguishes.
+    when the check failed (network/parse error) — the same tri-state
+    ``check_for_updates_sync`` returns.
     """
 
     finished = pyqtSignal(object)  # tuple | None
@@ -195,7 +195,7 @@ class UpdateView(QWidget):
             self.check_btn.setEnabled(True)
 
     def _on_check_finished(self, result: Any) -> None:
-        """Handle the check result on the GUI thread (mirrors the classic flow)."""
+        """Handle the check result on the GUI thread."""
         if result is None:
             self.status_label.setText(Translations.tr(
                 "modern.update.error",

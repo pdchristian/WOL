@@ -5,17 +5,15 @@ Ein `wol_app/` für beide Plattformen. Plattformspezifisches wird hinter einer
 dünnen Shim-Schicht gekapselt. Views/Dialoge bleiben plattformneutral.
 
 ## Entry (`run.py`)
-`sys.platform`-Verzweigung:
-- win32 → klassische `main()` (UI-Modus-Wahl modern/klassisch).
-- linux → `run_modern_window(config, dark_mode)` (Modern UI only).
+Plattformübergreifend identisch: alle Plattformen starten
+`run_modern_window(config, dark_mode)` (Modern UI only).
 Die Modern-Window-Logik aus `C:\Python\WOL-Ubuntu\run.py` (Fusion-Style,
 `maybe_start_watchdog`, `apply_display_mode`, Icon) bleibt in `run.py` und
 nutzt `app_core`/`modern_main_window`.
 
 ## `app_core.py` (portiert)
 `HEADLESS_MODE`, `StatusWorker`, `_track_thread`. **Views importieren NUR
-`app_core`**, nie `main_window`. Windows `main_window.py` re-exportiert diese
-Symbole für Abwärtskompat.
+`app_core`**, nie ein Fenster-Modul.
 
 ## Shim-Schicht
 `wol_app/platform.py` wählt via `sys.platform`:
@@ -38,10 +36,12 @@ Beide sprechen dasselbe JSON-Protokoll (v4).
 `host_service_client.HOST_SERVICE_IMPLEMENTED` bleibt exportiert;
 Windows=True, Linux=True (beide Services vorhanden). Kein Feature-Skip mehr.
 
-## Klassische UI auf Linux
-Dateien (`main_window.py`, `device_dialog.py`, `log_dialog.py`,
-`network_scan_dialog.py`, `schedule_dialog.py`) bleiben im Baum, werden auf
-Linux nicht importiert (Gate über `sys.platform` im Entry).
+## UI
+Die klassische UI (`main_window.py`, `device_dialog.py`, `log_dialog.py`,
+`network_scan_dialog.py`, `schedule_dialog.py`, `settings_dialog.py`) wurde
+entfernt. Es gibt nur noch die Modern UI auf allen Plattformen; die
+UI-Modus-Auswahl (`ui.layout_mode`, Registry-Wert `UiMode`, Combo in den
+Einstellungen) ist entfallen.
 
 ## Requirements (PEP-508)
 ```

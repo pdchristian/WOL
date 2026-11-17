@@ -3,10 +3,9 @@
 4.1 `packaging/` aus Port übernehmen: `build_deb.sh`,
     `deb/DEBIAN/{control.in,postinst,prerm,postrm}`, `deb/wol-host-service.service`.
 4.2 `build_deb.sh` anpassen:
-    - Nur Modern-UI-Dateien stagehn (klassische UI-Dateien `main_window.py`,
-      `device_dialog.py`, `log_dialog.py`, `network_scan_dialog.py`,
-      `schedule_dialog.py` + Windows-`utils.py`-Anteile ausschließen;
-      stattdessen `sys.platform`-Shims, die auf Linux nie win32 importieren).
+    - Nur Modern-UI-Dateien stagehn (die klassische UI wurde entfernt;
+      Windows-`utils.py`-Anteile laufen über `sys.platform`-Shims, die auf
+      Linux nie win32 importieren).
     - Host-Service: `wol_host_service_linux.py` als
       `/usr/share/wake-on-lan-manager/wol_host_service.py` stagehn.
     - `Depends`: python3(>=3.10), python3-pyqt6, python3-cryptography, python3-psutil,
