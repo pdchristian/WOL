@@ -1,9 +1,10 @@
 # Wake-on-LAN Manager
 
-**Version 2.5.4 - Batch Play Edition**
+**Version 2.6.0 - Modern UI Edition**
 
 A modern GUI application (Windows · Ubuntu · macOS) for sending Wake-on-LAN magic packets to devices on your local network.
 
+> **New in 2.6.0:** **the classic UI is gone** — the **"Dark Control Center"** (sidebar layout) is now the only interface on Windows · Ubuntu · macOS. `run.py` starts it unconditionally; the old window with the menu bar and its dialogs (`device_dialog`, `settings_dialog`, `log_dialog`, `network_scan_dialog`, `schedule_dialog`) was deleted, and so was the design choice: no *Modern app / Classic app* installer task, no `UiMode` registry hint, no **Settings → Design** drop-down and no restart prompt any more. Existing installs keep working — a stale `ui.layout_mode` entry in `config.json` is ignored, and the installer removes the obsolete registry value.
 > **New in 2.5.3:** **Batches now ask before they run — on every client.** The Apple Watch already had a play button per batch and a confirmation prompt; the desktop dashboard (Windows · Ubuntu · macOS) and both WebView apps (Android · iOS) got the same flow: a ▶ badge in every batch row opens a Ja/Nein prompt naming the batch and the device, and nothing runs until it is confirmed. If the device forbids batches, the badge is dimmed and the prompt is skipped with a hint.
 > **New in 2.5.2:** **Inference activity is now measurable on vLLM-style servers too** — many OpenAI servers **negotiate the `/metrics` format**: `Accept: application/json` returns a JSON object, `Accept: text/plain` returns Prometheus text. The Host Service asks for text first, so it read a body whose gauge names (`vllm:num_requests_running` / `vllm:num_requests_waiting`, `strata:live_tok_s`, `vllm:prompt_tokens_total`) it did not know, and the device card stayed on the amber struck-through bolt although the server was perfectly readable. The `/metrics` probes additionally understand those names now (llama.cpp names keep precedence) and also got their own **2 s** timeout (`WATCH_METRICS_TIMEOUT_S`, was 0.6 s) because the body is built server-side; the cheap probes stay at 0.6 s. Requires an updated **WOL Host Service** (Windows · Ubuntu · macOS).
 > **New in 2.5.1:** **Second launch raises the minimized app (desktop)** — with *only one instance* allowed (default) and the window minimized, starting the app again now opens it out of the taskbar (Windows) / out of the Dock (macOS) instead of only flashing the button. Implemented platform-correctly in `utils.force_window_foreground()` (Windows `AttachThreadInput` + `SetForegroundWindow`; macOS `NSWindow.deminiaturize:` + app activation, PyObjC with a ctypes fallback). On macOS a second launch never starts a second process — LaunchServices re-activates the running app — so `utils.install_macos_reopen_handler()` hooks the Cocoa *reopen* event and runs the same raise code there.
@@ -143,6 +144,18 @@ Settings). Build and installation details, platform decisions and known
 limitations: [docs/macos/README.md](docs/macos/README.md).
 
 ## 📝 Changelog
+
+### Version 2.6.0 - Modern UI Edition (2026-11-18)
+
+> Desktop-only cleanup (Windows · Ubuntu · macOS) — the Android and iOS WebView clients stay on 2.5.3.
+
+#### 🗑️ One interface instead of two: the classic UI removed
+- **What was removed:** the classic window `main_window.py` (menu bar, device table, status bar) together with the dialogs only it used — `device_dialog.py`, `settings_dialog.py`, `log_dialog.py`, `network_scan_dialog.py`, `schedule_dialog.py` — plus the two classic-only update dialogs (`UpdateInfoDialog`, `UpdateErrorDialog`)
+- **One entry point:** `run.py` calls `run_modern_window()` on every platform — no `sys.platform` branch and no layout decision at startup; on Windows the AppUserModelID is `WakeOnLAN.Manager.Modern`
+- **The design switch went away with it:** `ui.layout_mode` / `ui.layout_mode_user_set`, `ConfigManager.get_layout_mode()` / `set_layout_mode()`, the registry read of `HKLM\SOFTWARE\Wake-on-LAN Manager\UiMode`, the installer's *Modern app / Classic app* task and the drop-down in **Settings → Design** (including the restart prompt) are gone — the sidebar UI always starts
+- **Nothing was re-implemented:** the modern screens had already covered every feature; the two pure validators the modern settings screen had imported from the classic dialog (`validate_broadcast_ip`, `validate_port`) now live in `wol_app/utils.py`
+- **Upgrading:** a leftover `ui.layout_mode` key in an existing `config.json` is simply ignored, and the installer deletes the obsolete `UiMode` registry value during its pre-install cleanup
+- **Packaging & docs:** both PyInstaller specs dropped the six modules, `packaging/build_deb.sh` no longer excludes classic files, every shortcut uses `icon_modern.ico`, and the manual / KNOWLEDGE / docs were rewritten for the single UI
 
 ### Version 2.5.3 - Batch Play Edition (2026-11-08)
 

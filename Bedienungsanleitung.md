@@ -73,7 +73,7 @@ Starten Sie die Anwendung über:
 
 ## Die moderne Benutzeroberfläche
 
-Mit **Version 2.0.0** wurde das moderne App-Design (**"Dark Control Center"**) eingeführt: Statt einer Fensteransicht mit Menüleiste und Tabelle führt die Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)).
+Mit **Version 2.0.0** wurde das moderne App-Design (**"Dark Control Center"**) eingeführt: Statt einer Fensteransicht mit Menüleiste und Tabelle führt die Oberfläche eine **Seitenleiste (Sidebar)** mit **vier nativen Bereichen** und zwei nativen App-Bildschirmen ein. **Version 2.1.0** ergänzt das **Geräte-Dashboard** mit Live-Performance-Werten (CPU/RAM/GPU/VRAM) und entfernter Batch-Ausführung. **Version 2.2.0** fügt dem Dashboard die **Prozess-Überwachung** hinzu: benannte Prozesse (z. B. `llama-server.exe`) werden auf dem Zielsystem beobachtet und als Live-Status-Chips mit Details (PID, Uptime, RAM/CPU, API-Port, geladenes llama.cpp-Modell) angezeigt – konfigurierbar direkt im Geräte-Dialog (Details im Kapitel [Geräte-Dashboard](#geräte-dashboard-performance--batches)). **Version 2.6.0** macht diese Oberfläche zur **einzigen**: die frühere Fensteransicht mit Menüleiste und Gerätetabelle wurde mitsamt ihrer Dialoge entfernt, damit entfallen auch die UI-Auswahl im Installer und die Design-Auswahl in den Einstellungen.
 
 ### Anzeige-Modus (dunkel / hell / automatisch)
 Im Bereich **Darstellung** der Einstellungen wählen Sie den **Anzeige-Modus**:
@@ -264,41 +264,42 @@ Die gewählte Sortierung wird **gespeichert** und gilt für **beide Ansichten**.
 ## Wake-on-LAN senden
 
 ### Einzelnes Gerät wecken
-1. Wählen Sie ein Gerät in der Tabelle aus.
-2. Klicken Sie auf **Ausgewähltes Gerät wecken**.
+1. Öffnen Sie die Seitenleiste **Geräte**.
+2. Klicken Sie auf der Geräte-Kachel auf **Aufwecken** (in der Listenansicht auf das Power-Symbol am Zeilenende, oder per Rechtsklick → **Aufwecken**).
 3. Ein Magic Packet wird an die MAC-Adresse gesendet.
 
 ### Alle Geräte wecken
-1. Klicken Sie oben auf **Alle Geräte wecken**.
+1. Klicken Sie oben auf der Seite **Geräte** auf **Alle starten**.
 2. Bestätigen Sie die Abfrage.
 3. Alle aktivierten Geräte erhalten ein Wake-on-LAN-Signal.
 
 > **Voraussetzung:** Wake-on-LAN muss im BIOS/UEFI und in den Netzwerkeinstellungen des Zielsystems aktiviert sein.
 
 ### Kontextmenü (Rechtsklick)
-Ein Rechtsklick auf ein Gerät in der Tabelle öffnet ein Kontextmenü mit weiteren Aktionen:
-- **Remote Fullscreen** – startet eine Remote-Desktop-Sitzung im Vollbild
-- **Remote Window** – startet eine Remote-Desktop-Sitzung in einem Fenster (mit der in den Einstellungen gewählten Auflösung)
-- **Herunterfahren** – fährt das Gerät remote herunter
-- **Status aktualisieren** / **Ping** – prüft den Gerätestatus
+Ein Rechtsklick auf eine Geräte-Kachel oder eine Zeile der Geräteliste öffnet ein Kontextmenü mit weiteren Aktionen:
+- **Remote Vollbild** / **Remote Fenster** – startet eine Remote-Desktop-Sitzung im Vollbild bzw. in einem Fenster (mit der in den Einstellungen gewählten Auflösung); der Menüpunkt nennt zusätzlich den verwendeten Client (Remotedesktop, TurboVNC oder RustDesk)
+- **Dashboard** – öffnet das Geräte-Dashboard (Live-Werte, Batches)
+- **Herunterfahren** (wenn das Gerät online ist) bzw. **Aufwecken** (wenn offline/unbekannt)
+- **Ping** – prüft den Status genau dieses Geräts
+- **Bearbeiten** – öffnet den Geräte-Dialog
 
 ---
 
 ## Status prüfen
 
 ### Manuelles Aktualisieren
-Klicken Sie auf **Status aktualisieren**. Die App pingt alle konfigurierten IPs und aktualisiert die Spalte "Status":
+Klicken Sie oben auf der Seite **Geräte** auf **Aktualisieren**. Die App pingt alle konfigurierten IPs und aktualisiert die Status-Pills der Kacheln und Listenzeilen:
 - 🟢 **Online** – Gerät antwortet auf Ping
 - 🔴 **Offline** – Gerät antwortet nicht (aus oder im Ruhezustand)
 - 🟡 **Unbekannt** – Keine IP konfiguriert oder Fehler beim Prüfen
 
 ### Automatisches Aktualisieren
-Der Status wird alle **30 Sekunden** automatisch aktualisiert.
+Der Status wird alle **30 Sekunden** automatisch aktualisiert – solange die Seite **Geräte** sichtbar ist.
 
 ### Einzelnes Gerät prüfen
-1. Wählen Sie ein Gerät aus.
-2. Klicken Sie auf **Ausgewähltes Gerät ping'en**.
-3. Ein Dialog zeigt den aktuellen Status an.
+1. Klicken Sie mit der **rechten Maustaste** auf die Geräte-Kachel (oder die Zeile in der Geräteliste).
+2. Wählen Sie **Ping**.
+3. Die Status-Pill des Geräts zeigt das Ergebnis an.
 
 ---
 
@@ -326,10 +327,10 @@ Bevor Remote-Shutdown funktioniert, müssen folgende Einstellungen am **Zielsyst
 Falls das Zielsystem keine Authentifizierung für die Remote-Shutdown-Funktion erfordert (z. B. bei offenen Freigaben oder lokalen Konten mit Standardberechtigungen), gehen Sie wie folgt vor:
 
 1. **Gerät auswählen:**
-   Wählen Sie in der Hauptansicht das gewünschte Gerät aus der Tabelle aus.
+   Öffnen Sie die Seitenleiste **Geräte** und wählen Sie die Kachel (bzw. die Zeile) des gewünschten Rechners.
 
 2. **Shutdown auslösen:**
-   Klicken Sie auf die Schaltfläche **Herunterfahren**.
+   Klicken Sie auf **Herunterfahren**.
 
 3. **Bestätigen:**
    Ein Dialogfenster erscheint zur Bestätigung. Klicken Sie auf **Ja**, um den Shutdown-Befehl zu senden.
@@ -353,7 +354,7 @@ Falls das Zielsystem eine Authentifizierung erfordert (z. B. bei Domänen-Konten
    - Klicken Sie auf **Aktualisieren**, um die Änderungen zu speichern.
 
 2. **Shutdown auslösen:**
-   - Wählen Sie das Gerät in der Hauptansicht aus.
+   - Öffnen Sie die Seitenleiste **Geräte** und wählen Sie die Kachel des Geräts.
    - Klicken Sie auf **Herunterfahren**.
 
 3. **Verbindung herstellen:**
@@ -765,4 +766,4 @@ Die Verschlüsselung ist für **Windows 10 und 11** optimiert. Ältere Versionen
 
 ---
 
-*Version 2.5.4 | Wake-on-LAN Manager*
+*Version 2.6.0 | Wake-on-LAN Manager*

@@ -33,8 +33,8 @@ UI. Host Service als Linux-/systemd-Variante.
 
 ## Entscheidungen
 - Monorepo, **geteilte Codebasis** mit Plattform-Shims (kein Fork).
-  Basis = `c:\Python\WOL` (Windows, v2.5.4, Source of Truth).
-- Version: auf **2.5.4** angleichen (Windows + Ubuntu synchron).
+  Basis = `c:\Python\WOL` (Windows, v2.6.0, Source of Truth).
+- Version: auf **2.6.0** angleichen (Windows + Ubuntu synchron).
 - Build/Test: **echte Ubuntu-VM/Host** (Repo liefert Skripte + Anleitung).
 - Distribution: **lokales `.deb` + GitHub Release** (kein PPA/apt-Repo).
 - RDP: **analoger Retry für xfreerdp** (nicht überspringen).
